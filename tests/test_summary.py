@@ -303,3 +303,14 @@ def test_unknown_run_raises(tmp_path):
     store, _ = _build(tmp_path, [], [])
     with pytest.raises(KeyError):
         build_view(store, 999)
+
+
+def test_rows_carry_component_kind(tmp_path):
+    comps = [_comp("metrics/event1", "E", number=1),
+             Component("variables/prop1", "P", "dimension", "custom_props", 1,
+                       Column("variables/prop1", "metrics/occurrences", "variables/prop1"), True)]
+    store, rid = _build(tmp_path, comps, [_dv(c.id, YESTERDAY, 1.0) for c in comps])
+    view = build_view(store, rid)
+    for key in ("day:2026-11-06", "week"):
+        kinds = {r["component_id"]: r["kind"] for r in view["views"][key]}
+        assert kinds == {"metrics/event1": "metric", "variables/prop1": "dimension"}

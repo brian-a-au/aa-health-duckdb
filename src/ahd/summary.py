@@ -36,7 +36,7 @@ dv AS (
 # Catalog components that have at least one daily value, with their sort position.
 _COMPS = """
 comps AS (
-    SELECT c.component_id, c.name, c."group", c.number,
+    SELECT c.component_id, c.name, c.kind, c."group", c.number,
         coalesce(list_position($groups::VARCHAR[], c."group"), 1000000) AS gpos
     FROM components c
     WHERE c.run_id = $run_id AND c.component_id <> $individual
@@ -64,7 +64,7 @@ base AS (
     GROUP BY s.sel_day, c.component_id
 ),
 r AS (
-    SELECT s.sel_day, c.component_id, c.name, c."group", c.number, c.gpos,
+    SELECT s.sel_day, c.component_id, c.name, c.kind, c."group", c.number, c.gpos,
         d.value, b.baseline,
         CASE WHEN b.baseline <> 0 THEN d.value / b.baseline - 1 END AS pct,
         {_ANOMALY.format(a="d")} AS anomaly
@@ -72,7 +72,7 @@ r AS (
     JOIN base b ON b.sel_day = s.sel_day AND b.component_id = c.component_id
     LEFT JOIN dv d ON d.component_id = c.component_id AND d.day = s.sel_day
 )
-SELECT CAST(sel_day AS VARCHAR) AS sel_day, component_id, name, "group", number,
+SELECT CAST(sel_day AS VARCHAR) AS sel_day, component_id, name, kind, "group", number,
     value, baseline, pct, {_ARROW} AS arrow, coalesce(value = 0, false) AS zero, anomaly
 FROM r
 ORDER BY sel_day DESC, {_ORDER}
@@ -81,7 +81,7 @@ ORDER BY sel_day DESC, {_ORDER}
 _WEEK_SQL = f"""
 WITH {_DV}, {_COMPS},
 r AS (
-    SELECT c.component_id, c.name, c."group", c.number, c.gpos,
+    SELECT c.component_id, c.name, c.kind, c."group", c.number, c.gpos,
         sum(d.value) FILTER (WHERE d.day BETWEEN $week_start AND $week_end) AS value,
         coalesce(sum(d.value) FILTER (WHERE d.day BETWEEN $baseline_start AND $baseline_end), 0)
             / 12 AS baseline
@@ -89,7 +89,7 @@ r AS (
     GROUP BY ALL
 ),
 p AS (SELECT *, CASE WHEN baseline <> 0 THEN value / baseline - 1 END AS pct FROM r)
-SELECT component_id, name, "group", number, value, baseline, pct, {_ARROW} AS arrow,
+SELECT component_id, name, kind, "group", number, value, baseline, pct, {_ARROW} AS arrow,
     coalesce(value = 0, false) AS zero, NULL AS anomaly
 FROM p
 ORDER BY {_ORDER}
