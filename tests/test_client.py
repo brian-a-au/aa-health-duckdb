@@ -1,4 +1,5 @@
 import pytest
+import requests
 
 from ahd.api.client import AdobeClient, ApiError
 
@@ -124,3 +125,40 @@ def test_other_4xx_raises():
 def test_repr_has_no_secrets():
     c, _, _ = make([])
     assert "SECRET-TOKEN" not in repr(c) and "KEY123" not in repr(c)
+
+
+class RaisingSession(FakeSession):
+    """A script entry that is an exception instance is raised instead of answered."""
+
+    def request(self, method, url, headers=None, params=None, json=None, timeout=None):
+        self.calls.append((method, url, dict(headers or {}), params, json))
+        item = self.script.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        status, body, hdrs = item
+        return FakeResponse(status, body, hdrs)
+
+
+def make_raising(script):
+    sleeps = []
+    session = RaisingSession(script)
+    c = AdobeClient._from_parts(session, dict(HEADER), "co1", lambda: dict(HEADER),
+                                sleep=sleeps.append)
+    return c, session, sleeps
+
+
+@pytest.mark.parametrize("exc", [requests.ConnectionError("reset"), requests.Timeout("slow")])
+def test_network_errors_retried_then_succeed(exc):
+    c, s, sleeps = make_raising([exc, exc, (200, {"ok": 1}, {})])
+    assert c.post_report({}) == {"ok": 1}
+    assert len(s.calls) == 3 and len(sleeps) == 2
+    assert all(0 <= d <= 10.0 for d in sleeps)
+
+
+def test_network_error_raised_after_max_retries():
+    errors = [requests.Timeout(f"slow {i}") for i in range(5)]
+    c, s, sleeps = make_raising(list(errors))
+    with pytest.raises(requests.Timeout) as e:
+        c.get("/dimensions")
+    assert e.value is errors[-1]
+    assert len(s.calls) == 5 and len(sleeps) == 4

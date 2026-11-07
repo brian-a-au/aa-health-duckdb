@@ -110,16 +110,26 @@ class AdobeClient:
         relogged = False
         attempt = 0
         while True:
-            resp = self._session.request(
-                method, url, headers=self._header, params=params, json=json, timeout=TIMEOUT
-            )
+            try:
+                resp = self._session.request(
+                    method, url, headers=self._header, params=params, json=json, timeout=TIMEOUT
+                )
+            except (requests.ConnectionError, requests.Timeout) as e:
+                if attempt >= self.max_retries:
+                    raise
+                attempt += 1
+                delay = self._backoff(attempt - 1)
+                log.debug("%s from %s %s, retry %d in %.1fs",
+                          type(e).__name__, method, path, attempt, delay)
+                self._sleep(delay)
+                continue
             status = resp.status_code
             if status == 401 and not relogged:
                 relogged = True
                 self._header = dict(self._relogin())
                 continue
             if (status == 429 or status >= 500) and attempt < self.max_retries:
-                delay = random.uniform(0, min(BACKOFF_CAP, BACKOFF_BASE * 2**attempt))
+                delay = self._backoff(attempt)
                 retry_after = resp.headers.get("Retry-After")
                 try:
                     delay = max(delay, float(retry_after)) if retry_after else delay
@@ -130,6 +140,10 @@ class AdobeClient:
                 self._sleep(delay)
                 continue
             return self._finish(resp)
+
+    @staticmethod
+    def _backoff(attempt: int) -> float:
+        return random.uniform(0, min(BACKOFF_CAP, BACKOFF_BASE * 2**attempt))
 
     @staticmethod
     def _finish(resp: Any) -> Any:
