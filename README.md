@@ -48,7 +48,7 @@ Check the sign in and see how many report suites the credential can see:
 uv run ahd check
 ```
 
-Check one report suite. This counts the custom events, eVars and props and tests anomaly detection. It exits with 2 if access is limited, and it explains the fix in plain words:
+Check one report suite. This counts the custom events, eVars and props and tests anomaly detection. It exits with 2 if access is limited, and it explains the fix in plain words. It also exits with 2 if a check could not be run, for example because of a network problem:
 
 ```
 uv run ahd check --rsid my_suite
