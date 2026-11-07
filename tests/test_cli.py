@@ -4,6 +4,7 @@ import pytest
 from fakes import (
     ApiError,
     fake_for,
+    is_anomaly_trend,
     is_trend,
     restricted_dimensions,
     restricted_metrics,
@@ -48,7 +49,7 @@ def test_run_writes_html_and_exit_code(tmp_path, cfg, capsys):
     assert str(files[0]) in capsys.readouterr().out
 
 
-def test_run_partial_exit_code(tmp_path, cfg):
+def test_run_failed_exit_code(tmp_path, cfg):
     fake = fake_for("rs1", events(3), custom_dims(),
                     posts=[(is_trend, ApiError(403, "no", "invalid_access"))])
     code = main(
@@ -57,6 +58,18 @@ def test_run_partial_exit_code(tmp_path, cfg):
         client_factory=lambda creds, company_id=None: fake,
     )
     assert code == 1  # every request failed: no values
+
+
+def test_run_partial_exit_code(tmp_path, cfg):
+    fake = fake_for("rs1", events(3), custom_dims(),
+                    posts=[(is_anomaly_trend, ApiError(403, "no", "invalid_access"))])
+    out = tmp_path / "o"
+    code = main(
+        args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", "2026-11-07", "--out", str(out)),
+        client_factory=lambda creds, company_id=None: fake,
+    )
+    assert code == 3
+    assert len(list(out.glob("*.html"))) == 1
 
 
 def test_render_needs_no_client(tmp_path, cfg, capsys):

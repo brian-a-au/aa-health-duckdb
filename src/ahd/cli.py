@@ -98,10 +98,13 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     window = RunWindow.for_today(
         today_in_zone(suite.get("timezoneZoneinfo") or "UTC", datetime.now(UTC))
     )
-    allowed = probe_anomaly(client, args.rsid, window, catalog[0].column) if catalog else True
-    print(f"Anomaly detection: {'allowed' if allowed else 'not allowed'}")
-    if not allowed:
-        ok = False
+    if catalog:
+        allowed = probe_anomaly(client, args.rsid, window, catalog[0].column)
+        print(f"Anomaly detection: {'allowed' if allowed else 'not allowed'}")
+        if not allowed:
+            ok = False
+    else:
+        print("Anomaly detection: not tested (no components to test with)")
     if not ok:
         print(ACCESS_FIX)
         return 2

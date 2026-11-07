@@ -29,7 +29,7 @@ You can also set the environment variables `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_S
 
 ## Permissions
 
-The tool only reads from Adobe. The only request that sends a body is the report request.
+The tool only reads from Adobe. Among Analytics API calls, the only one that sends a body is the report request, and it only reads data.
 
 The credential's technical account must be added to an Admin Console product profile that includes:
 
