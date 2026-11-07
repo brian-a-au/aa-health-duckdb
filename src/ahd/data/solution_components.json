@@ -1,0 +1,87 @@
+{
+  "Reserved Traffic Events": [
+    "metrics/pageviews",
+    "metrics/visits",
+    "metrics/visitors"
+  ],
+  "Reserved Purchase Events": [
+    "metrics/carts",
+    "metrics/cartadditions",
+    "metrics/cartremovals",
+    "metrics/cartviews",
+    "metrics/checkouts",
+    "metrics/orders",
+    "metrics/units",
+    "metrics/revenue"
+  ],
+  "App Lifecycle Events": [
+    "metrics/mobileinstalls",
+    "metrics/mobileupgrades",
+    "metrics/mobilelaunches",
+    "metrics/mobilecrashes",
+    "metrics/mobileprevsessionlength"
+  ],
+  "Heartbeat Events": [
+    "metrics/videoadcomplete",
+    "metrics/videoadstart",
+    "metrics/videoadtime",
+    "metrics/videoauthorized",
+    "metrics/videochaptercomplete",
+    "metrics/videochapterstart",
+    "metrics/videochaptertime",
+    "metrics/videocomplete",
+    "metrics/videoplay",
+    "metrics/videotime",
+    "metrics/videostart"
+  ],
+  "Reserved eVars": [
+    "variables/campaign",
+    "variables/product"
+  ],
+  "List Variables": [
+    "variables/listvariable1",
+    "variables/listvariable2",
+    "variables/listvariable3"
+  ],
+  "App Lifecycle Dimensions": [
+    "variables/mobileinstalldate",
+    "variables/mobileappid",
+    "variables/mobilelaunchnumber",
+    "variables/mobiledayssincefirstuse",
+    "variables/mobiledayssincelastuse",
+    "variables/mobilehourofday",
+    "variables/mobiledayofweek"
+  ],
+  "Heartbeat Dimensions": [
+    "variables/videoadstart",
+    "variables/videoadinpod",
+    "variables/videoadplayername",
+    "variables/videoadpod",
+    "variables/videochapter",
+    "variables/videochannel",
+    "variables/videoplayername",
+    "variables/videocontenttype",
+    "variables/videoepisode",
+    "variables/videomvpd",
+    "variables/videonetwork",
+    "variables/videoseason",
+    "variables/videoshow",
+    "variables/videoshowtype",
+    "variables/video"
+  ],
+  "Reserved Props": [
+    "variables/customlink",
+    "variables/exitlink",
+    "variables/downloadlink"
+  ],
+  "Activity Map Instances": [
+    "metrics/clickmaplinkbyregion",
+    "metrics/clickmaplink",
+    "metrics/clickmappage",
+    "metrics/clickmapregion"
+  ],
+  "Target Integration Instances": [
+    "metrics/targetconversion",
+    "metrics/targetimpression"
+  ]
+}
