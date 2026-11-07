@@ -53,7 +53,7 @@
     "metrics/mobiledayofweek"
   ],
   "Heartbeat Dimensions": [
-    "metrics/videoadstart",
+    "metrics/videoad",
     "metrics/videoadinpod",
     "metrics/videoadplayername",
     "metrics/videoadpod",

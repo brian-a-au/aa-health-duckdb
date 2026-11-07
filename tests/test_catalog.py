@@ -72,6 +72,16 @@ def test_solution_json_has_12_groups():
     assert "metrics/pageviews" in sol["Reserved Traffic Events"]
 
 
+def test_solution_ids_belong_to_one_group():
+    sol = load_solution()
+    ids = [cid for members in sol.values() for cid in members]
+    assert len(ids) == len(set(ids))
+    # The workbook's "Video Ad" row points at videoadstart by mistake; its own range is videoad.
+    assert "metrics/videoadstart" in sol["Heartbeat Events"]
+    assert sol["Heartbeat Dimensions"][0] == "metrics/videoad"
+    assert "metrics/videoadstart" not in sol["Heartbeat Dimensions"]
+
+
 def test_order_custom_first_then_solution():
     groups = []
     for c in catalog():
