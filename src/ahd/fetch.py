@@ -13,6 +13,8 @@ from datetime import UTC, date, datetime
 from importlib import metadata
 from typing import Any
 
+import requests
+
 from ahd.api.client import ApiError
 from ahd.api.reports import (
     Column,
@@ -46,6 +48,12 @@ DEVICE_IDS = ["0", "2163986270", "1728229488", "3464263970", "2355485956"]
 DEVICE_LABELS = ["Other", "Mobile Phone", "Tablet", "Media Player", "Television"]
 
 INDIVIDUAL_ID = "individual"
+NETWORK_ERROR = "network_error"
+
+
+def _network_message(e: requests.RequestException) -> str:
+    # Only the exception type: requests messages can carry URLs; never headers.
+    return f"The request failed with a network error ({type(e).__name__})."
 
 
 @dataclass
@@ -179,6 +187,10 @@ def _run(
                 for col in batch:
                     issue("column", col.component_id, code, e.message)
                 continue
+            except requests.RequestException as e:
+                for col in batch:
+                    issue("column", col.component_id, NETWORK_ERROR, _network_message(e))
+                continue
             values, errors = parse_trend(resp, batch)
             store.add_daily_values(run_id, values)
             value_count += len(values)
@@ -191,6 +203,9 @@ def _run(
             except ApiError as e:
                 issue("individual", INDIVIDUAL_ID, e.error_code or f"http_{e.status}",
                       f"{kind}: {e.message}")
+                continue
+            except requests.RequestException as e:
+                issue("individual", INDIVIDUAL_ID, NETWORK_ERROR, f"{kind}: {_network_message(e)}")
                 continue
             if kind in ("current", "historical"):
                 rows, _total = parse_ranked(resp)

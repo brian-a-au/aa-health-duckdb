@@ -300,3 +300,40 @@ def test_probe_other_error_fails_run_and_reraises(store):
         run_fetch(fake, store, opts())
     (run,) = store.list_runs()
     assert run["status"] == "failed" and run["finished_at"] is not None
+
+
+def test_network_error_in_one_batch_continues(store):
+    import requests
+
+    @after_probe
+    def timed_out_batch(body):
+        return is_trend(body) and "metrics/event2" in metric_ids(body)
+
+    def raise_timeout(body):
+        raise requests.Timeout("read timed out")
+
+    fake = fake_for("rs1", events(3), custom_dims(), posts=[(timed_out_batch, raise_timeout)])
+    rid = run_fetch(fake, store, opts(batch_size=2))
+    col_issues = [(r[1], r[2]) for r in issues(store, rid) if r[0] == "column"]
+    assert col_issues == [("metrics/event1", "network_error"),
+                          ("metrics/event2", "network_error")]
+    for cid in ["metrics/event3", "variables/prop1", "variables/page", "individual"]:
+        assert values_for(store, rid, cid) == 92
+    assert store.get_run(rid)["status"] == "partial"
+
+
+def test_network_error_in_individual_request_is_one_issue(store):
+    import requests
+
+    def is_browser(body):
+        return breakdown_dimension(body) == "variables/browsertype"
+
+    def raise_conn(body):
+        raise requests.ConnectionError("connection reset")
+
+    fake = fake_for("rs1", events(1), custom_dims(), posts=[(is_browser, raise_conn)])
+    rid = run_fetch(fake, store, opts())
+    ind = [r for r in issues(store, rid) if r[0] == "individual"]
+    assert [(r[1], r[2]) for r in ind] == [("individual", "network_error")]
+    assert values_for(store, rid, "individual") == 92
+    assert store.get_run(rid)["status"] == "partial"
