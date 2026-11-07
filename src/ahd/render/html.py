@@ -30,7 +30,31 @@ ISSUE_HEADINGS = {
         "No custom eVars, props, or events were returned. The API credential's product "
         "profile probably hides them."
     ),
+    "anomaly_probe_failed": (
+        "Anomaly detection could not be tested, because the test request failed. Anomaly "
+        "bands are not shown. Running again may fix this."
+    ),
+    "unauthorized_metric": "Some metrics or dimensions are not visible to this credential.",
+    "unauthorized_dimension": "Some metrics or dimensions are not visible to this credential.",
+    "network_error": (
+        "Some requests failed because of network problems. Running again may fix this."
+    ),
+    "no_rows": (
+        "Some parts of the Individual Component Summary came back empty. The credential's "
+        "product profile may hide the chosen dimension, or there was no data."
+    ),
 }
+# The fetch step records an Adobe error without its own code as http_<status>.
+HTTP_HEADING = "Adobe returned an error for some requests."
+
+CSP = ("default-src 'none'; style-src 'unsafe-inline'; "
+       "script-src 'unsafe-inline'; img-src data:")
+
+BREAKDOWN_NOTES = {
+    "browser": "Rows are the top 10 values in the first column (Google), as in the Excel version.",
+    "device": "Rows are the top 10 values in the first column (Other), as in the Excel version.",
+}
+NO_INDIVIDUAL_NAME = "the chosen dimension and metric"
 
 STATUS_LABELS = {
     "ok": "Complete",
@@ -68,6 +92,24 @@ def _json_for_script(view: dict[str, Any]) -> Markup:
     return Markup(text)
 
 
+def issue_heading(code: str) -> str | None:
+    """A plain heading for an issue code, or None when there is none."""
+    if code in ISSUE_HEADINGS:
+        return ISSUE_HEADINGS[code]
+    if re.fullmatch(r"http_\d+", code):
+        return HTTP_HEADING
+    return None
+
+
+def individual_label(run: dict[str, Any]) -> str:
+    """For example "Page by Occurrences"."""
+    dim = run.get("dimension_name") or run.get("dimension")
+    metric = run.get("metric_name") or run.get("metric")
+    if dim and metric:
+        return f"{dim} by {metric}"
+    return NO_INDIVIDUAL_NAME
+
+
 def _issue_groups(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """One group per issue code, in first-seen order, with a plain heading."""
     groups: dict[str, dict[str, Any]] = {}
@@ -77,7 +119,7 @@ def _issue_groups(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if g is None:
             g = groups[code] = {
                 "code": code,
-                "heading": ISSUE_HEADINGS.get(code),
+                "heading": issue_heading(code),
                 "entries": [],
             }
         g["entries"].append({"component_id": it.get("component_id"),
@@ -93,6 +135,9 @@ def render_html(view: dict[str, Any]) -> str:
         run=run,
         status_label=STATUS_LABELS.get(status, status),
         status=status,
+        csp=Markup(CSP),
+        individual_label=individual_label(run),
+        breakdown_notes=BREAKDOWN_NOTES,
         issue_groups=_issue_groups(view.get("issues", [])),
         ranges=RANGES,
         no_bands_note=NO_BANDS_NOTE,

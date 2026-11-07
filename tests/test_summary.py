@@ -31,7 +31,8 @@ def _dv(cid, day, value, expected=None, upper=None, lower=None, anomaly=None):
 
 def _build(tmp_path, components, values, top=None, breakdowns=None, issues=None):
     store = Store.open(tmp_path / "t.duckdb")
-    rid = store.create_run("rs1", "Suite One", "seg1", TODAY, "US/Pacific", "0.1.0")
+    rid = store.create_run("rs1", "Suite One", "seg1", TODAY, "US/Pacific", "0.1.0",
+                           dimension="variables/page", metric="metrics/event1")
     store.add_components(rid, components)
     store.add_daily_values(rid, values)
     for period, rows in (top or {}).items():
@@ -258,7 +259,11 @@ def test_row_order_group_then_number_nulls_last_then_id(tmp_path):
 def test_run_block(friday):
     run = friday["run"]
     assert set(run) == {"id", "rsid", "rsid_name", "segment_id", "today", "timezone",
-                        "status", "started_at", "finished_at", "tool_version"}
+                        "status", "started_at", "finished_at", "tool_version",
+                        "dimension", "metric", "dimension_name", "metric_name"}
+    assert run["dimension"] == "variables/page" and run["metric"] == "metrics/event1"
+    # Page is not in this run's components, so its raw id is shown; Event 1 is.
+    assert run["dimension_name"] == "variables/page" and run["metric_name"] == "Event 1"
     assert run["rsid"] == "rs1" and run["rsid_name"] == "Suite One"
     assert run["segment_id"] == "seg1" and run["today"] == "2026-11-07"
     assert run["timezone"] == "US/Pacific" and run["status"] == "partial"
@@ -314,3 +319,26 @@ def test_rows_carry_component_kind(tmp_path):
     for key in ("day:2026-11-06", "week"):
         kinds = {r["component_id"]: r["kind"] for r in view["views"][key]}
         assert kinds == {"metrics/event1": "metric", "variables/prop1": "dimension"}
+
+
+def test_run_block_names_from_exists_dimension(tmp_path):
+    prop = Component("variables/prop7", "Search term", "dimension", "custom_props", 7,
+                     Column("variables/prop7", "metrics/occurrences", "variables/prop7"), True)
+    store = Store.open(tmp_path / "t.duckdb")
+    rid = store.create_run("rs1", "S", None, TODAY, "UTC", "0.1", dimension="variables/prop7",
+                           metric="metrics/occurrences")
+    store.add_components(rid, [prop])
+    store.finish_run(rid, "ok")
+    run = build_view(store, rid)["run"]
+    assert run["dimension_name"] == "Search term"
+    # occurrences is the exists column's metric, but not a component of its own
+    assert run["metric_name"] == "metrics/occurrences"
+
+
+def test_run_block_without_dimension(tmp_path):
+    store = Store.open(tmp_path / "t.duckdb")
+    rid = store.create_run("rs1", "S", None, TODAY, "UTC", "0.1")
+    store.finish_run(rid, "ok")
+    run = build_view(store, rid)["run"]
+    assert run["dimension"] is None and run["dimension_name"] is None
+    assert run["metric"] is None and run["metric_name"] is None

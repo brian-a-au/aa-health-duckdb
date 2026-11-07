@@ -168,3 +168,18 @@ def test_check_probe_failure_does_not_crash(tmp_path, cfg, capsys, failure):
     assert f"Anomaly detection: could not be tested ({name})" in out
     assert "All checks passed." not in out
     assert code == 2
+
+
+def test_newer_database_is_one_line_error(tmp_path, cfg, capsys):
+    import duckdb
+
+    from ahd.store import Store
+
+    db = tmp_path / "t.duckdb"
+    Store.open(db).con.close()
+    con = duckdb.connect(str(db))
+    con.execute("update schema_version set version = 2")
+    con.close()
+    code = main(["runs", "--db", str(db)])
+    err = capsys.readouterr().err
+    assert code == 1 and err.count("\n") == 1 and "newer" in err and "Traceback" not in err

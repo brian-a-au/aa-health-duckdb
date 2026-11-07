@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="{{ csp }}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>Analytics Health: {{ run.rsid_name or run.rsid }} {{ run.today }}</title>
@@ -14,6 +15,7 @@
   <h1>Analytics Health Dashboard</h1>
   <dl class="facts">
     <div><dt>Report suite</dt><dd>{{ run.rsid_name or run.rsid }} <span class="muted">({{ run.rsid }})</span></dd></div>
+    <div><dt>Individual component</dt><dd>{{ individual_label }}{% if run.dimension and run.metric %} <span class="muted">({{ run.dimension }}, {{ run.metric }})</span>{% endif %}</dd></div>
     <div><dt>Segment</dt><dd>{% if run.segment_id %}{{ run.segment_id }}{% else %}None (all visits){% endif %}</dd></div>
     <div><dt>Run date</dt><dd>{{ run.today }} <span class="muted">(report suite time zone {{ run.timezone }})</span></dd></div>
     <div><dt>Run time</dt><dd>{% if run.started_at %}{{ run.started_at[:16] | replace("T", " ") }} <span class="muted">(time on the computer that ran it)</span>{% else %}Unknown{% endif %}</dd></div>
@@ -61,7 +63,7 @@
 <main>
 <section class="panel" role="tabpanel" id="panel-components" aria-labelledby="tab-components">
   <div class="controls">
-    <label>Granularity
+    <label>Show
       <select id="granularity">
         <option value="day">Daily</option>
         <option value="week">Weekly</option>
@@ -97,8 +99,9 @@
 </section>
 
 <section class="panel" role="tabpanel" id="panel-individual" aria-labelledby="tab-individual" hidden>
+  <h2 id="individual-title">{{ individual_label }}</h2>
   <figure class="chart-card wide">
-    <figcaption>Trend for the chosen dimension and metric</figcaption>
+    <figcaption>Trend for {{ individual_label }}</figcaption>
     <div class="chart" id="individual-chart"></div>
   </figure>
   <h2>Top 100 values yesterday</h2>
@@ -107,9 +110,11 @@
   <h2>Browser analysis</h2>
   <p class="hint">Top 10 values yesterday for each major browser group.</p>
   <div id="browser"></div>
+  <p class="hint">{{ breakdown_notes.browser }}</p>
   <h2>Device analysis</h2>
   <p class="hint">Top 10 values yesterday for each device type. Desktop traffic falls under Other.</p>
   <div id="device"></div>
+  <p class="hint">{{ breakdown_notes.device }}</p>
 </section>
 
 <section class="panel" role="tabpanel" id="panel-alerts" aria-labelledby="tab-alerts" hidden>

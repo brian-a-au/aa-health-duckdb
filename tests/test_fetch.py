@@ -269,6 +269,7 @@ def test_today_uses_suite_zone_via_now(store):
     now = datetime(2026, 11, 8, 3, 0, tzinfo=UTC)  # 19:00 on Nov 7 in Pacific
     rid = run_fetch(fake, store, RunOptions(rsid="rs1"), now=lambda: now)
     run = store.get_run(rid)
+    assert run["dimension"] == "variables/page" and run["metric"] == "metrics/occurrences"
     assert run["today"] == TODAY
     assert run["timezone"] == "US/Pacific" and run["rsid_name"] == "Test Suite"
     assert all(date_range(b) == W.trend_range() for b in fake.trend_bodies())

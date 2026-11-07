@@ -11,12 +11,18 @@ import duckdb
 from ahd.api.reports import DailyValue
 from ahd.catalog import Component
 
+# Bump when the tables change, and add the upgrade steps to Store.open.
+SCHEMA_VERSION = 1
+
 _SCHEMA = """
 CREATE SEQUENCE IF NOT EXISTS run_seq START 1;
 CREATE TABLE IF NOT EXISTS runs (
     run_id INTEGER PRIMARY KEY, rsid VARCHAR, rsid_name VARCHAR, segment_id VARCHAR,
     today DATE, timezone VARCHAR, tool_version VARCHAR, status VARCHAR,
-    started_at TIMESTAMP, finished_at TIMESTAMP);
+    started_at TIMESTAMP, finished_at TIMESTAMP, dimension VARCHAR, metric VARCHAR);
+-- Files written before version 1 have no dimension and metric columns.
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS dimension VARCHAR;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS metric VARCHAR;
 CREATE TABLE IF NOT EXISTS components (
     run_id INTEGER, component_id VARCHAR, name VARCHAR, kind VARCHAR, "group" VARCHAR,
     number INTEGER, metric_id VARCHAR, exists_dimension VARCHAR, allowed_for_reporting BOOLEAN);
@@ -35,6 +41,10 @@ CREATE TABLE IF NOT EXISTS issues (
 """
 
 
+class SchemaVersionError(ValueError):
+    """The database file was written by a newer version of ahd."""
+
+
 class Store:
     def __init__(self, con: duckdb.DuckDBPyConnection) -> None:
         self.con = con
@@ -44,7 +54,23 @@ class Store:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         con = duckdb.connect(str(path))
-        con.execute(_SCHEMA)
+        try:
+            con.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER)")
+            found = con.execute("SELECT max(version) FROM schema_version").fetchone()[0]
+            if found is not None and found > SCHEMA_VERSION:
+                raise SchemaVersionError(
+                    f"The database {path} uses schema version {found}, which is newer than "
+                    f"this version of ahd knows about ({SCHEMA_VERSION}). Update ahd, or use "
+                    "a different database file with --db."
+                )
+            con.execute(_SCHEMA)
+            if found is None:
+                con.execute("INSERT INTO schema_version (version) VALUES (?)", [SCHEMA_VERSION])
+            elif found < SCHEMA_VERSION:
+                con.execute("UPDATE schema_version SET version = ?", [SCHEMA_VERSION])
+        except BaseException:
+            con.close()
+            raise
         return cls(con)
 
     def _many(self, sql: str, rows: list[tuple]) -> None:
@@ -59,11 +85,16 @@ class Store:
         today: date,
         timezone: str,
         tool_version: str,
+        dimension: str | None = None,
+        metric: str | None = None,
     ) -> int:
         row = self.con.execute(
-            "INSERT INTO runs VALUES (nextval('run_seq'), ?, ?, ?, ?, ?, ?, 'running', ?, NULL)"
+            "INSERT INTO runs (run_id, rsid, rsid_name, segment_id, today, timezone,"
+            " tool_version, status, started_at, finished_at, dimension, metric)"
+            " VALUES (nextval('run_seq'), ?, ?, ?, ?, ?, ?, 'running', ?, NULL, ?, ?)"
             " RETURNING run_id",
-            [rsid, rsid_name, segment_id, today, timezone, tool_version, datetime.now()],
+            [rsid, rsid_name, segment_id, today, timezone, tool_version, datetime.now(),
+             dimension, metric],
         ).fetchone()
         return row[0]
 
@@ -75,7 +106,9 @@ class Store:
 
     def add_components(self, run_id: int, components: list[Component]) -> None:
         self._many(
-            "INSERT INTO components VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO components (run_id, component_id, name, kind, \"group\", number,"
+            " metric_id, exists_dimension, allowed_for_reporting)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (run_id, c.id, c.name, c.kind, c.group, c.number, c.column.metric_id,
                  c.column.exists_dimension, c.allowed_for_reporting)
@@ -85,7 +118,8 @@ class Store:
 
     def add_daily_values(self, run_id: int, values: list[DailyValue]) -> None:
         self._many(
-            "INSERT INTO daily_values VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO daily_values (run_id, component_id, day, value, expected, upper,"
+            " lower, anomaly) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (run_id, v.component_id, v.day, v.value, v.expected, v.upper, v.lower, v.anomaly)
                 for v in values
@@ -97,7 +131,7 @@ class Store:
         rows: list[tuple[int, str, float]],
     ) -> None:
         self._many(
-            "INSERT INTO top_items VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO top_items (run_id, period, rank, item, value) VALUES (?, ?, ?, ?, ?)",
             [(run_id, period, r, item, v) for r, item, v in rows],
         )
 
@@ -106,7 +140,8 @@ class Store:
         rows: list[tuple[str, list[float]]], totals: list[float],
     ) -> None:
         self._many(
-            "INSERT INTO breakdowns VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO breakdowns (run_id, kind, col_index, label, rank, item, value)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
             [
                 (run_id, kind, i, label, rank, item, vals[i])
                 for rank, (item, vals) in enumerate(rows, start=1)
@@ -115,7 +150,8 @@ class Store:
             ],
         )
         self._many(
-            "INSERT INTO breakdown_totals VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO breakdown_totals (run_id, kind, col_index, label, total)"
+            " VALUES (?, ?, ?, ?, ?)",
             [(run_id, kind, i, label, totals[i]) for i, label in enumerate(labels) if i < len(totals)],
         )
 
@@ -123,7 +159,8 @@ class Store:
         self, run_id: int, scope: str, component_id: str | None, code: str, message: str
     ) -> None:
         self.con.execute(
-            "INSERT INTO issues VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO issues (run_id, scope, component_id, code, message)"
+            " VALUES (?, ?, ?, ?, ?)",
             [run_id, scope, component_id, code, message],
         )
 

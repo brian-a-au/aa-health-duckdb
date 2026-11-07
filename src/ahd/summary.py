@@ -180,11 +180,30 @@ def _iso(v: Any) -> Any:
     return v.isoformat() if isinstance(v, (date, datetime)) else v
 
 
+_NAME_SQL = """
+SELECT name FROM components
+WHERE run_id = $run_id AND (component_id = $id OR ($dims AND exists_dimension = $id))
+ORDER BY component_id = $id DESC, component_id
+LIMIT 1
+"""
+
+
+def _display_name(store: Store, run_id: int, cid: str | None, dimension: bool) -> str | None:
+    """The component's name in this run, else its raw id. A dimension may be an exists column."""
+    if not cid:
+        return None
+    row = store.con.execute(_NAME_SQL, {"run_id": run_id, "id": cid, "dims": dimension}).fetchone()
+    return row[0] if row and row[0] else cid
+
+
 def _run_block(store: Store, run_id: int) -> dict[str, Any]:
     run = store.get_run(run_id)
     keys = ["rsid", "rsid_name", "segment_id", "today", "timezone", "status",
-            "started_at", "finished_at", "tool_version"]
-    return {"id": run["run_id"], **{k: _iso(run[k]) for k in keys}}
+            "started_at", "finished_at", "tool_version", "dimension", "metric"]
+    block = {"id": run["run_id"], **{k: _iso(run[k]) for k in keys}}
+    block["dimension_name"] = _display_name(store, run_id, run["dimension"], True)
+    block["metric_name"] = _display_name(store, run_id, run["metric"], False)
+    return block
 
 
 def _movement(row: dict[str, Any]) -> int | str:

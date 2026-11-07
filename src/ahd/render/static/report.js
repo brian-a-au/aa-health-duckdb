@@ -496,8 +496,11 @@
   }
 
   function drawIndividual() {
+    var run = data.run || {};
+    var dim = run.dimension_name || run.dimension;
+    var metric = run.metric_name || run.metric;
     drawChart(byId("individual-chart"), data.series[data.individual || "individual"],
-      "the chosen dimension and metric");
+      dim && metric ? dim + " by " + metric : "the chosen dimension and metric");
   }
 
   function renderIndividual() {

@@ -10,7 +10,16 @@ from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
 from ahd.config import Credentials
 from ahd.fetch import RunOptions, run_fetch
-from ahd.render.html import NO_BANDS_NOTE, WEEK_NOTE, render_html, write_report
+from ahd.render.html import (
+    BREAKDOWN_NOTES,
+    CSP,
+    ISSUE_HEADINGS,
+    NO_BANDS_NOTE,
+    WEEK_NOTE,
+    issue_heading,
+    render_html,
+    write_report,
+)
 from ahd.store import Store
 from ahd.summary import build_view
 
@@ -83,7 +92,8 @@ def sample_store(path: Path, bands: bool = True) -> tuple[Store, int]:
     vals += _series("individual", 1200, bands, spike=YESTERDAY - timedelta(days=1))
 
     store = Store.open(path)
-    rid = store.create_run("luma.prod", "Luma Production", None, TODAY, "US/Pacific", "0.1.0")
+    rid = store.create_run("luma.prod", "Luma Production", None, TODAY, "US/Pacific", "0.1.0",
+                           dimension="variables/page", metric="metrics/orders")
     store.add_components(rid, comps)
     store.add_daily_values(rid, vals)
     store.add_top_items(rid, "current", [
@@ -181,7 +191,7 @@ def test_three_tabs_and_status():
     assert "Complete, with some gaps" in html
     assert ("Anomaly bands are not available. The API credential&#39;s product profile does "
             "not include the Anomaly Detection permission (Report Suite Tools).") in html
-    # unknown codes show the code and the message
+    # a code with a heading still lists its items with the message
     assert "unauthorized_metric" in html and "You do not have access to this metric." in html
     assert "metrics/event9" in html
     assert "Copy alert summary" in html
@@ -221,6 +231,8 @@ def test_week_note_and_controls():
     for label in ("Daily", "Weekly", "1 to 100", "901 to 1000", "Metric chart",
                   "Dimension chart"):
         assert label in html
+    assert re.search(r"<label>Show\s*<select id=\"granularity\">", html)
+    assert "Granularity" not in html
 
 
 def test_static_assets_inlined():
@@ -243,3 +255,57 @@ def test_write_report_sanitizes_rsid(tmp_path):
     path = write_report(v, tmp_path)
     assert path.parent == tmp_path
     assert "/" not in path.name and ".." not in path.name
+
+
+def test_individual_names_in_heading_trend_and_header():
+    html = render_html(sample_view())
+    assert "Trend for the chosen dimension and metric" not in html
+    assert '<h2 id="individual-title">Page by Orders</h2>' in html
+    assert "<figcaption>Trend for Page by Orders</figcaption>" in html
+    assert re.search(r"<dt>Individual component</dt><dd>Page by Orders", html)
+    data = _data_json(html)
+    assert data["run"]["dimension_name"] == "Page" and data["run"]["metric_name"] == "Orders"
+
+
+def test_individual_names_fall_back_for_old_runs():
+    v = sample_view()
+    for k in ("dimension", "metric", "dimension_name", "metric_name"):
+        v["run"][k] = None
+    html = render_html(v)
+    assert "<figcaption>Trend for the chosen dimension and metric</figcaption>" in html
+
+
+def test_issue_headings_for_known_codes():
+    for code in ("unauthorized_metric", "network_error", "anomaly_probe_failed", "no_rows",
+                 "anomaly_not_allowed", "no_custom_components"):
+        assert ISSUE_HEADINGS[code] == issue_heading(code)
+    assert issue_heading("unauthorized_metric") == (
+        "Some metrics or dimensions are not visible to this credential.")
+    assert issue_heading("network_error") == (
+        "Some requests failed because of network problems. Running again may fix this.")
+    for code in ("http_400", "http_404", "http_500", "http_503"):
+        assert issue_heading(code) == "Adobe returned an error for some requests."
+    assert issue_heading("http_") is None and issue_heading("weird_code") is None
+    html = render_html(sample_view())  # the sample has one unauthorized_metric issue
+    assert "Some metrics or dimensions are not visible to this credential." in html
+    assert "metrics/event9" in html  # entries with a component id are still listed
+
+
+def test_csp_meta_is_first_in_head():
+    html = render_html(sample_view())
+    assert CSP == ("default-src 'none'; style-src 'unsafe-inline'; "
+                   "script-src 'unsafe-inline'; img-src data:")
+    meta = f'<meta http-equiv="Content-Security-Policy" content="{CSP}">'
+    assert meta.replace("'", "&#39;") in html or meta in html
+    assert html.index("Content-Security-Policy") < html.index("<style>")
+
+
+def test_breakdown_notes_under_tables():
+    html = render_html(sample_view())
+    assert BREAKDOWN_NOTES["browser"] == (
+        "Rows are the top 10 values in the first column (Google), as in the Excel version.")
+    assert BREAKDOWN_NOTES["device"] == (
+        "Rows are the top 10 values in the first column (Other), as in the Excel version.")
+    for kind in ("browser", "device"):
+        note = BREAKDOWN_NOTES[kind]
+        assert html.index(f'<div id="{kind}"></div>') < html.index(note)

@@ -18,7 +18,7 @@ from ahd.config import ConfigError, load_credentials
 from ahd.dates import RunWindow, today_in_zone
 from ahd.fetch import RunOptions, fetch_catalog, probe_anomaly, run_fetch
 from ahd.render.html import write_report
-from ahd.store import Store
+from ahd.store import SchemaVersionError, Store
 from ahd.summary import build_view
 
 DEFAULT_DB = "./data/ahd.duckdb"
@@ -171,7 +171,7 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
         if args.command == "render":
             return _render(args)
         return _runs(args)
-    except (ConfigError, ApiError) as e:
+    except (ConfigError, ApiError, SchemaVersionError) as e:
         print(f"Error: {e}", file=sys.stderr)
     except requests.RequestException as e:
         print(f"Error: the request failed with a network error ({type(e).__name__}).",

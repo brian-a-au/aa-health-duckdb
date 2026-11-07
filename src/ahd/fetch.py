@@ -146,7 +146,8 @@ def run_fetch(
     today = opts.today or today_in_zone(zone, now())
     window = RunWindow.for_today(today)
     run_id = store.create_run(
-        opts.rsid, suite.get("name") or opts.rsid, opts.segment_id, today, zone, _tool_version()
+        opts.rsid, suite.get("name") or opts.rsid, opts.segment_id, today, zone, _tool_version(),
+        dimension=opts.dimension, metric=opts.metric,
     )
     try:
         status = _run(client, store, opts, run_id, catalog, window)
