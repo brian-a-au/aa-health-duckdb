@@ -1,0 +1,32 @@
+[project]
+name = "ahd"
+version = "0.1.0"
+description = "Analytics Health Dashboard rebuilt as Python, DuckDB and a single HTML file"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aanalytics2>=0.5.6",
+    "requests",
+    "duckdb",
+    "jinja2",
+]
+
+[project.scripts]
+ahd = "ahd.cli:main"
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ahd"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

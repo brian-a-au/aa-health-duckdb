@@ -1,0 +1,9 @@
+[
+  {"id": "variables/page", "name": "Page"},
+  {"id": "variables/prop1", "name": "Site Section", "allowedForReporting": true},
+  {"id": "variables/prop1.1", "name": "Site Section Sub", "allowedForReporting": true},
+  {"id": "variables/prop2", "name": "Hidden Prop", "allowedForReporting": false},
+  {"id": "variables/listvariable1", "name": "List Var 1"},
+  {"id": "variables/campaign", "name": "Tracking Code"},
+  {"id": "variables/browser", "name": "Browser"}
+]

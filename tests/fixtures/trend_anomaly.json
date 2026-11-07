@@ -1,0 +1,2701 @@
+{
+ "totalPages": 1,
+ "firstPage": true,
+ "lastPage": true,
+ "numberOfElements": 92,
+ "number": 0,
+ "totalElements": 92,
+ "columns": {
+  "dimension": {
+   "id": "variables/daterangeday",
+   "type": "time"
+  },
+  "columnIds": [
+   "0",
+   "1",
+   "2"
+  ]
+ },
+ "rows": [
+  {
+   "itemId": "1260808",
+   "value": "Aug 8, 2026",
+   "data": [
+    100.0,
+    200.0,
+    300.0
+   ],
+   "dataExpected": [
+    98.5,
+    198.5,
+    298.5
+   ],
+   "dataUpperBound": [
+    110.0,
+    210.0,
+    310.0
+   ],
+   "dataLowerBound": [
+    90.0,
+    190.0,
+    290.0
+   ],
+   "dataAnomalyDetected": [
+    true,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260809",
+   "value": "Aug 9, 2026",
+   "data": [
+    101.0,
+    201.0,
+    301.0
+   ],
+   "dataExpected": [
+    99.5,
+    199.5,
+    299.5
+   ],
+   "dataUpperBound": [
+    111.0,
+    211.0,
+    311.0
+   ],
+   "dataLowerBound": [
+    91.0,
+    191.0,
+    291.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260810",
+   "value": "Aug 10, 2026",
+   "data": [
+    102.0,
+    202.0,
+    302.0
+   ],
+   "dataExpected": [
+    100.5,
+    200.5,
+    300.5
+   ],
+   "dataUpperBound": [
+    112.0,
+    212.0,
+    312.0
+   ],
+   "dataLowerBound": [
+    92.0,
+    192.0,
+    292.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260811",
+   "value": "Aug 11, 2026",
+   "data": [
+    103.0,
+    203.0,
+    303.0
+   ],
+   "dataExpected": [
+    101.5,
+    201.5,
+    301.5
+   ],
+   "dataUpperBound": [
+    113.0,
+    213.0,
+    313.0
+   ],
+   "dataLowerBound": [
+    93.0,
+    193.0,
+    293.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260812",
+   "value": "Aug 12, 2026",
+   "data": [
+    104.0,
+    204.0,
+    304.0
+   ],
+   "dataExpected": [
+    102.5,
+    202.5,
+    302.5
+   ],
+   "dataUpperBound": [
+    114.0,
+    214.0,
+    314.0
+   ],
+   "dataLowerBound": [
+    94.0,
+    194.0,
+    294.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260813",
+   "value": "Aug 13, 2026",
+   "data": [
+    105.0,
+    205.0,
+    305.0
+   ],
+   "dataExpected": [
+    103.5,
+    203.5,
+    303.5
+   ],
+   "dataUpperBound": [
+    115.0,
+    215.0,
+    315.0
+   ],
+   "dataLowerBound": [
+    95.0,
+    195.0,
+    295.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260814",
+   "value": "Aug 14, 2026",
+   "data": [
+    106.0,
+    206.0,
+    306.0
+   ],
+   "dataExpected": [
+    104.5,
+    204.5,
+    304.5
+   ],
+   "dataUpperBound": [
+    116.0,
+    216.0,
+    316.0
+   ],
+   "dataLowerBound": [
+    96.0,
+    196.0,
+    296.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260815",
+   "value": "Aug 15, 2026",
+   "data": [
+    107.0,
+    207.0,
+    307.0
+   ],
+   "dataExpected": [
+    105.5,
+    205.5,
+    305.5
+   ],
+   "dataUpperBound": [
+    117.0,
+    217.0,
+    317.0
+   ],
+   "dataLowerBound": [
+    97.0,
+    197.0,
+    297.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260816",
+   "value": "Aug 16, 2026",
+   "data": [
+    108.0,
+    208.0,
+    308.0
+   ],
+   "dataExpected": [
+    106.5,
+    206.5,
+    306.5
+   ],
+   "dataUpperBound": [
+    118.0,
+    218.0,
+    318.0
+   ],
+   "dataLowerBound": [
+    98.0,
+    198.0,
+    298.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260817",
+   "value": "Aug 17, 2026",
+   "data": [
+    109.0,
+    209.0,
+    309.0
+   ],
+   "dataExpected": [
+    107.5,
+    207.5,
+    307.5
+   ],
+   "dataUpperBound": [
+    119.0,
+    219.0,
+    319.0
+   ],
+   "dataLowerBound": [
+    99.0,
+    199.0,
+    299.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260818",
+   "value": "Aug 18, 2026",
+   "data": [
+    110.0,
+    210.0,
+    310.0
+   ],
+   "dataExpected": [
+    108.5,
+    208.5,
+    308.5
+   ],
+   "dataUpperBound": [
+    120.0,
+    220.0,
+    320.0
+   ],
+   "dataLowerBound": [
+    100.0,
+    200.0,
+    300.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260819",
+   "value": "Aug 19, 2026",
+   "data": [
+    111.0,
+    211.0,
+    311.0
+   ],
+   "dataExpected": [
+    109.5,
+    209.5,
+    309.5
+   ],
+   "dataUpperBound": [
+    121.0,
+    221.0,
+    321.0
+   ],
+   "dataLowerBound": [
+    101.0,
+    201.0,
+    301.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260820",
+   "value": "Aug 20, 2026",
+   "data": [
+    112.0,
+    212.0,
+    312.0
+   ],
+   "dataExpected": [
+    110.5,
+    210.5,
+    310.5
+   ],
+   "dataUpperBound": [
+    122.0,
+    222.0,
+    322.0
+   ],
+   "dataLowerBound": [
+    102.0,
+    202.0,
+    302.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260821",
+   "value": "Aug 21, 2026",
+   "data": [
+    113.0,
+    213.0,
+    313.0
+   ],
+   "dataExpected": [
+    111.5,
+    211.5,
+    311.5
+   ],
+   "dataUpperBound": [
+    123.0,
+    223.0,
+    323.0
+   ],
+   "dataLowerBound": [
+    103.0,
+    203.0,
+    303.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260822",
+   "value": "Aug 22, 2026",
+   "data": [
+    114.0,
+    214.0,
+    314.0
+   ],
+   "dataExpected": [
+    112.5,
+    212.5,
+    312.5
+   ],
+   "dataUpperBound": [
+    124.0,
+    224.0,
+    324.0
+   ],
+   "dataLowerBound": [
+    104.0,
+    204.0,
+    304.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260823",
+   "value": "Aug 23, 2026",
+   "data": [
+    115.0,
+    215.0,
+    315.0
+   ],
+   "dataExpected": [
+    113.5,
+    213.5,
+    313.5
+   ],
+   "dataUpperBound": [
+    125.0,
+    225.0,
+    325.0
+   ],
+   "dataLowerBound": [
+    105.0,
+    205.0,
+    305.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260824",
+   "value": "Aug 24, 2026",
+   "data": [
+    116.0,
+    216.0,
+    316.0
+   ],
+   "dataExpected": [
+    114.5,
+    214.5,
+    314.5
+   ],
+   "dataUpperBound": [
+    126.0,
+    226.0,
+    326.0
+   ],
+   "dataLowerBound": [
+    106.0,
+    206.0,
+    306.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260825",
+   "value": "Aug 25, 2026",
+   "data": [
+    117.0,
+    217.0,
+    317.0
+   ],
+   "dataExpected": [
+    115.5,
+    215.5,
+    315.5
+   ],
+   "dataUpperBound": [
+    127.0,
+    227.0,
+    327.0
+   ],
+   "dataLowerBound": [
+    107.0,
+    207.0,
+    307.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260826",
+   "value": "Aug 26, 2026",
+   "data": [
+    118.0,
+    218.0,
+    318.0
+   ],
+   "dataExpected": [
+    116.5,
+    216.5,
+    316.5
+   ],
+   "dataUpperBound": [
+    128.0,
+    228.0,
+    328.0
+   ],
+   "dataLowerBound": [
+    108.0,
+    208.0,
+    308.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260827",
+   "value": "Aug 27, 2026",
+   "data": [
+    119.0,
+    219.0,
+    319.0
+   ],
+   "dataExpected": [
+    117.5,
+    217.5,
+    317.5
+   ],
+   "dataUpperBound": [
+    129.0,
+    229.0,
+    329.0
+   ],
+   "dataLowerBound": [
+    109.0,
+    209.0,
+    309.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260828",
+   "value": "Aug 28, 2026",
+   "data": [
+    120.0,
+    220.0,
+    320.0
+   ],
+   "dataExpected": [
+    118.5,
+    218.5,
+    318.5
+   ],
+   "dataUpperBound": [
+    130.0,
+    230.0,
+    330.0
+   ],
+   "dataLowerBound": [
+    110.0,
+    210.0,
+    310.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260829",
+   "value": "Aug 29, 2026",
+   "data": [
+    121.0,
+    221.0,
+    321.0
+   ],
+   "dataExpected": [
+    119.5,
+    219.5,
+    319.5
+   ],
+   "dataUpperBound": [
+    131.0,
+    231.0,
+    331.0
+   ],
+   "dataLowerBound": [
+    111.0,
+    211.0,
+    311.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260830",
+   "value": "Aug 30, 2026",
+   "data": [
+    122.0,
+    222.0,
+    322.0
+   ],
+   "dataExpected": [
+    120.5,
+    220.5,
+    320.5
+   ],
+   "dataUpperBound": [
+    132.0,
+    232.0,
+    332.0
+   ],
+   "dataLowerBound": [
+    112.0,
+    212.0,
+    312.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260831",
+   "value": "Aug 31, 2026",
+   "data": [
+    123.0,
+    223.0,
+    323.0
+   ],
+   "dataExpected": [
+    121.5,
+    221.5,
+    321.5
+   ],
+   "dataUpperBound": [
+    133.0,
+    233.0,
+    333.0
+   ],
+   "dataLowerBound": [
+    113.0,
+    213.0,
+    313.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260901",
+   "value": "Sep 1, 2026",
+   "data": [
+    124.0,
+    224.0,
+    324.0
+   ],
+   "dataExpected": [
+    122.5,
+    222.5,
+    322.5
+   ],
+   "dataUpperBound": [
+    134.0,
+    234.0,
+    334.0
+   ],
+   "dataLowerBound": [
+    114.0,
+    214.0,
+    314.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260902",
+   "value": "Sep 2, 2026",
+   "data": [
+    125.0,
+    225.0,
+    325.0
+   ],
+   "dataExpected": [
+    123.5,
+    223.5,
+    323.5
+   ],
+   "dataUpperBound": [
+    135.0,
+    235.0,
+    335.0
+   ],
+   "dataLowerBound": [
+    115.0,
+    215.0,
+    315.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260903",
+   "value": "Sep 3, 2026",
+   "data": [
+    126.0,
+    226.0,
+    326.0
+   ],
+   "dataExpected": [
+    124.5,
+    224.5,
+    324.5
+   ],
+   "dataUpperBound": [
+    136.0,
+    236.0,
+    336.0
+   ],
+   "dataLowerBound": [
+    116.0,
+    216.0,
+    316.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260904",
+   "value": "Sep 4, 2026",
+   "data": [
+    127.0,
+    227.0,
+    327.0
+   ],
+   "dataExpected": [
+    125.5,
+    225.5,
+    325.5
+   ],
+   "dataUpperBound": [
+    137.0,
+    237.0,
+    337.0
+   ],
+   "dataLowerBound": [
+    117.0,
+    217.0,
+    317.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260905",
+   "value": "Sep 5, 2026",
+   "data": [
+    128.0,
+    228.0,
+    328.0
+   ],
+   "dataExpected": [
+    126.5,
+    226.5,
+    326.5
+   ],
+   "dataUpperBound": [
+    138.0,
+    238.0,
+    338.0
+   ],
+   "dataLowerBound": [
+    118.0,
+    218.0,
+    318.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    true
+   ]
+  },
+  {
+   "itemId": "1260906",
+   "value": "Sep 6, 2026",
+   "data": [
+    129.0,
+    229.0,
+    329.0
+   ],
+   "dataExpected": [
+    127.5,
+    227.5,
+    327.5
+   ],
+   "dataUpperBound": [
+    139.0,
+    239.0,
+    339.0
+   ],
+   "dataLowerBound": [
+    119.0,
+    219.0,
+    319.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    true,
+    false
+   ]
+  },
+  {
+   "itemId": "1260907",
+   "value": "Sep 7, 2026",
+   "data": [
+    130.0,
+    230.0,
+    330.0
+   ],
+   "dataExpected": [
+    128.5,
+    228.5,
+    328.5
+   ],
+   "dataUpperBound": [
+    140.0,
+    240.0,
+    340.0
+   ],
+   "dataLowerBound": [
+    120.0,
+    220.0,
+    320.0
+   ],
+   "dataAnomalyDetected": [
+    true,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260908",
+   "value": "Sep 8, 2026",
+   "data": [
+    131.0,
+    231.0,
+    331.0
+   ],
+   "dataExpected": [
+    129.5,
+    229.5,
+    329.5
+   ],
+   "dataUpperBound": [
+    141.0,
+    241.0,
+    341.0
+   ],
+   "dataLowerBound": [
+    121.0,
+    221.0,
+    321.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260909",
+   "value": "Sep 9, 2026",
+   "data": [
+    132.0,
+    232.0,
+    332.0
+   ],
+   "dataExpected": [
+    130.5,
+    230.5,
+    330.5
+   ],
+   "dataUpperBound": [
+    142.0,
+    242.0,
+    342.0
+   ],
+   "dataLowerBound": [
+    122.0,
+    222.0,
+    322.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260910",
+   "value": "Sep 10, 2026",
+   "data": [
+    133.0,
+    233.0,
+    333.0
+   ],
+   "dataExpected": [
+    131.5,
+    231.5,
+    331.5
+   ],
+   "dataUpperBound": [
+    143.0,
+    243.0,
+    343.0
+   ],
+   "dataLowerBound": [
+    123.0,
+    223.0,
+    323.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260911",
+   "value": "Sep 11, 2026",
+   "data": [
+    134.0,
+    234.0,
+    334.0
+   ],
+   "dataExpected": [
+    132.5,
+    232.5,
+    332.5
+   ],
+   "dataUpperBound": [
+    144.0,
+    244.0,
+    344.0
+   ],
+   "dataLowerBound": [
+    124.0,
+    224.0,
+    324.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260912",
+   "value": "Sep 12, 2026",
+   "data": [
+    135.0,
+    235.0,
+    335.0
+   ],
+   "dataExpected": [
+    133.5,
+    233.5,
+    333.5
+   ],
+   "dataUpperBound": [
+    145.0,
+    245.0,
+    345.0
+   ],
+   "dataLowerBound": [
+    125.0,
+    225.0,
+    325.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260913",
+   "value": "Sep 13, 2026",
+   "data": [
+    136.0,
+    236.0,
+    336.0
+   ],
+   "dataExpected": [
+    134.5,
+    234.5,
+    334.5
+   ],
+   "dataUpperBound": [
+    146.0,
+    246.0,
+    346.0
+   ],
+   "dataLowerBound": [
+    126.0,
+    226.0,
+    326.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260914",
+   "value": "Sep 14, 2026",
+   "data": [
+    137.0,
+    237.0,
+    337.0
+   ],
+   "dataExpected": [
+    135.5,
+    235.5,
+    335.5
+   ],
+   "dataUpperBound": [
+    147.0,
+    247.0,
+    347.0
+   ],
+   "dataLowerBound": [
+    127.0,
+    227.0,
+    327.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260915",
+   "value": "Sep 15, 2026",
+   "data": [
+    138.0,
+    238.0,
+    338.0
+   ],
+   "dataExpected": [
+    136.5,
+    236.5,
+    336.5
+   ],
+   "dataUpperBound": [
+    148.0,
+    248.0,
+    348.0
+   ],
+   "dataLowerBound": [
+    128.0,
+    228.0,
+    328.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260916",
+   "value": "Sep 16, 2026",
+   "data": [
+    139.0,
+    239.0,
+    339.0
+   ],
+   "dataExpected": [
+    137.5,
+    237.5,
+    337.5
+   ],
+   "dataUpperBound": [
+    149.0,
+    249.0,
+    349.0
+   ],
+   "dataLowerBound": [
+    129.0,
+    229.0,
+    329.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260917",
+   "value": "Sep 17, 2026",
+   "data": [
+    140.0,
+    240.0,
+    340.0
+   ],
+   "dataExpected": [
+    138.5,
+    238.5,
+    338.5
+   ],
+   "dataUpperBound": [
+    150.0,
+    250.0,
+    350.0
+   ],
+   "dataLowerBound": [
+    130.0,
+    230.0,
+    330.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260918",
+   "value": "Sep 18, 2026",
+   "data": [
+    141.0,
+    241.0,
+    341.0
+   ],
+   "dataExpected": [
+    139.5,
+    239.5,
+    339.5
+   ],
+   "dataUpperBound": [
+    151.0,
+    251.0,
+    351.0
+   ],
+   "dataLowerBound": [
+    131.0,
+    231.0,
+    331.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260919",
+   "value": "Sep 19, 2026",
+   "data": [
+    142.0,
+    242.0,
+    342.0
+   ],
+   "dataExpected": [
+    140.5,
+    240.5,
+    340.5
+   ],
+   "dataUpperBound": [
+    152.0,
+    252.0,
+    352.0
+   ],
+   "dataLowerBound": [
+    132.0,
+    232.0,
+    332.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260920",
+   "value": "Sep 20, 2026",
+   "data": [
+    143.0,
+    243.0,
+    343.0
+   ],
+   "dataExpected": [
+    141.5,
+    241.5,
+    341.5
+   ],
+   "dataUpperBound": [
+    153.0,
+    253.0,
+    353.0
+   ],
+   "dataLowerBound": [
+    133.0,
+    233.0,
+    333.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260921",
+   "value": "Sep 21, 2026",
+   "data": [
+    144.0,
+    244.0,
+    344.0
+   ],
+   "dataExpected": [
+    142.5,
+    242.5,
+    342.5
+   ],
+   "dataUpperBound": [
+    154.0,
+    254.0,
+    354.0
+   ],
+   "dataLowerBound": [
+    134.0,
+    234.0,
+    334.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260922",
+   "value": "Sep 22, 2026",
+   "data": [
+    145.0,
+    245.0,
+    345.0
+   ],
+   "dataExpected": [
+    143.5,
+    243.5,
+    343.5
+   ],
+   "dataUpperBound": [
+    155.0,
+    255.0,
+    355.0
+   ],
+   "dataLowerBound": [
+    135.0,
+    235.0,
+    335.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260923",
+   "value": "Sep 23, 2026",
+   "data": [
+    146.0,
+    246.0,
+    346.0
+   ],
+   "dataExpected": [
+    144.5,
+    244.5,
+    344.5
+   ],
+   "dataUpperBound": [
+    156.0,
+    256.0,
+    356.0
+   ],
+   "dataLowerBound": [
+    136.0,
+    236.0,
+    336.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260924",
+   "value": "Sep 24, 2026",
+   "data": [
+    147.0,
+    247.0,
+    347.0
+   ],
+   "dataExpected": [
+    145.5,
+    245.5,
+    345.5
+   ],
+   "dataUpperBound": [
+    157.0,
+    257.0,
+    357.0
+   ],
+   "dataLowerBound": [
+    137.0,
+    237.0,
+    337.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260925",
+   "value": "Sep 25, 2026",
+   "data": [
+    148.0,
+    248.0,
+    348.0
+   ],
+   "dataExpected": [
+    146.5,
+    246.5,
+    346.5
+   ],
+   "dataUpperBound": [
+    158.0,
+    258.0,
+    358.0
+   ],
+   "dataLowerBound": [
+    138.0,
+    238.0,
+    338.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260926",
+   "value": "Sep 26, 2026",
+   "data": [
+    149.0,
+    249.0,
+    349.0
+   ],
+   "dataExpected": [
+    147.5,
+    247.5,
+    347.5
+   ],
+   "dataUpperBound": [
+    159.0,
+    259.0,
+    359.0
+   ],
+   "dataLowerBound": [
+    139.0,
+    239.0,
+    339.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260927",
+   "value": "Sep 27, 2026",
+   "data": [
+    150.0,
+    250.0,
+    350.0
+   ],
+   "dataExpected": [
+    148.5,
+    248.5,
+    348.5
+   ],
+   "dataUpperBound": [
+    160.0,
+    260.0,
+    360.0
+   ],
+   "dataLowerBound": [
+    140.0,
+    240.0,
+    340.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260928",
+   "value": "Sep 28, 2026",
+   "data": [
+    151.0,
+    251.0,
+    351.0
+   ],
+   "dataExpected": [
+    149.5,
+    249.5,
+    349.5
+   ],
+   "dataUpperBound": [
+    161.0,
+    261.0,
+    361.0
+   ],
+   "dataLowerBound": [
+    141.0,
+    241.0,
+    341.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260929",
+   "value": "Sep 29, 2026",
+   "data": [
+    152.0,
+    252.0,
+    352.0
+   ],
+   "dataExpected": [
+    150.5,
+    250.5,
+    350.5
+   ],
+   "dataUpperBound": [
+    162.0,
+    262.0,
+    362.0
+   ],
+   "dataLowerBound": [
+    142.0,
+    242.0,
+    342.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1260930",
+   "value": "Sep 30, 2026",
+   "data": [
+    153.0,
+    253.0,
+    353.0
+   ],
+   "dataExpected": [
+    151.5,
+    251.5,
+    351.5
+   ],
+   "dataUpperBound": [
+    163.0,
+    263.0,
+    363.0
+   ],
+   "dataLowerBound": [
+    143.0,
+    243.0,
+    343.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261001",
+   "value": "Oct 1, 2026",
+   "data": [
+    154.0,
+    254.0,
+    354.0
+   ],
+   "dataExpected": [
+    152.5,
+    252.5,
+    352.5
+   ],
+   "dataUpperBound": [
+    164.0,
+    264.0,
+    364.0
+   ],
+   "dataLowerBound": [
+    144.0,
+    244.0,
+    344.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261002",
+   "value": "Oct 2, 2026",
+   "data": [
+    155.0,
+    255.0,
+    355.0
+   ],
+   "dataExpected": [
+    153.5,
+    253.5,
+    353.5
+   ],
+   "dataUpperBound": [
+    165.0,
+    265.0,
+    365.0
+   ],
+   "dataLowerBound": [
+    145.0,
+    245.0,
+    345.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261003",
+   "value": "Oct 3, 2026",
+   "data": [
+    156.0,
+    256.0,
+    356.0
+   ],
+   "dataExpected": [
+    154.5,
+    254.5,
+    354.5
+   ],
+   "dataUpperBound": [
+    166.0,
+    266.0,
+    366.0
+   ],
+   "dataLowerBound": [
+    146.0,
+    246.0,
+    346.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261004",
+   "value": "Oct 4, 2026",
+   "data": [
+    157.0,
+    257.0,
+    357.0
+   ],
+   "dataExpected": [
+    155.5,
+    255.5,
+    355.5
+   ],
+   "dataUpperBound": [
+    167.0,
+    267.0,
+    367.0
+   ],
+   "dataLowerBound": [
+    147.0,
+    247.0,
+    347.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261005",
+   "value": "Oct 5, 2026",
+   "data": [
+    158.0,
+    258.0,
+    358.0
+   ],
+   "dataExpected": [
+    156.5,
+    256.5,
+    356.5
+   ],
+   "dataUpperBound": [
+    168.0,
+    268.0,
+    368.0
+   ],
+   "dataLowerBound": [
+    148.0,
+    248.0,
+    348.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    true
+   ]
+  },
+  {
+   "itemId": "1261006",
+   "value": "Oct 6, 2026",
+   "data": [
+    159.0,
+    259.0,
+    359.0
+   ],
+   "dataExpected": [
+    157.5,
+    257.5,
+    357.5
+   ],
+   "dataUpperBound": [
+    169.0,
+    269.0,
+    369.0
+   ],
+   "dataLowerBound": [
+    149.0,
+    249.0,
+    349.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    true,
+    false
+   ]
+  },
+  {
+   "itemId": "1261007",
+   "value": "Oct 7, 2026",
+   "data": [
+    160.0,
+    260.0,
+    360.0
+   ],
+   "dataExpected": [
+    158.5,
+    258.5,
+    358.5
+   ],
+   "dataUpperBound": [
+    170.0,
+    270.0,
+    370.0
+   ],
+   "dataLowerBound": [
+    150.0,
+    250.0,
+    350.0
+   ],
+   "dataAnomalyDetected": [
+    true,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261008",
+   "value": "Oct 8, 2026",
+   "data": [
+    161.0,
+    261.0,
+    361.0
+   ],
+   "dataExpected": [
+    159.5,
+    259.5,
+    359.5
+   ],
+   "dataUpperBound": [
+    171.0,
+    271.0,
+    371.0
+   ],
+   "dataLowerBound": [
+    151.0,
+    251.0,
+    351.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261009",
+   "value": "Oct 9, 2026",
+   "data": [
+    162.0,
+    262.0,
+    362.0
+   ],
+   "dataExpected": [
+    160.5,
+    260.5,
+    360.5
+   ],
+   "dataUpperBound": [
+    172.0,
+    272.0,
+    372.0
+   ],
+   "dataLowerBound": [
+    152.0,
+    252.0,
+    352.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261010",
+   "value": "Oct 10, 2026",
+   "data": [
+    163.0,
+    263.0,
+    363.0
+   ],
+   "dataExpected": [
+    161.5,
+    261.5,
+    361.5
+   ],
+   "dataUpperBound": [
+    173.0,
+    273.0,
+    373.0
+   ],
+   "dataLowerBound": [
+    153.0,
+    253.0,
+    353.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261011",
+   "value": "Oct 11, 2026",
+   "data": [
+    164.0,
+    264.0,
+    364.0
+   ],
+   "dataExpected": [
+    162.5,
+    262.5,
+    362.5
+   ],
+   "dataUpperBound": [
+    174.0,
+    274.0,
+    374.0
+   ],
+   "dataLowerBound": [
+    154.0,
+    254.0,
+    354.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261012",
+   "value": "Oct 12, 2026",
+   "data": [
+    165.0,
+    265.0,
+    365.0
+   ],
+   "dataExpected": [
+    163.5,
+    263.5,
+    363.5
+   ],
+   "dataUpperBound": [
+    175.0,
+    275.0,
+    375.0
+   ],
+   "dataLowerBound": [
+    155.0,
+    255.0,
+    355.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261013",
+   "value": "Oct 13, 2026",
+   "data": [
+    166.0,
+    266.0,
+    366.0
+   ],
+   "dataExpected": [
+    164.5,
+    264.5,
+    364.5
+   ],
+   "dataUpperBound": [
+    176.0,
+    276.0,
+    376.0
+   ],
+   "dataLowerBound": [
+    156.0,
+    256.0,
+    356.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261014",
+   "value": "Oct 14, 2026",
+   "data": [
+    167.0,
+    267.0,
+    367.0
+   ],
+   "dataExpected": [
+    165.5,
+    265.5,
+    365.5
+   ],
+   "dataUpperBound": [
+    177.0,
+    277.0,
+    377.0
+   ],
+   "dataLowerBound": [
+    157.0,
+    257.0,
+    357.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261015",
+   "value": "Oct 15, 2026",
+   "data": [
+    168.0,
+    268.0,
+    368.0
+   ],
+   "dataExpected": [
+    166.5,
+    266.5,
+    366.5
+   ],
+   "dataUpperBound": [
+    178.0,
+    278.0,
+    378.0
+   ],
+   "dataLowerBound": [
+    158.0,
+    258.0,
+    358.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261016",
+   "value": "Oct 16, 2026",
+   "data": [
+    169.0,
+    269.0,
+    369.0
+   ],
+   "dataExpected": [
+    167.5,
+    267.5,
+    367.5
+   ],
+   "dataUpperBound": [
+    179.0,
+    279.0,
+    379.0
+   ],
+   "dataLowerBound": [
+    159.0,
+    259.0,
+    359.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261017",
+   "value": "Oct 17, 2026",
+   "data": [
+    170.0,
+    270.0,
+    370.0
+   ],
+   "dataExpected": [
+    168.5,
+    268.5,
+    368.5
+   ],
+   "dataUpperBound": [
+    180.0,
+    280.0,
+    380.0
+   ],
+   "dataLowerBound": [
+    160.0,
+    260.0,
+    360.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261018",
+   "value": "Oct 18, 2026",
+   "data": [
+    171.0,
+    271.0,
+    371.0
+   ],
+   "dataExpected": [
+    169.5,
+    269.5,
+    369.5
+   ],
+   "dataUpperBound": [
+    181.0,
+    281.0,
+    381.0
+   ],
+   "dataLowerBound": [
+    161.0,
+    261.0,
+    361.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261019",
+   "value": "Oct 19, 2026",
+   "data": [
+    172.0,
+    272.0,
+    372.0
+   ],
+   "dataExpected": [
+    170.5,
+    270.5,
+    370.5
+   ],
+   "dataUpperBound": [
+    182.0,
+    282.0,
+    382.0
+   ],
+   "dataLowerBound": [
+    162.0,
+    262.0,
+    362.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261020",
+   "value": "Oct 20, 2026",
+   "data": [
+    173.0,
+    273.0,
+    373.0
+   ],
+   "dataExpected": [
+    171.5,
+    271.5,
+    371.5
+   ],
+   "dataUpperBound": [
+    183.0,
+    283.0,
+    383.0
+   ],
+   "dataLowerBound": [
+    163.0,
+    263.0,
+    363.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261021",
+   "value": "Oct 21, 2026",
+   "data": [
+    174.0,
+    274.0,
+    374.0
+   ],
+   "dataExpected": [
+    172.5,
+    272.5,
+    372.5
+   ],
+   "dataUpperBound": [
+    184.0,
+    284.0,
+    384.0
+   ],
+   "dataLowerBound": [
+    164.0,
+    264.0,
+    364.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261022",
+   "value": "Oct 22, 2026",
+   "data": [
+    175.0,
+    275.0,
+    375.0
+   ],
+   "dataExpected": [
+    173.5,
+    273.5,
+    373.5
+   ],
+   "dataUpperBound": [
+    185.0,
+    285.0,
+    385.0
+   ],
+   "dataLowerBound": [
+    165.0,
+    265.0,
+    365.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261023",
+   "value": "Oct 23, 2026",
+   "data": [
+    176.0,
+    276.0,
+    376.0
+   ],
+   "dataExpected": [
+    174.5,
+    274.5,
+    374.5
+   ],
+   "dataUpperBound": [
+    186.0,
+    286.0,
+    386.0
+   ],
+   "dataLowerBound": [
+    166.0,
+    266.0,
+    366.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261024",
+   "value": "Oct 24, 2026",
+   "data": [
+    177.0,
+    277.0,
+    377.0
+   ],
+   "dataExpected": [
+    175.5,
+    275.5,
+    375.5
+   ],
+   "dataUpperBound": [
+    187.0,
+    287.0,
+    387.0
+   ],
+   "dataLowerBound": [
+    167.0,
+    267.0,
+    367.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261025",
+   "value": "Oct 25, 2026",
+   "data": [
+    178.0,
+    278.0,
+    378.0
+   ],
+   "dataExpected": [
+    176.5,
+    276.5,
+    376.5
+   ],
+   "dataUpperBound": [
+    188.0,
+    288.0,
+    388.0
+   ],
+   "dataLowerBound": [
+    168.0,
+    268.0,
+    368.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261026",
+   "value": "Oct 26, 2026",
+   "data": [
+    179.0,
+    279.0,
+    379.0
+   ],
+   "dataExpected": [
+    177.5,
+    277.5,
+    377.5
+   ],
+   "dataUpperBound": [
+    189.0,
+    289.0,
+    389.0
+   ],
+   "dataLowerBound": [
+    169.0,
+    269.0,
+    369.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261027",
+   "value": "Oct 27, 2026",
+   "data": [
+    180.0,
+    280.0,
+    380.0
+   ],
+   "dataExpected": [
+    178.5,
+    278.5,
+    378.5
+   ],
+   "dataUpperBound": [
+    190.0,
+    290.0,
+    390.0
+   ],
+   "dataLowerBound": [
+    170.0,
+    270.0,
+    370.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261028",
+   "value": "Oct 28, 2026",
+   "data": [
+    181.0,
+    281.0,
+    381.0
+   ],
+   "dataExpected": [
+    179.5,
+    279.5,
+    379.5
+   ],
+   "dataUpperBound": [
+    191.0,
+    291.0,
+    391.0
+   ],
+   "dataLowerBound": [
+    171.0,
+    271.0,
+    371.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261029",
+   "value": "Oct 29, 2026",
+   "data": [
+    182.0,
+    282.0,
+    382.0
+   ],
+   "dataExpected": [
+    180.5,
+    280.5,
+    380.5
+   ],
+   "dataUpperBound": [
+    192.0,
+    292.0,
+    392.0
+   ],
+   "dataLowerBound": [
+    172.0,
+    272.0,
+    372.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261030",
+   "value": "Oct 30, 2026",
+   "data": [
+    183.0,
+    283.0,
+    383.0
+   ],
+   "dataExpected": [
+    181.5,
+    281.5,
+    381.5
+   ],
+   "dataUpperBound": [
+    193.0,
+    293.0,
+    393.0
+   ],
+   "dataLowerBound": [
+    173.0,
+    273.0,
+    373.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261031",
+   "value": "Oct 31, 2026",
+   "data": [
+    184.0,
+    284.0,
+    384.0
+   ],
+   "dataExpected": [
+    182.5,
+    282.5,
+    382.5
+   ],
+   "dataUpperBound": [
+    194.0,
+    294.0,
+    394.0
+   ],
+   "dataLowerBound": [
+    174.0,
+    274.0,
+    374.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261101",
+   "value": "Nov 1, 2026",
+   "data": [
+    185.0,
+    285.0,
+    385.0
+   ],
+   "dataExpected": [
+    183.5,
+    283.5,
+    383.5
+   ],
+   "dataUpperBound": [
+    195.0,
+    295.0,
+    395.0
+   ],
+   "dataLowerBound": [
+    175.0,
+    275.0,
+    375.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261102",
+   "value": "Nov 2, 2026",
+   "data": [
+    186.0,
+    286.0,
+    386.0
+   ],
+   "dataExpected": [
+    184.5,
+    284.5,
+    384.5
+   ],
+   "dataUpperBound": [
+    196.0,
+    296.0,
+    396.0
+   ],
+   "dataLowerBound": [
+    176.0,
+    276.0,
+    376.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261103",
+   "value": "Nov 3, 2026",
+   "data": [
+    187.0,
+    287.0,
+    387.0
+   ],
+   "dataExpected": [
+    185.5,
+    285.5,
+    385.5
+   ],
+   "dataUpperBound": [
+    197.0,
+    297.0,
+    397.0
+   ],
+   "dataLowerBound": [
+    177.0,
+    277.0,
+    377.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261104",
+   "value": "Nov 4, 2026",
+   "data": [
+    188.0,
+    288.0,
+    388.0
+   ],
+   "dataExpected": [
+    186.5,
+    286.5,
+    386.5
+   ],
+   "dataUpperBound": [
+    198.0,
+    298.0,
+    398.0
+   ],
+   "dataLowerBound": [
+    178.0,
+    278.0,
+    378.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    true
+   ]
+  },
+  {
+   "itemId": "1261105",
+   "value": "Nov 5, 2026",
+   "data": [
+    189.0,
+    289.0,
+    389.0
+   ],
+   "dataExpected": [
+    187.5,
+    287.5,
+    387.5
+   ],
+   "dataUpperBound": [
+    199.0,
+    299.0,
+    399.0
+   ],
+   "dataLowerBound": [
+    179.0,
+    279.0,
+    379.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    true,
+    false
+   ]
+  },
+  {
+   "itemId": "1261106",
+   "value": "Nov 6, 2026",
+   "data": [
+    190.0,
+    290.0,
+    390.0
+   ],
+   "dataExpected": [
+    188.5,
+    288.5,
+    388.5
+   ],
+   "dataUpperBound": [
+    200.0,
+    300.0,
+    400.0
+   ],
+   "dataLowerBound": [
+    180.0,
+    280.0,
+    380.0
+   ],
+   "dataAnomalyDetected": [
+    true,
+    false,
+    false
+   ]
+  },
+  {
+   "itemId": "1261107",
+   "value": "Nov 7, 2026",
+   "data": [
+    191.0,
+    291.0,
+    391.0
+   ],
+   "dataExpected": [
+    189.5,
+    289.5,
+    389.5
+   ],
+   "dataUpperBound": [
+    201.0,
+    301.0,
+    401.0
+   ],
+   "dataLowerBound": [
+    181.0,
+    281.0,
+    381.0
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false,
+    false
+   ]
+  }
+ ],
+ "summaryData": {
+  "filteredTotals": [
+   13386.0,
+   22586.0,
+   31786.0
+  ],
+  "totals": [
+   13386.0,
+   22586.0,
+   31786.0
+  ]
+ }
+}

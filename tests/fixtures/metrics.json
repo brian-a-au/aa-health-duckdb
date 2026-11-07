@@ -1,0 +1,42 @@
+[
+  {
+    "id": "metrics/pageviews",
+    "name": "Page Views"
+  },
+  {
+    "id": "metrics/visits",
+    "name": "Visits"
+  },
+  {
+    "id": "metrics/event2",
+    "name": "Newsletter Signup"
+  },
+  {
+    "id": "metrics/event10",
+    "name": "Event 10"
+  },
+  {
+    "id": "metrics/evar5instances",
+    "name": "Internal Search Term Instances"
+  },
+  {
+    "id": "metrics/evar12instances",
+    "name": "Campaign Instances"
+  },
+  {
+    "id": "metrics/bouncerate",
+    "name": "Bounce Rate"
+  },
+  {
+    "id": "metrics/campaigninstances",
+    "name": "Tracking Code Instances"
+  },
+  {
+    "id": "metrics/amo_clicks",
+    "name": "AMO Clicks"
+  },
+  {
+    "id": "metrics/clickmaplinkinstances",
+    "name": "Activity Map Link Instances"
+  }
+]

@@ -1,0 +1,97 @@
+{
+  "Reserved Traffic Events": [
+    "metrics/pageviews",
+    "metrics/visits",
+    "metrics/visitors"
+  ],
+  "Reserved Purchase Events": [
+    "metrics/carts",
+    "metrics/cartadditions",
+    "metrics/cartremovals",
+    "metrics/cartviews",
+    "metrics/checkouts",
+    "metrics/orders",
+    "metrics/units",
+    "metrics/revenue"
+  ],
+  "App Lifecycle Events": [
+    "metrics/mobileinstalls",
+    "metrics/mobileupgrades",
+    "metrics/mobilelaunches",
+    "metrics/mobilecrashes",
+    "metrics/mobileprevsessionlength"
+  ],
+  "Heartbeat Events": [
+    "metrics/videoadcomplete",
+    "metrics/videoadstart",
+    "metrics/videoadtime",
+    "metrics/videoauthorized",
+    "metrics/videochaptercomplete",
+    "metrics/videochapterstart",
+    "metrics/videochaptertime",
+    "metrics/videocomplete",
+    "metrics/videoplay",
+    "metrics/videotime",
+    "metrics/videostart"
+  ],
+  "Reserved eVars": [
+    "metrics/campaign",
+    "metrics/product"
+  ],
+  "List Variables": [
+    "variables/listvariable1",
+    "variables/listvariable2",
+    "variables/listvariable3"
+  ],
+  "App Lifecycle Dimensions": [
+    "metrics/mobileinstalldate",
+    "metrics/mobileappid",
+    "metrics/mobilelaunchnumber",
+    "metrics/mobiledayssincefirstuse",
+    "metrics/mobiledayssincelastuse",
+    "metrics/mobilehourofday",
+    "metrics/mobiledayofweek"
+  ],
+  "Heartbeat Dimensions": [
+    "metrics/videoad",
+    "metrics/videoadinpod",
+    "metrics/videoadplayername",
+    "metrics/videoadpod",
+    "metrics/videochapter",
+    "metrics/videochannel",
+    "metrics/videoplayername",
+    "metrics/videocontenttype",
+    "metrics/videoepisode",
+    "metrics/videomvpd",
+    "metrics/videonetwork",
+    "metrics/videoseason",
+    "metrics/videoshow",
+    "metrics/videoshowtype",
+    "metrics/video"
+  ],
+  "Reserved Props": [
+    "metrics/customlink",
+    "metrics/exitlink",
+    "metrics/downloadlink"
+  ],
+  "Activity Map Instances": [
+    "metrics/clickmaplinkbyregion",
+    "metrics/clickmaplink",
+    "metrics/clickmappage",
+    "metrics/clickmapregion"
+  ],
+  "Target Integration Instances": [
+    "metrics/targetconversion",
+    "metrics/targetimpression"
+  ],
+  "AMO Integration Instances": [
+    "metrics/amo_cid",
+    "metrics/amo_ef_id",
+    "metrics/amo_clicks",
+    "metrics/amo_conversions",
+    "metrics/amo_cost",
+    "metrics/amo_impressions",
+    "metrics/amo_position",
+    "metrics/amo_quality_score"
+  ]
+}

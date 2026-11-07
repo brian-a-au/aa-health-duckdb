@@ -1,0 +1,61 @@
+{
+ "totalPages": 1,
+ "firstPage": true,
+ "lastPage": true,
+ "numberOfElements": 2,
+ "number": 0,
+ "totalElements": 2,
+ "columns": {
+  "dimension": {
+   "id": "variables/page",
+   "type": "string"
+  },
+  "columnIds": [
+   "0",
+   "1",
+   "2",
+   "3",
+   "4"
+  ]
+ },
+ "rows": [
+  {
+   "itemId": "1",
+   "value": "Home Page",
+   "data": [
+    10.0,
+    20.0,
+    0.0,
+    5.0,
+    1.0
+   ]
+  },
+  {
+   "itemId": "2",
+   "value": "Search",
+   "data": [
+    4.0,
+    3.0,
+    2.0,
+    1.0,
+    0.0
+   ]
+  }
+ ],
+ "summaryData": {
+  "filteredTotals": [
+   14.0,
+   23.0,
+   2.0,
+   6.0,
+   1.0
+  ],
+  "totals": [
+   14.0,
+   23.0,
+   2.0,
+   6.0,
+   1.0
+  ]
+ }
+}

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="{{ csp }}">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Analytics Health: {{ run.rsid_name or run.rsid }} {{ run.today }}</title>
+<style>
+{{ css }}
+</style>
+</head>
+<body>
+<header class="page-head">
+  <h1>Analytics Health Dashboard</h1>
+  <dl class="facts">
+    <div><dt>Report suite</dt><dd>{{ run.rsid_name or run.rsid }} <span class="muted">({{ run.rsid }})</span></dd></div>
+    <div><dt>Individual component</dt><dd>{{ individual_label }}{% if run.dimension and run.metric %} <span class="muted">({{ run.dimension }}, {{ run.metric }})</span>{% endif %}</dd></div>
+    <div><dt>Segment</dt><dd>{% if run.segment_id %}{{ run.segment_id }}{% else %}None (all visits){% endif %}</dd></div>
+    <div><dt>Run date</dt><dd>{{ run.today }} <span class="muted">(report suite time zone {{ run.timezone }})</span></dd></div>
+    <div><dt>Run time</dt><dd>{% if run.started_at %}{{ run.started_at[:16] | replace("T", " ") }} <span class="muted">(time on the computer that ran it)</span>{% else %}Unknown{% endif %}</dd></div>
+    <div><dt>Status</dt><dd><span class="status status-{{ status }}">{{ status_label }}</span></dd></div>
+  </dl>
+</header>
+
+<section class="status-section" id="status" aria-labelledby="status-title">
+  <h2 id="status-title">Status</h2>
+  {% if issue_groups %}
+  <p>Some data could not be read in this run. Each item below says what is missing and why.</p>
+  <ul class="issues">
+    {% for g in issue_groups %}
+    <li class="issue">
+      {% if g.heading %}
+      <p class="issue-heading">{{ g.heading }}</p>
+      {% else %}
+      <p class="issue-heading">Problem code <code>{{ g.code }}</code>{% if g.entries | length > 1 %} ({{ g.entries | length }} items){% endif %}</p>
+      {% endif %}
+      {% set show_items = not g.heading or g.entries | selectattr("component_id") | list %}
+      {% if show_items %}
+      <details{% if g.entries | length <= 3 %} open{% endif %}>
+        <summary>{% if g.entries | length == 1 %}Details{% else %}Details for {{ g.entries | length }} items{% endif %}</summary>
+        <ul class="issue-items">
+          {% for it in g.entries %}
+          <li>{% if it.component_id %}<code>{{ it.component_id }}</code>: {% endif %}{{ it.message }}</li>
+          {% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No problems were found in this run.</p>
+  {% endif %}
+</section>
+
+<nav class="tabs" role="tablist" aria-label="Report sections">
+  <button type="button" role="tab" id="tab-components" aria-controls="panel-components" aria-selected="true">Components Summary</button>
+  <button type="button" role="tab" id="tab-individual" aria-controls="panel-individual" aria-selected="false" tabindex="-1">Individual Component Summary</button>
+  <button type="button" role="tab" id="tab-alerts" aria-controls="panel-alerts" aria-selected="false" tabindex="-1">Alerts Summary</button>
+</nav>
+
+<main>
+<section class="panel" role="tabpanel" id="panel-components" aria-labelledby="tab-components">
+  <div class="controls">
+    <label>Show
+      <select id="granularity">
+        <option value="day">Daily</option>
+        <option value="week">Weekly</option>
+      </select>
+    </label>
+    <label id="day-label">Day
+      <select id="day"></select>
+    </label>
+    <label>Component numbers
+      <select id="range">
+        <option value="">All numbers</option>
+        {% for lo, hi in ranges %}
+        <option value="{{ lo }}-{{ hi }}">{{ lo }} to {{ hi }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <p class="note" id="week-note" hidden>{{ week_note }}</p>
+  <p class="hint" id="range-hint">The number filter applies to custom events, eVars, and props.</p>
+
+  <div class="charts">
+    <figure class="chart-card">
+      <label>Metric chart <select id="metric-pick"></select></label>
+      <div class="chart" id="metric-chart"></div>
+    </figure>
+    <figure class="chart-card">
+      <label>Dimension chart <select id="dimension-pick"></select></label>
+      <div class="chart" id="dimension-chart"></div>
+    </figure>
+  </div>
+
+  <div id="tables"></div>
+</section>
+
+<section class="panel" role="tabpanel" id="panel-individual" aria-labelledby="tab-individual" hidden>
+  <h2 id="individual-title">{{ individual_label }}</h2>
+  <figure class="chart-card wide">
+    <figcaption>Trend for {{ individual_label }}</figcaption>
+    <div class="chart" id="individual-chart"></div>
+  </figure>
+  <h2>Top 100 values yesterday</h2>
+  <p class="hint">Movement compares the rank with the previous 90 days. A positive number means the value moved up. A dash means no change. An asterisk means the value is new to the top 100.</p>
+  <div id="top100"></div>
+  <h2>Browser analysis</h2>
+  <p class="hint">Top 10 values yesterday for each major browser group.</p>
+  <div id="browser"></div>
+  <p class="hint">{{ breakdown_notes.browser }}</p>
+  <h2>Device analysis</h2>
+  <p class="hint">Top 10 values yesterday for each device type. Desktop traffic falls under Other.</p>
+  <div id="device"></div>
+  <p class="hint">{{ breakdown_notes.device }}</p>
+</section>
+
+<section class="panel" role="tabpanel" id="panel-alerts" aria-labelledby="tab-alerts" hidden>
+  <h2>Alerts for yesterday</h2>
+  <p class="hint">Components that Adobe flagged as unusual, or that had a value of 0.</p>
+  <div class="copy-row">
+    <button type="button" id="copy-alerts">Copy alert summary</button>
+    <span id="copy-result" role="status" aria-live="polite"></span>
+  </div>
+  <div id="alerts"></div>
+  <details class="copy-fallback">
+    <summary>Show the alert summary as text</summary>
+    <textarea id="alert-text" readonly rows="8"></textarea>
+  </details>
+</section>
+</main>
+
+<footer class="page-foot muted">Made by ahd {{ run.tool_version }}, run {{ run.id }}. This page loads nothing from the internet.</footer>
+
+<template id="no-bands-template"><p class="note chart-note">{{ no_bands_note }}</p></template>
+<script type="application/json" id="data">{{ data }}</script>
+<script>
+{{ js }}
+</script>
+</body>
+</html>
