@@ -1,0 +1,157 @@
+{
+ "totalPages": 135,
+ "firstPage": true,
+ "lastPage": false,
+ "numberOfElements": 10,
+ "number": 0,
+ "totalElements": 1341,
+ "columns": {
+  "dimensions": [
+   {
+    "id": "variables/page",
+    "dimensionColumnId": "840363a0-0c1d-43aa-b280-c7dde3f60ec5",
+    "type": "string"
+   }
+  ],
+  "columnIds": [
+   "0",
+   "1",
+   "2",
+   "3",
+   "4"
+  ],
+  "dimension": {
+   "id": "variables/page",
+   "dimensionColumnId": "840363a0-0c1d-43aa-b280-c7dde3f60ec5",
+   "type": "string"
+  }
+ },
+ "rows": [
+  {
+   "data": [
+    14902.0,
+    4893.0,
+    1760.0,
+    885.0,
+    2986.0
+   ],
+   "itemId": "3306266643",
+   "value": "home"
+  },
+  {
+   "data": [
+    4551.0,
+    1469.0,
+    708.0,
+    266.0,
+    939.0
+   ],
+   "itemId": "2438860771",
+   "value": "application: step 1"
+  },
+  {
+   "data": [
+    3662.0,
+    804.0,
+    7091.0,
+    181.0,
+    2305.0
+   ],
+   "itemId": "894732499",
+   "value": "app: launch"
+  },
+  {
+   "data": [
+    3410.0,
+    1121.0,
+    404.0,
+    201.0,
+    727.0
+   ],
+   "itemId": "1284838141",
+   "value": "forum"
+  },
+  {
+   "data": [
+    2925.0,
+    930.0,
+    376.0,
+    159.0,
+    584.0
+   ],
+   "itemId": "2897271828",
+   "value": "search results"
+  },
+  {
+   "data": [
+    2779.0,
+    898.0,
+    320.0,
+    160.0,
+    582.0
+   ],
+   "itemId": "4251698718",
+   "value": "events"
+  },
+  {
+   "data": [
+    2576.0,
+    807.0,
+    339.0,
+    179.0,
+    508.0
+   ],
+   "itemId": "545858230",
+   "value": "articles"
+  },
+  {
+   "data": [
+    2555.0,
+    769.0,
+    249.0,
+    137.0,
+    522.0
+   ],
+   "itemId": "174070502",
+   "value": "mobile web: home"
+  },
+  {
+   "data": [
+    2527.0,
+    868.0,
+    255.0,
+    160.0,
+    564.0
+   ],
+   "itemId": "3553521723",
+   "value": "category 4"
+  },
+  {
+   "data": [
+    2352.0,
+    727.0,
+    263.0,
+    153.0,
+    470.0
+   ],
+   "itemId": "1738577623",
+   "value": "category 2"
+  }
+ ],
+ "summaryData": {
+  "filteredTotals": [
+   115752.0,
+   34791.0,
+   52897.0,
+   6504.0,
+   32620.0
+  ],
+  "totals": [
+   213974.0,
+   65324.0,
+   83695.0,
+   12170.0,
+   56776.0
+  ]
+ }
+}

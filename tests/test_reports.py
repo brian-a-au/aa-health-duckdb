@@ -119,3 +119,35 @@ def test_parse_breakdown():
     rows, totals = parse_breakdown(load("breakdown_browser.json"))
     assert rows[0] == ("Home Page", [10.0, 20.0, 0.0, 5.0, 1.0])
     assert totals == [14.0, 23.0, 2.0, 6.0, 1.0]
+
+
+# Responses saved from a live run on Demo Data (dgeo1xxpnwcidluma) on 2026-11-07.
+# They hold the extra column metadata the live API returns and the parsers ignore.
+
+
+def test_live_trend_parses_with_anomaly_fields():
+    cols = [Column("metrics/event25", "metrics/event25"),
+            Column("variables/prop7", "metrics/occurrences", exists_dimension="variables/prop7")]
+    values, errors = parse_trend(load("live_trend_anomaly.json"), cols)
+    assert errors == []
+    assert len(values) == 2 * 92
+    by = {(v.component_id, v.day): v for v in values}
+    assert by[("metrics/event25", date(2026, 11, 6))].value == 5136.0
+    assert by[("variables/prop7", date(2026, 11, 6))].value == 28177.0
+    assert min(v.day for v in values) == date(2026, 8, 8)
+    assert max(v.day for v in values) == date(2026, 11, 7)
+    assert all(v.expected is not None and v.upper is not None and v.lower is not None for v in values)
+
+
+def test_live_top_items_parse():
+    rows, total = parse_ranked(load("live_top_items.json"))
+    assert len(rows) == 100
+    assert rows[0][1] == "home"
+    assert total == 1387
+
+
+def test_live_browser_breakdown_parse():
+    rows, totals = parse_breakdown(load("live_breakdown_browser.json"))
+    assert len(rows) == 10
+    assert all(len(vals) == 5 for _, vals in rows)
+    assert totals == [213974.0, 65324.0, 83695.0, 12170.0, 56776.0]

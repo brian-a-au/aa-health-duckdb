@@ -1,0 +1,735 @@
+{
+ "totalPages": 14,
+ "firstPage": true,
+ "lastPage": false,
+ "numberOfElements": 100,
+ "number": 0,
+ "totalElements": 1387,
+ "columns": {
+  "dimensions": [
+   {
+    "id": "variables/page",
+    "dimensionColumnId": "1a0a03c0-8103-4deb-89a5-89363f527418",
+    "type": "string"
+   }
+  ],
+  "columnIds": [
+   "0"
+  ],
+  "dimension": {
+   "id": "variables/page",
+   "dimensionColumnId": "1a0a03c0-8103-4deb-89a5-89363f527418",
+   "type": "string"
+  }
+ },
+ "rows": [
+  {
+   "data": [
+    30610.0
+   ],
+   "itemId": "3306266643",
+   "value": "home"
+  },
+  {
+   "data": [
+    16865.0
+   ],
+   "itemId": "894732499",
+   "value": "app: launch"
+  },
+  {
+   "data": [
+    9579.0
+   ],
+   "itemId": "2438860771",
+   "value": "application: step 1"
+  },
+  {
+   "data": [
+    7074.0
+   ],
+   "itemId": "1284838141",
+   "value": "forum"
+  },
+  {
+   "data": [
+    6754.0
+   ],
+   "itemId": "400018359",
+   "value": "app: category 1"
+  },
+  {
+   "data": [
+    6472.0
+   ],
+   "itemId": "1243640704",
+   "value": "app: category 2"
+  },
+  {
+   "data": [
+    6369.0
+   ],
+   "itemId": "561779979",
+   "value": "app: product details"
+  },
+  {
+   "data": [
+    6054.0
+   ],
+   "itemId": "2897271828",
+   "value": "search results"
+  },
+  {
+   "data": [
+    5759.0
+   ],
+   "itemId": "4251698718",
+   "value": "events"
+  },
+  {
+   "data": [
+    5512.0
+   ],
+   "itemId": "1139682774",
+   "value": "app: navigation"
+  },
+  {
+   "data": [
+    5346.0
+   ],
+   "itemId": "545858230",
+   "value": "articles"
+  },
+  {
+   "data": [
+    5257.0
+   ],
+   "itemId": "3553521723",
+   "value": "category 4"
+  },
+  {
+   "data": [
+    5074.0
+   ],
+   "itemId": "174070502",
+   "value": "mobile web: home"
+  },
+  {
+   "data": [
+    4790.0
+   ],
+   "itemId": "1738577623",
+   "value": "category 2"
+  },
+  {
+   "data": [
+    4486.0
+   ],
+   "itemId": "2796092754",
+   "value": "category 5"
+  },
+  {
+   "data": [
+    4365.0
+   ],
+   "itemId": "338857740",
+   "value": "category 1"
+  },
+  {
+   "data": [
+    3893.0
+   ],
+   "itemId": "3455114909",
+   "value": "category 3"
+  },
+  {
+   "data": [
+    3670.0
+   ],
+   "itemId": "3288786550",
+   "value": "event details"
+  },
+  {
+   "data": [
+    3369.0
+   ],
+   "itemId": "994605763",
+   "value": "app: category 4"
+  },
+  {
+   "data": [
+    3368.0
+   ],
+   "itemId": "773465109",
+   "value": "lead form: step 1"
+  },
+  {
+   "data": [
+    3186.0
+   ],
+   "itemId": "1662367271",
+   "value": "app: category 5"
+  },
+  {
+   "data": [
+    2980.0
+   ],
+   "itemId": "2081001160",
+   "value": "app: category 3"
+  },
+  {
+   "data": [
+    2930.0
+   ],
+   "itemId": "3628286140",
+   "value": "app: shop by category"
+  },
+  {
+   "data": [
+    2855.0
+   ],
+   "itemId": "3422447179",
+   "value": "create account: step 1"
+  },
+  {
+   "data": [
+    2732.0
+   ],
+   "itemId": "557469158",
+   "value": "application: step 2"
+  },
+  {
+   "data": [
+    2539.0
+   ],
+   "itemId": "1806533347",
+   "value": "purchase: step 1"
+  },
+  {
+   "data": [
+    2526.0
+   ],
+   "itemId": "161454092",
+   "value": "app: purchase step 1"
+  },
+  {
+   "data": [
+    2044.0
+   ],
+   "itemId": "1541138801",
+   "value": "purchase: step 2"
+  },
+  {
+   "data": [
+    1970.0
+   ],
+   "itemId": "1220526249",
+   "value": "app: purchase step 2"
+  },
+  {
+   "data": [
+    1816.0
+   ],
+   "itemId": "1948785450",
+   "value": "mobile web: forum"
+  },
+  {
+   "data": [
+    1798.0
+   ],
+   "itemId": "1211076998",
+   "value": "create account: step 2"
+  },
+  {
+   "data": [
+    1716.0
+   ],
+   "itemId": "4239997072",
+   "value": "purchase: thank you"
+  },
+  {
+   "data": [
+    1685.0
+   ],
+   "itemId": "683942052",
+   "value": "app: category 2: subcategory 2c"
+  },
+  {
+   "data": [
+    1658.0
+   ],
+   "itemId": "3465000698",
+   "value": "mobile web: search results"
+  },
+  {
+   "data": [
+    1658.0
+   ],
+   "itemId": "3020737071",
+   "value": "app: purchase confirmation"
+  },
+  {
+   "data": [
+    1642.0
+   ],
+   "itemId": "2541337521",
+   "value": "app: category 2: subcategory 2b"
+  },
+  {
+   "data": [
+    1605.0
+   ],
+   "itemId": "930890531",
+   "value": "courses"
+  },
+  {
+   "data": [
+    1582.0
+   ],
+   "itemId": "439852453",
+   "value": "VOC Survey"
+  },
+  {
+   "data": [
+    1554.0
+   ],
+   "itemId": "2043482611",
+   "value": "app: category 2: subcategory 2a"
+  },
+  {
+   "data": [
+    1536.0
+   ],
+   "itemId": "225844478",
+   "value": "mobile web: articles"
+  },
+  {
+   "data": [
+    1508.0
+   ],
+   "itemId": "148321839",
+   "value": "location search results"
+  },
+  {
+   "data": [
+    1419.0
+   ],
+   "itemId": "2869803798",
+   "value": "lead form: step 2"
+  },
+  {
+   "data": [
+    1393.0
+   ],
+   "itemId": "2547259564",
+   "value": "staff"
+  },
+  {
+   "data": [
+    1359.0
+   ],
+   "itemId": "4199482255",
+   "value": "admission"
+  },
+  {
+   "data": [
+    1299.0
+   ],
+   "itemId": "2963345772",
+   "value": "help"
+  },
+  {
+   "data": [
+    1258.0
+   ],
+   "itemId": "3589452278",
+   "value": "mobile web: events"
+  },
+  {
+   "data": [
+    1251.0
+   ],
+   "itemId": "1579978116",
+   "value": "app: wishlist"
+  },
+  {
+   "data": [
+    1204.0
+   ],
+   "itemId": "9180283",
+   "value": "app: category 5: subcategory 5a"
+  },
+  {
+   "data": [
+    1196.0
+   ],
+   "itemId": "951282267",
+   "value": "app: category 1: subcategory 1b"
+  },
+  {
+   "data": [
+    1170.0
+   ],
+   "itemId": "453042600",
+   "value": "app: blogdetails"
+  },
+  {
+   "data": [
+    1156.0
+   ],
+   "itemId": "3571101080",
+   "value": "app: category 1: subcategory 1c"
+  },
+  {
+   "data": [
+    1141.0
+   ],
+   "itemId": "526877298",
+   "value": "app: category 5: subcategory 5c"
+  },
+  {
+   "data": [
+    1139.0
+   ],
+   "itemId": "3242146141",
+   "value": "students"
+  },
+  {
+   "data": [
+    1118.0
+   ],
+   "itemId": "219883024",
+   "value": "app: category 5: subcategory 5b"
+  },
+  {
+   "data": [
+    1100.0
+   ],
+   "itemId": "153828215",
+   "value": "event registration: step 1"
+  },
+  {
+   "data": [
+    1059.0
+   ],
+   "itemId": "3686038356",
+   "value": "app: search results"
+  },
+  {
+   "data": [
+    1041.0
+   ],
+   "itemId": "1526364590",
+   "value": "mobile web: application: step 1"
+  },
+  {
+   "data": [
+    1040.0
+   ],
+   "itemId": "1791715888",
+   "value": "app: category 1: subcategory 1a"
+  },
+  {
+   "data": [
+    1025.0
+   ],
+   "itemId": "3449352968",
+   "value": "app: today's deals"
+  },
+  {
+   "data": [
+    1011.0
+   ],
+   "itemId": "388911149",
+   "value": "mobile web: lead form: step 1"
+  },
+  {
+   "data": [
+    964.0
+   ],
+   "itemId": "13838047",
+   "value": "mobile web: category 5"
+  },
+  {
+   "data": [
+    945.0
+   ],
+   "itemId": "1098150771",
+   "value": "app: event list"
+  },
+  {
+   "data": [
+    918.0
+   ],
+   "itemId": "2458117046",
+   "value": "create account: step 3"
+  },
+  {
+   "data": [
+    907.0
+   ],
+   "itemId": "1687422498",
+   "value": "app: track order"
+  },
+  {
+   "data": [
+    812.0
+   ],
+   "itemId": "2942189314",
+   "value": "app: blogs"
+  },
+  {
+   "data": [
+    794.0
+   ],
+   "itemId": "2311769684",
+   "value": "mobile web: category 4"
+  },
+  {
+   "data": [
+    791.0
+   ],
+   "itemId": "634333892",
+   "value": "app: login now"
+  },
+  {
+   "data": [
+    774.0
+   ],
+   "itemId": "1791710456",
+   "value": "mobile web: category 2"
+  },
+  {
+   "data": [
+    772.0
+   ],
+   "itemId": "1865498042",
+   "value": "forums: forumid:03"
+  },
+  {
+   "data": [
+    753.0
+   ],
+   "itemId": "1460126408",
+   "value": "product details: prd1011"
+  },
+  {
+   "data": [
+    741.0
+   ],
+   "itemId": "3592023907",
+   "value": "applconfirmation: thank you"
+  },
+  {
+   "data": [
+    723.0
+   ],
+   "itemId": "3812841904",
+   "value": "product details: prd1007"
+  },
+  {
+   "data": [
+    715.0
+   ],
+   "itemId": "3707289104",
+   "value": "mobile web: category 3"
+  },
+  {
+   "data": [
+    709.0
+   ],
+   "itemId": "3706313961",
+   "value": "product details: prd1035"
+  },
+  {
+   "data": [
+    707.0
+   ],
+   "itemId": "3319029324",
+   "value": "app: subscribe"
+  },
+  {
+   "data": [
+    706.0
+   ],
+   "itemId": "1237655319",
+   "value": "product details: prd1022"
+  },
+  {
+   "data": [
+    705.0
+   ],
+   "itemId": "650527381",
+   "value": "product details: prd1023"
+  },
+  {
+   "data": [
+    692.0
+   ],
+   "itemId": "264121976",
+   "value": "app: setting"
+  },
+  {
+   "data": [
+    688.0
+   ],
+   "itemId": "3650115771",
+   "value": "product details: prd1033"
+  },
+  {
+   "data": [
+    685.0
+   ],
+   "itemId": "701549014",
+   "value": "app: event details"
+  },
+  {
+   "data": [
+    684.0
+   ],
+   "itemId": "1057356483",
+   "value": "lead form: thank you"
+  },
+  {
+   "data": [
+    674.0
+   ],
+   "itemId": "1997845671",
+   "value": "mobile web: purchase: step 1"
+  },
+  {
+   "data": [
+    646.0
+   ],
+   "itemId": "3575936018",
+   "value": "app: about us"
+  },
+  {
+   "data": [
+    643.0
+   ],
+   "itemId": "17750428",
+   "value": "product details: prd1002"
+  },
+  {
+   "data": [
+    636.0
+   ],
+   "itemId": "1884828939",
+   "value": "approval: step 1"
+  },
+  {
+   "data": [
+    627.0
+   ],
+   "itemId": "948513316",
+   "value": "app: rate this app"
+  },
+  {
+   "data": [
+    603.0
+   ],
+   "itemId": "3108397136",
+   "value": "app: sign in"
+  },
+  {
+   "data": [
+    600.0
+   ],
+   "itemId": "32536855",
+   "value": "mobile web: category 1"
+  },
+  {
+   "data": [
+    589.0
+   ],
+   "itemId": "3195162522",
+   "value": "mobile web: event details"
+  },
+  {
+   "data": [
+    586.0
+   ],
+   "itemId": "2161581764",
+   "value": "product details: prd1004"
+  },
+  {
+   "data": [
+    580.0
+   ],
+   "itemId": "1097682370",
+   "value": "app: category 4: subcategory 4a"
+  },
+  {
+   "data": [
+    576.0
+   ],
+   "itemId": "3766491691",
+   "value": "product details: prd1040"
+  },
+  {
+   "data": [
+    576.0
+   ],
+   "itemId": "193064009",
+   "value": "product details: prd1028"
+  },
+  {
+   "data": [
+    572.0
+   ],
+   "itemId": "2255359763",
+   "value": "product details: prd1045"
+  },
+  {
+   "data": [
+    570.0
+   ],
+   "itemId": "3600804056",
+   "value": "mobile web: location search results"
+  },
+  {
+   "data": [
+    563.0
+   ],
+   "itemId": "3981920712",
+   "value": "product details: prd1030"
+  },
+  {
+   "data": [
+    563.0
+   ],
+   "itemId": "1029882052",
+   "value": "app: try premium"
+  },
+  {
+   "data": [
+    561.0
+   ],
+   "itemId": "4153996673",
+   "value": "product details: prd1050"
+  },
+  {
+   "data": [
+    557.0
+   ],
+   "itemId": "356513202",
+   "value": "contact us"
+  },
+  {
+   "data": [
+    545.0
+   ],
+   "itemId": "885081630",
+   "value": "product details: prd1034"
+  }
+ ],
+ "summaryData": {
+  "filteredTotals": [
+   292654.0
+  ],
+  "totals": [
+   521061.0
+  ]
+ }
+}

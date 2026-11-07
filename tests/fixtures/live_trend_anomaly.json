@@ -1,0 +1,2246 @@
+{
+ "totalPages": 1,
+ "firstPage": true,
+ "lastPage": true,
+ "numberOfElements": 92,
+ "number": 0,
+ "totalElements": 92,
+ "columns": {
+  "dimensions": [
+   {
+    "id": "variables/daterangeday",
+    "dimensionColumnId": "7bbc0341-fce0-428f-a451-9635ce250254",
+    "type": "time"
+   }
+  ],
+  "columnIds": [
+   "0",
+   "1"
+  ],
+  "dimension": {
+   "id": "variables/daterangeday",
+   "dimensionColumnId": "7bbc0341-fce0-428f-a451-9635ce250254",
+   "type": "time"
+  }
+ },
+ "rows": [
+  {
+   "data": [
+    5250.0,
+    28780.0
+   ],
+   "dataExpected": [
+    7878.186641086181,
+    39439.14704151107
+   ],
+   "dataUpperBound": [
+    11130.92839340528,
+    53576.52098924758
+   ],
+   "dataLowerBound": [
+    4625.4448887670815,
+    25301.77309377455
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260708",
+   "value": "Aug 8, 2026"
+  },
+  {
+   "data": [
+    5453.0,
+    28721.0
+   ],
+   "dataExpected": [
+    7244.169166667389,
+    38832.82305679004
+   ],
+   "dataUpperBound": [
+    10297.135394701985,
+    53200.74991410534
+   ],
+   "dataLowerBound": [
+    4191.202938632791,
+    24464.896199474737
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260709",
+   "value": "Aug 9, 2026"
+  },
+  {
+   "data": [
+    8679.0,
+    46543.0
+   ],
+   "dataExpected": [
+    6205.142148399255,
+    30654.666222671323
+   ],
+   "dataUpperBound": [
+    8831.587734292269,
+    45196.803309498675
+   ],
+   "dataLowerBound": [
+    3578.6965625062417,
+    16112.529135843968
+   ],
+   "dataAnomalyDetected": [
+    false,
+    true
+   ],
+   "itemId": "1260710",
+   "value": "Aug 10, 2026"
+  },
+  {
+   "data": [
+    8309.0,
+    42529.0
+   ],
+   "dataExpected": [
+    6988.30339150905,
+    36729.58533057607
+   ],
+   "dataUpperBound": [
+    10038.52008876717,
+    51805.61762939503
+   ],
+   "dataLowerBound": [
+    3938.086694250929,
+    21653.553031757114
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260711",
+   "value": "Aug 11, 2026"
+  },
+  {
+   "data": [
+    6876.0,
+    36071.0
+   ],
+   "dataExpected": [
+    6951.872567203264,
+    35926.08870058374
+   ],
+   "dataUpperBound": [
+    9975.28311897361,
+    50918.47744341022
+   ],
+   "dataLowerBound": [
+    3928.4620154329195,
+    20933.699957757264
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260712",
+   "value": "Aug 12, 2026"
+  },
+  {
+   "data": [
+    8871.0,
+    47027.0
+   ],
+   "dataExpected": [
+    6349.1842321817485,
+    33118.817690272524
+   ],
+   "dataUpperBound": [
+    9075.831933006084,
+    47922.6835336195
+   ],
+   "dataLowerBound": [
+    3622.536531357414,
+    18314.95184692555
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260713",
+   "value": "Aug 13, 2026"
+  },
+  {
+   "data": [
+    7280.0,
+    38718.0
+   ],
+   "dataExpected": [
+    7985.576784620069,
+    42349.8425442261
+   ],
+   "dataUpperBound": [
+    11509.278070566877,
+    57579.19488540986
+   ],
+   "dataLowerBound": [
+    4461.87549867326,
+    27120.49020304234
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260714",
+   "value": "Aug 14, 2026"
+  },
+  {
+   "data": [
+    4654.0,
+    23914.0
+   ],
+   "dataExpected": [
+    7294.569366085173,
+    38785.8301230362
+   ],
+   "dataUpperBound": [
+    10480.776150972108,
+    53872.82389130919
+   ],
+   "dataLowerBound": [
+    4108.362581198238,
+    23698.836354763207
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260715",
+   "value": "Aug 15, 2026"
+  },
+  {
+   "data": [
+    6990.0,
+    36117.0
+   ],
+   "dataExpected": [
+    7034.021243070137,
+    38531.10755199227
+   ],
+   "dataUpperBound": [
+    10164.40902340299,
+    54090.11045066538
+   ],
+   "dataLowerBound": [
+    3903.6334627372844,
+    22972.104653319155
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260716",
+   "value": "Aug 16, 2026"
+  },
+  {
+   "data": [
+    7524.0,
+    39263.0
+   ],
+   "dataExpected": [
+    6205.726712309462,
+    30657.471518301776
+   ],
+   "dataUpperBound": [
+    8935.954207891764,
+    46055.182577660285
+   ],
+   "dataLowerBound": [
+    3475.4992167271594,
+    15259.760458943267
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260717",
+   "value": "Aug 17, 2026"
+  },
+  {
+   "data": [
+    5472.0,
+    28323.0
+   ],
+   "dataExpected": [
+    6988.675493338865,
+    36730.92116197136
+   ],
+   "dataUpperBound": [
+    10059.794541024856,
+    52162.79146975916
+   ],
+   "dataLowerBound": [
+    3917.5564456528737,
+    21299.05085418356
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260718",
+   "value": "Aug 18, 2026"
+  },
+  {
+   "data": [
+    7945.0,
+    42302.0
+   ],
+   "dataExpected": [
+    6951.812357744783,
+    35925.434915369915
+   ],
+   "dataUpperBound": [
+    10004.635831916552,
+    51380.82846766534
+   ],
+   "dataLowerBound": [
+    3898.9888835730135,
+    20470.041363074488
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260719",
+   "value": "Aug 19, 2026"
+  },
+  {
+   "data": [
+    5321.0,
+    28317.0
+   ],
+   "dataExpected": [
+    6349.502761361787,
+    33120.16507432476
+   ],
+   "dataUpperBound": [
+    9120.169312457721,
+    48518.547612926086
+   ],
+   "dataLowerBound": [
+    3578.836210265853,
+    17721.782535723432
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260720",
+   "value": "Aug 20, 2026"
+  },
+  {
+   "data": [
+    5329.0,
+    28141.0
+   ],
+   "dataExpected": [
+    7985.1178718260035,
+    42347.56011705257
+   ],
+   "dataUpperBound": [
+    11452.375971262503,
+    57645.165224536526
+   ],
+   "dataLowerBound": [
+    4517.859772389504,
+    27049.955009568617
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260721",
+   "value": "Aug 21, 2026"
+  },
+  {
+   "data": [
+    8782.0,
+    46250.0
+   ],
+   "dataExpected": [
+    7293.759408854035,
+    38781.363563704836
+   ],
+   "dataUpperBound": [
+    10501.099408431317,
+    54435.8669067894
+   ],
+   "dataLowerBound": [
+    4086.4194092767534,
+    23126.86022062027
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260722",
+   "value": "Aug 22, 2026"
+  },
+  {
+   "data": [
+    7903.0,
+    41847.0
+   ],
+   "dataExpected": [
+    7033.904947487067,
+    38530.12626342977
+   ],
+   "dataUpperBound": [
+    10121.624298465333,
+    54164.952057688475
+   ],
+   "dataLowerBound": [
+    3946.185596508802,
+    22895.30046917106
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260723",
+   "value": "Aug 23, 2026"
+  },
+  {
+   "data": [
+    6796.0,
+    35921.0
+   ],
+   "dataExpected": [
+    6205.849182561189,
+    30658.166808697675
+   ],
+   "dataUpperBound": [
+    8911.4278689073,
+    46165.69266766495
+   ],
+   "dataLowerBound": [
+    3500.2704962150774,
+    15150.640949730396
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260724",
+   "value": "Aug 24, 2026"
+  },
+  {
+   "data": [
+    9161.0,
+    46722.0
+   ],
+   "dataExpected": [
+    6988.411891607297,
+    36729.57979236433
+   ],
+   "dataUpperBound": [
+    10011.130098560345,
+    52153.74274424392
+   ],
+   "dataLowerBound": [
+    3965.693684654249,
+    21305.416840484748
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260725",
+   "value": "Aug 25, 2026"
+  },
+  {
+   "data": [
+    7421.0,
+    39675.0
+   ],
+   "dataExpected": [
+    6952.183695411451,
+    35927.416587466716
+   ],
+   "dataUpperBound": [
+    9987.03276361166,
+    51440.413875442835
+   ],
+   "dataLowerBound": [
+    3917.3346272112412,
+    20414.419299490597
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260726",
+   "value": "Aug 26, 2026"
+  },
+  {
+   "data": [
+    4621.0,
+    23922.0
+   ],
+   "dataExpected": [
+    6349.587948203128,
+    33120.765086344836
+   ],
+   "dataUpperBound": [
+    9097.973866956963,
+    48521.922095760536
+   ],
+   "dataLowerBound": [
+    3601.2020294492913,
+    17719.608076929137
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260727",
+   "value": "Aug 27, 2026"
+  },
+  {
+   "data": [
+    6814.0,
+    35401.0
+   ],
+   "dataExpected": [
+    7984.991847591939,
+    42346.779051440375
+   ],
+   "dataUpperBound": [
+    11457.540923559856,
+    57799.70946113825
+   ],
+   "dataLowerBound": [
+    4512.442771624022,
+    26893.8486417425
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260728",
+   "value": "Aug 28, 2026"
+  },
+  {
+   "data": [
+    7556.0,
+    39407.0
+   ],
+   "dataExpected": [
+    7294.196728820036,
+    38783.47813508182
+   ],
+   "dataUpperBound": [
+    10450.338819936287,
+    54205.4852270879
+   ],
+   "dataLowerBound": [
+    4138.0546377037845,
+    23361.471043075748
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260729",
+   "value": "Aug 29, 2026"
+  },
+  {
+   "data": [
+    5250.0,
+    27880.0
+   ],
+   "dataExpected": [
+    7034.148065476714,
+    38531.13947155534
+   ],
+   "dataUpperBound": [
+    10051.66444595349,
+    53818.12420876324
+   ],
+   "dataLowerBound": [
+    4016.631684999938,
+    23244.154734347438
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260730",
+   "value": "Aug 30, 2026"
+  },
+  {
+   "data": [
+    8773.0,
+    47282.0
+   ],
+   "dataExpected": [
+    6205.810634971474,
+    34571.699604730085
+   ],
+   "dataUpperBound": [
+    8875.844884151953,
+    49972.23673005453
+   ],
+   "dataLowerBound": [
+    3535.7763857909968,
+    19171.162479405644
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260731",
+   "value": "Aug 31, 2026"
+  },
+  {
+   "data": [
+    8877.0,
+    46987.0
+   ],
+   "dataExpected": [
+    6988.751788268206,
+    37513.20718615503
+   ],
+   "dataUpperBound": [
+    10059.967195375266,
+    53123.30489548699
+   ],
+   "dataLowerBound": [
+    3917.536381161145,
+    21903.109476823072
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260801",
+   "value": "Sep 1, 2026"
+  },
+  {
+   "data": [
+    7712.0,
+    39724.0
+   ],
+   "dataExpected": [
+    6952.313351618074,
+    37051.844052472086
+   ],
+   "dataUpperBound": [
+    10019.004485666908,
+    52715.82363060075
+   ],
+   "dataLowerBound": [
+    3885.622217569239,
+    21387.86447434342
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260802",
+   "value": "Sep 2, 2026"
+  },
+  {
+   "data": [
+    4762.0,
+    24757.0
+   ],
+   "dataExpected": [
+    6349.503364717126,
+    33079.46994416193
+   ],
+   "dataUpperBound": [
+    9132.692039850648,
+    48628.99157133904
+   ],
+   "dataLowerBound": [
+    3566.314689583604,
+    17529.948316984824
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260803",
+   "value": "Sep 3, 2026"
+  },
+  {
+   "data": [
+    6653.0,
+    35788.0
+   ],
+   "dataExpected": [
+    7985.0099779135735,
+    39496.54942050215
+   ],
+   "dataUpperBound": [
+    11492.136924971303,
+    55058.66113289792
+   ],
+   "dataLowerBound": [
+    4477.883030855844,
+    23934.437708106387
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260804",
+   "value": "Sep 4, 2026"
+  },
+  {
+   "data": [
+    7554.0,
+    39737.0
+   ],
+   "dataExpected": [
+    7294.340306801516,
+    37232.8118958198
+   ],
+   "dataUpperBound": [
+    10486.758284960255,
+    52698.05751173002
+   ],
+   "dataLowerBound": [
+    4101.922328642777,
+    21767.566279909588
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260805",
+   "value": "Sep 5, 2026"
+  },
+  {
+   "data": [
+    5142.0,
+    28308.0
+   ],
+   "dataExpected": [
+    7034.069523303452,
+    37151.54714988823
+   ],
+   "dataUpperBound": [
+    10089.04865985507,
+    52507.75538684059
+   ],
+   "dataLowerBound": [
+    3979.090386751833,
+    21795.338912935877
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260806",
+   "value": "Sep 6, 2026"
+  },
+  {
+   "data": [
+    8021.0,
+    42511.0
+   ],
+   "dataExpected": [
+    6206.172638408439,
+    34573.62221540078
+   ],
+   "dataUpperBound": [
+    8911.38639226155,
+    49962.166643577664
+   ],
+   "dataLowerBound": [
+    3500.9588845553285,
+    19185.07778722389
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260807",
+   "value": "Sep 7, 2026"
+  },
+  {
+   "data": [
+    5357.0,
+    28839.0
+   ],
+   "dataExpected": [
+    6988.9679183289445,
+    37514.32724455795
+   ],
+   "dataUpperBound": [
+    10052.17047519144,
+    52905.43739686357
+   ],
+   "dataLowerBound": [
+    3925.7653614664487,
+    22123.21709225233
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260808",
+   "value": "Sep 8, 2026"
+  },
+  {
+   "data": [
+    5458.0,
+    29023.0
+   ],
+   "dataExpected": [
+    6952.0588638964655,
+    37050.46345031263
+   ],
+   "dataUpperBound": [
+    10001.13840364287,
+    52466.87606951342
+   ],
+   "dataLowerBound": [
+    3902.9793241500606,
+    21634.05083111184
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260809",
+   "value": "Sep 9, 2026"
+  },
+  {
+   "data": [
+    8837.0,
+    47123.0
+   ],
+   "dataExpected": [
+    6348.822159991458,
+    33075.91594704587
+   ],
+   "dataUpperBound": [
+    9131.739834962544,
+    48497.03944047447
+   ],
+   "dataLowerBound": [
+    3565.9044850203713,
+    17654.792453617265
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260810",
+   "value": "Sep 10, 2026"
+  },
+  {
+   "data": [
+    8016.0,
+    43161.0
+   ],
+   "dataExpected": [
+    7984.7369092019535,
+    39495.700288577966
+   ],
+   "dataUpperBound": [
+    11536.868213055996,
+    55159.35258816519
+   ],
+   "dataLowerBound": [
+    4432.6056053479115,
+    23832.047988990744
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260811",
+   "value": "Sep 11, 2026"
+  },
+  {
+   "data": [
+    6818.0,
+    36889.0
+   ],
+   "dataExpected": [
+    7294.372636497604,
+    37233.32402643066
+   ],
+   "dataUpperBound": [
+    10516.129834359632,
+    52808.376427534065
+   ],
+   "dataLowerBound": [
+    4072.615438635575,
+    21658.271625327252
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260812",
+   "value": "Sep 12, 2026"
+  },
+  {
+   "data": [
+    8908.0,
+    47069.0
+   ],
+   "dataExpected": [
+    7033.801620385368,
+    37150.63778143974
+   ],
+   "dataUpperBound": [
+    10120.36499357941,
+    52615.825152722
+   ],
+   "dataLowerBound": [
+    3947.238247191326,
+    21685.450410157486
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260813",
+   "value": "Sep 13, 2026"
+  },
+  {
+   "data": [
+    7508.0,
+    39974.0
+   ],
+   "dataExpected": [
+    6206.639684546958,
+    34576.27385009723
+   ],
+   "dataUpperBound": [
+    8938.092772421576,
+    50103.629983387735
+   ],
+   "dataLowerBound": [
+    3475.18659667234,
+    19048.917716806718
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260814",
+   "value": "Sep 14, 2026"
+  },
+  {
+   "data": [
+    4663.0,
+    24507.0
+   ],
+   "dataExpected": [
+    6989.044719532554,
+    37515.061342070294
+   ],
+   "dataUpperBound": [
+    10062.124746756064,
+    52985.331280395534
+   ],
+   "dataLowerBound": [
+    3915.9646923090445,
+    22044.79140374505
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260815",
+   "value": "Sep 15, 2026"
+  },
+  {
+   "data": [
+    6503.0,
+    35744.0
+   ],
+   "dataExpected": [
+    6952.079935920666,
+    37050.827947997976
+   ],
+   "dataUpperBound": [
+    10033.608775257533,
+    52699.43868588109
+   ],
+   "dataLowerBound": [
+    3870.551096583799,
+    21402.21721011486
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260816",
+   "value": "Sep 16, 2026"
+  },
+  {
+   "data": [
+    7451.0,
+    39423.0
+   ],
+   "dataExpected": [
+    6349.347011172329,
+    33079.16392916262
+   ],
+   "dataUpperBound": [
+    9146.428018088185,
+    48625.913975196214
+   ],
+   "dataLowerBound": [
+    3552.266004256473,
+    17532.413883129026
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260817",
+   "value": "Sep 17, 2026"
+  },
+  {
+   "data": [
+    1324.0,
+    7331.0
+   ],
+   "dataExpected": [
+    7451.623820563845,
+    38659.37171355464
+   ],
+   "dataUpperBound": [
+    10725.552673696382,
+    54169.21766408235
+   ],
+   "dataLowerBound": [
+    4177.694967431307,
+    23149.525763026926
+   ],
+   "dataAnomalyDetected": [
+    true,
+    true
+   ],
+   "itemId": "1260818",
+   "value": "Sep 18, 2026"
+  },
+  {
+   "data": [
+    1523.0,
+    8057.0
+   ],
+   "dataExpected": [
+    7090.142462050304,
+    37227.470188770174
+   ],
+   "dataUpperBound": [
+    10262.207956755889,
+    53020.896319285566
+   ],
+   "dataLowerBound": [
+    3918.07696734472,
+    21434.04405825478
+   ],
+   "dataAnomalyDetected": [
+    true,
+    true
+   ],
+   "itemId": "1260819",
+   "value": "Sep 19, 2026"
+  },
+  {
+   "data": [
+    5497.0,
+    29550.0
+   ],
+   "dataExpected": [
+    6932.245023740149,
+    36558.43091367685
+   ],
+   "dataUpperBound": [
+    10089.654139818567,
+    52636.952871726346
+   ],
+   "dataLowerBound": [
+    3774.8359076617303,
+    20479.908955627354
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260820",
+   "value": "Sep 20, 2026"
+  },
+  {
+   "data": [
+    5353.0,
+    29241.0
+   ],
+   "dataExpected": [
+    7082.498437036008,
+    37027.200858858596
+   ],
+   "dataUpperBound": [
+    10304.129431760963,
+    53078.21009606638
+   ],
+   "dataLowerBound": [
+    3860.867442311053,
+    20976.19162165081
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260821",
+   "value": "Sep 21, 2026"
+  },
+  {
+   "data": [
+    8950.0,
+    48556.0
+   ],
+   "dataExpected": [
+    7096.299798836284,
+    36427.20418655657
+   ],
+   "dataUpperBound": [
+    10326.368508713402,
+    52468.574550962214
+   ],
+   "dataLowerBound": [
+    3866.231088959166,
+    20385.833822150926
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260822",
+   "value": "Sep 22, 2026"
+  },
+  {
+   "data": [
+    10684.0,
+    59115.0
+   ],
+   "dataExpected": [
+    6868.56110910735,
+    36771.1867197494
+   ],
+   "dataUpperBound": [
+    10000.081965343752,
+    52930.56009512064
+   ],
+   "dataLowerBound": [
+    3737.040252870947,
+    20611.813344378155
+   ],
+   "dataAnomalyDetected": [
+    true,
+    true
+   ],
+   "itemId": "1260823",
+   "value": "Sep 23, 2026"
+  },
+  {
+   "data": [
+    6799.0,
+    37110.0
+   ],
+   "dataExpected": [
+    6576.9599891481585,
+    34480.93484912449
+   ],
+   "dataUpperBound": [
+    9627.044546098889,
+    50917.900717139404
+   ],
+   "dataLowerBound": [
+    3526.875432197429,
+    18043.968981109578
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260824",
+   "value": "Sep 24, 2026"
+  },
+  {
+   "data": [
+    8967.0,
+    46418.0
+   ],
+   "dataExpected": [
+    7036.989989955445,
+    38116.95195402407
+   ],
+   "dataUpperBound": [
+    10281.098684046316,
+    54464.38738527109
+   ],
+   "dataLowerBound": [
+    3792.881295864574,
+    21769.516522777056
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260825",
+   "value": "Sep 25, 2026"
+  },
+  {
+   "data": [
+    7620.0,
+    39655.0
+   ],
+   "dataExpected": [
+    6845.287102519493,
+    36030.561412341376
+   ],
+   "dataUpperBound": [
+    10007.767570944885,
+    52377.074250106794
+   ],
+   "dataLowerBound": [
+    3682.8066340941,
+    19684.048574575958
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260826",
+   "value": "Sep 26, 2026"
+  },
+  {
+   "data": [
+    4539.0,
+    23743.0
+   ],
+   "dataExpected": [
+    6880.232209732865,
+    36474.79902900468
+   ],
+   "dataUpperBound": [
+    10044.436948406534,
+    52743.1284271684
+   ],
+   "dataLowerBound": [
+    3716.0274710591966,
+    20206.469630840966
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260827",
+   "value": "Sep 27, 2026"
+  },
+  {
+   "data": [
+    6623.0,
+    35825.0
+   ],
+   "dataExpected": [
+    7028.913511686059,
+    37095.65557980825
+   ],
+   "dataUpperBound": [
+    10282.1618235848,
+    53491.44046267593
+   ],
+   "dataLowerBound": [
+    3775.665199787317,
+    20699.87069694057
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260828",
+   "value": "Sep 28, 2026"
+  },
+  {
+   "data": [
+    7655.0,
+    39713.0
+   ],
+   "dataExpected": [
+    7326.383314677285,
+    37118.212970340166
+   ],
+   "dataUpperBound": [
+    10698.939551645908,
+    53421.68337618086
+   ],
+   "dataLowerBound": [
+    3953.827077708662,
+    20814.742564499473
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260829",
+   "value": "Sep 29, 2026"
+  },
+  {
+   "data": [
+    5517.0,
+    28777.0
+   ],
+   "dataExpected": [
+    6869.235391940331,
+    36774.737495516565
+   ],
+   "dataUpperBound": [
+    10013.993638694195,
+    52994.37277849571
+   ],
+   "dataLowerBound": [
+    3724.4771451864663,
+    20555.102212537422
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260830",
+   "value": "Sep 30, 2026"
+  },
+  {
+   "data": [
+    8904.0,
+    46305.0
+   ],
+   "dataExpected": [
+    6576.8973220451135,
+    34480.71309190648
+   ],
+   "dataUpperBound": [
+    9582.917461582569,
+    50694.33351738588
+   ],
+   "dataLowerBound": [
+    3570.8771825076574,
+    18267.092666427077
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260901",
+   "value": "Oct 1, 2026"
+  },
+  {
+   "data": [
+    7448.0,
+    40075.0
+   ],
+   "dataExpected": [
+    7037.318150869692,
+    38118.21847576337
+   ],
+   "dataUpperBound": [
+    10276.962845024773,
+    54425.52466887861
+   ],
+   "dataLowerBound": [
+    3797.6734567146095,
+    21810.91228264814
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260902",
+   "value": "Oct 2, 2026"
+  },
+  {
+   "data": [
+    4673.0,
+    25670.0
+   ],
+   "dataExpected": [
+    6845.34777282652,
+    36030.72460232884
+   ],
+   "dataUpperBound": [
+    9980.330593484545,
+    52253.165340007414
+   ],
+   "dataLowerBound": [
+    3710.364952168495,
+    19808.283864650268
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260903",
+   "value": "Oct 3, 2026"
+  },
+  {
+   "data": [
+    6737.0,
+    36200.0
+   ],
+   "dataExpected": [
+    6879.683889132506,
+    36471.923998315055
+   ],
+   "dataUpperBound": [
+    10044.81983072058,
+    52744.269842389105
+   ],
+   "dataLowerBound": [
+    3714.5479475444313,
+    20199.578154241004
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260904",
+   "value": "Oct 4, 2026"
+  },
+  {
+   "data": [
+    7128.0,
+    39665.0
+   ],
+   "dataExpected": [
+    7028.777307700528,
+    37095.175598127236
+   ],
+   "dataUpperBound": [
+    10245.210478574827,
+    53279.89361927862
+   ],
+   "dataLowerBound": [
+    3812.3441368262274,
+    20910.457576975852
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260905",
+   "value": "Oct 5, 2026"
+  },
+  {
+   "data": [
+    5406.0,
+    28075.0
+   ],
+   "dataExpected": [
+    7326.369399587956,
+    37118.50456295048
+   ],
+   "dataUpperBound": [
+    10661.168255218645,
+    53225.283578727795
+   ],
+   "dataLowerBound": [
+    3991.570543957267,
+    21011.72554717317
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260906",
+   "value": "Oct 6, 2026"
+  },
+  {
+   "data": [
+    8036.0,
+    42174.0
+   ],
+   "dataExpected": [
+    6868.844751695591,
+    36772.80327866347
+   ],
+   "dataUpperBound": [
+    9999.892147559542,
+    52897.46130278071
+   ],
+   "dataLowerBound": [
+    3737.79735583164,
+    20648.14525454623
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260907",
+   "value": "Oct 7, 2026"
+  },
+  {
+   "data": [
+    5441.0,
+    28450.0
+   ],
+   "dataExpected": [
+    6577.127792349043,
+    34482.10579900364
+   ],
+   "dataUpperBound": [
+    9567.912276054712,
+    50558.90820297679
+   ],
+   "dataLowerBound": [
+    3586.3433086433747,
+    18405.303395030496
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260908",
+   "value": "Oct 8, 2026"
+  },
+  {
+   "data": [
+    5224.0,
+    27995.0
+   ],
+   "dataExpected": [
+    7036.985181051092,
+    38116.836020376955
+   ],
+   "dataUpperBound": [
+    10229.519095622356,
+    54155.53912179079
+   ],
+   "dataLowerBound": [
+    3844.451266479827,
+    22078.132918963118
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260909",
+   "value": "Oct 9, 2026"
+  },
+  {
+   "data": [
+    8641.0,
+    46249.0
+   ],
+   "dataExpected": [
+    6844.549562309133,
+    36026.899410519676
+   ],
+   "dataUpperBound": [
+    9953.561007318176,
+    52108.90963866237
+   ],
+   "dataLowerBound": [
+    3735.5381173000897,
+    19944.889182376977
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260910",
+   "value": "Oct 10, 2026"
+  },
+  {
+   "data": [
+    7959.0,
+    42442.0
+   ],
+   "dataExpected": [
+    6879.4857219717605,
+    36471.168880715224
+   ],
+   "dataUpperBound": [
+    10008.822728059116,
+    52597.95266690169
+   ],
+   "dataLowerBound": [
+    3750.148715884404,
+    20344.385094528756
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260911",
+   "value": "Oct 11, 2026"
+  },
+  {
+   "data": [
+    6541.0,
+    34973.0
+   ],
+   "dataExpected": [
+    7028.724503888087,
+    37095.32976570029
+   ],
+   "dataUpperBound": [
+    10217.257125113432,
+    53183.89512953983
+   ],
+   "dataLowerBound": [
+    3840.191882662743,
+    21006.764401860753
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260912",
+   "value": "Oct 12, 2026"
+  },
+  {
+   "data": [
+    8213.0,
+    45537.0
+   ],
+   "dataExpected": [
+    7326.050340728852,
+    37117.02545776626
+   ],
+   "dataUpperBound": [
+    10634.455120422048,
+    53131.09617875878
+   ],
+   "dataLowerBound": [
+    4017.645561035655,
+    21102.954736773747
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260913",
+   "value": "Oct 13, 2026"
+  },
+  {
+   "data": [
+    6917.0,
+    38579.0
+   ],
+   "dataExpected": [
+    6869.106609082643,
+    36774.51876397609
+   ],
+   "dataUpperBound": [
+    9960.130652837077,
+    52793.453797799964
+   ],
+   "dataLowerBound": [
+    3778.082565328211,
+    20755.58373015222
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260914",
+   "value": "Oct 14, 2026"
+  },
+  {
+   "data": [
+    4221.0,
+    22814.0
+   ],
+   "dataExpected": [
+    6577.045386722885,
+    34482.31563406153
+   ],
+   "dataUpperBound": [
+    9522.25630814903,
+    50427.10779505054
+   ],
+   "dataLowerBound": [
+    3631.834465296741,
+    18537.523473072517
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260915",
+   "value": "Oct 15, 2026"
+  },
+  {
+   "data": [
+    6353.0,
+    34306.0
+   ],
+   "dataExpected": [
+    7036.706386746843,
+    38116.07217049934
+   ],
+   "dataUpperBound": [
+    10209.769116644275,
+    54141.70126510861
+   ],
+   "dataLowerBound": [
+    3863.6436568494128,
+    22090.44307589007
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260916",
+   "value": "Oct 16, 2026"
+  },
+  {
+   "data": [
+    7064.0,
+    38634.0
+   ],
+   "dataExpected": [
+    6844.74503458492,
+    36028.80584032848
+   ],
+   "dataUpperBound": [
+    9919.146620051706,
+    51994.58085836436
+   ],
+   "dataLowerBound": [
+    3770.3434491181333,
+    20063.030822292603
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260917",
+   "value": "Oct 17, 2026"
+  },
+  {
+   "data": [
+    5027.0,
+    27926.0
+   ],
+   "dataExpected": [
+    6879.450619099657,
+    36471.887300885064
+   ],
+   "dataUpperBound": [
+    9955.116791871413,
+    52369.91114091851
+   ],
+   "dataLowerBound": [
+    3803.7844463279016,
+    20573.863460851615
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260918",
+   "value": "Oct 18, 2026"
+  },
+  {
+   "data": [
+    7274.0,
+    40924.0
+   ],
+   "dataExpected": [
+    7028.229167218303,
+    37093.78492808999
+   ],
+   "dataUpperBound": [
+    10176.183971148319,
+    52999.97878530183
+   ],
+   "dataLowerBound": [
+    3880.2743632882875,
+    21187.591070878152
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260919",
+   "value": "Oct 19, 2026"
+  },
+  {
+   "data": [
+    4973.0,
+    27012.0
+   ],
+   "dataExpected": [
+    7325.750411051583,
+    37117.13263414091
+   ],
+   "dataUpperBound": [
+    10592.096642296183,
+    52965.98632197081
+   ],
+   "dataLowerBound": [
+    4059.4041798069825,
+    21268.278946311002
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260920",
+   "value": "Oct 20, 2026"
+  },
+  {
+   "data": [
+    4850.0,
+    26954.0
+   ],
+   "dataExpected": [
+    6868.442527746779,
+    36772.109805097294
+   ],
+   "dataUpperBound": [
+    9944.807016087163,
+    52661.743845283105
+   ],
+   "dataLowerBound": [
+    3792.078039406395,
+    20882.475764911484
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260921",
+   "value": "Oct 21, 2026"
+  },
+  {
+   "data": [
+    8026.0,
+    43843.0
+   ],
+   "dataExpected": [
+    6575.970734077924,
+    34477.39377176795
+   ],
+   "dataUpperBound": [
+    9530.076192968303,
+    50400.69565687518
+   ],
+   "dataLowerBound": [
+    3621.8652751875456,
+    18554.091886660724
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260922",
+   "value": "Oct 22, 2026"
+  },
+  {
+   "data": [
+    7265.0,
+    38424.0
+   ],
+   "dataExpected": [
+    7036.1486172436935,
+    38114.04195772343
+   ],
+   "dataUpperBound": [
+    10195.918275421322,
+    54060.919329707736
+   ],
+   "dataLowerBound": [
+    3876.3789590660663,
+    22167.16458573912
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260923",
+   "value": "Oct 23, 2026"
+  },
+  {
+   "data": [
+    6293.0,
+    33928.0
+   ],
+   "dataExpected": [
+    6844.379995090943,
+    36027.83071264127
+   ],
+   "dataUpperBound": [
+    9904.556164242993,
+    51903.46082754515
+   ],
+   "dataLowerBound": [
+    3784.2038259388933,
+    20152.200597737392
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260924",
+   "value": "Oct 24, 2026"
+  },
+  {
+   "data": [
+    8384.0,
+    45324.0
+   ],
+   "dataExpected": [
+    6878.798503631654,
+    36469.323939972775
+   ],
+   "dataUpperBound": [
+    9942.428764290236,
+    52279.29302394136
+   ],
+   "dataLowerBound": [
+    3815.168242973072,
+    20659.35485600419
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260925",
+   "value": "Oct 25, 2026"
+  },
+  {
+   "data": [
+    6733.0,
+    36542.0
+   ],
+   "dataExpected": [
+    7028.120835222141,
+    37094.20254643324
+   ],
+   "dataUpperBound": [
+    10157.256759359076,
+    52918.37889786585
+   ],
+   "dataLowerBound": [
+    3898.984911085206,
+    21270.02619500063
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260926",
+   "value": "Oct 26, 2026"
+  },
+  {
+   "data": [
+    4209.0,
+    22601.0
+   ],
+   "dataExpected": [
+    7325.31967592612,
+    37115.71524796031
+   ],
+   "dataUpperBound": [
+    10573.053092335691,
+    52871.26386009135
+   ],
+   "dataLowerBound": [
+    4077.5862595165495,
+    21360.16663582927
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260927",
+   "value": "Oct 27, 2026"
+  },
+  {
+   "data": [
+    6276.0,
+    34178.0
+   ],
+   "dataExpected": [
+    6867.985707798285,
+    36770.28008089788
+   ],
+   "dataUpperBound": [
+    9946.072864060177,
+    52678.583526872666
+   ],
+   "dataLowerBound": [
+    3789.8985515363925,
+    20861.97663492309
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260928",
+   "value": "Oct 28, 2026"
+  },
+  {
+   "data": [
+    7070.0,
+    38495.0
+   ],
+   "dataExpected": [
+    6576.009019579956,
+    34478.209485244406
+   ],
+   "dataUpperBound": [
+    9512.41306514147,
+    50325.34571714958
+   ],
+   "dataLowerBound": [
+    3639.6049740184403,
+    18631.07325333923
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260929",
+   "value": "Oct 29, 2026"
+  },
+  {
+   "data": [
+    4911.0,
+    27029.0
+   ],
+   "dataExpected": [
+    7035.954601180096,
+    38113.415044605
+   ],
+   "dataUpperBound": [
+    10165.851648013944,
+    53909.89407052804
+   ],
+   "dataLowerBound": [
+    3906.057554346248,
+    22316.936018681954
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260930",
+   "value": "Oct 30, 2026"
+  },
+  {
+   "data": [
+    8200.0,
+    45013.0
+   ],
+   "dataExpected": [
+    6843.88432193696,
+    36025.822474053624
+   ],
+   "dataUpperBound": [
+    9898.18245248392,
+    51881.36002117745
+   ],
+   "dataLowerBound": [
+    3789.5861913900003,
+    20170.284926929806
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1260931",
+   "value": "Oct 31, 2026"
+  },
+  {
+   "data": [
+    8401.0,
+    46812.0
+   ],
+   "dataExpected": [
+    6878.698701832395,
+    36469.522642634016
+   ],
+   "dataUpperBound": [
+    9945.42787405507,
+    52340.52413593567
+   ],
+   "dataLowerBound": [
+    3811.9695296097193,
+    20598.521149332355
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1261001",
+   "value": "Nov 1, 2026"
+  },
+  {
+   "data": [
+    6797.0,
+    36216.0
+   ],
+   "dataExpected": [
+    7027.837016788979,
+    37093.607309101506
+   ],
+   "dataUpperBound": [
+    10160.364482056924,
+    53005.95796500576
+   ],
+   "dataLowerBound": [
+    3895.3095515210343,
+    21181.25665319726
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1261002",
+   "value": "Nov 2, 2026"
+  },
+  {
+   "data": [
+    4290.0,
+    23477.0
+   ],
+   "dataExpected": [
+    7324.749231089601,
+    37113.68811879006
+   ],
+   "dataUpperBound": [
+    10576.491897519867,
+    52961.455190590386
+   ],
+   "dataLowerBound": [
+    4073.006564659336,
+    21265.92104698973
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1261003",
+   "value": "Nov 3, 2026"
+  },
+  {
+   "data": [
+    6535.0,
+    34730.0
+   ],
+   "dataExpected": [
+    6867.691881032579,
+    36769.53566490134
+   ],
+   "dataUpperBound": [
+    9945.465516120174,
+    52735.674843264045
+   ],
+   "dataLowerBound": [
+    3789.9182459449835,
+    20803.396486538633
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1261004",
+   "value": "Nov 4, 2026"
+  },
+  {
+   "data": [
+    6326.0,
+    35551.0
+   ],
+   "dataExpected": [
+    6575.858815548142,
+    34478.18273131922
+   ],
+   "dataUpperBound": [
+    9511.47513888703,
+    50383.8634396416
+   ],
+   "dataLowerBound": [
+    3640.242492209254,
+    18572.502022996836
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1261005",
+   "value": "Nov 5, 2026"
+  },
+  {
+   "data": [
+    5136.0,
+    28177.0
+   ],
+   "dataExpected": [
+    7035.448359916656,
+    38111.580334328406
+   ],
+   "dataUpperBound": [
+    10163.998765570264,
+    53954.62687147346
+   ],
+   "dataLowerBound": [
+    3906.8979542630486,
+    22268.533797183347
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1261006",
+   "value": "Nov 6, 2026"
+  },
+  {
+   "data": [
+    4939.0,
+    26981.0
+   ],
+   "dataExpected": [
+    6843.756736511836,
+    36026.114385506764
+   ],
+   "dataUpperBound": [
+    9892.0847660247,
+    51901.222591792
+   ],
+   "dataLowerBound": [
+    3795.428706998971,
+    20151.006179221527
+   ],
+   "dataAnomalyDetected": [
+    false,
+    false
+   ],
+   "itemId": "1261007",
+   "value": "Nov 7, 2026"
+  }
+ ],
+ "summaryData": {
+  "filteredTotals": [
+   613142.0,
+   3280008.0
+  ],
+  "totals": [
+   613142.0,
+   3280008.0
+  ]
+ }
+}
