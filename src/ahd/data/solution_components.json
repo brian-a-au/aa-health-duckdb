@@ -35,8 +35,8 @@
     "metrics/videostart"
   ],
   "Reserved eVars": [
-    "variables/campaign",
-    "variables/product"
+    "metrics/campaign",
+    "metrics/product"
   ],
   "List Variables": [
     "variables/listvariable1",
@@ -44,35 +44,35 @@
     "variables/listvariable3"
   ],
   "App Lifecycle Dimensions": [
-    "variables/mobileinstalldate",
-    "variables/mobileappid",
-    "variables/mobilelaunchnumber",
-    "variables/mobiledayssincefirstuse",
-    "variables/mobiledayssincelastuse",
-    "variables/mobilehourofday",
-    "variables/mobiledayofweek"
+    "metrics/mobileinstalldate",
+    "metrics/mobileappid",
+    "metrics/mobilelaunchnumber",
+    "metrics/mobiledayssincefirstuse",
+    "metrics/mobiledayssincelastuse",
+    "metrics/mobilehourofday",
+    "metrics/mobiledayofweek"
   ],
   "Heartbeat Dimensions": [
-    "variables/videoadstart",
-    "variables/videoadinpod",
-    "variables/videoadplayername",
-    "variables/videoadpod",
-    "variables/videochapter",
-    "variables/videochannel",
-    "variables/videoplayername",
-    "variables/videocontenttype",
-    "variables/videoepisode",
-    "variables/videomvpd",
-    "variables/videonetwork",
-    "variables/videoseason",
-    "variables/videoshow",
-    "variables/videoshowtype",
-    "variables/video"
+    "metrics/videoadstart",
+    "metrics/videoadinpod",
+    "metrics/videoadplayername",
+    "metrics/videoadpod",
+    "metrics/videochapter",
+    "metrics/videochannel",
+    "metrics/videoplayername",
+    "metrics/videocontenttype",
+    "metrics/videoepisode",
+    "metrics/videomvpd",
+    "metrics/videonetwork",
+    "metrics/videoseason",
+    "metrics/videoshow",
+    "metrics/videoshowtype",
+    "metrics/video"
   ],
   "Reserved Props": [
-    "variables/customlink",
-    "variables/exitlink",
-    "variables/downloadlink"
+    "metrics/customlink",
+    "metrics/exitlink",
+    "metrics/downloadlink"
   ],
   "Activity Map Instances": [
     "metrics/clickmaplinkbyregion",
@@ -83,5 +83,15 @@
   "Target Integration Instances": [
     "metrics/targetconversion",
     "metrics/targetimpression"
+  ],
+  "AMO Integration Instances": [
+    "metrics/amo_cid",
+    "metrics/amo_ef_id",
+    "metrics/amo_clicks",
+    "metrics/amo_conversions",
+    "metrics/amo_cost",
+    "metrics/amo_impressions",
+    "metrics/amo_position",
+    "metrics/amo_quality_score"
   ]
 }

@@ -57,9 +57,7 @@ def test_solution_member_grouped():
     c = by_id()["metrics/pageviews"]
     assert c.group == "Reserved Traffic Events"
     assert c.column == Column("metrics/pageviews", "metrics/pageviews")
-    assert by_id()["variables/listvariable1"].group == "List Variables"
-    assert by_id()["variables/campaign"].group == "Reserved eVars"
-
+    
 
 def test_unknown_standard_dropped():
     ids = by_id()
@@ -67,10 +65,10 @@ def test_unknown_standard_dropped():
     assert "variables/browser" not in ids
 
 
-def test_solution_json_has_11_groups():
+def test_solution_json_has_12_groups():
     sol = load_solution()
     assert list(sol) == SOLUTION_GROUPS
-    assert len(sol) == 11
+    assert len(sol) == 12
     assert "metrics/pageviews" in sol["Reserved Traffic Events"]
 
 
@@ -82,6 +80,36 @@ def test_order_custom_first_then_solution():
     assert groups == [
         "custom_events", "custom_evars", "custom_props",
         "Reserved Traffic Events", "Reserved eVars", "List Variables", "Reserved Props",
+        "Activity Map Instances", "AMO Integration Instances",
     ]
     nums = [c.number for c in catalog() if c.group == "custom_events"]
     assert nums == [2, 10]
+
+
+def test_instances_fallback_and_group():
+    c = by_id()["metrics/campaigninstances"]
+    assert c.group == "Reserved eVars"
+    assert c.kind == "metric"
+    assert c.column == Column("metrics/campaigninstances", "metrics/campaigninstances")
+    assert "variables/campaign" not in by_id()
+    assert by_id()["metrics/clickmaplinkinstances"].group == "Activity Map Instances"
+
+
+def test_exact_id_wins_over_instances():
+    metrics = METRICS + [{"id": "metrics/campaign", "name": "Campaign"}]
+    ids = {c.id for c in build_catalog(metrics, DIMS, load_solution())}
+    assert "metrics/campaign" in ids
+    assert "metrics/campaigninstances" not in ids
+
+
+def test_amo_member():
+    c = by_id()["metrics/amo_clicks"]
+    assert c.group == "AMO Integration Instances"
+    assert c.column == Column("metrics/amo_clicks", "metrics/amo_clicks")
+
+
+def test_list_variable_stays_exists_column():
+    c = by_id()["variables/listvariable1"]
+    assert c.group == "List Variables"
+    assert c.column == Column("variables/listvariable1", "metrics/occurrences",
+                              "variables/listvariable1")

@@ -22,6 +22,7 @@ SOLUTION_GROUPS = [
     "Reserved Props",
     "Activity Map Instances",
     "Target Integration Instances",
+    "AMO Integration Instances",
 ]
 CUSTOM_GROUPS = ["custom_events", "custom_evars", "custom_props"]
 GROUP_ORDER = CUSTOM_GROUPS + SOLUTION_GROUPS
@@ -58,6 +59,15 @@ def build_catalog(
     member_group = {cid: g for g in SOLUTION_GROUPS for cid in solution.get(g, [])}
     out: dict[str, Component] = {}
 
+    # Solution members (except List Variables) are counted as /metrics columns, like the
+    # workbook's events_X ranges: match metrics/X, else metrics/Xinstances.
+    wanted: dict[str, str] = {}
+    for cid, g in member_group.items():
+        if cid.startswith("metrics/"):
+            wanted[cid] = g
+            wanted[cid + "instances"] = g
+    exact = {m["id"] for m in metrics}
+
     for m in metrics:
         cid = m["id"]
         name = m.get("name") or cid
@@ -68,8 +78,11 @@ def build_catalog(
             name = name.removesuffix(" Instances")
             out[cid] = Component(cid, name, "metric", "custom_evars", int(mt[1]),
                                  Column(cid, cid), None)
-        elif cid in member_group:
-            out[cid] = Component(cid, name, "metric", member_group[cid], None,
+        elif cid in wanted:
+            if cid.endswith("instances") and cid.removesuffix("instances") in exact \
+                    and cid.removesuffix("instances") in wanted:
+                continue  # exact id exists; it wins over the instances fallback
+            out[cid] = Component(cid, name, "metric", wanted[cid], None,
                                  Column(cid, cid), None)
 
     for d in dimensions:
@@ -79,13 +92,8 @@ def build_catalog(
         if mt := _PROP.match(cid):
             out[cid] = Component(cid, name, "dimension", "custom_props", int(mt[1]),
                                  _exists_column(cid), allowed)
-        elif cid == "variables/page":
-            continue  # added below
         elif _LIST.match(cid):
             out[cid] = Component(cid, name, "dimension", "List Variables", None,
-                                 _exists_column(cid), allowed)
-        elif cid in member_group and cid.startswith("variables/") and "." not in cid:
-            out[cid] = Component(cid, name, "dimension", member_group[cid], None,
                                  _exists_column(cid), allowed)
 
     page = next((d for d in dimensions if d["id"] == "variables/page"), {})
