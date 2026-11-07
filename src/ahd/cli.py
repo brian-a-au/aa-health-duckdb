@@ -92,6 +92,7 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     print(f"Custom eVars: {counts['custom_evars']}")
     print(f"Custom props: {counts['custom_props']}")
     ok = True
+    untested = False
     if not any(counts.values()):
         ok = False
         print("No custom events, eVars or props are visible to this credential.")
@@ -99,14 +100,23 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
         today_in_zone(suite.get("timezoneZoneinfo") or "UTC", datetime.now(UTC))
     )
     if catalog:
-        allowed = probe_anomaly(client, args.rsid, window, catalog[0].column)
-        print(f"Anomaly detection: {'allowed' if allowed else 'not allowed'}")
-        if not allowed:
-            ok = False
+        try:
+            allowed = probe_anomaly(client, args.rsid, window, catalog[0].column)
+        except (ApiError, requests.RequestException) as e:
+            # Only the exception type: messages can carry URLs.
+            print(f"Anomaly detection: could not be tested ({type(e).__name__})")
+            untested = True
+        else:
+            print(f"Anomaly detection: {'allowed' if allowed else 'not allowed'}")
+            if not allowed:
+                ok = False
     else:
         print("Anomaly detection: not tested (no components to test with)")
     if not ok:
         print(ACCESS_FIX)
+        return 2
+    if untested:
+        print("Not every check could be run. Wait a little and run this check again.")
         return 2
     print("All checks passed.")
     return 0

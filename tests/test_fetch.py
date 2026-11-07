@@ -293,13 +293,86 @@ def test_segment_passed_everywhere(store):
                for b in fake.posted())
 
 
-def test_probe_other_error_fails_run_and_reraises(store):
-    fake = fake_for("rs1", events(1), custom_dims(),
-                    posts=[(is_anomaly_trend, ApiError(500, "down", "server_error"))])
-    with pytest.raises(ApiError):
-        run_fetch(fake, store, opts())
-    (run,) = store.list_runs()
-    assert run["status"] == "failed" and run["finished_at"] is not None
+def _probe_failure_run(store, responder):
+    fake = fake_for("rs1", events(3), custom_dims(), posts=[(is_anomaly_trend, responder)])
+    rid = run_fetch(fake, store, opts())
+    return fake, rid
+
+
+def _assert_probe_failed_and_continued(store, fake, rid):
+    rows = [r for r in issues(store, rid) if r[2] == "anomaly_probe_failed"]
+    assert len(rows) == 1
+    scope, cid, _code, msg = rows[0]
+    assert scope == "permissions" and cid is None
+    assert "anomaly detection" in msg.lower() and "http" not in msg.lower()
+    assert issue_codes(store, rid) == {"anomaly_probe_failed"}
+    later = fake.trend_bodies()[1:]
+    assert later and all(b["settings"]["includeAnomalyDetection"] is False for b in later)
+    assert values_for(store, rid, "metrics/event1") == 92
+    assert store.get_run(rid)["status"] == "partial"
+
+
+def test_probe_server_error_is_issue_and_run_continues(store):
+    fake, rid = _probe_failure_run(store, ApiError(500, "down", "server_error"))
+    _assert_probe_failed_and_continued(store, fake, rid)
+
+
+def test_probe_timeout_is_issue_and_run_continues(store):
+    import requests
+
+    def raise_timeout(body):
+        raise requests.Timeout("read timed out")
+
+    fake, rid = _probe_failure_run(store, raise_timeout)
+    _assert_probe_failed_and_continued(store, fake, rid)
+    msg, = [r[3] for r in issues(store, rid)]
+    assert "Timeout" in msg
+
+
+# ---- empty Individual results (spec section 7) -------------------------------
+
+@pytest.mark.parametrize("kind, pred, phrase", [
+    ("current", lambda b: not is_trend(b) and breakdown_dimension(b) is None
+     and date_range(b) == W.yesterday_range(), "Top 100 values for yesterday"),
+    ("historical", lambda b: not is_trend(b) and breakdown_dimension(b) is None
+     and date_range(b) == W.historical_range(), "Top 100 values for the previous 90 days"),
+    ("browser", lambda b: breakdown_dimension(b) == "variables/browsertype",
+     "Browser table"),
+    ("device", lambda b: breakdown_dimension(b) == "variables/mobiledevicetype",
+     "Device table"),
+])
+def test_empty_individual_result_is_no_rows_issue(store, kind, pred, phrase):
+    empty = {"rows": [], "totalElements": 0, "summaryData": {"totals": [0.0] * 5}}
+    fake = fake_for("rs1", events(1), custom_dims(), posts=[(pred, empty)])
+    rid = run_fetch(fake, store, opts())
+    ind = [r for r in issues(store, rid) if r[0] == "individual"]
+    assert [(r[1], r[2]) for r in ind] == [("individual", "no_rows")]
+    msg = ind[0][3]
+    assert msg.startswith(phrase + ": no rows came back.")
+    assert "product profile may hide this dimension" in msg
+    assert store.get_run(rid)["status"] == "partial"
+
+
+def test_empty_individual_trend_is_no_rows_issue(store):
+    @after_probe
+    def is_individual_trend(body):
+        return is_trend(body) and exists_dims(body) == ["variables/page"] \
+            and metric_ids(body) == ["metrics/occurrences"]
+
+    empty = {"columns": {"columnIds": ["0"], "columnErrors": []}, "rows": [],
+             "totalElements": 0}
+    # the catalog batch has 3 columns, so only the individual trend has 1 column here
+    fake = fake_for("rs1", events(1), custom_dims(), posts=[(is_individual_trend, empty)])
+    rid = run_fetch(fake, store, opts())
+    ind = [r for r in issues(store, rid) if r[0] == "individual"]
+    assert [(r[2], r[3].split(":")[0]) for r in ind] == [("no_rows", "Daily trend")]
+    assert values_for(store, rid, "individual") == 0
+
+
+def test_individual_with_rows_has_no_issue(store):
+    fake = fake_for("rs1", events(1), custom_dims())
+    rid = run_fetch(fake, store, opts())
+    assert [r for r in issues(store, rid) if r[0] == "individual"] == []
 
 
 def test_network_error_in_one_batch_continues(store):

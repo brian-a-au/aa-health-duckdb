@@ -150,3 +150,21 @@ def test_api_error_is_one_line(tmp_path, cfg, capsys):
     code = main(["check", "--config", str(cfg)], client_factory=factory)
     err = capsys.readouterr().err
     assert code == 1 and err.count("\n") == 1 and "sec-67890" not in err
+
+
+@pytest.mark.parametrize("failure", ["api500", "timeout"])
+def test_check_probe_failure_does_not_crash(tmp_path, cfg, capsys, failure):
+    import requests
+
+    def raise_timeout(body):
+        raise requests.Timeout("slow")
+
+    responder = ApiError(500, "down", None) if failure == "api500" else raise_timeout
+    fake = fake_for("rs1", events(3), custom_dims(), posts=[(is_anomaly_trend, responder)])
+    code = main(["check", "--config", str(cfg), "--rsid", "rs1"],
+                client_factory=lambda c, company_id=None: fake)
+    out = capsys.readouterr().out
+    name = "ApiError" if failure == "api500" else "Timeout"
+    assert f"Anomaly detection: could not be tested ({name})" in out
+    assert "All checks passed." not in out
+    assert code == 2

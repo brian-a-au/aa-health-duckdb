@@ -50,6 +50,30 @@ DEVICE_LABELS = ["Other", "Mobile Phone", "Tablet", "Media Player", "Television"
 INDIVIDUAL_ID = "individual"
 NETWORK_ERROR = "network_error"
 
+# Plain names for the Individual requests, used in issue messages.
+INDIVIDUAL_LABELS = {
+    "current": "Top 100 values for yesterday",
+    "historical": "Top 100 values for the previous 90 days",
+    "browser": "Browser table",
+    "device": "Device table",
+    "trend": "Daily trend",
+}
+
+
+def _no_rows_message(kind: str) -> str:
+    return (
+        f"{INDIVIDUAL_LABELS[kind]}: no rows came back. The credential's product profile "
+        "may hide this dimension, or it had no data."
+    )
+
+
+def _probe_failed_message(e: Exception) -> str:
+    # Only the exception type: messages can carry URLs; never headers.
+    return (
+        f"Anomaly detection could not be tested because the test request failed "
+        f"({type(e).__name__}). The run continued without expected values or anomaly flags."
+    )
+
 
 def _network_message(e: requests.RequestException) -> str:
     # Only the exception type: requests messages can carry URLs; never headers.
@@ -92,7 +116,10 @@ def probe_anomaly(
     column: Column,
     segment_id: str | None = None,
 ) -> bool:
-    """One trend request with anomaly detection. False only on invalid_access. No retry."""
+    """One trend request with anomaly detection. False only on invalid_access.
+
+    Any other ApiError or network error is raised; callers decide how to report it.
+    """
     body = trend_body(rsid, window.trend_range(), [column], segment_id, True)
     try:
         client.post_report(body)
@@ -152,9 +179,16 @@ def _run(
 
     columns = [c.column for c in catalog]
     anomaly = True
-    if columns and not probe_anomaly(client, opts.rsid, window, columns[0], opts.segment_id):
-        anomaly = False
-        issue("permissions", None, "anomaly_not_allowed", ANOMALY_MESSAGE)
+    if columns:
+        try:
+            allowed = probe_anomaly(client, opts.rsid, window, columns[0], opts.segment_id)
+        except (ApiError, requests.RequestException) as e:
+            anomaly = False
+            issue("permissions", None, "anomaly_probe_failed", _probe_failed_message(e))
+        else:
+            if not allowed:
+                anomaly = False
+                issue("permissions", None, "anomaly_not_allowed", ANOMALY_MESSAGE)
 
     rsid, seg = opts.rsid, opts.segment_id
     individual = Column(INDIVIDUAL_ID, opts.metric, exists_dimension=opts.dimension)
@@ -202,26 +236,31 @@ def _run(
                 resp = fut.result()
             except ApiError as e:
                 issue("individual", INDIVIDUAL_ID, e.error_code or f"http_{e.status}",
-                      f"{kind}: {e.message}")
+                      f"{INDIVIDUAL_LABELS[kind]}: {e.message}")
                 continue
             except requests.RequestException as e:
-                issue("individual", INDIVIDUAL_ID, NETWORK_ERROR, f"{kind}: {_network_message(e)}")
+                issue("individual", INDIVIDUAL_ID, NETWORK_ERROR,
+                      f"{INDIVIDUAL_LABELS[kind]}: {_network_message(e)}")
                 continue
             if kind in ("current", "historical"):
                 rows, _total = parse_ranked(resp)
                 store.add_top_items(run_id, kind, rows)
-            elif kind == "browser":
+                empty = not rows
+            elif kind in ("browser", "device"):
                 rows, totals = parse_breakdown(resp)
-                store.add_breakdown(run_id, "browser", BROWSER_LABELS, rows, totals)
-            elif kind == "device":
-                rows, totals = parse_breakdown(resp)
-                store.add_breakdown(run_id, "device", DEVICE_LABELS, rows, totals)
+                labels = BROWSER_LABELS if kind == "browser" else DEVICE_LABELS
+                store.add_breakdown(run_id, kind, labels, rows, totals)
+                empty = not rows
             else:
                 values, errors = parse_trend(resp, [individual])
                 store.add_daily_values(run_id, values)
                 value_count += len(values)
                 for err in errors:
-                    issue("individual", INDIVIDUAL_ID, err.error_code, f"trend: {err.message}")
+                    issue("individual", INDIVIDUAL_ID, err.error_code, f"{INDIVIDUAL_LABELS[kind]}: {err.message}")
+                empty = not values and not errors
+            if empty:
+                # Spec section 7: zero rows may be a permission gap, not "no data".
+                issue("individual", INDIVIDUAL_ID, "no_rows", _no_rows_message(kind))
 
     if value_count == 0:
         return "failed"
