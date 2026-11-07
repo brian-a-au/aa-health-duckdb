@@ -81,6 +81,16 @@ Defaults: the database is `./data/ahd.duckdb`, the report folder is `./reports/`
 - An arrow shows when the change is more than 20 percent. When the baseline is zero, there is no percent change and no arrow.
 - A column the credential cannot read is listed as a problem. It is never shown as zero.
 
+## Not yet checked against live data
+
+The numbers have not yet been compared with live data from a credential that has full access. The test credential could not see the custom components or use anomaly detection, so these parts are still unverified:
+
+- Asking for anomaly detection in requests that hold many columns at once. The Excel version asked for 3 columns per request. This tool asks for 20 by default.
+- The item IDs that pick the browser groups (Google, Microsoft, Apple, Mozilla, Other) and the device types (Other, Mobile Phone, Tablet, Media Player, Television).
+- The component IDs for the Activity Map, Target and AMO groups.
+
+Until these checks are done, compare a run with the same numbers in Analysis Workspace before you rely on it.
+
 ## Known limits
 
 - It covers one report suite per run.
