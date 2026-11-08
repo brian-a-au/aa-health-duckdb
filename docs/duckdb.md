@@ -271,16 +271,16 @@ FROM routed GROUP BY ALL ORDER BY alerts DESC;
 
 `read_csv` reads the file directly, with no import step. `QUALIFY` keeps the first matching owner for each alert. `list(...)[1:3]` gathers the three worst drops into one cell.
 
-### Send one weekly digest for every suite
+### Send one digest for every suite
 
-One row per report suite, from the latest run of each:
+One row per report suite, with yesterday's alerts from the latest run of each. Each alert counts once, by the same rules as the `alerts` macro: an Adobe flag first, then a value of 0, then a large drop.
 
 ```sql
 SELECT r.rsid_name AS suite, r.today - 1 AS day,
-    count(*) FILTER (WHERE d.anomaly IS NOT NULL) AS unusual,
-    count(*) FILTER (WHERE d.zero AND NOT d.unused) AS dropped_to_zero,
+    count(*) FILTER (WHERE d.anomaly IS NOT NULL AND NOT (d.zero AND d.unused)) AS unusual,
+    count(*) FILTER (WHERE d.zero AND NOT d.unused AND d.anomaly IS NULL) AS dropped_to_zero,
     count(*) FILTER (WHERE d.usual >= 10 AND d.pct_vs_usual < -0.30
-                     AND d.anomaly IS NULL) AS large_drops,
+                     AND NOT d.zero AND d.anomaly IS NULL) AS large_drops,
     count(*) FILTER (WHERE d.unused) AS never_collected,
     (SELECT count(*) FROM issues i WHERE i.run_id = r.run_id) AS problems
 FROM latest_runs r JOIN component_days d ON d.run_id = r.run_id AND d.is_yesterday
@@ -406,12 +406,13 @@ GROUP BY "group" ORDER BY "group";
 
 ### A history longer than 92 days
 
-Each run holds 92 days. Runs made on different days overlap, so together they cover more. This query keeps each day once, from the newest run that has it:
+Each run holds 92 days. Runs made on different days overlap, so together they cover more. This query keeps each day once, from the newest finished run of one suite that has it. It leaves out runs with a segment, because their values are smaller:
 
 ```sql
 SELECT component_id, count(*) AS days, min(day) AS first_day, max(day) AS last_day
 FROM (
-    FROM component_days
+    FROM component_days JOIN runs USING (run_id)
+    WHERE rsid = 'my_suite' AND segment_id IS NULL AND status IN ('ok', 'partial')
     QUALIFY row_number() OVER (PARTITION BY component_id, day ORDER BY run_id DESC) = 1
 )
 WHERE component_id = 'metrics/visits'
