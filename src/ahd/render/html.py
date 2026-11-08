@@ -63,6 +63,12 @@ STATUS_LABELS = {
     "running": "Not finished",
 }
 
+STATUS_BADGES = {
+    "ok": ("good", "✓"),
+    "partial": ("flag", "!"),
+    "failed": ("zero", "✕"),
+}
+
 RANGES = [(n * 100 + 1, n * 100 + 100) for n in range(10)]
 
 _env = Environment(
@@ -135,6 +141,8 @@ def render_html(view: dict[str, Any]) -> str:
         run=run,
         status_label=STATUS_LABELS.get(status, status),
         status=status,
+        status_kind=STATUS_BADGES.get(status, ("plain", "•"))[0],
+        status_icon=STATUS_BADGES.get(status, ("plain", "•"))[1],
         csp=Markup(CSP),
         individual_label=individual_label(run),
         breakdown_notes=BREAKDOWN_NOTES,

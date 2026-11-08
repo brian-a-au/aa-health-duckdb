@@ -309,3 +309,34 @@ def test_breakdown_notes_under_tables():
     for kind in ("browser", "device"):
         note = BREAKDOWN_NOTES[kind]
         assert html.index(f'<div id="{kind}"></div>') < html.index(note)
+
+
+def test_status_badge_has_icon_and_label():
+    html = render_html(sample_view())  # sample run is partial
+    assert re.search(r'<span class="badge badge-flag"><span class="icon" aria-hidden="true">!</span>'
+                     r'Complete, with some gaps', html)
+    v = sample_view()
+    v["run"]["status"] = "ok"
+    html = render_html(v)
+    assert '<span class="badge badge-good"><span class="icon" aria-hidden="true">✓</span>Complete' in html
+
+
+def test_page_has_tiles_flag_filter_and_sortable_tables():
+    html = render_html(sample_view())
+    assert '<section class="tiles" id="tiles"' in html
+    assert html.index('id="tiles"') < html.index('id="status"')
+    assert '<input type="checkbox" id="flagged-only">' in html
+    assert "aria-sort" in html and "Usual order" in html
+
+
+def test_alerts_carry_direction_for_the_page():
+    data = _data_json(render_html(sample_view()))
+    for a in data["alerts"]:
+        assert "anomaly" in a and "zero" in a
+
+
+def test_flag_colors_are_not_good_and_bad():
+    # Both directions share one warning color; red is kept for zero data.
+    css = render_html(sample_view())
+    assert ".mark-low, .mark-high { fill: var(--flag)" in css
+    assert "--high:" not in css and "--low:" not in css

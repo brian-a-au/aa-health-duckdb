@@ -19,9 +19,11 @@
     <div><dt>Segment</dt><dd>{% if run.segment_id %}{{ run.segment_id }}{% else %}None (all visits){% endif %}</dd></div>
     <div><dt>Run date</dt><dd>{{ run.today }} <span class="muted">(report suite time zone {{ run.timezone }})</span></dd></div>
     <div><dt>Run time</dt><dd>{% if run.started_at %}{{ run.started_at[:16] | replace("T", " ") }} <span class="muted">(time on the computer that ran it)</span>{% else %}Unknown{% endif %}</dd></div>
-    <div><dt>Status</dt><dd><span class="status status-{{ status }}">{{ status_label }}</span></dd></div>
+    <div><dt>Status</dt><dd><span class="badge badge-{{ status_kind }}"><span class="icon" aria-hidden="true">{{ status_icon }}</span>{{ status_label }}</span></dd></div>
   </dl>
 </header>
+
+<section class="tiles" id="tiles" aria-label="Yesterday at a glance"></section>
 
 <section class="status-section" id="status" aria-labelledby="status-title">
   <h2 id="status-title">Status</h2>
@@ -50,7 +52,7 @@
     {% endfor %}
   </ul>
   {% else %}
-  <p>No problems were found in this run.</p>
+  <p class="status-line"><span class="badge badge-good"><span class="icon" aria-hidden="true">✓</span>No problems</span>No problems were found in this run.</p>
   {% endif %}
 </section>
 
@@ -80,6 +82,7 @@
         {% endfor %}
       </select>
     </label>
+    <label class="check" id="flagged-label"><input type="checkbox" id="flagged-only"> Show only flagged</label>
   </div>
   <p class="note" id="week-note" hidden>{{ week_note }}</p>
   <p class="hint" id="range-hint">The number filter applies to custom events, eVars, and props.</p>
@@ -105,7 +108,7 @@
     <div class="chart" id="individual-chart"></div>
   </figure>
   <h2>Top 100 values yesterday</h2>
-  <p class="hint">Movement compares the rank with the previous 90 days. A positive number means the value moved up. A dash means no change. An asterisk means the value is new to the top 100.</p>
+  <p class="hint">Movement compares the rank with the previous 90 days. For example, "up 3" means the value is 3 places higher than before. A dash means no change. "* new" means the value is new to the top 100.</p>
   <div id="top100"></div>
   <h2>Browser analysis</h2>
   <p class="hint">Top 10 values yesterday for each major browser group.</p>
