@@ -421,11 +421,25 @@ def add_pair(
         store.add_issue(run_id, scope, component_id, code, message)
 
     label = _pair_label(dimension_name or dimension, metric_name or metric)
-    with _pool(5) as pool:
-        trend_col, futures = _submit_pair(
-            pool, client, run["rsid"], run["segment_id"], window, anomaly, dimension, metric, pair
-        )
-        _store_pair(store, run_id, pair, trend_col, futures, label, issue, progress)
+    try:
+        with _pool(5) as pool:
+            trend_col, futures = _submit_pair(
+                pool,
+                client,
+                run["rsid"],
+                run["segment_id"],
+                window,
+                anomaly,
+                dimension,
+                metric,
+                pair,
+            )
+            _store_pair(store, run_id, pair, trend_col, futures, label, issue, progress)
+    except BaseException:
+        # A pair that stopped part way, e.g. on Ctrl-C or a failed sign-in, would block a retry
+        # of the same dimension and metric. Remove it, so the run looks as it did before.
+        store.delete_pair(run_id, pair, pair_series_id(pair))
+        raise
     if problems and run["status"] == "ok":
         store.set_status(run_id, "partial")
     return pair, problems

@@ -585,6 +585,30 @@ def test_add_pair_refuses_duplicates_and_running_runs(store):
         add_pair(fake, store, rid, "variables/evar1", "metrics/orders")
 
 
+def test_add_pair_that_stops_part_way_can_be_tried_again(store):
+    from ahd.api.auth import SignInError
+    from ahd.fetch import add_pair
+
+    fake = fake_for("rs1", events(1), custom_dims())
+    rid = run_fetch(fake, store, opts())
+
+    def fail_after_some(body):
+        # The browser table fails after the top 100 tables were stored.
+        if breakdown_dimension(body):
+            raise SignInError("sign-in renewal failed")
+        return trend_response(body) if is_trend(body) else {"rows": [{"value": "x", "data": [1]}]}
+
+    broken = fake_for("rs1", events(1), custom_dims(), default_post=fail_after_some)
+    with pytest.raises(SignInError):
+        add_pair(broken, store, rid, "variables/evar1", "metrics/orders")
+    assert [p["pair"] for p in store.list_pairs(rid)] == [1]
+    for table in ("top_items", "breakdowns", "breakdown_totals"):
+        count = store.con.execute(f"select count(*) from {table} where pair = 2").fetchone()[0]
+        assert count == 0, table
+    assert values_for(store, rid, "individual/2") == 0
+    assert add_pair(fake, store, rid, "variables/evar1", "metrics/orders") == (2, 0)
+
+
 def test_ctrl_c_drops_the_requests_that_have_not_started(store):
     import time
 

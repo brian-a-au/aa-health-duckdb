@@ -304,6 +304,28 @@ class Store:
         # Write the change to the file now, so the space can be reused.
         self.con.execute("CHECKPOINT")
 
+    def delete_pair(self, run_id: int, pair: int, series_id: str) -> None:
+        """Remove one pair and every row stored for it, all or nothing.
+
+        Used only when ahd individual stops part way, so that the same pair can be tried again.
+        series_id is the component_id of the pair's daily trend, e.g. "individual/2".
+        """
+        self.con.execute("BEGIN TRANSACTION")
+        try:
+            for table in ("pairs", "top_items", "breakdowns", "breakdown_totals"):
+                self.con.execute(
+                    f"DELETE FROM {table} WHERE run_id = ? AND pair = ?", [run_id, pair]
+                )
+            for table in ("daily_values", "issues"):
+                self.con.execute(
+                    f"DELETE FROM {table} WHERE run_id = ? AND component_id = ?",
+                    [run_id, series_id],
+                )
+        except BaseException:
+            self.con.execute("ROLLBACK")
+            raise
+        self.con.execute("COMMIT")
+
     def component_counts(self, run_id: int, groups: list[str]) -> dict[str, int]:
         """How many components of each group the run stored."""
         rows = self.con.execute(
