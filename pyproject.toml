@@ -3,6 +3,8 @@ name = "ahd"
 version = "0.1.0"
 description = "Analytics Health Dashboard rebuilt as Python, DuckDB and a single HTML file"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "aanalytics2>=0.5.6",
