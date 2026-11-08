@@ -235,7 +235,9 @@ def test_newer_database_is_one_line_error(tmp_path, cfg, capsys):
     con.close()
     code = main(["runs", "--db", str(db)])
     err = capsys.readouterr().err
-    assert code == 1 and err.count("\n") == 1 and "newer" in err and "Traceback" not in err
+    assert (
+        code == 1 and err.count("\n") == 1 and "different version" in err and "Traceback" not in err
+    )
 
 
 # ---- profiles ----------------------------------------------------------------

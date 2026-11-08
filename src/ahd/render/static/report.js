@@ -637,27 +637,19 @@
     }
   }
 
-  // The type filter in the Dimension card sorts dimensions by their group.
-  // The type filter in the Metric card uses Adobe's type for each metric.
+  // The type filter in the Dimension card sorts dimensions into eVars, props and other.
+  // The type filter in the Metric card lists the metric groups found in this run.
   var EVAR_GROUPS = ["custom_evars", "Reserved eVars"];
   var PROP_GROUPS = ["custom_props", "Reserved Props"];
   function typeOf(r) {
-    if (r.kind === "metric") {
-      return ["int", "decimal", "currency"].indexOf(r.metric_type) >= 0 ? r.metric_type : "other";
-    }
+    if (r.kind === "metric") return r.group;
     if (EVAR_GROUPS.indexOf(r.group) >= 0) return "evars";
     if (PROP_GROUPS.indexOf(r.group) >= 0) return "props";
     return "other";
   }
   var TYPE_EMPTY = {
-    dimension: {
-      evars: "No eVar data was read.", props: "No prop data was read.",
-      other: "No other dimension data was read."
-    },
-    metric: {
-      int: "No whole number metric data was read.", decimal: "No decimal metric data was read.",
-      currency: "No currency metric data was read."
-    }
+    evars: "No eVar data was read.", props: "No prop data was read.",
+    other: "No other dimension data was read."
   };
 
   function fillPicker(select, kind, chartId, typeSelect) {
@@ -666,6 +658,15 @@
     });
     var rows = all;
     var host = byId(chartId);
+    if (typeSelect && kind === "metric") {
+      // One choice per metric group that has data, in report order.
+      var seen = {};
+      all.forEach(function (r) {
+        if (seen[r.group]) return;
+        seen[r.group] = true;
+        typeSelect.appendChild(el("option", { value: r.group }, CUSTOM_TITLES[r.group] || r.group));
+      });
+    }
 
     function fill() {
       var keep = rows[select.selectedIndex];
@@ -690,7 +691,7 @@
       if (!r) {
         clear(host);
         var type = typeSelect ? typeSelect.value : "";
-        host.appendChild(el("p", { "class": "chart-empty" }, TYPE_EMPTY[kind][type] ||
+        host.appendChild(el("p", { "class": "chart-empty" }, (kind === "dimension" && TYPE_EMPTY[type]) ||
           (kind === "metric" ? "No metric data was read." : "No dimension data was read.")));
         return;
       }

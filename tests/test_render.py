@@ -437,13 +437,10 @@ def test_component_drop_warning_is_shown_and_escaped():
 def test_metric_type_filter_and_currency_data():
     v = sample_view()
     html = render_html(v)
-    assert '<select id="metric-type">' in html
-    for value, label in [
-        ("int", "Whole numbers"),
-        ("decimal", "Decimals"),
-        ("currency", "Currency"),
-    ]:
-        assert f'<option value="{value}">{label}</option>' in html
+    # The page adds one choice per metric group, so the template holds only "All".
+    start = html.index('<select id="metric-type">')
+    select = html[start : html.index("</select>", start)]
+    assert select.count("<option") == 1 and '<option value="">All</option>' in select
     data = _data_json(html)
     assert "currency" in data["run"]
     assert all("metric_type" in r for r in data["views"]["week"])
