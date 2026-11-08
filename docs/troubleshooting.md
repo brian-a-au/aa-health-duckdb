@@ -62,6 +62,10 @@ The tool already waits and tries again after a rate limit, a server error or Ado
 
 **Copy problems** in the status section copies the list for an email or a ticket.
 
+## Time zones
+
+- **"which this computer does not know"**: the time zone data is missing, e.g., on Windows after an incomplete install. Run `uv sync` to install it. To run anyway, give the date with `--date YYYY-MM-DD`.
+
 ## Profiles and config files
 
 - **"Profile 'x' was not found"**: the file `~/.aa/orgs/x/config.json` does not exist. Check the name, or create the profile with `aa_auto_sdr --profile-add`.

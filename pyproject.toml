@@ -10,6 +10,8 @@ dependencies = [
     "requests",
     "duckdb>=2.0",
     "jinja2",
+    # Windows has no time zone files of its own. zoneinfo reads them from this package.
+    "tzdata",
 ]
 
 [project.scripts]

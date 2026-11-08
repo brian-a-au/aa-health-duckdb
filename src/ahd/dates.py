@@ -2,7 +2,9 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from ahd.config import ConfigError
 
 
 def _range(start: date, end_exclusive: date) -> str:
@@ -11,7 +13,16 @@ def _range(start: date, end_exclusive: date) -> str:
 
 def today_in_zone(zoneinfo_name: str, now_utc: datetime) -> date:
     """Today's date in the report suite's time zone."""
-    return now_utc.astimezone(ZoneInfo(zoneinfo_name)).date()
+    try:
+        zone = ZoneInfo(zoneinfo_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        # ValueError: a name that is not a valid key, e.g. an absolute path.
+        raise ConfigError(
+            f"The report suite uses the time zone {zoneinfo_name!r}, which this computer does "
+            "not know. Run uv sync to install the time zone data, then try again. Or give the "
+            "date with --date YYYY-MM-DD."
+        ) from None
+    return now_utc.astimezone(zone).date()
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,9 @@
+import importlib.util
 from datetime import UTC, date, datetime
 
+import pytest
+
+from ahd.config import ConfigError
 from ahd.dates import RunWindow, today_in_zone
 
 
@@ -21,3 +25,14 @@ def test_today_uses_suite_zone():
         2026, 11, 7
     )
     assert today_in_zone("US/Pacific", datetime(2026, 11, 8, 2, 0, tzinfo=UTC)) == date(2026, 11, 7)
+
+
+@pytest.mark.parametrize("name", ["Not/AZone", "/etc/passwd"])
+def test_unknown_zone_is_a_plain_error(name):
+    with pytest.raises(ConfigError, match="time zone"):
+        today_in_zone(name, datetime(2026, 11, 7, tzinfo=UTC))
+
+
+def test_time_zone_data_is_installed():
+    # Windows has no time zone files, so the tzdata package must be a dependency.
+    assert importlib.util.find_spec("tzdata") is not None
