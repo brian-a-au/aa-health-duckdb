@@ -148,7 +148,14 @@ def make_raising(script):
     return c, session, sleeps
 
 
-@pytest.mark.parametrize("exc", [requests.ConnectionError("reset"), requests.Timeout("slow")])
+@pytest.mark.parametrize(
+    "exc",
+    [
+        requests.ConnectionError("reset"),
+        requests.Timeout("slow"),
+        requests.exceptions.ChunkedEncodingError("Connection broken: IncompleteRead"),
+    ],
+)
 def test_network_errors_retried_then_succeed(exc):
     c, s, sleeps = make_raising([exc, exc, (200, {"ok": 1}, {})])
     assert c.post_report({}) == {"ok": 1}

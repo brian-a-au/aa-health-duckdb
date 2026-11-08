@@ -23,6 +23,13 @@ TIMEOUT = 120
 # Adobe's "temporarily unavailable" code. It comes with HTTP 403 but clears on a retry.
 TEMPORARY_403 = "403025"
 NOT_JSON = "Adobe sent an answer that could not be read as JSON."
+# Network errors that are worth another try. ChunkedEncodingError means the connection
+# dropped while the answer was being read.
+RETRIED_ERRORS = (
+    requests.ConnectionError,
+    requests.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+)
 
 
 class ApiError(Exception):
@@ -111,7 +118,7 @@ class AdobeClient:
                 resp = self._session.request(
                     method, url, headers=header, params=params, json=json, timeout=TIMEOUT
                 )
-            except (requests.ConnectionError, requests.Timeout) as e:
+            except RETRIED_ERRORS as e:
                 if attempt >= self.max_retries:
                     raise
                 attempt += 1
