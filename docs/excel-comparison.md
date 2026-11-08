@@ -26,6 +26,26 @@ aa-health-duckdb is an unofficial alternative to Adobe's Excel workbook ["Analyt
 - **SQL on every run, suite and organization**, with recipes for alert emails, owner routing and audits. See the [DuckDB guide](duckdb.md).
 - **Any system.** The report opens in any browser, offline. The workbook needs Excel on Windows.
 
+## Performance
+
+The workbook was not timed for this page. This section gives the times of the tool only.
+
+The tool was timed on 2026-11-08, on a demo report suite with 410 components. Each run used a date that no earlier run had used, so Adobe had no saved answers to reuse. Each setting ran twice.
+
+| `--workers` | `--batch-size` | Faster run | Slower run |
+|---|---|---|---|
+| 2 | 20 | 2 min 53 s | 3 min 21 s |
+| 4 (default) | 20 | 1 min 43 s | 2 min 15 s |
+| 8 | 20 | 1 min 0 s | 1 min 9 s |
+| 4 | 10 | 1 min 38 s | 2 min 1 s |
+| 4 | 40 | 1 min 42 s | 1 min 55 s |
+
+- Nearly all of a run is waiting for Adobe to answer the report requests. The tool's own work after the last answer takes less than a second.
+- `--workers` sets how many requests run at the same time. More workers made a run faster. With 8 workers, each request took about as long as with 4.
+- `--batch-size` sets how many components one request asks for. It made little difference, because Adobe takes longer to answer a larger request.
+- Adobe sent no rate limit errors in these runs.
+- A second run for the same date can be much faster, e.g., 32 seconds instead of 112, probably because Adobe reuses its earlier answers.
+
 ## What it leaves out, on purpose
 
 - **The version check on open.** It is not needed for a private tool.
