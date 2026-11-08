@@ -192,20 +192,22 @@ SELECT alert, name, round(usual) AS usual, value, round(pct_vs_usual * 100) AS p
 
 ### Send an alert email every morning
 
-[`examples/send_alerts.py`](examples/send_alerts.py) emails the latest alerts for one report suite, with an HTML table and a plain text part. It sends nothing when there are no alerts. That way an empty inbox means a healthy suite.
+[`examples/send_alerts.py`](examples/send_alerts.py) emails the latest alerts for one or more report suites, with an HTML table and a plain text part. The email has one section for each suite that has alerts. It sends nothing when no suite has alerts. That way an empty inbox means healthy suites.
 
 ```
 uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
+uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite other_suite
+uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb --all
 ```
 
-It reads the latest finished run without a segment. Add `--segment ID` for the latest run with that segment. A third argument sets the large drop percent as a share, e.g., `0.20` for 20 percent. The default is `0.30`.
+It reads the latest finished run of each suite without a segment. `--all` uses every suite that has a finished run in the file. Add `--segment ID` for the latest runs with that segment. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`.
 
 Without `SMTP_HOST`, it writes `alerts.eml` in the current folder, which you can open and check first. To send, set `SMTP_HOST`, `MAIL_FROM` and `MAIL_TO`. Set `SMTP_PORT` when the server does not use 587. Set `SMTP_USER` and `SMTP_PASSWORD` when the server needs a login.
 
 It exits with these codes:
 
 - 0 when it sent or wrote a message
-- 1 when something is wrong, e.g., the file holds no finished run of the suite
+- 1 when something is wrong, e.g., the file holds no finished run of a suite. The alerts of the other suites are still sent.
 - 2 when there was nothing to send
 
 To run it every morning, add a run and the email to a schedule, e.g., with `crontab -e` on macOS or Linux:

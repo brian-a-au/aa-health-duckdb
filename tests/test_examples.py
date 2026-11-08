@@ -30,8 +30,8 @@ def _db(tmp_path, yesterday_value, segments=(None,)):
     return db
 
 
-def _add_run(s, yesterday_value, segment):
-    rid = s.create_run("rs1", "Suite", segment, TODAY, "UTC", "0.1")
+def _add_run(s, yesterday_value, segment, rsid="rs1", name="Suite"):
+    rid = s.create_run(rsid, name, segment, TODAY, "UTC", "0.1")
     cid = "metrics/event1"
     s.add_components(
         rid, [Component(cid, "Big <event>", "metric", "custom_events", 1, Column(cid, cid), None)]
@@ -97,7 +97,7 @@ def test_send_alerts_uses_smtp_when_configured(tmp_path, monkeypatch):
         "MAIL_TO": "team@example.com",
     }.items():
         monkeypatch.setenv(k, v)
-    assert mod.main([str(_db(tmp_path, 1.0)), "rs1", "0.5"]) == 0
+    assert mod.main([str(_db(tmp_path, 1.0)), "rs1", "--threshold", "0.5"]) == 0
     assert sent[0] == ("connect", "smtp.example.com", 587)
     assert sent[-1][0:2] == ("send", "team@example.com")
     assert ("login", "me") in sent
@@ -128,13 +128,75 @@ def test_send_alerts_unknown_suite_is_an_error_not_a_quiet_day(tmp_path, capsys)
     assert "holds no finished run of rs_typo" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("argv", [["db", "rs1", "30"], ["db", "rs1", "zero"], ["db"], []])
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["db", "rs1", "--threshold", "30"],
+        ["db", "rs1", "--threshold", "zero"],
+        ["db"],
+        ["db", "rs1", "--all"],
+        [],
+    ],
+)
 def test_send_alerts_bad_arguments_print_usage(argv, capsys):
     mod = _load("send_alerts")
     with pytest.raises(SystemExit) as e:
         mod.main(argv)
     assert e.value.code == 2
     assert "usage:" in capsys.readouterr().err
+
+
+def _suites_db(tmp_path, values):
+    """One finished run for each suite. values maps rsid to yesterday's value."""
+    db = tmp_path / "ahd.duckdb"
+    s = Store.open(db)
+    for rsid, value in values.items():
+        _add_run(s, value, None, rsid=rsid, name=f"Suite {rsid}")
+    s.con.close()
+    return str(db)
+
+
+def test_send_alerts_puts_several_suites_in_one_email(tmp_path, monkeypatch):
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    db = _suites_db(tmp_path, {"rs1": 5_000_000.0, "rs2": 1.0})
+    assert mod.main([db, "rs1", "rs2"]) == 0
+    eml = (tmp_path / "alerts.eml").read_text(encoding="utf-8")
+    assert "Subject: 2 Analytics Health alerts for 2 report suites" in eml
+    assert "Suite rs1 (rs1), 2026-11-06: 1 alerts" in eml
+    assert "Suite rs2 (rs2), 2026-11-06: 1 alerts" in eml
+
+
+def test_send_alerts_all_uses_every_suite_with_a_finished_run(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    db = _suites_db(tmp_path, {"rs1": 5_000_000.0, "rs2": 24_000_000.0, "rs3": 1.0})
+    assert mod.main([db, "--all"]) == 0
+    out = capsys.readouterr().out
+    assert "No alerts for rs2." in out and "Wrote alerts.eml with 2 alerts" in out
+    eml = (tmp_path / "alerts.eml").read_text(encoding="utf-8")
+    assert "(rs1)" in eml and "(rs3)" in eml and "(rs2)" not in eml
+
+
+def test_send_alerts_all_with_no_runs_is_an_error(tmp_path, capsys):
+    mod = _load("send_alerts")
+    db = str(_db(tmp_path, 5_000_000.0))
+    assert mod.main([db, "--all", "--segment", "s300_none"]) == 1
+    assert "holds no finished run with the segment s300_none" in capsys.readouterr().err
+
+
+def test_send_alerts_sends_the_others_when_one_suite_is_missing(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    db = _suites_db(tmp_path, {"rs1": 5_000_000.0})
+    assert mod.main([db, "rs1", "rs_typo"]) == 1
+    captured = capsys.readouterr()
+    assert "holds no finished run of rs_typo" in captured.err
+    eml = (tmp_path / "alerts.eml").read_text(encoding="utf-8")
+    assert "Subject: 1 Analytics Health alerts for rs1 on 2026-11-06" in eml
 
 
 def test_send_alerts_missing_or_locked_database(tmp_path, capsys):
