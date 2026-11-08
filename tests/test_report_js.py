@@ -337,3 +337,330 @@ def test_ahd_chrome_chooses_the_program(monkeypatch, tmp_path):
     monkeypatch.setenv("AHD_CHROME", str(tmp_path / "missing"))
     with pytest.raises(pytest.fail.Exception, match="no file there"):
         module.find_chrome()
+
+
+@pytest.fixture(scope="module")
+def with_problem(tmp_path_factory):
+    """A run with one problem in its status section, for the Copy problems button."""
+    store = Store.open(tmp_path_factory.mktemp("problem") / "p.duckdb")
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
+    store.add_pair(rid, "variables/page", "metrics/occurrences")
+    cid = "metrics/event1"
+    store.add_components(
+        rid, [Component(cid, "Orders <b>", "metric", "custom_events", 1, Column(cid, cid), True)]
+    )
+    store.add_daily_values(rid, _series(cid, 10.0, 10.0))
+    store.add_issue(rid, "component", "metrics/event2", "unauthorized_metric", "Event 2 is hidden")
+    store.finish_run(rid, "partial")
+    yield store, rid
+    store.con.close()
+
+
+def _number(text):
+    """A number from a table cell, e.g., "2,716" or "▼ -63.1%". None for an empty cell."""
+    found = re.search(r"-?[\d,]+(\.\d+)?", text.replace("−", "-"))
+    return float(found.group(0).replace(",", "")) if found else None
+
+
+def _natural(text):
+    return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", text.casefold())]
+
+
+# Clicks a heading of the first components table three times, then clicks "Usual order".
+SORT_PROBE = """
+var table = document.querySelector("#panel-components table");
+function snap() {
+  var note = table.closest(".table-wrap").nextElementSibling;
+  return {
+    cells: [].map.call(table.tBodies[0].rows, function (r) {
+      return [].map.call(r.cells, function (c) { return c.textContent; });
+    }),
+    sort: [].map.call(table.tHead.rows[0].cells, function (th) { return th.getAttribute("aria-sort"); }),
+    note: note.hidden ? null : note.firstChild.textContent
+  };
+}
+var heads = [].map.call(table.tHead.rows[0].cells, function (th) { return th.textContent.slice(0, -1); });
+var out = { heads: heads, label: table.getAttribute("aria-label"), runs: {} };
+COLUMNS.forEach(function (col) {
+  var button = table.tHead.rows[0].cells[col].querySelector("button");
+  var steps = [snap()];
+  for (var i = 0; i < 3; i++) { button.click(); steps.push(snap()); }
+  button.click();
+  table.closest(".table-wrap").nextElementSibling.querySelector("button").click();
+  steps.push(snap());
+  out.runs[col] = steps;
+});
+return out;
+"""
+
+
+def _sort_run(chrome, store_rid, folder, columns):
+    page = render_html(build_view(*store_rid))
+    probe = SORT_PROBE.replace("COLUMNS", json.dumps(columns))
+    return run_probe(chrome, page, probe, folder)
+
+
+def test_a_number_column_sorts_largest_first_then_smallest_then_back(chrome, showcase, tmp_path):
+    got = _sort_run(chrome, showcase, tmp_path, [2])
+    assert got["heads"][2] == "Total for the day" and got["label"]
+    usual, first, second, third, reset = got["runs"]["2"]
+    values = [[_number(r[2]) for r in step["cells"]] for step in (first, second)]
+    assert values[0] == sorted(values[0], reverse=True)
+    assert values[1] == sorted(values[1])
+    assert first["sort"][2] == "descending" and second["sort"][2] == "ascending"
+    assert first["note"] == "Sorted by Total for the day, largest first."
+    assert second["note"] == "Sorted by Total for the day, smallest first."
+    assert third["cells"] == usual["cells"] and third["sort"][2] == "none" and third["note"] is None
+    assert reset["cells"] == usual["cells"] and reset["note"] is None
+
+
+def test_a_text_column_sorts_a_to_z_then_z_to_a(chrome, showcase, tmp_path):
+    got = _sort_run(chrome, showcase, tmp_path, [1])
+    _usual, first, second, _third, _reset = got["runs"]["1"]
+    names = [[r[1] for r in step["cells"]] for step in (first, second)]
+    assert names[0] == sorted(names[0], key=_natural)
+    assert names[1] == list(reversed(names[0]))
+    assert first["sort"][1] == "ascending" and first["note"] == "Sorted by Name, A to Z."
+
+
+def test_empty_cells_stay_last_in_both_directions(chrome, edges, tmp_path):
+    got = _sort_run(chrome, edges, tmp_path, [4])
+    assert got["heads"][4] == "Change from usual"
+    for step in got["runs"]["4"][1:3]:
+        values = [_number(r[4]) for r in step["cells"]]
+        filled = [v for v in values if v is not None]
+        assert None in values and filled
+        assert values == filled + [None] * (len(values) - len(filled))
+
+
+# Reads the metric chart, moves its readout with the keyboard, and picks another metric.
+CHART_PROBE = """
+function chart(id) {
+  var host = document.getElementById(id);
+  var svg = host.querySelector("svg");
+  if (!svg) return { empty: host.textContent };
+  return {
+    paths: [].map.call(host.querySelectorAll("path"), function (p) { return p.getAttribute("class"); }),
+    readout: host.querySelector(".chart-readout").textContent,
+    legend: [].map.call(host.querySelectorAll(".legend li"), function (li) { return li.textContent; }),
+    cross: svg.querySelector(".cross").getAttribute("visibility"),
+    focusable: svg.getAttribute("tabindex")
+  };
+}
+var svg = document.querySelector("#metric-chart svg");
+var out = { first: chart("metric-chart"), pick: document.getElementById("metric-pick").value };
+function key(name) { svg.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true })); }
+key("ArrowLeft");
+out.left = chart("metric-chart");
+key("ArrowRight");
+key("ArrowRight");
+out.right = chart("metric-chart");
+var pick = document.getElementById("metric-pick");
+pick.value = PICK;
+pick.dispatchEvent(new Event("change"));
+out.picked = chart("metric-chart");
+out.dimension = chart("dimension-chart");
+return out;
+"""
+
+
+def _chart_run(chrome, store_rid, folder, pick):
+    page = render_html(build_view(*store_rid))
+    return run_probe(chrome, page, CHART_PROBE.replace("PICK", json.dumps(pick)), folder)
+
+
+def test_the_chart_readout_follows_the_keyboard(chrome, showcase, tmp_path):
+    view = build_view(*showcase)
+    got = _chart_run(chrome, showcase, tmp_path, "metrics/event2")
+    first = got["first"]
+    assert first["focusable"] == "0" and "actual" in first["paths"] and first["cross"] == "hidden"
+    last = view["series"][got["pick"]][-1]
+    assert first["readout"].startswith(f"Fri, Nov 6, 2026: {last[1]:,.0f}")
+    assert got["left"]["readout"].startswith("Thu, Nov 5, 2026: ")
+    assert got["left"]["cross"] == "visible"
+    # The readout stops at the last day.
+    assert got["right"]["readout"] == first["readout"]
+    picked = view["series"]["metrics/event2"][-1]
+    assert got["picked"]["readout"].startswith(f"Fri, Nov 6, 2026: {picked[1]:,.0f}")
+    assert "actual" in got["dimension"]["paths"]
+    assert got["dimension"]["readout"].startswith("Fri, Nov 6, 2026: ")
+
+
+def test_the_chart_marks_a_flagged_day(chrome, edges, tmp_path):
+    got = _chart_run(chrome, edges, tmp_path, "metrics/event11")
+    picked = got["picked"]
+    assert "mark-high" in picked["paths"] and "Flagged above range" in picked["legend"]
+    assert picked["readout"].endswith("Above the expected range.")
+    assert got["dimension"] == {"empty": "No dimension data was read."}
+
+
+# Clicks a copy button with a stand-in clipboard and returns what was copied and the message.
+COPY_PROBE = """
+var copied = {};
+function clipboard(write, writeText) {
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+    write: function (items) {
+      if (!write) return Promise.reject(new Error("no rich copy"));
+      return Promise.all([items[0].getType("text/html"), items[0].getType("text/plain")])
+        .then(function (b) { return Promise.all([b[0].text(), b[1].text()]); })
+        .then(function (t) { copied.html = t[0]; copied.text = t[1]; });
+    },
+    writeText: function (text) {
+      if (!writeText) return Promise.reject(new Error("no copy"));
+      copied.plain = text;
+      return Promise.resolve();
+    }
+  }});
+}
+// Waits until the page shows its message. It checks after each turn of the page's task
+// queue, not after a set time, and gives up after 200 checks.
+function shown(result, tries) {
+  if (result.textContent || tries > 200) return Promise.resolve();
+  return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+    return shown(result, tries + 1);
+  });
+}
+function press(write, writeText) {
+  clipboard(write, writeText);
+  copied = {};
+  var result = document.getElementById(RESULT);
+  result.textContent = "";
+  document.getElementById(BUTTON).click();
+  return shown(result, 0).then(function () {
+    var fallback = document.querySelector(".copy-fallback");
+    return { copied: copied, result: document.getElementById(RESULT).textContent,
+      fallbackOpen: !!(fallback && fallback.open) };
+  });
+}
+var out = {};
+return press(true, true).then(function (r) { out.rich = r; return press(false, true); })
+  .then(function (r) { out.plain = r; return press(false, false); })
+  .then(function (r) {
+    out.none = r;
+    out.alertText = document.getElementById("alert-text").value;
+    return out;
+  });
+"""
+
+
+def _copy_run(chrome, store_rid, folder, button, result):
+    page = render_html(build_view(*store_rid))
+    probe = COPY_PROBE.replace("BUTTON", json.dumps(button)).replace("RESULT", json.dumps(result))
+    return run_probe(chrome, page, probe, folder)
+
+
+def test_copy_alerts_puts_html_and_text_on_the_clipboard(chrome, edges, tmp_path):
+    got = _copy_run(chrome, edges, tmp_path, "copy-alerts", "copy-result")
+    rich, plain, none = got["rich"], got["plain"], got["none"]
+    assert rich["result"].startswith("Copied. An email program pastes it formatted")
+    assert rich["copied"]["text"] == got["alertText"]
+    assert "<table" in rich["copied"]["html"] and "metrics/event6" in rich["copied"]["html"]
+    assert plain["result"].startswith("Copied as plain text.")
+    assert plain["copied"]["plain"] == got["alertText"]
+    assert none["result"].startswith("Could not copy.") and none["fallbackOpen"]
+
+
+def test_copy_problems_lists_each_problem(chrome, with_problem, tmp_path):
+    got = _copy_run(chrome, with_problem, tmp_path, "copy-problems", "copy-problems-result")
+    text = got["rich"]["copied"]["text"]
+    assert "Some metrics or dimensions are not visible to this credential." in text
+    assert "metrics/event2" in text and "metrics/event2" in got["rich"]["copied"]["html"]
+    assert got["none"]["result"].startswith("Could not copy.")
+
+
+# For each theme button: the theme the page uses, the pressed button, the saved choice, and the
+# text and background colors of the main kinds of text.
+THEME_PROBE = """
+var KINDS = ["body", ".muted", ".hint", "th", "td", ".tile-label", ".tile-note", ".tile-value",
+  "button", ".group-count", ".chart-readout", ".empty", "summary", "code", "select", "label",
+  ".badge-good", ".badge-flag", ".badge-zero"];
+function background(n) {
+  while (n) {
+    var c = getComputedStyle(n).backgroundColor;
+    if (c && c !== "rgba(0, 0, 0, 0)" && c !== "transparent") return c;
+    n = n.parentElement;
+  }
+  return getComputedStyle(document.body).backgroundColor;
+}
+var out = {};
+["light", "dark", "auto"].forEach(function (choice) {
+  document.querySelector("[data-theme-choice=" + choice + "]").click();
+  var colors = {};
+  KINDS.forEach(function (k) {
+    var n = document.querySelector(k);
+    if (n) colors[k] = [getComputedStyle(n).color, background(n), background(document.body)];
+  });
+  out[choice] = {
+    theme: document.documentElement.getAttribute("data-theme"),
+    pressed: [].filter.call(document.querySelectorAll("[data-theme-choice]"), function (b) {
+      return b.getAttribute("aria-pressed") === "true";
+    }).map(function (b) { return b.getAttribute("data-theme-choice"); }),
+    saved: localStorage.getItem("ahd-theme"),
+    colors: colors
+  };
+});
+return out;
+"""
+
+
+def _rgba(text):
+    v = [float(x) for x in re.findall(r"[\d.]+", text)]
+    return v[:3], v[3] if len(v) > 3 else 1.0
+
+
+def _contrast(fg, bg, page):
+    """The WCAG contrast ratio. A see-through background is mixed with the page color first."""
+    (f, _), (b, alpha), (p, _) = _rgba(fg), _rgba(bg), _rgba(page)
+    b = [b[i] * alpha + p[i] * (1 - alpha) for i in range(3)]
+
+    def lum(c):
+        ch = [x / 255 for x in c]
+        ch = [x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4 for x in ch]
+        return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+
+    hi, lo = sorted([lum(f), lum(b)], reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_theme_buttons_and_text_contrast(chrome, showcase, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*showcase)), THEME_PROBE, tmp_path)
+    for choice in ("light", "dark"):
+        t = got[choice]
+        assert (t["theme"], t["pressed"], t["saved"]) == (choice, [choice], choice)
+        assert len(t["colors"]) >= 15
+        low = {k: round(_contrast(*c), 2) for k, c in t["colors"].items() if _contrast(*c) < 4.5}
+        assert low == {}, f"text below a contrast of 4.5 in the {choice} theme: {low}"
+    assert got["auto"]["theme"] is None and got["auto"]["pressed"] == ["auto"]
+    light = _rgba(got["light"]["colors"]["body"][1])[0]
+    dark = _rgba(got["dark"]["colors"]["body"][1])[0]
+    assert sum(dark) < sum(light) / 4
+
+
+# Every control and table must have a name that a screen reader can read.
+NAMES_PROBE = """
+["tab-components", "tab-individual", "tab-alerts"].forEach(function (id) {
+  document.getElementById(id).click();
+});
+function name(n) {
+  var by = n.getAttribute("aria-labelledby");
+  var text = (n.getAttribute("aria-label") || "") + (n.getAttribute("title") || "") +
+    (by ? by.split(" ").map(function (id) {
+      var t = document.getElementById(id);
+      return t ? t.textContent : "";
+    }).join(" ") : "") +
+    (n.labels && n.labels.length ? n.labels[0].textContent : "") +
+    (n.tagName === "BUTTON" ? n.textContent : "") +
+    (n.tagName === "TABLE" && n.caption ? n.caption.textContent : "");
+  return text.trim();
+}
+var all = document.querySelectorAll("input, select, textarea, button, table");
+return { count: all.length, unnamed: [].filter.call(all, function (n) { return !name(n); })
+  .map(function (n) { return n.tagName.toLowerCase() + (n.id ? "#" + n.id : ""); }) };
+"""
+
+
+@pytest.mark.parametrize("which", ["showcase", "edges", "with_problem"])
+def test_every_control_and_table_has_a_name(chrome, request, tmp_path, which):
+    page = render_html(build_view(*request.getfixturevalue(which)))
+    got = run_probe(chrome, page, NAMES_PROBE, tmp_path)
+    assert got["count"] > 10 and got["unnamed"] == []

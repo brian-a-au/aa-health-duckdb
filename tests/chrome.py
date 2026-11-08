@@ -1,7 +1,7 @@
 """Open a report in headless Chrome and read what a probe script finds in the page.
 
 The probe is the body of a JavaScript function that runs after the page script. It returns a
-value, and the test gets that value back as Python data. The page runs in an iframe inside an
+value or a Promise of one, and the test gets that value back as Python data. The page runs in an iframe inside an
 outer page, because headless Chrome will not make its window narrower than 500 px. The iframe
 sends the result to the outer page with postMessage, and the outer page writes it into a <pre>
 element. Chrome prints the outer page with --dump-dom when the page is done.
@@ -43,11 +43,14 @@ CATCHER = (
     "document.addEventListener('securitypolicyviolation',function(e){"
     "__probeErrors.push('CSP blocked '+e.violatedDirective+' '+e.blockedURI)});</script>"
 )
+# The probe may return a value or a Promise of one. Errors are read when the result is sent,
+# so an error that happens while the Promise is open is counted too.
 PROBE = (
-    "<script>(function(){{var msg;"
-    "try{{msg={{result:(function(){{\n{probe}\n}})(),errors:window.__probeErrors}};}}"
-    "catch(e){{msg={{probe_error:String(e&&e.stack||e),errors:window.__probeErrors}};}}"
-    "parent.postMessage(JSON.stringify(msg),'*');}})();</script>"
+    "<script>(function(){{function post(m){{m.errors=window.__probeErrors;"
+    "parent.postMessage(JSON.stringify(m),'*');}}"
+    "function fail(e){{post({{probe_error:String(e&&e.stack||e)}});}}"
+    "try{{Promise.resolve((function(){{\n{probe}\n}})())"
+    ".then(function(r){{post({{result:r}});}},fail);}}catch(e){{fail(e);}}}})();</script>"
 )
 OUTER = (
     "<!doctype html><html><head><meta charset='utf-8'></head><body style='margin:0'>"
