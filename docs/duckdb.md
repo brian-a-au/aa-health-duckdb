@@ -1,5 +1,7 @@
 # Use the database with DuckDB
 
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · **DuckDB guide** · [Troubleshooting](troubleshooting.md)
+
 Every `ahd` run is saved in one DuckDB file. The HTML report shows one run at a time. The file holds every run, for every report suite, and you can ask it any question with SQL. This guide shows what you can do with it, from a daily alert email to an audit of unused variables across all your organizations.
 
 Every example here was run against a real database made by `ahd` with DuckDB 2.0. The outputs are real, from Adobe's demo report suites, and shortened where they were long.

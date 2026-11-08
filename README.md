@@ -6,276 +6,86 @@
 [![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](https://github.com/brian-a-au/aa-health-duckdb/tree/main/tests)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
-[![DuckDB](https://img.shields.io/badge/DuckDB-local%20file-fff000.svg)](https://duckdb.org/)
+[![DuckDB 2.0](https://img.shields.io/badge/DuckDB-2.0-fff000.svg)](https://duckdb.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/brian-a-au/aa-health-duckdb/blob/main/LICENSE)
 
 [![Slideshow of the report: summary tiles, trend charts with expected ranges, component tables, alerts, browser breakdowns, and light and dark mode](docs/showcase.gif)](docs/showcase.png)
 
 27-second loop of real report excerpts, made from synthetic data. Click the animation for a still image.
 
-aa-health-duckdb checks the health of an Adobe Analytics report suite. For every custom event, eVar and prop, it shows yesterday's value, the usual value, and whether Adobe's anomaly detection flagged it. It also lists the components that collected no data.
+aa-health-duckdb checks the health of an Adobe Analytics report suite. For every custom event, eVar and prop, it shows yesterday's value, the usual value, and whether Adobe's anomaly detection flagged it. It also finds large drops, values that dropped to zero, and components that never collected data.
 
-It is an unofficial alternative to Adobe's Excel workbook "Analytics Health Dashboard 3.07", built on the Adobe Analytics 2.0 API. It does not replace the workbook. The command is `ahd`.
+It is an unofficial alternative to Adobe's Excel workbook "Analytics Health Dashboard 3.07", built on the Adobe Analytics 2.0 API. The command is `ahd`.
 
-## How it works
+## What it does
 
-`ahd run` does three things on your computer:
+- **One report you can open anywhere.** Each run writes one HTML file that works in any browser, offline. It has three tabs: Components Summary, Individual Component Summary and Alerts Summary. [The report](docs/report.md) walks through it.
+- **Alerts that matter.** It lists Adobe's anomaly flags, drops larger than a percent you set with a slider, and components that dropped to zero. Components that never collected data are listed apart, so they don't hide real problems.
+- **Every run kept.** It stores each run in a local DuckDB file, so you can compare runs, report suites and organizations with SQL, and send alert emails only when something is new. See the [DuckDB guide](docs/duckdb.md).
+- **Any dimension by any metric.** The Individual Component Summary can hold several pairs, e.g., Internal Search Term by Cart Additions, and you add one in a few seconds.
+- **Plain errors.** When sign-in or access fails, it names the cause and the fix.
+- **Read-only and private.** It only reads from Adobe, never shows or stores your credential, and never sends usage data.
 
-1. **Fetch.** It signs in with your OAuth Server-to-Server credential and asks the Adobe Analytics 2.0 API for 92 days of daily data, with Adobe's expected values and anomaly flags. It only reads from Adobe.
-2. **Store.** It saves the data in a DuckDB file on your computer. By default the file is `./data/ahd.duckdb`. When you use a profile, the file is in the profile's folder instead (see [Configuration](#configuration)).
-3. **Report.** It works out the summaries with SQL on that file and writes one HTML file to `./reports/`.
+[Compared with the Excel workbook](docs/excel-comparison.md) lists how the numbers and features differ.
 
-### DuckDB runs inside ahd
+## Quick start
 
-DuckDB is a database that runs inside the `ahd` program itself, so there is no database server to install, start or connect to. `uv sync` installs it with the other Python packages.
+You need Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), and an Adobe OAuth Server-to-Server credential with access to Adobe Analytics.
 
-- **One local file.** The whole database is one file on your disk. Each run adds to it, and older runs stay in it. You can rebuild any stored run's report with `ahd render`, without calling Adobe again.
-- **Nothing is uploaded.** The tool never sends the file anywhere.
-- **No credentials inside.** The file holds report data, e.g., component names and daily values. It never holds your credential. Treat it with the same care as the reports.
-- **Easy to clean up or inspect.** To remove some runs, use `ahd prune`. To start over, delete the file. To look inside it, open it with the DuckDB command line tool, version 2.0 or newer, e.g., `duckdb -readonly data/ahd.duckdb -c "from latest_runs"`. An older `duckdb` cannot open the file. See [Use the database](#use-the-database).
+1. Install the tool from the project folder:
 
-### How runs are stored
+   ```
+   uv sync
+   ```
 
-Each time you use `ahd run`, the tool saves a new run in the DuckDB file. It never changes or overwrites the data of an earlier run. The one thing you can add to a stored run is another Individual Component Summary pair, with `ahd individual`.
+2. Save the credential's four values in `config.json` in the project folder, or use a profile. See [Configuration](docs/configuration.md).
 
-- **Run numbers.** Runs are numbered 1, 2, 3 and so on, in the order you make them. The number appears in the report's file name, e.g., `ahd_my_suite_2026-11-07_run3.html`.
-- **Each run is complete.** A run holds its own copy of everything its report needs. This includes the full 92 days of data, even when those days overlap with an earlier run. Runs never share or merge data. So if you run twice on the same day, you get two runs, and their numbers can differ a little if Adobe was still processing data in between.
-- **One file, many suites.** Runs for different report suites go into the same file. To keep them apart, give each suite its own file with `--db`.
-- **One file per profile.** When you use a profile, its runs go into `~/.aa/orgs/<name>/ahd.duckdb`. So data from different organizations never shares a file. `--db` still wins over this default.
-- **Status.** A run starts as "running" and ends as "ok", "partial" or "failed". A run that stopped in the middle, e.g., because you closed the window, stays "running".
-- **Listing and rebuilding.** `ahd runs` lists every stored run with its number, report suite, date, status and how long it took, newest first. `ahd render --run 3` rebuilds the report for run 3 from the file, with no calls to Adobe. A rebuilt report uses the current version of the page design.
-- **Size.** One run of a suite with about 400 components takes about 3 MB. The file keeps growing until you delete runs.
-- **Deleting runs.** `ahd prune` deletes the runs you choose from every table at once. If any part fails, nothing is deleted. The file does not get smaller afterwards, but DuckDB reuses the freed space for new runs. Run numbers are never reused, so a new run never gets the number of a deleted one. Reports that are already written stay in the reports folder.
-- **Fewer components than last time.** After each run, the tool compares the number of custom events, eVars and props with the previous run of the same report suite. If any of them fell by more than 20 percent, the run output and the report show a warning. The usual cause is a change to the credential's product profile in the Adobe Admin Console, or a run with a different credential.
+   ```json
+   {
+     "org_id": "YOUR_ORG_ID@AdobeOrg",
+     "client_id": "YOUR_CLIENT_ID",
+     "secret": "YOUR_CLIENT_SECRET",
+     "scopes": "openid, AdobeID, additional_info.projectedProductContext"
+   }
+   ```
 
-Inside the file, every row carries its run number. The tables are:
+3. Check the sign-in and find your report suite:
 
-| Table | What it holds, for each run |
+   ```
+   uv run ahd check
+   uv run ahd suites
+   uv run ahd check --rsid "My Suite"
+   ```
+
+4. Fetch the data and write the report. It takes about 2 minutes for a suite with 400 components, and it prints the report's path at the end:
+
+   ```
+   uv run ahd run --rsid "My Suite"
+   ```
+
+5. Open the HTML file in your browser.
+
+If something fails, see [Troubleshooting](docs/troubleshooting.md).
+
+## Documentation
+
+| Document | What it covers |
 |---|---|
-| `runs` | One row per run: report suite, segment, run date, time zone, currency, status, and start and end times |
-| `pairs` | The Individual Component Summary pairs of each run: the dimension and metric, with their names. Pair 1 comes from `ahd run`, and `ahd individual` adds more |
-| `components` | The events, eVars, props and solution components that were checked, with their names, groups and Adobe's metric type |
-| `daily_values` | One row per component per day: the value, Adobe's expected value, the expected range, and whether Adobe flagged it |
-| `top_items` | The top 100 values for yesterday and for the 90 days before, for each pair |
-| `breakdowns` and `breakdown_totals` | The browser and device tables and their totals, for each pair |
-| `issues` | Anything that could not be read, with the reason |
-| `schema_version` | The version of this layout. The tool refuses a file made with a different layout, and you start a new file |
-
-The file also holds two views and a table macro for your own SQL: `latest_runs`, `component_days` and `alerts()`. They follow the same rules as the report. The [DuckDB guide](docs/duckdb.md) explains them.
-
-### The report
-
-The report is one HTML file with its styles, script and data inside it. Open it in any browser by double clicking it. It loads nothing from the internet, so it also works offline. It has three tabs:
-
-- **Components Summary:** every custom event, eVar and prop, with trend charts. As in the workbook, the Metric chart starts on Occurrences and the Dimension chart starts on Page. You can view it by day or by week, and show only the flagged components. Each chart has a Type filter. The Metric chart filters by metric group, e.g., custom events or reserved purchase events. It lists only the groups that have data in the run. The Dimension chart filters by eVars, props or other dimensions.
-- **Individual Component Summary:** one dimension by one metric in more depth. It shows a trend, the top 100 values, and the top values for each browser group and device type. A run starts with one pair, by default Page by Occurrences. Add more pairs with `ahd individual`. Then pick a pair with the Dimension and Metric dropdowns, and the tab changes at once, with no waiting. The page cannot fetch data by itself, because it works offline.
-- **Alerts Summary:** the alerts for one day, in these groups. It starts on yesterday, and you can pick any of the last 7 days:
-  - **Unusual values.** Adobe's anomaly detection flagged the value as outside the expected range.
-  - **Large drops.** The value was further below the usual value for the weekday than the slider allows. Adobe did not flag it.
-  - **Dropped to zero.** The value was 0, but the component had data on other days in the run.
-  - **Never collected data.** The value was 0 on every day in the run. These are often unused slots, so they are not alerts. They are in a closed list at the end.
-
-  **Copy alerts** copies the alerts as a formatted table and as plain text, so an email program pastes a table and a chat pastes text. When a run had problems, **Copy problems** in the status section does the same for them.
-
-Summary tiles at the top give yesterday's counts. Every table can be sorted, and a switch at the top right chooses light mode, dark mode, or your computer's setting.
-
-A slider above the tiles sets the percent for a large drop. A line under it says how many components are flagged on the day shown in the Components Summary, and it names the largest drop, even when that drop is under the percent. A flagged value gets a "Large drop" badge in the Flag column. It goes from 10 to 100 percent, and it starts at 30 percent. A drop is measured against the usual value for the weekday, which is the 12-week average. Components with a usual value under 10 are skipped, because small numbers change a lot from day to day. The same percent sets when the tables show an arrow. When you move the slider, the tiles, the tables, the "Show only flagged" filter and the alerts change at once.
-
-Working offline does not mean the report is cleared for sharing. It contains your component names and values, so share it only where your organization allows.
-
-## Install
-
-You need Python 3.12 or newer and [uv](https://docs.astral.sh/uv/). From the project folder, run:
-
-```
-uv sync
-```
-
-This installs the `ahd` command into the project environment. Run it with `uv run ahd`.
-
-## Configuration
-
-The tool needs the four values of your Adobe OAuth Server-to-Server credential:
-
-```json
-{
-  "org_id": "YOUR_ORG_ID@AdobeOrg",
-  "client_id": "YOUR_CLIENT_ID",
-  "secret": "YOUR_CLIENT_SECRET",
-  "scopes": "openid, AdobeID, additional_info.projectedProductContext"
-}
-```
-
-The tool looks for the credential in this order, and uses the first one it finds:
-
-1. **A profile.** Pass `--profile <name>`, or set the `AA_PROFILE` environment variable. The tool reads `~/.aa/orgs/<name>/config.json`. This is the same file that aa_auto_sdr uses, so a profile you made with `aa_auto_sdr --profile-add` works in both tools. One `AA_PROFILE` setting picks the organization for both. The tool only reads profiles. Use aa_auto_sdr to create, test or change them.
-2. **Environment variables.** Set all four of `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_SECRET` and `AHD_SCOPES`.
-3. **A config file.** Pass its path with `--config`, or put a file named `config.json` in the folder where you run the tool. If you also set some of the `AHD_*` variables, each one wins over the same key in the file.
-
-The tool reads a profile or config file as UTF-8 JSON. It accepts the byte-order mark that Windows PowerShell 5 adds. If the file is missing, is not valid JSON, or does not hold one JSON object, the tool stops and names the file.
-
-When the tool signs in, it prints where the credential came from, e.g., "Signed in using profile prod". It prints only the name of the source. The tool never writes the credential values to the screen, to logs, to the database, or to the report. Keep `config.json` out of version control.
-
-### Sign-in problems
-
-When sign-in fails, the tool says what is wrong and what to fix. It can tell apart these causes:
-
-- **A wrong client ID or client secret.** Copy the value again from the credential in the Adobe Developer Console.
-- **A wrong org ID.** The org ID must be the one shown on the same credential in the Developer Console.
-- **Missing scopes.** Adobe still gives a token when the Analytics scopes are missing, but that token sees no Analytics company. The tool names the scopes that are missing.
-- **No Analytics access.** The credential signs in but sees no Analytics company. Add its technical account to an Adobe Analytics product profile in the Adobe Admin Console.
-- **No report suites.** The credential sees the company but no report suites. `ahd check` says so and exits with 2. Add the report suites to the product profile in the Admin Console.
-
-## Permissions
-
-The tool only reads from Adobe. Among Analytics API calls, the only one that sends a body is the report request, and it only reads data.
-
-The credential's technical account must be added to an Admin Console product profile that includes:
-
-- The report suite's metrics and dimensions, so that the custom events, eVars and props are visible.
-- The Report Suite Tools item "Anomaly Detection", so that the expected values and anomaly flags can be fetched.
-
-If the profile hides the custom components, the report shows no custom data. If "Anomaly Detection" is missing, the run still finishes, but the report has no expected values and no anomaly flags, and it says so. Changes in the Admin Console can take a while to reach Analytics.
-
-Run `ahd check` to test your setup before a full run.
-
-## Usage
-
-Check the sign in and see how many report suites the credential can see. It exits with 2 if the credential sees none:
-
-```
-uv run ahd check
-```
-
-List the report suites the credential can see, and the segments you can use with one suite. Each list shows the ID and the name:
-
-```
-uv run ahd suites
-uv run ahd segments --rsid "My Suite"
-```
-
-`--rsid` and `--segment` take an ID or a name, in any case. If two report suites or segments have the same name, the tool lists their IDs and asks you to use one. If the credential sees more than one login company, choose one with `--company`, by its global company ID or its name. The commands that sign in accept it: `check`, `suites`, `segments` and `run`.
-
-Check one report suite. This counts the custom events, eVars and props and tests anomaly detection. It exits with 2 if access is limited, and it explains the fix in plain words. It also exits with 2 if a check could not be run, for example because of a network problem:
-
-```
-uv run ahd check --rsid my_suite
-```
-
-Fetch data and write the report. While it runs, the tool prints its progress on stderr, e.g., "Daily trends: 12 of 21 requests done". The path of the HTML file is printed when the run ends:
-
-```
-uv run ahd run --rsid my_suite
-uv run ahd run --rsid "My Suite" --segment "Mobile visits"
-uv run ahd run --rsid my_suite --segment s300000000_abc --batch-size 20 --workers 4
-uv run ahd run --rsid my_suite --date 2026-11-07 --out ./reports/
-```
-
-To start the slider at another percent, add `--change-alert` to `run` or `render`. It takes 10 to 100, in steps of 5:
-
-```
-uv run ahd render --run 3 --change-alert 50
-```
-
-Exit codes for `run`: 0 when everything worked, 1 when it failed, and 3 when it finished but some columns or requests had problems (the report lists them).
-
-Choose the first Individual Component Summary pair with `--dimension` and `--metric`. Each takes a full ID (`variables/evar17`), a short ID (`evar17`) or the name shown in Analysis Workspace (`"Internal Search Term"`). You can use any dimension or metric that the API lists for the report suite:
-
-```
-uv run ahd run --rsid my_suite --dimension "Internal Search Term" --metric "Cart Additions"
-```
-
-Add another pair to a stored run. This makes 5 requests and takes a few seconds, not a full run. It uses the run's report suite, segment and dates, and it writes the report again:
-
-```
-uv run ahd individual --run 3 --dimension evar17 --metric revenue
-```
-
-A run cannot hold the same pair twice. If a request for the new pair fails, the report's status section lists the problem, and the command exits with 3.
-
-Rebuild a report from a stored run without any API calls, and list stored runs:
-
-```
-uv run ahd runs
-uv run ahd render --run 3
-```
-
-Use a profile. You can put `--profile` before or after the command. With a profile, every command uses the database in the profile's folder:
-
-```
-uv run ahd check --profile prod --rsid my_suite
-uv run ahd --profile prod run --rsid my_suite
-AA_PROFILE=prod uv run ahd runs
-```
-
-Delete stored runs. Give `--run` once for each run number, or `--before` to delete every run dated before that day, or both. The tool lists the runs it will delete and asks you to type y first. Add `--yes` to skip the question. A run that is still marked "running" is kept unless you add `--force`:
-
-```
-uv run ahd prune --run 1 --run 4
-uv run ahd prune --before 2026-10-01 --yes
-```
-
-Defaults: the database is `./data/ahd.duckdb`, or `~/.aa/orgs/<name>/ahd.duckdb` with a profile, the report folder is `./reports/`, the batch size is 20 columns per request, and 4 requests run at the same time. Add `--verbose` before the command for debug logging on stderr.
-
-## Use the database
-
-Every run stays in the DuckDB file, so you can query all runs, suites and organizations with SQL. The [DuckDB guide](docs/duckdb.md) has tested recipes, e.g.:
-
-- email the alerts every morning, but only when there are any, with [`docs/examples/send_alerts.py`](docs/examples/send_alerts.py)
-- email only the alerts that are new since the last run
-- send each alert to its owner, from a CSV file of patterns and email addresses
-- one digest for every report suite, or every organization with `ATTACH`
-- a list of variables that never collected data, for cleanup
-- values that dropped out of the top 100
-- export to CSV, JSON, Parquet or Excel
-
-You need DuckDB 2.0 or newer for the `duckdb` command. The Python package comes with `ahd`.
-
-## Tests
-
-Run the tests and the lint checks the same way GitHub Actions does:
-
-```
-uv run pytest --cov=ahd --cov-branch
-uv run ruff check
-uv run ruff format --check
-```
-
-The tests use saved Adobe responses and never call Adobe. Every test runs with the network blocked, so a test fails if it tries to open a connection. The tests also ignore your own `AA_PROFILE`, `AHD_*` variables and `~/.aa` profiles. GitHub Actions runs them on Python 3.12, 3.13 and 3.14 for every push to `main` and every pull request. The run fails if branch coverage drops below 95 percent.
-
-## Working on the code
-
-[AGENTS.md](AGENTS.md) explains the layout, the rules and the checks for anyone who changes the code, including AI coding agents. `CLAUDE.md` points to it.
-
-## How the numbers differ from Excel
-
-- The week is the 7 days ending yesterday. The baseline is the 84 days from 91 days ago through 8 days ago, divided by 12 to give a weekly average.
-- "Today" is today in the report suite's time zone, not your computer's time zone. The workbook asks for today's partial data as well. The tool fetches that row and ignores it.
-- The top 100 tables compare yesterday with the 90 days before it (from 91 days ago through 2 days ago). The browser and device tables use yesterday.
-- An arrow shows when the change is more than the slider's percent, 30 percent by default. The workbook uses a fixed 20 percent. When the baseline is zero, there is no percent change and no arrow.
-- The workbook alerts on every component with a value of 0. The tool lists a component that dropped to 0 as an alert, and it lists a component that was 0 on every day separately as never collected data.
-- The workbook alerts only on Adobe's anomaly flags and on zero values. The tool also alerts on drops larger than the slider's percent.
-- A column the credential cannot read is listed as a problem. It is never shown as zero.
-- A currency metric shows its values in the report suite's currency, e.g., $1,234.56 for US dollars. This applies to the tables, the alerts and the charts. Other metrics show as plain numbers. Runs stored by an older version have no metric types, so their values show as plain numbers.
-- eVars are treated as dimensions, like props. They appear in the Dimension chart, which has a filter for eVars, props or other dimensions. The workbook filed them under events. Each eVar is still counted with its instances metric, as in the workbook.
+| [Usage](docs/usage.md) | Every command, with its options, exit codes and defaults |
+| [Configuration](docs/configuration.md) | Where the tool finds your credential, profiles, and the Admin Console permissions it needs |
+| [The report](docs/report.md) | A walkthrough of the HTML report: the slider, tiles, tabs, alerts and copying |
+| [How runs are stored](docs/runs.md) | The DuckDB file, run numbers, deleting runs, and the tables inside |
+| [DuckDB guide](docs/duckdb.md) | SQL recipes: alert emails, owner routing, digests across suites and organizations, audits and exports |
+| [Troubleshooting](docs/troubleshooting.md) | Sign-in problems, limited access, warnings and database errors |
+| [Compared with the Excel workbook](docs/excel-comparison.md) | How the numbers differ, what the tool adds, and what it leaves out |
+| [Development](docs/development.md) | Tests, lint and the README slideshow. See also [AGENTS.md](AGENTS.md) |
 
 ## Known limits
 
 - It covers one report suite per run.
-- It is English only.
-- It does not send email.
-- Adobe publishes no rate limits, so the tool uses a small number of parallel requests. It waits and tries again after a rate limit, a server error, or Adobe's temporary error 403025. It records the problem only when the last try also fails.
-- When the sign-in token expires during a run, only one request signs in again. The other parallel requests wait for it and then use the new token.
-
-## Remake the slideshow
-
-The slideshow at the top uses the real report, filled with synthetic data from `scripts/make_showcase.py`. It uses no Adobe API, credential or customer data. You need Google Chrome and FFmpeg installed. Run:
-
-```
-uv run python scripts/make_showcase.py --out docs
-```
-
-This writes `docs/showcase.gif` and `docs/showcase.png`.
+- It is in English only.
+- The `ahd` command does not send email. The [DuckDB guide](docs/duckdb.md#email-recipes) shows how to send alerts with a short script.
+- Adobe publishes no rate limits, so the tool sends a small number of parallel requests, and it waits and tries again after a rate limit or a temporary error.
 
 ## License
 
