@@ -119,8 +119,14 @@ class AdobeClient:
                     raise
                 attempt += 1
                 delay = self._backoff(attempt - 1)
-                log.debug("%s from %s %s, retry %d in %.1fs",
-                          type(e).__name__, method, path, attempt, delay)
+                log.debug(
+                    "%s from %s %s, retry %d in %.1fs",
+                    type(e).__name__,
+                    method,
+                    path,
+                    attempt,
+                    delay,
+                )
                 self._sleep(delay)
                 continue
             status = resp.status_code
@@ -136,7 +142,9 @@ class AdobeClient:
                 except ValueError:
                     pass
                 attempt += 1
-                log.debug("HTTP %s from %s %s, retry %d in %.1fs", status, method, path, attempt, delay)
+                log.debug(
+                    "HTTP %s from %s %s, retry %d in %.1fs", status, method, path, attempt, delay
+                )
                 self._sleep(delay)
                 continue
             return self._finish(resp)

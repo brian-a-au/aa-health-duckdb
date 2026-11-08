@@ -47,8 +47,7 @@ ISSUE_HEADINGS = {
 # The fetch step records an Adobe error without its own code as http_<status>.
 HTTP_HEADING = "Adobe returned an error for some requests."
 
-CSP = ("default-src 'none'; style-src 'unsafe-inline'; "
-       "script-src 'unsafe-inline'; img-src data:")
+CSP = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:"
 
 BREAKDOWN_NOTES = {
     "browser": "Rows are the top 10 values in the first column (Google), as in the Excel version.",
@@ -128,8 +127,9 @@ def _issue_groups(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "heading": issue_heading(code),
                 "entries": [],
             }
-        g["entries"].append({"component_id": it.get("component_id"),
-                           "message": it.get("message") or ""})
+        g["entries"].append(
+            {"component_id": it.get("component_id"), "message": it.get("message") or ""}
+        )
     return list(groups.values())
 
 

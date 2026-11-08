@@ -72,6 +72,7 @@ class FakeClient:
 
 # ---- body predicates ---------------------------------------------------------
 
+
 def is_trend(body: dict) -> bool:
     return body.get("dimension") == "variables/daterangeday"
 
@@ -109,6 +110,7 @@ def date_range(body: dict) -> str:
 
 # ---- response builders -------------------------------------------------------
 
+
 def _days(range_str: str) -> list[date]:
     start_s, end_s = range_str.split("/")
     start = datetime.fromisoformat(start_s[:10]).date()
@@ -116,8 +118,9 @@ def _days(range_str: str) -> list[date]:
     return [start + timedelta(days=n) for n in range((end - start).days)]
 
 
-def trend_response(body: dict, value: float = 1.0, column_errors: dict[int, str] | None = None
-                   ) -> dict:
+def trend_response(
+    body: dict, value: float = 1.0, column_errors: dict[int, str] | None = None
+) -> dict:
     """One row per day in the body's range; every column gets `value`."""
     n = len(body["metricContainer"]["metrics"])
     errors = [
@@ -132,16 +135,22 @@ def trend_response(body: dict, value: float = 1.0, column_errors: dict[int, str]
         }
         for d in _days(date_range(body))
     ]
-    return {"columns": {"columnIds": [str(i) for i in range(n)], "columnErrors": errors},
-            "rows": rows, "totalElements": len(rows)}
+    return {
+        "columns": {"columnIds": [str(i) for i in range(n)], "columnErrors": errors},
+        "rows": rows,
+        "totalElements": len(rows),
+    }
 
 
 def ranked_response(body: dict, items: list[tuple[str, float]] | None = None) -> dict:
     items = items if items is not None else [("Home Page", 10.0), ("Search", 4.0)]
     n = len(body["metricContainer"]["metrics"])
     rows = [{"itemId": str(i), "value": v, "data": [x] * n} for i, (v, x) in enumerate(items, 1)]
-    return {"rows": rows, "totalElements": len(rows),
-            "summaryData": {"totals": [sum(x for _, x in items)] * n}}
+    return {
+        "rows": rows,
+        "totalElements": len(rows),
+        "summaryData": {"totals": [sum(x for _, x in items)] * n},
+    }
 
 
 def auto_response(body: dict) -> dict:
@@ -151,58 +160,143 @@ def auto_response(body: dict) -> dict:
 # ---- restricted-profile fixtures (shape of what live Adobe returned) ---------
 
 RESTRICTED_METRIC_IDS = [
-    "metrics/occurrences", "metrics/botoccurrences", "metrics/botpageviews",
-    "metrics/pageviews", "metrics/visits", "metrics/visitors", "metrics/bouncerate",
-    "metrics/bounces", "metrics/entries", "metrics/exits", "metrics/timespentvisit",
-    "metrics/timespentvisitor", "metrics/averagepagedepth", "metrics/reloads",
+    "metrics/occurrences",
+    "metrics/botoccurrences",
+    "metrics/botpageviews",
+    "metrics/pageviews",
+    "metrics/visits",
+    "metrics/visitors",
+    "metrics/bouncerate",
+    "metrics/bounces",
+    "metrics/entries",
+    "metrics/exits",
+    "metrics/timespentvisit",
+    "metrics/timespentvisitor",
+    "metrics/averagepagedepth",
+    "metrics/reloads",
     "metrics/singlepagevisits",
 ]
 
 RESTRICTED_DIMENSION_IDS = [
-    "variables/" + n for n in [
-        "browser", "browsertype", "browserheight", "browserwidth", "colordepth",
-        "connectiontype", "cookiesenabled", "javaenabled", "javascriptversion", "language",
-        "monitorresolution", "operatingsystem", "operatingsystemgroup", "mobiledevicetype",
-        "mobiledevicename", "mobilemanufacturer", "mobilescreenheight", "mobilescreenwidth",
-        "mobilescreensize", "mobileaudiosupport", "mobilevideosupport", "mobilecolordepth",
-        "mobilecookiesupport", "mobileimagesupport", "mobilejavavm", "mobilenetwork",
-        "mobilemaxbookmarkurllength", "mobilemaxurllength", "mobileoperatingsystem",
-        "mobiledrm", "mobilemaxbrowserwidth", "devicetype", "geocountry", "georegion",
-        "geocity", "geodma", "zip", "referrer", "referrertype", "referringdomain",
-        "searchengine", "searchenginekeyword", "searchenginenatural",
-        "searchenginenaturalkeyword", "searchenginepaid", "searchenginepaidkeyword",
-        "entrypage", "entrypageoriginal", "exitpage", "server", "sitesection", "hitdepth",
-        "visitnumber", "returnfrequency", "daysbeforefirstpurchase", "dayssincelastpurchase",
-        "dayssincelastvisit", "visitortype", "timespent", "timespentpervisit",
-        "averagepagedepth", "daterangeday", "daterangeweek", "daterangemonth",
-        "daterangequarter", "daterangeyear", "daterangehour", "daterangeminute",
-        "timepartdayofweek", "timeparthourofday", "timepartdayofmonth",
-        "timepartdayofyear", "timepartmonthofyear", "timepartquarterofyear",
-        "timepartweekdayweekend", "timepartminuteofhour", "lasttouchchannel",
-        "firsttouchchannel", "lasttouchchanneldetail", "firsttouchchanneldetail",
-        "trackingcode", "campaign", "product", "category", "customerloyalty",
-        "purchaseid", "transactionid",
+    "variables/" + n
+    for n in [
+        "browser",
+        "browsertype",
+        "browserheight",
+        "browserwidth",
+        "colordepth",
+        "connectiontype",
+        "cookiesenabled",
+        "javaenabled",
+        "javascriptversion",
+        "language",
+        "monitorresolution",
+        "operatingsystem",
+        "operatingsystemgroup",
+        "mobiledevicetype",
+        "mobiledevicename",
+        "mobilemanufacturer",
+        "mobilescreenheight",
+        "mobilescreenwidth",
+        "mobilescreensize",
+        "mobileaudiosupport",
+        "mobilevideosupport",
+        "mobilecolordepth",
+        "mobilecookiesupport",
+        "mobileimagesupport",
+        "mobilejavavm",
+        "mobilenetwork",
+        "mobilemaxbookmarkurllength",
+        "mobilemaxurllength",
+        "mobileoperatingsystem",
+        "mobiledrm",
+        "mobilemaxbrowserwidth",
+        "devicetype",
+        "geocountry",
+        "georegion",
+        "geocity",
+        "geodma",
+        "zip",
+        "referrer",
+        "referrertype",
+        "referringdomain",
+        "searchengine",
+        "searchenginekeyword",
+        "searchenginenatural",
+        "searchenginenaturalkeyword",
+        "searchenginepaid",
+        "searchenginepaidkeyword",
+        "entrypage",
+        "entrypageoriginal",
+        "exitpage",
+        "server",
+        "sitesection",
+        "hitdepth",
+        "visitnumber",
+        "returnfrequency",
+        "daysbeforefirstpurchase",
+        "dayssincelastpurchase",
+        "dayssincelastvisit",
+        "visitortype",
+        "timespent",
+        "timespentpervisit",
+        "averagepagedepth",
+        "daterangeday",
+        "daterangeweek",
+        "daterangemonth",
+        "daterangequarter",
+        "daterangeyear",
+        "daterangehour",
+        "daterangeminute",
+        "timepartdayofweek",
+        "timeparthourofday",
+        "timepartdayofmonth",
+        "timepartdayofyear",
+        "timepartmonthofyear",
+        "timepartquarterofyear",
+        "timepartweekdayweekend",
+        "timepartminuteofhour",
+        "lasttouchchannel",
+        "firsttouchchannel",
+        "lasttouchchanneldetail",
+        "firsttouchchanneldetail",
+        "trackingcode",
+        "campaign",
+        "product",
+        "category",
+        "customerloyalty",
+        "purchaseid",
+        "transactionid",
     ]
 ]
 
 
 def restricted_metrics() -> list[dict]:
-    return [{"id": i, "name": i.split("/")[1], "allowedForReporting": True}
-            for i in RESTRICTED_METRIC_IDS]
+    return [
+        {"id": i, "name": i.split("/")[1], "allowedForReporting": True}
+        for i in RESTRICTED_METRIC_IDS
+    ]
 
 
 def restricted_dimensions() -> list[dict]:
-    return [{"id": i, "name": i.split("/")[1], "allowedForReporting": True}
-            for i in RESTRICTED_DIMENSION_IDS]
+    return [
+        {"id": i, "name": i.split("/")[1], "allowedForReporting": True}
+        for i in RESTRICTED_DIMENSION_IDS
+    ]
 
 
 def suite(rsid: str = "rs1", name: str = "Test Suite", tz: str = "US/Pacific") -> dict:
     return {"rsid": rsid, "name": name, "timezoneZoneinfo": tz}
 
 
-def fake_for(rsid: str, metrics: list[dict], dimensions: list[dict],
-             posts: list[tuple[Predicate, Responder]] | None = None,
-             tz: str = "US/Pacific", **kw) -> FakeClient:
+def fake_for(
+    rsid: str,
+    metrics: list[dict],
+    dimensions: list[dict],
+    posts: list[tuple[Predicate, Responder]] | None = None,
+    tz: str = "US/Pacific",
+    **kw,
+) -> FakeClient:
     return FakeClient(
         gets={
             f"/reportsuites/collections/suites/{rsid}": suite(rsid, tz=tz),

@@ -21,8 +21,10 @@ def load(name):
 
 
 def test_trend_body_exists_column_shape():
-    cols = [Column("metrics/event1", "metrics/event1"),
-            Column("variables/prop1", "metrics/occurrences", exists_dimension="variables/prop1")]
+    cols = [
+        Column("metrics/event1", "metrics/event1"),
+        Column("variables/prop1", "metrics/occurrences", exists_dimension="variables/prop1"),
+    ]
     b = trend_body("rs", RANGE, cols, None, True)
     assert b["rsid"] == "rs"
     assert b["dimension"] == "variables/daterangeday"
@@ -32,11 +34,21 @@ def test_trend_body_exists_column_shape():
     assert "filters" not in mc["metrics"][0]
     assert mc["metrics"][1]["id"] == "metrics/occurrences"
     assert mc["metrics"][1]["filters"] == ["f1"]
-    assert mc["metricFilters"] == [{
-        "id": "f1", "type": "segment",
-        "segmentDefinition": {"func": "segment", "version": [1, 0, 0], "container": {
-            "func": "container", "context": "hits",
-            "pred": {"func": "exists", "val": {"func": "attr", "name": "variables/prop1"}}}}}]
+    assert mc["metricFilters"] == [
+        {
+            "id": "f1",
+            "type": "segment",
+            "segmentDefinition": {
+                "func": "segment",
+                "version": [1, 0, 0],
+                "container": {
+                    "func": "container",
+                    "context": "hits",
+                    "pred": {"func": "exists", "val": {"func": "attr", "name": "variables/prop1"}},
+                },
+            },
+        }
+    ]
     assert len(b["globalFilters"]) == 1 and b["globalFilters"][0]["type"] == "dateRange"
     assert b["globalFilters"][0]["dateRange"] == RANGE
 
@@ -57,12 +69,21 @@ def test_top_items_body():
 
 
 def test_breakdown_body_browser_ids():
-    b = breakdown_body("rs", "r", "variables/page", "metrics/occurrences",
-                       "variables/browsertype", ["8", "2", "6", "7", "1"], None)
+    b = breakdown_body(
+        "rs",
+        "r",
+        "variables/page",
+        "metrics/occurrences",
+        "variables/browsertype",
+        ["8", "2", "6", "7", "1"],
+        None,
+    )
     mc = b["metricContainer"]
     assert [f["itemId"] for f in mc["metricFilters"]] == ["8", "2", "6", "7", "1"]
-    assert all(f["type"] == "breakdown" and f["dimension"] == "variables/browsertype"
-               for f in mc["metricFilters"])
+    assert all(
+        f["type"] == "breakdown" and f["dimension"] == "variables/browsertype"
+        for f in mc["metricFilters"]
+    )
     assert [m["sort"] for m in mc["metrics"] if "sort" in m] == ["desc"]
     assert "sort" in mc["metrics"][0]
     assert [m["filters"] for m in mc["metrics"]] == [[f["id"]] for f in mc["metricFilters"]]
@@ -97,13 +118,17 @@ def test_parse_trend_column_error_gives_no_zeros():
 def test_parse_trend_without_anomaly_fields():
     cols = [Column("metrics/ok", "metrics/ok"), Column("metrics/bad", "metrics/bad")]
     vals, _ = parse_trend(load("trend_206.json"), cols)
-    assert all(v.expected is None and v.upper is None and v.lower is None and v.anomaly is None
-               for v in vals)
+    assert all(
+        v.expected is None and v.upper is None and v.lower is None and v.anomaly is None
+        for v in vals
+    )
 
 
 def test_parse_trend_date_falls_back_to_item_id():
-    resp = {"columns": {"columnIds": ["0"]},
-            "rows": [{"itemId": "1251028", "value": "garbage", "data": [3.0]}]}
+    resp = {
+        "columns": {"columnIds": ["0"]},
+        "rows": [{"itemId": "1251028", "value": "garbage", "data": [3.0]}],
+    }
     vals, _ = parse_trend(resp, [Column("metrics/a", "metrics/a")])
     assert vals[0].day == date(2025, 10, 28)
 
@@ -126,8 +151,10 @@ def test_parse_breakdown():
 
 
 def test_live_trend_parses_with_anomaly_fields():
-    cols = [Column("metrics/event25", "metrics/event25"),
-            Column("variables/prop7", "metrics/occurrences", exists_dimension="variables/prop7")]
+    cols = [
+        Column("metrics/event25", "metrics/event25"),
+        Column("variables/prop7", "metrics/occurrences", exists_dimension="variables/prop7"),
+    ]
     values, errors = parse_trend(load("live_trend_anomaly.json"), cols)
     assert errors == []
     assert len(values) == 2 * 92
@@ -136,7 +163,9 @@ def test_live_trend_parses_with_anomaly_fields():
     assert by[("variables/prop7", date(2026, 11, 6))].value == 28177.0
     assert min(v.day for v in values) == date(2026, 8, 8)
     assert max(v.day for v in values) == date(2026, 11, 7)
-    assert all(v.expected is not None and v.upper is not None and v.lower is not None for v in values)
+    assert all(
+        v.expected is not None and v.upper is not None and v.lower is not None for v in values
+    )
 
 
 def test_live_top_items_parse():

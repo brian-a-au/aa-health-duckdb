@@ -145,9 +145,7 @@ def _at(arr: list | None, i: int):
     return arr[i]
 
 
-def parse_trend(
-    resp: dict, columns: list[Column]
-) -> tuple[list[DailyValue], list[ColumnError]]:
+def parse_trend(resp: dict, columns: list[Column]) -> tuple[list[DailyValue], list[ColumnError]]:
     col_meta = resp.get("columns") or {}
     errors: list[ColumnError] = []
     failed: set[int] = set()
@@ -190,8 +188,7 @@ def parse_trend(
 
 def parse_ranked(resp: dict) -> tuple[list[tuple[int, str, float]], int]:
     rows = [
-        (n, r["value"], float(r["data"][0]))
-        for n, r in enumerate(resp.get("rows") or [], start=1)
+        (n, r["value"], float(r["data"][0])) for n, r in enumerate(resp.get("rows") or [], start=1)
     ]
     return rows, int(resp.get("totalElements", len(rows)))
 

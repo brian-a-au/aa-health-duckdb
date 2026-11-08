@@ -72,34 +72,45 @@ def build_catalog(
         cid = m["id"]
         name = m.get("name") or cid
         if mt := _EVENT.match(cid):
-            out[cid] = Component(cid, name, "metric", "custom_events", int(mt[1]),
-                                 Column(cid, cid), None)
+            out[cid] = Component(
+                cid, name, "metric", "custom_events", int(mt[1]), Column(cid, cid), None
+            )
         elif mt := _EVAR.match(cid):
             name = name.removesuffix(" Instances")
-            out[cid] = Component(cid, name, "metric", "custom_evars", int(mt[1]),
-                                 Column(cid, cid), None)
+            out[cid] = Component(
+                cid, name, "metric", "custom_evars", int(mt[1]), Column(cid, cid), None
+            )
         elif cid in wanted:
-            if cid.endswith("instances") and cid.removesuffix("instances") in exact \
-                    and cid.removesuffix("instances") in wanted:
+            if (
+                cid.endswith("instances")
+                and cid.removesuffix("instances") in exact
+                and cid.removesuffix("instances") in wanted
+            ):
                 continue  # exact id exists; it wins over the instances fallback
-            out[cid] = Component(cid, name, "metric", wanted[cid], None,
-                                 Column(cid, cid), None)
+            out[cid] = Component(cid, name, "metric", wanted[cid], None, Column(cid, cid), None)
 
     for d in dimensions:
         cid = d["id"]
         name = d.get("name") or cid
         allowed = d.get("allowedForReporting")
         if mt := _PROP.match(cid):
-            out[cid] = Component(cid, name, "dimension", "custom_props", int(mt[1]),
-                                 _exists_column(cid), allowed)
+            out[cid] = Component(
+                cid, name, "dimension", "custom_props", int(mt[1]), _exists_column(cid), allowed
+            )
         elif _LIST.match(cid):
-            out[cid] = Component(cid, name, "dimension", "List Variables", None,
-                                 _exists_column(cid), allowed)
+            out[cid] = Component(
+                cid, name, "dimension", "List Variables", None, _exists_column(cid), allowed
+            )
 
     page = next((d for d in dimensions if d["id"] == "variables/page"), {})
     out["variables/page"] = Component(
-        "variables/page", page.get("name") or "Page", "dimension", "Reserved Props", None,
-        _exists_column("variables/page"), page.get("allowedForReporting"),
+        "variables/page",
+        page.get("name") or "Page",
+        "dimension",
+        "Reserved Props",
+        None,
+        _exists_column("variables/page"),
+        page.get("allowedForReporting"),
     )
 
     def key(c: Component):

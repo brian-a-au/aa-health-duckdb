@@ -12,8 +12,12 @@ from fakes import (
 
 from ahd.cli import main
 
-CONFIG = {"org_id": "o@AdobeOrg", "client_id": "cid-12345", "secret": "sec-67890",
-          "scopes": "openid"}
+CONFIG = {
+    "org_id": "o@AdobeOrg",
+    "client_id": "cid-12345",
+    "secret": "sec-67890",
+    "scopes": "openid",
+}
 
 
 def events(n):
@@ -21,8 +25,10 @@ def events(n):
 
 
 def custom_dims():
-    return [{"id": "variables/prop1", "name": "Prop 1", "allowedForReporting": True},
-            {"id": "variables/page", "name": "Page", "allowedForReporting": True}]
+    return [
+        {"id": "variables/prop1", "name": "Prop 1", "allowedForReporting": True},
+        {"id": "variables/page", "name": "Page", "allowedForReporting": True},
+    ]
 
 
 @pytest.fixture
@@ -50,19 +56,33 @@ def test_run_writes_html_and_exit_code(tmp_path, cfg, capsys):
 
 
 def test_run_failed_exit_code(tmp_path, cfg):
-    fake = fake_for("rs1", events(3), custom_dims(),
-                    posts=[(is_trend, ApiError(403, "no", "invalid_access"))])
+    fake = fake_for(
+        "rs1", events(3), custom_dims(), posts=[(is_trend, ApiError(403, "no", "invalid_access"))]
+    )
     code = main(
-        args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", "2026-11-07",
-             "--out", str(tmp_path / "o")),
+        args(
+            tmp_path,
+            cfg,
+            "run",
+            "--rsid",
+            "rs1",
+            "--date",
+            "2026-11-07",
+            "--out",
+            str(tmp_path / "o"),
+        ),
         client_factory=lambda creds, company_id=None: fake,
     )
     assert code == 1  # every request failed: no values
 
 
 def test_run_partial_exit_code(tmp_path, cfg):
-    fake = fake_for("rs1", events(3), custom_dims(),
-                    posts=[(is_anomaly_trend, ApiError(403, "no", "invalid_access"))])
+    fake = fake_for(
+        "rs1",
+        events(3),
+        custom_dims(),
+        posts=[(is_anomaly_trend, ApiError(403, "no", "invalid_access"))],
+    )
     out = tmp_path / "o"
     code = main(
         args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", "2026-11-07", "--out", str(out)),
@@ -74,26 +94,50 @@ def test_run_partial_exit_code(tmp_path, cfg):
 
 def test_render_needs_no_client(tmp_path, cfg, capsys):
     fake = fake_for("rs1", events(3), custom_dims())
-    main(args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", "2026-11-07",
-              "--out", str(tmp_path / "o1")),
-         client_factory=lambda creds, company_id=None: fake)
+    main(
+        args(
+            tmp_path,
+            cfg,
+            "run",
+            "--rsid",
+            "rs1",
+            "--date",
+            "2026-11-07",
+            "--out",
+            str(tmp_path / "o1"),
+        ),
+        client_factory=lambda creds, company_id=None: fake,
+    )
     capsys.readouterr()
 
     def boom(*a, **k):
         raise AssertionError("client must not be created")
 
     out = tmp_path / "o2"
-    code = main(["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--out", str(out)],
-                client_factory=boom)
+    code = main(
+        ["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--out", str(out)],
+        client_factory=boom,
+    )
     assert code == 0
     assert len(list(out.glob("*.html"))) == 1
 
 
 def test_runs_lists_runs(tmp_path, cfg, capsys):
     fake = fake_for("rs1", events(3), custom_dims())
-    main(args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", "2026-11-07",
-              "--out", str(tmp_path / "o")),
-         client_factory=lambda creds, company_id=None: fake)
+    main(
+        args(
+            tmp_path,
+            cfg,
+            "run",
+            "--rsid",
+            "rs1",
+            "--date",
+            "2026-11-07",
+            "--out",
+            str(tmp_path / "o"),
+        ),
+        client_factory=lambda creds, company_id=None: fake,
+    )
     capsys.readouterr()
     assert main(["runs", "--db", str(tmp_path / "t.duckdb")]) == 0
     out = capsys.readouterr().out
@@ -110,25 +154,32 @@ def test_check_without_rsid(tmp_path, cfg, capsys):
 
 def test_check_reports_restricted_profile(tmp_path, cfg, capsys):
     fake = fake_for("rs1", restricted_metrics(), restricted_dimensions())
-    code = main(["check", "--config", str(cfg), "--rsid", "rs1"],
-                client_factory=lambda c, company_id=None: fake)
+    code = main(
+        ["check", "--config", str(cfg), "--rsid", "rs1"],
+        client_factory=lambda c, company_id=None: fake,
+    )
     assert code == 2
     assert "product profile" in capsys.readouterr().out
 
 
 def test_check_ok(tmp_path, cfg, capsys):
     fake = fake_for("rs1", events(3), custom_dims())
-    code = main(["check", "--config", str(cfg), "--rsid", "rs1"],
-                client_factory=lambda c, company_id=None: fake)
+    code = main(
+        ["check", "--config", str(cfg), "--rsid", "rs1"],
+        client_factory=lambda c, company_id=None: fake,
+    )
     out = capsys.readouterr().out
     assert code == 0 and "3" in out
 
 
 def test_check_anomaly_denied(tmp_path, cfg, capsys):
-    fake = fake_for("rs1", events(3), custom_dims(),
-                    posts=[(is_trend, ApiError(403, "no", "invalid_access"))])
-    code = main(["check", "--config", str(cfg), "--rsid", "rs1"],
-                client_factory=lambda c, company_id=None: fake)
+    fake = fake_for(
+        "rs1", events(3), custom_dims(), posts=[(is_trend, ApiError(403, "no", "invalid_access"))]
+    )
+    code = main(
+        ["check", "--config", str(cfg), "--rsid", "rs1"],
+        client_factory=lambda c, company_id=None: fake,
+    )
     assert code == 2
     assert "Anomaly Detection" in capsys.readouterr().out
 
@@ -161,8 +212,10 @@ def test_check_probe_failure_does_not_crash(tmp_path, cfg, capsys, failure):
 
     responder = ApiError(500, "down", None) if failure == "api500" else raise_timeout
     fake = fake_for("rs1", events(3), custom_dims(), posts=[(is_anomaly_trend, responder)])
-    code = main(["check", "--config", str(cfg), "--rsid", "rs1"],
-                client_factory=lambda c, company_id=None: fake)
+    code = main(
+        ["check", "--config", str(cfg), "--rsid", "rs1"],
+        client_factory=lambda c, company_id=None: fake,
+    )
     out = capsys.readouterr().out
     name = "ApiError" if failure == "api500" else "Timeout"
     assert f"Anomaly detection: could not be tested ({name})" in out

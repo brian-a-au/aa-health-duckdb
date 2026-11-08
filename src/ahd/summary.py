@@ -210,8 +210,19 @@ def _display_name(store: Store, run_id: int, cid: str | None, dimension: bool) -
 
 def _run_block(store: Store, run_id: int) -> dict[str, Any]:
     run = store.get_run(run_id)
-    keys = ["rsid", "rsid_name", "segment_id", "today", "timezone", "status",
-            "started_at", "finished_at", "tool_version", "dimension", "metric"]
+    keys = [
+        "rsid",
+        "rsid_name",
+        "segment_id",
+        "today",
+        "timezone",
+        "status",
+        "started_at",
+        "finished_at",
+        "tool_version",
+        "dimension",
+        "metric",
+    ]
     block = {"id": run["run_id"], **{k: _iso(run[k]) for k in keys}}
     block["dimension_name"] = _display_name(store, run_id, run["dimension"], True)
     block["metric_name"] = _display_name(store, run_id, run["metric"], False)
@@ -248,8 +259,7 @@ def build_view(store: Store, run_id: int) -> dict[str, Any]:
     series: dict[str, list[list[Any]]] = {}
     for row in _rows(store, _SERIES_SQL, p):
         series.setdefault(row["component_id"], []).append(
-            [row["day"], row["value"], row["expected"], row["upper"], row["lower"],
-             row["anomaly"]]
+            [row["day"], row["value"], row["expected"], row["upper"], row["lower"], row["anomaly"]]
         )
 
     top100 = [

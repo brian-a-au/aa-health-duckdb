@@ -142,8 +142,9 @@ class RaisingSession(FakeSession):
 def make_raising(script):
     sleeps = []
     session = RaisingSession(script)
-    c = AdobeClient._from_parts(session, dict(HEADER), "co1", lambda: dict(HEADER),
-                                sleep=sleeps.append)
+    c = AdobeClient._from_parts(
+        session, dict(HEADER), "co1", lambda: dict(HEADER), sleep=sleeps.append
+    )
     return c, session, sleeps
 
 

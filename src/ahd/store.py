@@ -93,8 +93,17 @@ class Store:
             " tool_version, status, started_at, finished_at, dimension, metric)"
             " VALUES (nextval('run_seq'), ?, ?, ?, ?, ?, ?, 'running', ?, NULL, ?, ?)"
             " RETURNING run_id",
-            [rsid, rsid_name, segment_id, today, timezone, tool_version, datetime.now(),
-             dimension, metric],
+            [
+                rsid,
+                rsid_name,
+                segment_id,
+                today,
+                timezone,
+                tool_version,
+                datetime.now(),
+                dimension,
+                metric,
+            ],
         ).fetchone()
         return row[0]
 
@@ -106,12 +115,21 @@ class Store:
 
     def add_components(self, run_id: int, components: list[Component]) -> None:
         self._many(
-            "INSERT INTO components (run_id, component_id, name, kind, \"group\", number,"
+            'INSERT INTO components (run_id, component_id, name, kind, "group", number,'
             " metric_id, exists_dimension, allowed_for_reporting)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
-                (run_id, c.id, c.name, c.kind, c.group, c.number, c.column.metric_id,
-                 c.column.exists_dimension, c.allowed_for_reporting)
+                (
+                    run_id,
+                    c.id,
+                    c.name,
+                    c.kind,
+                    c.group,
+                    c.number,
+                    c.column.metric_id,
+                    c.column.exists_dimension,
+                    c.allowed_for_reporting,
+                )
                 for c in components
             ],
         )
@@ -127,7 +145,9 @@ class Store:
         )
 
     def add_top_items(
-        self, run_id: int, period: Literal["current", "historical"],
+        self,
+        run_id: int,
+        period: Literal["current", "historical"],
         rows: list[tuple[int, str, float]],
     ) -> None:
         self._many(
@@ -136,8 +156,12 @@ class Store:
         )
 
     def add_breakdown(
-        self, run_id: int, kind: Literal["browser", "device"], labels: list[str],
-        rows: list[tuple[str, list[float]]], totals: list[float],
+        self,
+        run_id: int,
+        kind: Literal["browser", "device"],
+        labels: list[str],
+        rows: list[tuple[str, list[float]]],
+        totals: list[float],
     ) -> None:
         self._many(
             "INSERT INTO breakdowns (run_id, kind, col_index, label, rank, item, value)"
@@ -152,7 +176,11 @@ class Store:
         self._many(
             "INSERT INTO breakdown_totals (run_id, kind, col_index, label, total)"
             " VALUES (?, ?, ?, ?, ?)",
-            [(run_id, kind, i, label, totals[i]) for i, label in enumerate(labels) if i < len(totals)],
+            [
+                (run_id, kind, i, label, totals[i])
+                for i, label in enumerate(labels)
+                if i < len(totals)
+            ],
         )
 
     def add_issue(
