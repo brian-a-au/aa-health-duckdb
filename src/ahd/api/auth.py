@@ -149,21 +149,24 @@ def find_company(session: Any, token: str, creds: Credentials, company_id: str |
     )
     if org is None:
         raise SignInError(WRONG_ORG)
-    ids = [
-        str(c["globalCompanyId"])
+    companies = [
+        (str(c["globalCompanyId"]), str(c.get("companyName") or ""))
         for c in org.get("companies") or []
         if isinstance(c, dict) and c.get("globalCompanyId")
     ]
-    if not ids:
+    if not companies:
         raise SignInError(NO_COMPANY)
     if company_id is None:
-        return ids[0]
-    if company_id not in ids:
-        raise SignInError(
-            f"This credential cannot see the login company {company_id!r}. "
-            f"It can see {len(ids)} login companies."
-        )
-    return company_id
+        return companies[0][0]
+    # The login company may be given by its global company ID or by its name.
+    wanted = company_id.strip().lower()
+    for cid, name in companies:
+        if wanted in (cid.lower(), name.lower()):
+            return cid
+    names = ", ".join(f"{name or '(no name)'} ({cid})" for cid, name in companies)
+    raise SignInError(
+        f"This credential cannot see the login company {company_id!r}. It can see: {names}."
+    )
 
 
 def sign_in(session: Any, creds: Credentials, company_id: str | None = None) -> SignIn:

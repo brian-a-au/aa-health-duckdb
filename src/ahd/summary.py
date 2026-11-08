@@ -125,32 +125,35 @@ WHERE day BETWEEN $start AND $yesterday
 ORDER BY component_id, day
 """
 
-# Yesterday's rows that may be an alert: Adobe flagged them, the value is 0, or the value is
-# more than MIN_CHANGE_ALERT below the usual value for the weekday. The page picks from these.
+# Rows that may be an alert, for each day the reader can pick: Adobe flagged them, the value
+# is 0, or the value is more than MIN_CHANGE_ALERT below the usual value for that weekday.
+# The page picks from these with its day picker and slider.
 _ALERTS_SQL = f"""
 WITH {_DV}, {_COMPS},
+sel AS (SELECT unnest($days::DATE[]) AS sel_day),
 usual AS (
-    SELECT c.component_id, coalesce(sum(d.value), 0) / 12 AS usual
-    FROM comps c LEFT JOIN dv d ON d.component_id = c.component_id
+    SELECT s.sel_day, c.component_id, coalesce(sum(d.value), 0) / 12 AS usual
+    FROM sel s CROSS JOIN comps c
+    LEFT JOIN dv d ON d.component_id = c.component_id
         AND d.day BETWEEN $baseline_start AND $baseline_end
-        AND dayofweek(d.day) = dayofweek($yesterday::DATE)
-    GROUP BY c.component_id
+        AND dayofweek(d.day) = dayofweek(s.sel_day)
+    GROUP BY s.sel_day, c.component_id
 ),
 r AS (
-    SELECT c.name, c.component_id, c.metric_type, c.unused, c.gpos, c.number, d.expected,
-        d.value AS actual, u.usual,
+    SELECT u.sel_day, c.name, c.component_id, c.metric_type, c.unused, c.gpos, c.number,
+        d.expected, d.value AS actual, u.usual,
         CASE WHEN d.expected <> 0 THEN d.value / d.expected - 1 END AS pct_vs_expected,
         CASE WHEN u.usual <> 0 THEN d.value / u.usual - 1 END AS pct_vs_usual,
         {_ANOMALY.format(a="d")} AS anomaly, coalesce(d.value = 0, false) AS zero
-    FROM comps c JOIN dv d ON d.component_id = c.component_id AND d.day = $yesterday
-    JOIN usual u ON u.component_id = c.component_id
+    FROM usual u JOIN comps c ON c.component_id = u.component_id
+    JOIN dv d ON d.component_id = c.component_id AND d.day = u.sel_day
 )
-SELECT name, component_id, metric_type, expected, actual, usual, pct_vs_expected, pct_vs_usual,
-    anomaly, zero, unused
+SELECT CAST(sel_day AS VARCHAR) AS day, name, component_id, metric_type, expected, actual,
+    usual, pct_vs_expected, pct_vs_usual, anomaly, zero, unused
 FROM r
 WHERE anomaly IS NOT NULL OR zero
     OR (usual >= {MIN_USUAL} AND pct_vs_usual < -{MIN_CHANGE_ALERT})
-ORDER BY {_ORDER}
+ORDER BY sel_day DESC, {_ORDER}
 """
 
 _TOP_SQL = """
@@ -259,9 +262,24 @@ def _run_block(store: Store, run_id: int) -> dict[str, Any]:
         "currency",
     ]
     block = {"id": run["run_id"], **{k: _iso(run[k]) for k in keys}}
+    block["duration"] = duration_text(run["started_at"], run["finished_at"])
     block["dimension_name"] = _display_name(store, run_id, run["dimension"], True)
     block["metric_name"] = _display_name(store, run_id, run["metric"], False)
     return block
+
+
+def duration_text(started: datetime | None, finished: datetime | None) -> str | None:
+    """How long a run took, e.g. "1 min 51 s". None when it has no end time."""
+    if started is None or finished is None:
+        return None
+    seconds = max(0, round((finished - started).total_seconds()))
+    hours, rest = divmod(seconds, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours} h {minutes} min"
+    if minutes:
+        return f"{minutes} min {secs} s"
+    return f"{secs} s"
 
 
 def _movement(row: dict[str, Any]) -> int | str:

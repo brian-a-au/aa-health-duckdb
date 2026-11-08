@@ -51,7 +51,10 @@ def orgs(*entries):
 
 
 def org(org_id="ORG1@AdobeOrg", companies=("co1",)):
-    return {"imsOrgId": org_id, "companies": [{"globalCompanyId": c} for c in companies]}
+    return {
+        "imsOrgId": org_id,
+        "companies": [{"globalCompanyId": c, "companyName": f"Name {c}"} for c in companies],
+    }
 
 
 def _fails(session, creds=CREDS, company_id=None):
@@ -83,7 +86,10 @@ def test_org_match_ignores_case_and_picks_the_right_org():
 def test_chosen_company():
     s = Session(GOOD_TOKEN, orgs(org(companies=("co1", "co2"))))
     assert sign_in(s, CREDS, "co2").company_id == "co2"
-    assert "cannot see the login company 'co3'" in _fails(s, company_id="co3")
+    assert sign_in(s, CREDS, "name CO2").company_id == "co2"  # by name, any case
+    text = _fails(s, company_id="co3")
+    assert "cannot see the login company 'co3'" in text
+    assert "Name co1 (co1), Name co2 (co2)" in text
 
 
 @pytest.mark.parametrize(

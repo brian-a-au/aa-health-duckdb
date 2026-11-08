@@ -1,5 +1,6 @@
 {
   "Reserved Traffic Events": [
+    "metrics/occurrences",
     "metrics/pageviews",
     "metrics/visits",
     "metrics/visitors"

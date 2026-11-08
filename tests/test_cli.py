@@ -466,3 +466,133 @@ def test_change_alert_option(tmp_path, cfg):
 def test_change_alert_must_be_a_slider_step(tmp_path, bad):
     with pytest.raises(SystemExit):
         main(["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--change-alert", bad])
+
+
+# ---- suites, segments, names, company, progress --------------------------------
+
+
+def test_suites_and_segments_commands(cfg, capsys):
+    fake = fake_for("rs1", events(1), custom_dims())
+    assert main(["suites", "--config", str(cfg)], client_factory=lambda c: fake) == 0
+    out = capsys.readouterr().out
+    assert "rs1  Test Suite" in out
+    code = main(
+        ["segments", "--config", str(cfg), "--rsid", "test suite"], client_factory=lambda c: fake
+    )
+    out = capsys.readouterr().out
+    assert code == 0 and "s300_abc  Mobile visits" in out
+
+
+def test_suites_none_visible(cfg, capsys):
+    from fakes import FakeClient
+
+    fake = FakeClient(gets={"/reportsuites/collections/suites": {"content": []}})
+    assert main(["suites", "--config", str(cfg)], client_factory=lambda c: fake) == 2
+    assert "sees no report suites" in capsys.readouterr().out
+
+
+def test_segments_none(cfg, capsys):
+    fake = fake_for("rs1", events(1), custom_dims())
+    fake.gets["/segments"] = {"content": []}
+    assert (
+        main(["segments", "--config", str(cfg), "--rsid", "rs1"], client_factory=lambda c: fake)
+        == 0
+    )
+    assert "No segments are available" in capsys.readouterr().out
+
+
+def test_run_by_names_and_company(tmp_path, cfg, capsys):
+    from ahd.store import Store
+
+    fake = fake_for("rs1", events(3), custom_dims())
+    seen = {}
+
+    def factory(creds, company_id=None):
+        seen["company"] = company_id
+        return fake
+
+    code = main(
+        args(
+            tmp_path,
+            cfg,
+            "run",
+            "--rsid",
+            "Test Suite",
+            "--segment",
+            "mobile visits",
+            "--date",
+            "2026-11-07",
+            "--out",
+            str(tmp_path / "o"),
+            "--company",
+            "Luma",
+        ),
+        client_factory=factory,
+    )
+    assert code == 0 and seen["company"] == "Luma"
+    run = Store.open(tmp_path / "t.duckdb").get_run(1)
+    assert run["rsid"] == "rs1" and run["segment_id"] == "s300_abc"
+    for body in fake.posted():
+        assert {"type": "segment", "segmentId": "s300_abc"} in body["globalFilters"]
+    err = capsys.readouterr().err
+    assert "Found " in err and "Daily trends: 1 of 1 requests done." in err
+    assert "Individual Component Summary: 5 of 5 requests done." in err
+
+
+def test_check_by_suite_name(cfg, capsys):
+    fake = fake_for("rs1", events(3), custom_dims())
+    code = main(
+        ["check", "--config", str(cfg), "--rsid", "TEST SUITE"],
+        client_factory=lambda c, company_id=None: fake,
+    )
+    assert code == 0 and "Report suite: Test Suite" in capsys.readouterr().out
+
+
+def test_runs_shows_duration(tmp_path, cfg, capsys):
+    fake = fake_for("rs1", events(3), custom_dims())
+    main(
+        args(
+            tmp_path,
+            cfg,
+            "run",
+            "--rsid",
+            "rs1",
+            "--date",
+            "2026-11-07",
+            "--out",
+            str(tmp_path / "o"),
+        ),
+        client_factory=lambda c, company_id=None: fake,
+    )
+    capsys.readouterr()
+    main(["runs", "--db", str(tmp_path / "t.duckdb")])
+    out = capsys.readouterr().out
+    assert "took" in out.splitlines()[0] and out.splitlines()[1].rstrip().endswith(" s")
+
+
+def test_progress_on_a_terminal_rewrites_one_line():
+    import io
+
+    from ahd.cli import _Progress
+
+    class Tty(io.StringIO):
+        def isatty(self):
+            return True
+
+    t = Tty()
+    p = _Progress(t)
+    p("Long first message")
+    p("Short")
+    p.done()
+    assert t.getvalue() == (
+        "\rLong first message"
+        + "\rShort".ljust(len("Long first message") + 1)
+        + "\r"
+        + " " * 5
+        + "\r"
+    )
+    plain = io.StringIO()
+    q = _Progress(plain)
+    q("one")
+    q.done()
+    assert plain.getvalue() == "one\n"

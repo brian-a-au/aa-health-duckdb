@@ -176,10 +176,16 @@ def test_alerts_zero_and_anomaly(tmp_path):
         _dv("individual", YESTERDAY, 0.0),  # never an alert
     ]
     store, rid = _build(tmp_path, comps, vals)
-    alerts = build_view(store, rid)["alerts"]
+    every = build_view(store, rid)["alerts"]
+    # Each selectable day has its own rows: the zero on Nov 5 is an alert for that day.
+    assert [(a["day"], a["component_id"]) for a in every if a["day"] != "2026-11-06"] == [
+        ("2026-11-05", "metrics/event1")
+    ]
+    alerts = [a for a in every if a["day"] == "2026-11-06"]
     assert [a["component_id"] for a in alerts] == ["metrics/event2", "metrics/event3"]
     spike, zero = alerts
     assert spike == {
+        "day": "2026-11-06",
         "name": "Spike",
         "component_id": "metrics/event2",
         "metric_type": None,
@@ -334,7 +340,9 @@ def test_run_block(friday):
         "currency",
         "dimension_name",
         "metric_name",
+        "duration",
     }
+    assert isinstance(run["duration"], str) and run["duration"].endswith(" s")
     assert run["dimension"] == "variables/page" and run["metric"] == "metrics/event1"
     # Page is not in this run's components, so its standard name is used; Event 1 is.
     assert run["dimension_name"] == "Page" and run["metric_name"] == "Event 1"
@@ -570,7 +578,7 @@ def test_drop_candidates(tmp_path, friday_value, yesterday_value, included):
     store, rid = _build(
         tmp_path, [_comp(cid, "E", number=1)], _series(cid, friday_value, yesterday_value)
     )
-    alerts = build_view(store, rid)["alerts"]
+    alerts = [a for a in build_view(store, rid)["alerts"] if a["day"] == YESTERDAY.isoformat()]
     assert bool(alerts) is included
     if included:
         a = alerts[0]
@@ -588,3 +596,17 @@ def test_view_carries_change_alert_settings(tmp_path):
     assert view["change_alert"] == DEFAULT_CHANGE_ALERT == 0.30
     assert view["min_usual"] == MIN_USUAL == 10
     assert build_view(store, rid, change_alert=0.45)["change_alert"] == 0.45
+
+
+@pytest.mark.parametrize(
+    ("seconds", "text"),
+    [(0, "0 s"), (45, "45 s"), (111, "1 min 51 s"), (3720, "1 h 2 min"), (-5, "0 s")],
+)
+def test_duration_text(seconds, text):
+    from datetime import datetime
+
+    from ahd.summary import duration_text
+
+    start = datetime(2026, 11, 8, 9, 0, 0)
+    assert duration_text(start, start + timedelta(seconds=seconds)) == text
+    assert duration_text(start, None) is None and duration_text(None, start) is None

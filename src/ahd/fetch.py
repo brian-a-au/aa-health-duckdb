@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from importlib import metadata
@@ -135,13 +135,21 @@ def _batches(columns: list[Column], size: int) -> list[list[Column]]:
     return [columns[i : i + size] for i in range(0, len(columns), size)]
 
 
+def _quiet(message: str) -> None:
+    """The default progress callback: say nothing."""
+
+
 def run_fetch(
     client: Any,
     store: Store,
     opts: RunOptions,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    progress: Callable[[str], None] = _quiet,
 ) -> int:
+    """progress gets a short plain message after each step, e.g. for a status line."""
+    progress("Reading the report suite and its components.")
     catalog, suite = fetch_catalog(client, opts.rsid)
+    progress(f"Found {len(catalog)} components to check.")
     zone = suite.get("timezoneZoneinfo") or "UTC"
     today = opts.today or today_in_zone(zone, now())
     window = RunWindow.for_today(today)
@@ -157,7 +165,7 @@ def run_fetch(
         currency=suite.get("currency") if isinstance(suite.get("currency"), str) else None,
     )
     try:
-        status = _run(client, store, opts, run_id, catalog, window)
+        status = _run(client, store, opts, run_id, catalog, window, progress)
     except BaseException:
         store.finish_run(run_id, "failed")
         raise
@@ -172,6 +180,7 @@ def _run(
     run_id: int,
     catalog: list[Component],
     window: RunWindow,
+    progress: Callable[[str], None] = _quiet,
 ) -> str:
     issue_count = 0
     value_count = 0
@@ -198,6 +207,7 @@ def _run(
                 anomaly = False
                 issue("permissions", None, "anomaly_not_allowed", ANOMALY_MESSAGE)
 
+    progress("Anomaly detection is allowed." if anomaly else "Anomaly detection is not available.")
     rsid, seg = opts.rsid, opts.segment_id
     individual = Column(INDIVIDUAL_ID, opts.metric, exists_dimension=opts.dimension)
 
@@ -241,7 +251,10 @@ def _run(
         ind_futures = {k: pool.submit(client.post_report, b) for k, b in ind_bodies.items()}
 
         # Results are written here, on the calling thread, in submission order.
-        for batch, fut in batch_futures:
+        total = len(batch_futures)
+        for done, (batch, fut) in enumerate(batch_futures, start=1):
+            wait([fut])
+            progress(f"Daily trends: {done} of {total} requests done.")
             try:
                 resp = fut.result()
             except ApiError as e:
@@ -259,7 +272,9 @@ def _run(
             for err in errors:
                 issue("column", err.component_id, err.error_code, err.message)
 
-        for kind, fut in ind_futures.items():
+        for done, (kind, fut) in enumerate(ind_futures.items(), start=1):
+            wait([fut])
+            progress(f"Individual Component Summary: {done} of {len(ind_futures)} requests done.")
             try:
                 resp = fut.result()
             except ApiError as e:

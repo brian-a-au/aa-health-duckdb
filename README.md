@@ -43,7 +43,7 @@ Each time you use `ahd run`, the tool saves a new run in the DuckDB file. It nev
 - **One file, many suites.** Runs for different report suites go into the same file. To keep them apart, give each suite its own file with `--db`.
 - **One file per profile.** When you use a profile, its runs go into `~/.aa/orgs/<name>/ahd.duckdb`. So data from different organizations never shares a file. `--db` still wins over this default.
 - **Status.** A run starts as "running" and ends as "ok", "partial" or "failed". A run that stopped in the middle, e.g., because you closed the window, stays "running".
-- **Listing and rebuilding.** `ahd runs` lists every stored run with its number, report suite, date and status, newest first. `ahd render --run 3` rebuilds the report for run 3 from the file, with no calls to Adobe. A rebuilt report uses the current version of the page design.
+- **Listing and rebuilding.** `ahd runs` lists every stored run with its number, report suite, date, status and how long it took, newest first. `ahd render --run 3` rebuilds the report for run 3 from the file, with no calls to Adobe. A rebuilt report uses the current version of the page design.
 - **Size.** One run of a suite with about 400 components takes about 3 MB. The file keeps growing until you delete runs.
 - **Deleting runs.** `ahd prune` deletes the runs you choose from every table at once. If any part fails, nothing is deleted. The file does not get smaller afterwards, but DuckDB reuses the freed space for new runs. Run numbers are never reused, so a new run never gets the number of a deleted one. Reports that are already written stay in the reports folder.
 - **Fewer components than last time.** After each run, the tool compares the number of custom events, eVars and props with the previous run of the same report suite. If any of them fell by more than 20 percent, the run output and the report show a warning. The usual cause is a change to the credential's product profile in the Adobe Admin Console, or a run with a different credential.
@@ -64,9 +64,9 @@ Inside the file, every row carries its run number. The tables are:
 
 The report is one HTML file with its styles, script and data inside it. Open it in any browser by double clicking it. It loads nothing from the internet, so it also works offline. It has three tabs:
 
-- **Components Summary:** every custom event, eVar and prop, with trend charts. You can view it by day or by week, and show only the flagged components. Each chart has a Type filter. The Metric chart filters by metric group, e.g., custom events or reserved purchase events. It lists only the groups that have data in the run. The Dimension chart filters by eVars, props or other dimensions.
+- **Components Summary:** every custom event, eVar and prop, with trend charts. As in the workbook, the Metric chart starts on Occurrences and the Dimension chart starts on Page. You can view it by day or by week, and show only the flagged components. Each chart has a Type filter. The Metric chart filters by metric group, e.g., custom events or reserved purchase events. It lists only the groups that have data in the run. The Dimension chart filters by eVars, props or other dimensions.
 - **Individual Component Summary:** one dimension in more depth. By default this is Page by Occurrences. It shows a trend, the top 100 values, and the top values for each browser group and device type.
-- **Alerts Summary:** the alerts for yesterday, in these groups:
+- **Alerts Summary:** the alerts for one day, in these groups. It starts on yesterday, and you can pick any of the last 7 days:
   - **Unusual values.** Adobe's anomaly detection flagged the value as outside the expected range.
   - **Large drops.** The value was further below the usual value for the weekday than the slider allows. Adobe did not flag it.
   - **Dropped to zero.** The value was 0, but the component had data on other days in the run.
@@ -76,7 +76,7 @@ The report is one HTML file with its styles, script and data inside it. Open it 
 
 Summary tiles at the top give yesterday's counts. Every table can be sorted, and a switch at the top right chooses light mode, dark mode, or your computer's setting.
 
-A slider above the tiles sets the percent for a large drop. It goes from 10 to 100 percent, and it starts at 30 percent. A drop is measured against the usual value for the weekday, which is the 12-week average. Components with a usual value under 10 are skipped, because small numbers change a lot from day to day. The same percent sets when the tables show an arrow. When you move the slider, the tiles, the tables, the "Show only flagged" filter and the alerts change at once.
+A slider above the tiles sets the percent for a large drop. A line under it says how many components are flagged on the day shown in the Components Summary, and it names the largest drop, even when that drop is under the percent. A flagged value gets a "Large drop" badge in the Flag column. It goes from 10 to 100 percent, and it starts at 30 percent. A drop is measured against the usual value for the weekday, which is the 12-week average. Components with a usual value under 10 are skipped, because small numbers change a lot from day to day. The same percent sets when the tables show an arrow. When you move the slider, the tiles, the tables, the "Show only flagged" filter and the alerts change at once.
 
 Working offline does not mean the report is cleared for sharing. It contains your component names and values, so share it only where your organization allows.
 
@@ -144,16 +144,26 @@ Check the sign in and see how many report suites the credential can see. It exit
 uv run ahd check
 ```
 
+List the report suites the credential can see, and the segments you can use with one suite. Each list shows the ID and the name:
+
+```
+uv run ahd suites
+uv run ahd segments --rsid "My Suite"
+```
+
+`--rsid` and `--segment` take an ID or a name, in any case. If two report suites or segments have the same name, the tool lists their IDs and asks you to use one. If the credential sees more than one login company, choose one with `--company`, by its global company ID or its name. The commands that sign in accept it: `check`, `suites`, `segments` and `run`.
+
 Check one report suite. This counts the custom events, eVars and props and tests anomaly detection. It exits with 2 if access is limited, and it explains the fix in plain words. It also exits with 2 if a check could not be run, for example because of a network problem:
 
 ```
 uv run ahd check --rsid my_suite
 ```
 
-Fetch data and write the report. The path of the HTML file is printed when the run ends:
+Fetch data and write the report. While it runs, the tool prints its progress on stderr, e.g., "Daily trends: 12 of 21 requests done". The path of the HTML file is printed when the run ends:
 
 ```
 uv run ahd run --rsid my_suite
+uv run ahd run --rsid "My Suite" --segment "Mobile visits"
 uv run ahd run --rsid my_suite --segment s300000000_abc --batch-size 20 --workers 4
 uv run ahd run --rsid my_suite --date 2026-11-07 --out ./reports/
 ```

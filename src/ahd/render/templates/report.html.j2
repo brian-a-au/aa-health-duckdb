@@ -25,16 +25,18 @@
     <div><dt>Individual component</dt><dd>{{ individual_label }}{% if run.dimension and run.metric %} <span class="muted">({{ run.dimension }}, {{ run.metric }})</span>{% endif %}</dd></div>
     <div><dt>Segment</dt><dd>{% if run.segment_id %}{{ run.segment_id }}{% else %}None (all visits){% endif %}</dd></div>
     <div><dt>Run date</dt><dd>{{ run.today }} <span class="muted">(report suite time zone {{ run.timezone }})</span></dd></div>
-    <div><dt>Run time</dt><dd>{% if run.started_at %}{{ run.started_at[:16] | replace("T", " ") }} <span class="muted">(time on the computer that ran it)</span>{% else %}Unknown{% endif %}</dd></div>
+    <div><dt>Run time</dt><dd>{% if run.started_at %}{{ run.started_at[:16] | replace("T", " ") }} <span class="muted">(time on the computer that ran it)</span>{% if run.duration %}<br>Took {{ run.duration }}{% endif %}{% else %}Unknown{% endif %}</dd></div>
     <div><dt>Status</dt><dd><span class="badge badge-{{ status_kind }}"><span class="icon" aria-hidden="true">{{ status_icon }}</span>{{ status_label }}</span></dd></div>
   </dl>
 </header>
 
 <div class="change-alert">
-  <label for="change-alert">Flag drops larger than</label>
+  <label for="change-alert">Large drop alert: flag values more than</label>
   <input type="range" id="change-alert" min="10" max="100" step="5" value="{{ change_alert_pct }}" aria-describedby="change-alert-hint">
   <output for="change-alert" id="change-alert-value">{{ change_alert_pct }}%</output>
-  <p class="hint" id="change-alert-hint">A drop is measured against the usual value for the weekday. Components with a usual value under {{ min_usual }} are skipped. The same percent sets when the tables show an arrow.</p>
+  <span>below usual</span>
+  <p class="change-alert-result" id="change-alert-result" role="status" aria-live="polite"></p>
+  <p class="hint" id="change-alert-hint">"Usual" is the 12-week average for the same weekday. Components with a usual value under {{ min_usual }} are skipped. A flagged value gets a "Large drop" badge in the Flag column and is listed on the Alerts tab. The same percent sets when the tables show an arrow.</p>
 </div>
 
 <section class="tiles" id="tiles" aria-label="Yesterday at a glance"></section>
@@ -163,7 +165,12 @@
 </section>
 
 <section class="panel" role="tabpanel" id="panel-alerts" aria-labelledby="tab-alerts" hidden>
-  <h2>Alerts for yesterday</h2>
+  <h2>Alerts</h2>
+  <div class="controls">
+    <label>Day
+      <select id="alert-day"></select>
+    </label>
+  </div>
   <p class="hint">Components that Adobe flagged as unusual, that fell further below their usual value than the slider allows, or that dropped to 0.</p>
   <div class="copy-row">
     <button type="button" id="copy-alerts">Copy alert summary</button>

@@ -18,14 +18,23 @@ from ahd.catalog import CUSTOM_GROUPS
 from ahd.config import ConfigError, chosen_profile, load_credentials, profile_dir
 from ahd.dates import RunWindow, today_in_zone
 from ahd.fetch import RunOptions, fetch_catalog, probe_anomaly, run_fetch
+from ahd.lookup import list_segments, list_suites, resolve_segment, resolve_suite
 from ahd.render.html import write_report
 from ahd.store import SchemaVersionError, Store
-from ahd.summary import DEFAULT_CHANGE_ALERT, DROP_CAUSE, build_view, component_drops
+from ahd.summary import (
+    DEFAULT_CHANGE_ALERT,
+    DROP_CAUSE,
+    build_view,
+    component_drops,
+    duration_text,
+)
 
 DEFAULT_DB = "./data/ahd.duckdb"
 PROFILE_DB = "ahd.duckdb"
 DEFAULT_OUT = "./reports/"
 EXIT_CODES = {"ok": 0, "failed": 1, "partial": 3}
+
+RSID_HELP = "A report suite ID or name. Run ahd suites to list them."
 
 PROFILE_HELP = (
     "Use the credential in ~/.aa/orgs/NAME/config.json, the profile aa_auto_sdr uses. "
@@ -61,6 +70,15 @@ def _parser() -> argparse.ArgumentParser:
                 help=f"DuckDB file (default {DEFAULT_DB}, or ahd.duckdb in the profile folder).",
             )
 
+    def signin(sp: argparse.ArgumentParser) -> None:
+        common(sp, db=False)
+        sp.add_argument(
+            "--company",
+            metavar="ID_OR_NAME",
+            help="The login company to use, by global company ID or name. Needed only when "
+            "the credential sees more than one.",
+        )
+
     def change_alert(sp: argparse.ArgumentParser) -> None:
         sp.add_argument(
             "--change-alert",
@@ -74,13 +92,25 @@ def _parser() -> argparse.ArgumentParser:
         )
 
     check = sub.add_parser("check", help="Sign in and check what this credential can see.")
-    common(check, db=False)
-    check.add_argument("--rsid")
+    signin(check)
+    check.add_argument("--rsid", help=RSID_HELP)
+
+    suites = sub.add_parser("suites", help="List the report suites this credential can see.")
+    signin(suites)
+
+    segments = sub.add_parser("segments", help="List the segments you can use with a suite.")
+    signin(segments)
+    segments.add_argument("--rsid", required=True, help=RSID_HELP)
 
     run = sub.add_parser("run", help="Fetch data and write the HTML report.")
-    common(run)
-    run.add_argument("--rsid", required=True)
-    run.add_argument("--segment")
+    signin(run)
+    run.add_argument(
+        "--db",
+        type=Path,
+        help=f"DuckDB file (default {DEFAULT_DB}, or ahd.duckdb in the profile folder).",
+    )
+    run.add_argument("--rsid", required=True, help=RSID_HELP)
+    run.add_argument("--segment", help="A segment ID or name, to filter every request.")
     run.add_argument("--date", type=date.fromisoformat, help="Use this date as today (YYYY-MM-DD).")
     run.add_argument("--dimension", default="variables/page")
     run.add_argument("--metric", default="metrics/occurrences")
@@ -136,14 +166,63 @@ def _connect(args: argparse.Namespace, factory: Callable[..., Any]) -> Any:
     if path is None and Path("config.json").exists():
         path = Path("config.json")
     creds = load_credentials(path, _profile(args))
-    client = factory(creds)
+    company = getattr(args, "company", None)
+    client = factory(creds, company_id=company) if company else factory(creds)
     # Only the name of the source, never a value from it.
     print(f"Signed in using {creds.source}")
     return client
 
 
+def _print_table(rows: list[dict], empty: str) -> None:
+    if not rows:
+        print(empty)
+        return
+    width = max(len(r["id"]) for r in rows)
+    print(f"{'ID':<{width}}  Name")
+    for r in rows:
+        print(f"{r['id']:<{width}}  {r['name']}")
+
+
+def _suites(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
+    client = _connect(args, factory)
+    rows = list_suites(client)
+    _print_table(rows, NO_REPORT_SUITES)
+    return 0 if rows else 2
+
+
+def _segments(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
+    client = _connect(args, factory)
+    rsid = resolve_suite(client, args.rsid)
+    _print_table(list_segments(client, rsid), "No segments are available for this report suite.")
+    return 0
+
+
+class _Progress:
+    """Status lines on stderr. On a terminal each line replaces the one before."""
+
+    def __init__(self, stream: Any = None) -> None:
+        self.stream = stream or sys.stderr
+        self.live = bool(getattr(self.stream, "isatty", lambda: False)())
+        self.width = 0
+
+    def __call__(self, message: str) -> None:
+        if self.live:
+            self.stream.write("\r" + message.ljust(self.width))
+            self.width = len(message)
+        else:
+            self.stream.write(message + "\n")
+        self.stream.flush()
+
+    def done(self) -> None:
+        if self.live and self.width:
+            self.stream.write("\r" + " " * self.width + "\r")
+            self.stream.flush()
+
+
 def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     client = _connect(args, factory)
+    if args.rsid:
+        args.rsid = resolve_suite(client, args.rsid)
     if not args.rsid:
         suites = client.get("/reportsuites/collections/suites", {"limit": 1000}) or {}
         count = len(suites.get("content") or [])
@@ -193,17 +272,23 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
 def _run(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     db = _db_path(args)
     client = _connect(args, factory)
+    rsid = resolve_suite(client, args.rsid)
+    segment = resolve_segment(client, rsid, args.segment) if args.segment else None
     store = Store.open(db)
     opts = RunOptions(
-        rsid=args.rsid,
-        segment_id=args.segment,
+        rsid=rsid,
+        segment_id=segment,
         today=args.date,
         dimension=args.dimension,
         metric=args.metric,
         batch_size=args.batch_size,
         workers=args.workers,
     )
-    run_id = run_fetch(client, store, opts)
+    progress = _Progress()
+    try:
+        run_id = run_fetch(client, store, opts, progress=progress)
+    finally:
+        progress.done()
     status = store.get_run(run_id)["status"]
     path = write_report(build_view(store, run_id, args.change_alert / 100), args.out)
     print(path)
@@ -228,9 +313,10 @@ def _render(args: argparse.Namespace) -> int:
 
 
 def _print_runs(rows: list[dict]) -> None:
-    print(f"{'run':>4}  {'report suite':<24} {'date':<10}  {'status':<8}")
+    print(f"{'run':>4}  {'report suite':<24} {'date':<10}  {'status':<8}  took")
     for r in rows:
-        print(f"{r['run_id']:>4}  {r['rsid']!s:<24} {r['today']!s:<10}  {r['status']:<8}")
+        took = duration_text(r["started_at"], r["finished_at"]) or ""
+        print(f"{r['run_id']:>4}  {r['rsid']!s:<24} {r['today']!s:<10}  {r['status']:<8}  {took}")
 
 
 def _confirm(question: str) -> bool:
@@ -296,6 +382,10 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
             return _render(args)
         if args.command == "prune":
             return _prune(args)
+        if args.command == "suites":
+            return _suites(args, client_factory)
+        if args.command == "segments":
+            return _segments(args, client_factory)
         return _runs(args)
     except (ConfigError, ApiError, SignInError, SchemaVersionError) as e:
         print(f"Error: {e}", file=sys.stderr)
