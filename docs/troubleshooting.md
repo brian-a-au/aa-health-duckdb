@@ -16,7 +16,7 @@ Start with `ahd check --rsid <suite>`. It signs in, counts what the credential c
 
 ## Sign-in problems
 
-When sign-in fails, the tool says what is wrong and what to fix. It tells these causes apart:
+When sign-in fails, the tool says what is wrong and what to fix. The fixes happen in the [Adobe Developer Console](https://developer.adobe.com/console/) or the [Adobe Admin Console](https://adminconsole.adobe.com/). [Configuration](configuration.md#create-the-credential) shows how the credential is set up. The tool tells these causes apart:
 
 | The message says | Cause | Fix |
 |---|---|---|
