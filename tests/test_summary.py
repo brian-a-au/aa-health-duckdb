@@ -38,9 +38,8 @@ def _build(tmp_path, components, values, top=None, breakdowns=None, issues=None)
         TODAY,
         "US/Pacific",
         "0.1.0",
-        dimension="variables/page",
-        metric="metrics/event1",
     )
+    store.add_pair(rid, "variables/page", "metrics/event1")
     store.add_components(rid, components)
     store.add_daily_values(rid, values)
     for period, rows in (top or {}).items():
@@ -173,7 +172,7 @@ def test_alerts_zero_and_anomaly(tmp_path):
         _dv("metrics/event2", YESTERDAY, 30.0, 20.0, 25.0, 15.0, True),
         _dv("metrics/event3", YESTERDAY, 0.0),
         _dv("metrics/event1", date(2026, 11, 5), 0.0),  # zero, but not yesterday
-        _dv("individual", YESTERDAY, 0.0),  # never an alert
+        _dv("individual/1", YESTERDAY, 0.0),  # never an alert
     ]
     store, rid = _build(tmp_path, comps, vals)
     every = build_view(store, rid)["alerts"]
@@ -222,7 +221,7 @@ def test_movement_index(tmp_path):
             "historical": [(2, "about", 900.0), (3, "home", 800.0), (1, "gone", 999.0)],
         },
     )
-    top = build_view(store, rid)["top100"]
+    top = build_view(store, rid)["pairs"][0]["top100"]
     assert top == [
         {"movement": 2, "rank": 1, "item": "home", "value": 100},
         {"movement": "-", "rank": 2, "item": "about", "value": 50},
@@ -234,8 +233,8 @@ def test_today_row_excluded_from_series(tmp_path):
     vals = [v for v in _friday_series("metrics/event1") if v.day != YESTERDAY]
     vals += [
         _dv("metrics/event1", YESTERDAY, 13.0, 8.0, 12.0, 4.0, True),
-        _dv("individual", YESTERDAY, 2.0),
-        _dv("individual", TODAY, 9.0),
+        _dv("individual/1", YESTERDAY, 2.0),
+        _dv("individual/1", TODAY, 9.0),
     ]
     store, rid = _build(tmp_path, [_comp("metrics/event1", "Event 1", number=1)], vals)
     view = build_view(store, rid)
@@ -244,17 +243,17 @@ def test_today_row_excluded_from_series(tmp_path):
     assert s[0][0] == "2026-08-08" and s[-1][0] == "2026-11-06"
     assert s[-1] == ["2026-11-06", 13, 8, 12, 4, "high"]
     assert s[0] == ["2026-08-08", 1, None, None, None, None]
-    assert view["series"]["individual"] == [["2026-11-06", 2, None, None, None, None]]
+    assert view["series"]["individual/1"] == [["2026-11-06", 2, None, None, None, None]]
 
 
 def test_individual_in_series_not_views_or_alerts(tmp_path):
     store, rid = _build(
         tmp_path,
         [_comp("metrics/event1", "E", number=1)],
-        [_dv("metrics/event1", YESTERDAY, 1.0), _dv("individual", YESTERDAY, 0.0)],
+        [_dv("metrics/event1", YESTERDAY, 1.0), _dv("individual/1", YESTERDAY, 0.0)],
     )
     view = build_view(store, rid)
-    assert "individual" in view["series"]
+    assert "individual/1" in view["series"]
     for rows in view["views"].values():
         assert [r["component_id"] for r in rows] == ["metrics/event1"]
     assert view["alerts"] == []
@@ -335,17 +334,15 @@ def test_run_block(friday):
         "started_at",
         "finished_at",
         "tool_version",
-        "dimension",
-        "metric",
         "currency",
-        "dimension_name",
-        "metric_name",
         "duration",
     }
     assert isinstance(run["duration"], str) and run["duration"].endswith(" s")
-    assert run["dimension"] == "variables/page" and run["metric"] == "metrics/event1"
-    # Page is not in this run's components, so its standard name is used; Event 1 is.
-    assert run["dimension_name"] == "Page" and run["metric_name"] == "Event 1"
+    [pair] = friday["pairs"]
+    assert pair["dimension"] == "variables/page" and pair["metric"] == "metrics/event1"
+    assert pair["series_id"] == "individual/1" and pair["pair"] == 1
+    # No stored names: Page is not in this run's components, so its standard name is used.
+    assert pair["dimension_name"] == "Page" and pair["metric_name"] == "Event 1"
     assert run["rsid"] == "rs1" and run["rsid_name"] == "Suite One"
     assert run["segment_id"] == "seg1" and run["today"] == "2026-11-07"
     assert run["timezone"] == "US/Pacific" and run["status"] == "partial"
@@ -367,7 +364,8 @@ def test_breakdowns(tmp_path):
         },
     )
     view = build_view(store, rid)
-    assert view["browser"] == {
+    [pair] = view["pairs"]
+    assert pair["browser"] == {
         "labels": ["Visits", "Page Views"],
         "rows": [
             {"rank": 1, "item": "Chrome", "values": [5, 9]},
@@ -375,13 +373,13 @@ def test_breakdowns(tmp_path):
         ],
         "totals": [7, 12],
     }
-    assert view["device"] == {"labels": [], "rows": [], "totals": []}
+    assert pair["device"] == {"labels": [], "rows": [], "totals": []}
 
 
 def test_empty_run_and_json_safe(tmp_path):
     store, rid = _build(tmp_path, [], [])
     view = build_view(store, rid)
-    assert view["series"] == {} and view["alerts"] == [] and view["top100"] == []
+    assert view["series"] == {} and view["alerts"] == [] and view["pairs"][0]["top100"] == []
     assert all(rows == [] for rows in view["views"].values())
     json.dumps(view, allow_nan=False)
 
@@ -444,24 +442,37 @@ def test_run_block_names_from_exists_dimension(tmp_path):
         TODAY,
         "UTC",
         "0.1",
-        dimension="variables/prop7",
-        metric="metrics/occurrences",
     )
+    store.add_pair(rid, "variables/prop7", "metrics/occurrences")
     store.add_components(rid, [prop])
     store.finish_run(rid, "ok")
-    run = build_view(store, rid)["run"]
-    assert run["dimension_name"] == "Search term"
+    [pair] = build_view(store, rid)["pairs"]
+    assert pair["dimension_name"] == "Search term"
     # occurrences is the exists column's metric, not a component, so it gets its standard name
-    assert run["metric_name"] == "Occurrences"
+    assert pair["metric_name"] == "Occurrences"
 
 
-def test_run_block_without_dimension(tmp_path):
+def test_run_without_pairs(tmp_path):
     store = Store.open(tmp_path / "t.duckdb")
     rid = store.create_run("rs1", "S", None, TODAY, "UTC", "0.1")
     store.finish_run(rid, "ok")
-    run = build_view(store, rid)["run"]
-    assert run["dimension"] is None and run["dimension_name"] is None
-    assert run["metric"] is None and run["metric_name"] is None
+    assert build_view(store, rid)["pairs"] == []
+
+
+def test_each_pair_has_its_own_tables(tmp_path):
+    store, rid = _build(tmp_path, [], [], top={"current": [(1, "home", 5.0)]})
+    pair = store.add_pair(
+        rid, "variables/evar17", "metrics/cartadditions", "Search", "Carts", "int"
+    )
+    store.add_top_items(rid, "current", [(1, "shoes", 7.0)], pair=pair)
+    store.add_breakdown(rid, "device", ["Other"], [("shoes", [7.0])], [7.0], pair=pair)
+    first, second = build_view(store, rid)["pairs"]
+    assert [r["item"] for r in first["top100"]] == ["home"]
+    assert first["device"]["rows"] == []
+    assert second["pair"] == 2 and second["series_id"] == "individual/2"
+    assert (second["dimension_name"], second["metric_name"]) == ("Search", "Carts")
+    assert [r["item"] for r in second["top100"]] == ["shoes"]
+    assert second["device"]["rows"] == [{"rank": 1, "item": "shoes", "values": [7]}]
 
 
 def test_alert_below_range_is_low(tmp_path):

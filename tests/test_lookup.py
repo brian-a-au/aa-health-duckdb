@@ -64,3 +64,49 @@ def test_resolve_segment():
     assert resolve_segment(client(), "rs_a", "paid") == "s2"
     with pytest.raises(ConfigError, match="ahd segments --rsid rs_a"):
         resolve_segment(client(), "rs_a", "nope")
+
+
+def comp_client():
+    return FakeClient(
+        gets={
+            "/dimensions": [
+                {"id": "variables/evar17", "name": "Internal Search Term"},
+                {"id": "variables/page", "name": "Page"},
+                {"id": "variables/prop1", "name": "Twin"},
+                {"id": "variables/prop2", "name": "twin"},
+                {"name": "no id"},
+            ],
+            "/metrics": [{"id": "metrics/cartadditions", "name": "Cart Additions", "type": "int"}],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("kind", "value", "found"),
+    [
+        ("dimension", "variables/evar17", "variables/evar17"),
+        ("dimension", "evar17", "variables/evar17"),
+        ("dimension", "EVAR17", "variables/evar17"),
+        ("dimension", " internal search term ", "variables/evar17"),
+        ("metric", "cartadditions", "metrics/cartadditions"),
+        ("metric", "Cart Additions", "metrics/cartadditions"),
+    ],
+)
+def test_resolve_component(kind, value, found):
+    from ahd.lookup import resolve_component
+
+    c = comp_client()
+    r = resolve_component(c, "rs1", kind, value)
+    assert r["id"] == found
+    assert c.calls[0][2] == {"rsid": "rs1"}
+
+
+def test_resolve_component_errors():
+    from ahd.lookup import resolve_component
+
+    with pytest.raises(ConfigError, match="More than one dimension is named 'TWIN'"):
+        resolve_component(comp_client(), "rs1", "dimension", "TWIN")
+    with pytest.raises(ConfigError, match="No metric in report suite rs1.*occurrences or event1"):
+        resolve_component(comp_client(), "rs1", "metric", "nope")
+    with pytest.raises(ConfigError, match="evar1 or page"):
+        resolve_component(comp_client(), "rs1", "dimension", "nope")

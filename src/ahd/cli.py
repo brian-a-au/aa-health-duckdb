@@ -17,8 +17,14 @@ from ahd.api.client import AdobeClient, ApiError
 from ahd.catalog import CUSTOM_GROUPS
 from ahd.config import ConfigError, chosen_profile, load_credentials, profile_dir
 from ahd.dates import RunWindow, today_in_zone
-from ahd.fetch import RunOptions, fetch_catalog, probe_anomaly, run_fetch
-from ahd.lookup import list_segments, list_suites, resolve_segment, resolve_suite
+from ahd.fetch import RunOptions, add_pair, fetch_catalog, probe_anomaly, run_fetch
+from ahd.lookup import (
+    list_segments,
+    list_suites,
+    resolve_component,
+    resolve_segment,
+    resolve_suite,
+)
 from ahd.render.html import write_report
 from ahd.store import SchemaVersionError, Store
 from ahd.summary import (
@@ -35,6 +41,14 @@ DEFAULT_OUT = "./reports/"
 EXIT_CODES = {"ok": 0, "failed": 1, "partial": 3}
 
 RSID_HELP = "A report suite ID or name. Run ahd suites to list them."
+DIMENSION_HELP = (
+    "The dimension for the Individual Component Summary: a full ID (variables/evar17), a "
+    "short ID (evar17) or a name (Internal Search Term)."
+)
+METRIC_HELP = (
+    "The metric for the Individual Component Summary: a full ID (metrics/cartadditions), a "
+    "short ID (cartadditions) or a name (Cart Additions)."
+)
 
 PROFILE_HELP = (
     "Use the credential in ~/.aa/orgs/NAME/config.json, the profile aa_auto_sdr uses. "
@@ -112,12 +126,28 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--rsid", required=True, help=RSID_HELP)
     run.add_argument("--segment", help="A segment ID or name, to filter every request.")
     run.add_argument("--date", type=date.fromisoformat, help="Use this date as today (YYYY-MM-DD).")
-    run.add_argument("--dimension", default="variables/page")
-    run.add_argument("--metric", default="metrics/occurrences")
+    run.add_argument("--dimension", default="page", help=DIMENSION_HELP + " Default: Page.")
+    run.add_argument("--metric", default="occurrences", help=METRIC_HELP + " Default: Occurrences.")
     run.add_argument("--batch-size", type=int, default=20)
     run.add_argument("--workers", type=int, default=4)
     run.add_argument("--out", type=Path, default=Path(DEFAULT_OUT))
     change_alert(run)
+
+    individual = sub.add_parser(
+        "individual",
+        help="Add a dimension by metric pair to a stored run's Individual Component Summary.",
+    )
+    signin(individual)
+    individual.add_argument(
+        "--db",
+        type=Path,
+        help=f"DuckDB file (default {DEFAULT_DB}, or ahd.duckdb in the profile folder).",
+    )
+    individual.add_argument("--run", type=int, required=True, help="The stored run to add to.")
+    individual.add_argument("--dimension", required=True, help=DIMENSION_HELP)
+    individual.add_argument("--metric", required=True, help=METRIC_HELP)
+    individual.add_argument("--out", type=Path, default=Path(DEFAULT_OUT))
+    change_alert(individual)
 
     render = sub.add_parser("render", help="Write the HTML from a stored run. No API calls.")
     common(render, config=False)
@@ -274,13 +304,18 @@ def _run(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     client = _connect(args, factory)
     rsid = resolve_suite(client, args.rsid)
     segment = resolve_segment(client, rsid, args.segment) if args.segment else None
+    dim = resolve_component(client, rsid, "dimension", args.dimension)
+    met = resolve_component(client, rsid, "metric", args.metric)
     store = Store.open(db)
     opts = RunOptions(
         rsid=rsid,
         segment_id=segment,
         today=args.date,
-        dimension=args.dimension,
-        metric=args.metric,
+        dimension=dim["id"],
+        metric=met["id"],
+        dimension_name=dim["name"],
+        metric_name=met["name"],
+        metric_type=met["type"],
         batch_size=args.batch_size,
         workers=args.workers,
     )
@@ -300,6 +335,38 @@ def _run(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
             print(f"  {d['message']}")
         print(DROP_CAUSE)
     return EXIT_CODES.get(status, 1)
+
+
+def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
+    store = Store.open(_db_path(args))
+    try:
+        run = store.get_run(args.run)
+    except KeyError:
+        raise ConfigError(f"There is no stored run {args.run}.") from None
+    client = _connect(args, factory)
+    dim = resolve_component(client, run["rsid"], "dimension", args.dimension)
+    met = resolve_component(client, run["rsid"], "metric", args.metric)
+    progress = _Progress()
+    try:
+        _pair, problems = add_pair(
+            client,
+            store,
+            args.run,
+            dim["id"],
+            met["id"],
+            dim["name"],
+            met["name"],
+            met["type"],
+            progress=progress,
+        )
+    finally:
+        progress.done()
+    print(write_report(build_view(store, args.run, args.change_alert / 100), args.out))
+    print(f"Added {dim['name']} by {met['name']} to run {args.run}.")
+    if problems:
+        print(f"{problems} of its requests had problems. The report's status section lists them.")
+        return EXIT_CODES["partial"]
+    return 0
 
 
 def _render(args: argparse.Namespace) -> int:
@@ -382,6 +449,8 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
             return _render(args)
         if args.command == "prune":
             return _prune(args)
+        if args.command == "individual":
+            return _individual(args, client_factory)
         if args.command == "suites":
             return _suites(args, client_factory)
         if args.command == "segments":

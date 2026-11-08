@@ -56,3 +56,41 @@ def resolve_suite(client: Any, value: str) -> str:
 def resolve_segment(client: Any, rsid: str, value: str) -> str:
     hint = f"Run ahd segments --rsid {rsid} to list them."
     return _pick(value, list_segments(client, rsid), "segment", hint)
+
+
+_PREFIX = {"dimension": "variables/", "metric": "metrics/"}
+
+
+def list_components(client: Any, rsid: str, kind: str) -> list[dict]:
+    """Every dimension or metric the API lists for the suite, as {"id", "name", "type"}."""
+    path = "/dimensions" if kind == "dimension" else "/metrics"
+    rows = client.get(path, {"rsid": rsid}) or []
+    return [
+        {"id": r["id"], "name": r.get("name") or r["id"], "type": r.get("type")}
+        for r in rows
+        if isinstance(r, dict) and r.get("id")
+    ]
+
+
+def resolve_component(client: Any, rsid: str, kind: str, value: str) -> dict:
+    """A dimension or metric by full ID, short ID (evar17, cartadditions) or name.
+
+    Returns {"id", "name", "type"}. An ID match wins over a name match.
+    """
+    rows = list_components(client, rsid, kind)
+    text = value.strip()
+    ids = {text.lower(), (_PREFIX[kind] + text).lower()}
+    for r in rows:
+        if r["id"].lower() in ids:
+            return r
+    named = [r for r in rows if r["name"].strip().lower() == text.lower()]
+    if len(named) == 1:
+        return named[0]
+    if named:
+        found = ", ".join(r["id"] for r in named)
+        raise ConfigError(f"More than one {kind} is named {value!r}: {found}. Use the ID instead.")
+    raise ConfigError(
+        f"No {kind} in report suite {rsid} has the ID or name {value!r}. Use an ID such as "
+        f"{'evar1 or page' if kind == 'dimension' else 'occurrences or event1'}, or the name "
+        "shown in Analysis Workspace."
+    )

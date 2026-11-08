@@ -769,20 +769,65 @@
     return { c: String(m), k: null };
   }
 
-  function drawIndividual() {
-    var run = data.run || {};
-    var dim = run.dimension_name || run.dimension;
-    var metric = run.metric_name || run.metric;
-    drawChart(byId("individual-chart"), data.series[data.individual || "individual"],
-      dim && metric ? dim + " by " + metric : "the chosen dimension and metric");
+  // The Individual Component Summary shows one stored pair at a time.
+  var pairs = data.pairs || [];
+  var pairIndex = 0;
+  function pairLabel(p) {
+    return p ? (p.dimension_name || p.dimension) + " by " + (p.metric_name || p.metric) :
+      "the chosen dimension and metric";
   }
 
-  function renderIndividual() {
-    redrawers.push(drawIndividual);
+  function drawIndividual() {
+    var p = pairs[pairIndex];
+    drawChart(byId("individual-chart"), p ? data.series[p.series_id] : [], pairLabel(p),
+      p ? p.metric_type : null);
+  }
+
+  function fillPairPickers() {
+    var dimSel = byId("pair-dimension"), metSel = byId("pair-metric");
+    var dims = [];
+    pairs.forEach(function (p) { if (dims.indexOf(p.dimension) < 0) dims.push(p.dimension); });
+    clear(dimSel);
+    dims.forEach(function (d) {
+      var p = pairs.filter(function (x) { return x.dimension === d; })[0];
+      dimSel.appendChild(el("option", { value: d }, p.dimension_name || d));
+    });
+    function fillMetrics() {
+      clear(metSel);
+      pairs.forEach(function (p, i) {
+        if (p.dimension === dimSel.value) {
+          metSel.appendChild(el("option", { value: String(i) }, p.metric_name || p.metric));
+        }
+      });
+    }
+    var current = pairs[pairIndex];
+    if (current) dimSel.value = current.dimension;
+    fillMetrics();
+    if (current) metSel.value = String(pairIndex);
+    dimSel.disabled = dims.length < 2;
+    metSel.disabled = metSel.options.length < 2;
+    dimSel.addEventListener("change", function () {
+      fillMetrics();
+      metSel.disabled = metSel.options.length < 2;
+      pairIndex = Number(metSel.value);
+      renderPair();
+    });
+    metSel.addEventListener("change", function () {
+      pairIndex = Number(metSel.value);
+      renderPair();
+    });
+  }
+
+  function renderPair() {
+    var p = pairs[pairIndex];
+    var label = pairLabel(p);
+    byId("individual-title").textContent = label;
+    byId("individual-caption").textContent = "Trend for " + label;
     drawIndividual();
+    var type = p ? p.metric_type : null;
     var top = byId("top100");
     clear(top);
-    var rows = data.top100 || [];
+    var rows = p ? p.top100 : [];
     if (!rows.length) {
       top.appendChild(el("p", { "class": "empty" }, "No top values were returned."));
     } else {
@@ -791,13 +836,13 @@
          { label: "Count", num: true }],
         rows.map(function (r) {
           return [movementCell(r.movement), { c: String(r.rank), k: r.rank }, r.item,
-            { c: fmtNum(r.value), k: r.value }];
+            { c: fmtNum(r.value, type), k: r.value }];
         }), null, "top100"));
     }
     ["browser", "device"].forEach(function (kind) {
       var host = byId(kind);
       clear(host);
-      var b = data[kind] || { labels: [], rows: [], totals: [] };
+      var b = (p && p[kind]) || { labels: [], rows: [], totals: [] };
       if (!b.rows.length) {
         host.appendChild(el("p", { "class": "empty" }, "No data was returned."));
         return;
@@ -812,12 +857,19 @@
       var body = b.rows.map(function (r) {
         return [r.item].concat(r.values.map(function (v, j) {
           var a = colMax[j] > 0 && v ? 0.04 + 0.30 * (v / colMax[j]) : 0;
-          return { c: fmtNum(v), k: v, cls: "shade", a: a };
+          return { c: fmtNum(v, type), k: v, cls: "shade", a: a };
         }));
       });
-      var foot = b.totals && b.totals.length ? ["Total"].concat(b.totals.map(fmtNum)) : null;
+      var foot = b.totals && b.totals.length ?
+        ["Total"].concat(b.totals.map(function (v) { return fmtNum(v, type); })) : null;
       host.appendChild(table(headers, body, foot, kind));
     });
+  }
+
+  function renderIndividual() {
+    redrawers.push(drawIndividual);
+    fillPairPickers();
+    renderPair();
   }
 
   // ---- alerts tab ------------------------------------------------------------

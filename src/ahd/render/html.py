@@ -106,13 +106,23 @@ def issue_heading(code: str) -> str | None:
     return None
 
 
-def individual_label(run: dict[str, Any]) -> str:
+def pair_label(pair: dict[str, Any]) -> str:
     """For example "Page by Occurrences"."""
-    dim = run.get("dimension_name") or run.get("dimension")
-    metric = run.get("metric_name") or run.get("metric")
+    dim = pair.get("dimension_name") or pair.get("dimension")
+    metric = pair.get("metric_name") or pair.get("metric")
     if dim and metric:
         return f"{dim} by {metric}"
     return NO_INDIVIDUAL_NAME
+
+
+def individual_label(pairs: list[dict[str, Any]]) -> str:
+    """The first pair, and how many more the run holds."""
+    if not pairs:
+        return NO_INDIVIDUAL_NAME
+    more = len(pairs) - 1
+    if not more:
+        return pair_label(pairs[0])
+    return f"{pair_label(pairs[0])}, and {more} more pair{'s' if more > 1 else ''}"
 
 
 def _issue_groups(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -144,7 +154,7 @@ def render_html(view: dict[str, Any]) -> str:
         status_kind=STATUS_BADGES.get(status, ("plain", "•"))[0],
         status_icon=STATUS_BADGES.get(status, ("plain", "•"))[1],
         csp=Markup(CSP),
-        individual_label=individual_label(run),
+        individual_label=individual_label(view.get("pairs", [])),
         breakdown_notes=BREAKDOWN_NOTES,
         issue_groups=_issue_groups(view.get("issues", [])),
         component_drops=view.get("component_drops", []),

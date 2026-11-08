@@ -102,7 +102,7 @@ def test_values_stored_and_status_ok(store):
         "metrics/event2",
         "variables/prop1",
         "variables/page",
-        "individual",
+        "individual/1",
     ]:
         assert values_for(store, rid, cid) == days
     assert issues(store, rid) == []
@@ -209,7 +209,7 @@ def test_batch_api_error_one_issue_per_column(store):
         ("metrics/event2", "invalid_request"),
     ]
     assert values_for(store, rid, "metrics/event3") == 92
-    assert values_for(store, rid, "individual") == 92
+    assert values_for(store, rid, "individual/1") == 92
     assert store.get_run(rid)["status"] == "partial"
 
 
@@ -291,7 +291,7 @@ def test_individual_failure_is_one_issue_and_continues(store):
     rid = run_fetch(fake, store, opts())
     ind = [r for r in issues(store, rid) if r[0] == "individual"]
     assert len(ind) == 1 and ind[0][2] == "unauthorized_dimension"
-    assert values_for(store, rid, "individual") == 92
+    assert values_for(store, rid, "individual/1") == 92
     assert (
         store.con.execute(
             "select count(*) from breakdown_totals where run_id = ? and kind = 'browser'", [rid]
@@ -316,7 +316,13 @@ def test_today_uses_suite_zone_via_now(store):
     now = datetime(2026, 11, 8, 3, 0, tzinfo=UTC)  # 19:00 on Nov 7 in Pacific
     rid = run_fetch(fake, store, RunOptions(rsid="rs1"), now=lambda: now)
     run = store.get_run(rid)
-    assert run["dimension"] == "variables/page" and run["metric"] == "metrics/occurrences"
+    [pair] = store.list_pairs(rid)
+    assert (pair["pair"], pair["dimension"], pair["metric"]) == (
+        1,
+        "variables/page",
+        "metrics/occurrences",
+    )
+    assert (pair["dimension_name"], pair["metric_name"]) == ("Page", "Occurrences")
     assert run["today"] == TODAY
     assert run["timezone"] == "US/Pacific" and run["rsid_name"] == "Test Suite"
     assert all(date_range(b) == W.trend_range() for b in fake.trend_bodies())
@@ -419,9 +425,9 @@ def test_empty_individual_result_is_no_rows_issue(store, kind, pred, phrase):
     fake = fake_for("rs1", events(1), custom_dims(), posts=[(pred, empty)])
     rid = run_fetch(fake, store, opts())
     ind = [r for r in issues(store, rid) if r[0] == "individual"]
-    assert [(r[1], r[2]) for r in ind] == [("individual", "no_rows")]
+    assert [(r[1], r[2]) for r in ind] == [("individual/1", "no_rows")]
     msg = ind[0][3]
-    assert msg.startswith(phrase + ": no rows came back.")
+    assert msg.startswith(phrase + " (Page by Occurrences): no rows came back.")
     assert "product profile may hide this dimension" in msg
     assert store.get_run(rid)["status"] == "partial"
 
@@ -440,8 +446,10 @@ def test_empty_individual_trend_is_no_rows_issue(store):
     fake = fake_for("rs1", events(1), custom_dims(), posts=[(is_individual_trend, empty)])
     rid = run_fetch(fake, store, opts())
     ind = [r for r in issues(store, rid) if r[0] == "individual"]
-    assert [(r[2], r[3].split(":")[0]) for r in ind] == [("no_rows", "Daily trend")]
-    assert values_for(store, rid, "individual") == 0
+    assert [(r[2], r[3].split(":")[0]) for r in ind] == [
+        ("no_rows", "Daily trend (Page by Occurrences)")
+    ]
+    assert values_for(store, rid, "individual/1") == 0
 
 
 def test_individual_with_rows_has_no_issue(store):
@@ -464,7 +472,7 @@ def test_network_error_in_one_batch_continues(store):
     rid = run_fetch(fake, store, opts(batch_size=2))
     col_issues = [(r[1], r[2]) for r in issues(store, rid) if r[0] == "column"]
     assert col_issues == [("metrics/event1", "network_error"), ("metrics/event2", "network_error")]
-    for cid in ["metrics/event3", "variables/prop1", "variables/page", "individual"]:
+    for cid in ["metrics/event3", "variables/prop1", "variables/page", "individual/1"]:
         assert values_for(store, rid, cid) == 92
     assert store.get_run(rid)["status"] == "partial"
 
@@ -481,8 +489,8 @@ def test_network_error_in_individual_request_is_one_issue(store):
     fake = fake_for("rs1", events(1), custom_dims(), posts=[(is_browser, raise_conn)])
     rid = run_fetch(fake, store, opts())
     ind = [r for r in issues(store, rid) if r[0] == "individual"]
-    assert [(r[1], r[2]) for r in ind] == [("individual", "network_error")]
-    assert values_for(store, rid, "individual") == 92
+    assert [(r[1], r[2]) for r in ind] == [("individual/1", "network_error")]
+    assert values_for(store, rid, "individual/1") == 92
     assert store.get_run(rid)["status"] == "partial"
 
 
@@ -500,3 +508,78 @@ def test_run_stores_suite_currency_and_metric_types(tmp_path, currency, stored):
         "select metric_type from components where component_id = 'metrics/event1'"
     ).fetchone()
     assert row == ("currency",)
+
+
+def test_add_pair_fetches_five_requests_for_the_same_run(store):
+    from ahd.fetch import add_pair
+
+    fake = fake_for("rs1", events(2), custom_dims())
+    rid = run_fetch(fake, store, opts(segment_id="seg9"))
+    before = len(fake.posted())
+    pair, problems = add_pair(
+        fake, store, rid, "variables/evar17", "metrics/cartadditions", "Search", "Carts", "int"
+    )
+    assert (pair, problems) == (2, 0)
+    new = fake.posted()[before:]
+    assert len(new) == 5
+    assert all("variables/evar17" in str(b) and "metrics/cartadditions" in str(b) for b in new)
+    # The same segment and dates as the run.
+    assert all({"type": "segment", "segmentId": "seg9"} in b["globalFilters"] for b in new)
+    trend = [b for b in new if is_trend(b)]
+    assert len(trend) == 1 and date_range(trend[0]) == W.trend_range()
+    assert is_anomaly_trend(trend[0])
+    assert values_for(store, rid, "individual/2") == 92
+    assert [p["pair"] for p in store.list_pairs(rid)] == [1, 2]
+    assert (
+        store.con.execute(
+            "select count(*) from top_items where run_id = ? and pair = 2", [rid]
+        ).fetchone()[0]
+        > 0
+    )
+
+
+def test_add_pair_without_anomaly_access_skips_anomaly(store):
+    from ahd.fetch import add_pair
+
+    fake = fake_for(
+        "rs1",
+        events(2),
+        custom_dims(),
+        posts=[(is_anomaly_trend, ApiError(403, "no", "invalid_access"))],
+    )
+    rid = run_fetch(fake, store, opts())
+    fake.posts = []
+    before = len(fake.posted())
+    add_pair(fake, store, rid, "variables/evar1", "metrics/orders")
+    trend = [b for b in fake.posted()[before:] if is_trend(b)]
+    assert len(trend) == 1 and not is_anomaly_trend(trend[0])
+
+
+def test_add_pair_problems_make_an_ok_run_partial(store):
+    from ahd.fetch import add_pair
+
+    fake = fake_for("rs1", events(2), custom_dims())
+    rid = run_fetch(fake, store, opts())
+    assert store.get_run(rid)["status"] == "ok"
+    fake.posts = [
+        (lambda b: "variables/evar5" in str(b), ApiError(400, "bad", "invalid_dimension"))
+    ]
+    _pair, problems = add_pair(
+        fake, store, rid, "variables/evar5", "metrics/orders", "Five", "Orders"
+    )
+    assert problems == 5 and store.get_run(rid)["status"] == "partial"
+    ind = [r for r in issues(store, rid) if r[1] == "individual/2"]
+    assert len(ind) == 5 and all("(Five by Orders)" in r[3] for r in ind)
+
+
+def test_add_pair_refuses_duplicates_and_running_runs(store):
+    from ahd.config import ConfigError
+    from ahd.fetch import add_pair
+
+    fake = fake_for("rs1", events(1), custom_dims())
+    rid = run_fetch(fake, store, opts())
+    with pytest.raises(ConfigError, match="already holds Page by Occurrences"):
+        add_pair(fake, store, rid, "variables/page", "metrics/occurrences")
+    store.set_status(rid, "running")
+    with pytest.raises(ConfigError, match="still marked"):
+        add_pair(fake, store, rid, "variables/evar1", "metrics/orders")

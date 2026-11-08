@@ -22,7 +22,7 @@
   </div>
   <dl class="facts">
     <div><dt>Report suite</dt><dd>{{ run.rsid_name or run.rsid }} <span class="muted">({{ run.rsid }})</span></dd></div>
-    <div><dt>Individual component</dt><dd>{{ individual_label }}{% if run.dimension and run.metric %} <span class="muted">({{ run.dimension }}, {{ run.metric }})</span>{% endif %}</dd></div>
+    <div><dt>Individual component</dt><dd>{{ individual_label }}</dd></div>
     <div><dt>Segment</dt><dd>{% if run.segment_id %}{{ run.segment_id }}{% else %}None (all visits){% endif %}</dd></div>
     <div><dt>Run date</dt><dd>{{ run.today }} <span class="muted">(report suite time zone {{ run.timezone }})</span></dd></div>
     <div><dt>Run time</dt><dd>{% if run.started_at %}{{ run.started_at[:16] | replace("T", " ") }} <span class="muted">(time on the computer that ran it)</span>{% if run.duration %}<br>Took {{ run.duration }}{% endif %}{% else %}Unknown{% endif %}</dd></div>
@@ -146,9 +146,18 @@
 </section>
 
 <section class="panel" role="tabpanel" id="panel-individual" aria-labelledby="tab-individual" hidden>
-  <h2 id="individual-title">{{ individual_label }}</h2>
+  <div class="controls">
+    <label>Dimension
+      <select id="pair-dimension"></select>
+    </label>
+    <label>Metric
+      <select id="pair-metric"></select>
+    </label>
+  </div>
+  <p class="hint">The dropdowns list the pairs stored in this run. To add another pair to this run, run <code>ahd individual --run {{ run.id }} --dimension "&lt;name or ID&gt;" --metric "&lt;name or ID&gt;"</code>. It takes a few seconds and writes this report again.</p>
+  <h2 id="individual-title"></h2>
   <figure class="chart-card wide">
-    <figcaption>Trend for {{ individual_label }}</figcaption>
+    <figcaption id="individual-caption"></figcaption>
     <div class="chart" id="individual-chart"></div>
   </figure>
   <h2>Top 100 values yesterday</h2>

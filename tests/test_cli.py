@@ -21,7 +21,10 @@ CONFIG = {
 
 
 def events(n):
-    return [{"id": f"metrics/event{i}", "name": f"Event {i}"} for i in range(1, n + 1)]
+    # Occurrences is the default metric for the Individual Component Summary.
+    return [{"id": f"metrics/event{i}", "name": f"Event {i}"} for i in range(1, n + 1)] + [
+        {"id": "metrics/occurrences", "name": "Occurrences", "type": "int"}
+    ]
 
 
 def custom_dims():
@@ -596,3 +599,118 @@ def test_progress_on_a_terminal_rewrites_one_line():
     q("one")
     q.done()
     assert plain.getvalue() == "one\n"
+
+
+# ---- individual pairs ---------------------------------------------------------
+
+
+def test_individual_adds_a_pair_and_rewrites_the_report(tmp_path, cfg, capsys):
+    from ahd.store import Store
+
+    fake = fake_for("rs1", events(2), custom_dims())
+    fake.gets["/dimensions"] = custom_dims() + [
+        {"id": "variables/evar17", "name": "Internal Search Term"}
+    ]
+    fake.gets["/metrics"] = events(2) + [
+        {"id": "metrics/cartadditions", "name": "Cart Additions", "type": "int"}
+    ]
+    out = tmp_path / "o"
+    main(
+        args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", "2026-11-07", "--out", str(out)),
+        client_factory=lambda c, company_id=None: fake,
+    )
+    capsys.readouterr()
+    code = main(
+        [
+            "individual",
+            "--config",
+            str(cfg),
+            "--db",
+            str(tmp_path / "t.duckdb"),
+            "--run",
+            "1",
+            "--dimension",
+            "internal search term",
+            "--metric",
+            "cartadditions",
+            "--out",
+            str(out),
+        ],
+        client_factory=lambda c, company_id=None: fake,
+    )
+    stdout = capsys.readouterr().out
+    assert code == 0
+    assert "Added Internal Search Term by Cart Additions to run 1." in stdout
+    html = next(out.glob("*.html")).read_text()
+    assert "Page by Occurrences, and 1 more pair" in html
+    pairs = Store.open(tmp_path / "t.duckdb").list_pairs(1)
+    assert [(p["dimension"], p["metric"]) for p in pairs] == [
+        ("variables/page", "metrics/occurrences"),
+        ("variables/evar17", "metrics/cartadditions"),
+    ]
+
+
+def test_individual_with_problems_exits_3(tmp_path, cfg, capsys):
+    fake = fake_for("rs1", events(2), custom_dims())
+    main(
+        args(
+            tmp_path,
+            cfg,
+            "run",
+            "--rsid",
+            "rs1",
+            "--date",
+            "2026-11-07",
+            "--out",
+            str(tmp_path / "o"),
+        ),
+        client_factory=lambda c, company_id=None: fake,
+    )
+    fake.posts = [
+        (
+            lambda b: "variables/prop1" in str(b) and "metrics/event1" in str(b),
+            ApiError(400, "bad", "invalid"),
+        )
+    ]
+    code = main(
+        [
+            "individual",
+            "--config",
+            str(cfg),
+            "--db",
+            str(tmp_path / "t.duckdb"),
+            "--run",
+            "1",
+            "--dimension",
+            "prop1",
+            "--metric",
+            "event1",
+            "--out",
+            str(tmp_path / "o"),
+        ],
+        client_factory=lambda c, company_id=None: fake,
+    )
+    assert code == 3 and "5 of its requests had problems" in capsys.readouterr().out
+
+
+def test_individual_unknown_run(tmp_path, cfg, capsys):
+    def boom(*a, **k):
+        raise AssertionError("must not sign in")
+
+    code = main(
+        [
+            "individual",
+            "--config",
+            str(cfg),
+            "--db",
+            str(tmp_path / "t.duckdb"),
+            "--run",
+            "9",
+            "--dimension",
+            "page",
+            "--metric",
+            "occurrences",
+        ],
+        client_factory=boom,
+    )
+    assert code == 1 and "There is no stored run 9." in capsys.readouterr().err

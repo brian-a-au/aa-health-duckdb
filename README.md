@@ -36,7 +36,7 @@ DuckDB is a database that runs inside the `ahd` program itself, so there is no d
 
 ### How runs are stored
 
-Each time you use `ahd run`, the tool saves a new run in the DuckDB file. It never changes or overwrites an earlier run.
+Each time you use `ahd run`, the tool saves a new run in the DuckDB file. It never changes or overwrites the data of an earlier run. The one thing you can add to a stored run is another Individual Component Summary pair, with `ahd individual`.
 
 - **Run numbers.** Runs are numbered 1, 2, 3 and so on, in the order you make them. The number appears in the report's file name, e.g., `ahd_my_suite_2026-11-07_run3.html`.
 - **Each run is complete.** A run holds its own copy of everything its report needs. This includes the full 92 days of data, even when those days overlap with an earlier run. Runs never share or merge data. So if you run twice on the same day, you get two runs, and their numbers can differ a little if Adobe was still processing data in between.
@@ -52,11 +52,12 @@ Inside the file, every row carries its run number. The tables are:
 
 | Table | What it holds, for each run |
 |---|---|
-| `runs` | One row per run: report suite, segment, run date, time zone, currency, status, start and end times, and the chosen dimension and metric |
+| `runs` | One row per run: report suite, segment, run date, time zone, currency, status, and start and end times |
+| `pairs` | The Individual Component Summary pairs of each run: the dimension and metric, with their names. Pair 1 comes from `ahd run`, and `ahd individual` adds more |
 | `components` | The events, eVars, props and solution components that were checked, with their names, groups and Adobe's metric type |
 | `daily_values` | One row per component per day: the value, Adobe's expected value, the expected range, and whether Adobe flagged it |
-| `top_items` | The top 100 values for yesterday and for the 90 days before |
-| `breakdowns` and `breakdown_totals` | The browser and device tables and their totals |
+| `top_items` | The top 100 values for yesterday and for the 90 days before, for each pair |
+| `breakdowns` and `breakdown_totals` | The browser and device tables and their totals, for each pair |
 | `issues` | Anything that could not be read, with the reason |
 | `schema_version` | The version of this layout. The tool refuses a file made with a different layout, and you start a new file |
 
@@ -65,7 +66,7 @@ Inside the file, every row carries its run number. The tables are:
 The report is one HTML file with its styles, script and data inside it. Open it in any browser by double clicking it. It loads nothing from the internet, so it also works offline. It has three tabs:
 
 - **Components Summary:** every custom event, eVar and prop, with trend charts. As in the workbook, the Metric chart starts on Occurrences and the Dimension chart starts on Page. You can view it by day or by week, and show only the flagged components. Each chart has a Type filter. The Metric chart filters by metric group, e.g., custom events or reserved purchase events. It lists only the groups that have data in the run. The Dimension chart filters by eVars, props or other dimensions.
-- **Individual Component Summary:** one dimension in more depth. By default this is Page by Occurrences. It shows a trend, the top 100 values, and the top values for each browser group and device type.
+- **Individual Component Summary:** one dimension by one metric in more depth. It shows a trend, the top 100 values, and the top values for each browser group and device type. A run starts with one pair, by default Page by Occurrences. Add more pairs with `ahd individual`. Then pick a pair with the Dimension and Metric dropdowns, and the tab changes at once, with no waiting. The page cannot fetch data by itself, because it works offline.
 - **Alerts Summary:** the alerts for one day, in these groups. It starts on yesterday, and you can pick any of the last 7 days:
   - **Unusual values.** Adobe's anomaly detection flagged the value as outside the expected range.
   - **Large drops.** The value was further below the usual value for the weekday than the slider allows. Adobe did not flag it.
@@ -175,6 +176,20 @@ uv run ahd render --run 3 --change-alert 50
 ```
 
 Exit codes for `run`: 0 when everything worked, 1 when it failed, and 3 when it finished but some columns or requests had problems (the report lists them).
+
+Choose the first Individual Component Summary pair with `--dimension` and `--metric`. Each takes a full ID (`variables/evar17`), a short ID (`evar17`) or the name shown in Analysis Workspace (`"Internal Search Term"`). You can use any dimension or metric that the API lists for the report suite:
+
+```
+uv run ahd run --rsid my_suite --dimension "Internal Search Term" --metric "Cart Additions"
+```
+
+Add another pair to a stored run. This makes 5 requests and takes a few seconds, not a full run. It uses the run's report suite, segment and dates, and it writes the report again:
+
+```
+uv run ahd individual --run 3 --dimension evar17 --metric revenue
+```
+
+A run cannot hold the same pair twice. If a request for the new pair fails, the report's status section lists the problem, and the command exits with 3.
 
 Rebuild a report from a stored run without any API calls, and list stored runs:
 
