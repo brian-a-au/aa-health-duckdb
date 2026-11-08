@@ -5,7 +5,38 @@
 (function () {
   "use strict";
 
-  var data = JSON.parse(document.getElementById("data").textContent);
+  // ---- unpack the page data ------------------------------------------------
+  // html.py packs the data to keep the file small: each component's name and group once in
+  // data.components, table rows and alerts as lists, and each chart as one list per field.
+  // This turns it back into the shape build_view returns. data.packed names the fields.
+  function unpackView(d) {
+    var f = d.packed;
+    if (!f) return d;
+    function obj(names, list, into) {
+      var o = into || {};
+      names.forEach(function (name, i) { o[name] = list[i]; });
+      return o;
+    }
+    function withComponent(o) {
+      var c = d.components[o.component_id];
+      return c ? obj(f.component, c, o) : o;
+    }
+    Object.keys(d.views).forEach(function (k) {
+      d.views[k] = d.views[k].map(function (r) { return withComponent(obj(f.row, r)); });
+    });
+    d.alerts = (d.alerts || []).map(function (a) { return withComponent(obj(f.alert, a)); });
+    Object.keys(d.series).forEach(function (cid) {
+      var s = d.series[cid], start = Date.parse(s.start + "T00:00:00Z"), points = [];
+      s[f.series[0]].forEach(function (_, i) {
+        var day = new Date(start + i * 864e5).toISOString().slice(0, 10);
+        points.push([day].concat(f.series.map(function (name) { return s[name][i]; })));
+      });
+      d.series[cid] = points;
+    });
+    return d;
+  }
+
+  var data = unpackView(JSON.parse(document.getElementById("data").textContent));
   var SVG_NS = "http://www.w3.org/2000/svg";
 
   var CUSTOM = ["custom_events", "custom_evars", "custom_props"];

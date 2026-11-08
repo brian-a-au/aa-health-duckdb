@@ -135,9 +135,12 @@ FROM p
 ORDER BY {_ORDER}
 """
 
+# The expected value and range only draw the chart, so 4 decimals are plenty. Adobe sends 16
+# digits, which made them most of the page's size.
 _SERIES_SQL = f"""
 WITH {_DV}
-SELECT component_id, CAST(day AS VARCHAR) AS day, value, expected, upper, lower,
+SELECT component_id, CAST(day AS VARCHAR) AS day, value, round(expected, 4) AS expected,
+    round(upper, 4) AS upper, round(lower, 4) AS lower,
     {_ANOMALY.format(a="dv")} AS anomaly
 FROM dv
 WHERE day BETWEEN $start AND $yesterday

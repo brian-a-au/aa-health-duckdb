@@ -159,10 +159,32 @@ def sample_view(bands: bool = True) -> dict:
             store.con.close()
 
 
+def _unpack(d: dict) -> dict:
+    """The same steps as unpackView in report.js, so tests can read the page data."""
+    f = d["packed"]
+
+    def with_component(o):
+        return {**o, **dict(zip(f["component"], d["components"].get(o["component_id"], [])))}
+
+    d["views"] = {
+        k: [with_component(dict(zip(f["row"], r))) for r in rows] for k, rows in d["views"].items()
+    }
+    d["alerts"] = [with_component(dict(zip(f["alert"], a))) for a in d["alerts"]]
+    series = {}
+    for cid, s in d["series"].items():
+        start = date.fromisoformat(s["start"])
+        series[cid] = [
+            [(start + timedelta(days=i)).isoformat(), *(s[name][i] for name in f["series"])]
+            for i in range(len(s[f["series"][0]]))
+        ]
+    d["series"] = series
+    return d
+
+
 def _data_json(html: str) -> dict:
     m = DATA_RE.search(html)
     assert m
-    return json.loads(m.group(1))
+    return _unpack(json.loads(m.group(1)))
 
 
 def test_single_file_no_external_urls():
@@ -492,3 +514,30 @@ def test_currency_values_keep_the_currency_decimals():
     # digits option would show "¥0.00". Checked in Chrome for USD, JPY, KWD and no code.
     js = (Path(__file__).parent.parent / "src/ahd/render/static/report.js").read_text()
     assert "var money = currencyFmt({});" in js
+
+
+def _plain(v):
+    """A build_view value as the page sees it after unpacking: 2.0 and 2 are the same."""
+    if isinstance(v, dict):
+        return {k: _plain(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_plain(x) for x in v]
+    return float(v) if isinstance(v, int) and not isinstance(v, bool) else v
+
+
+def test_packed_page_data_unpacks_to_the_view():
+    view = sample_view()
+    data = _data_json(render_html(view))
+    for key, rows in view["views"].items():
+        assert [{k: _plain(r[k]) for k in r} for r in data["views"][key]] == _plain(rows), key
+    for packed, original in zip(data["alerts"], view["alerts"], strict=True):
+        assert {k: _plain(packed[k]) for k in original} == _plain(original)
+    for cid, points in view["series"].items():
+        assert _plain(data["series"][cid]) == _plain(points), cid
+
+
+def test_packed_page_data_is_smaller():
+    view = sample_view()
+    plain = len(json.dumps(view, separators=(",", ":")))
+    m = DATA_RE.search(render_html(view))
+    assert len(m.group(1)) < plain * 0.6

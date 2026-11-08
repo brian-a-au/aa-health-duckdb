@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -92,8 +93,76 @@ def _inline(text: str, tag: str) -> Markup:
     return Markup(text)
 
 
+# The page data is packed to keep the file small. report.js unpacks it with unpackView into
+# the shape build_view returns. Keep both in step: the field order below is the order there.
+COMPONENT_FIELDS = ("name", "kind", "group", "number", "metric_type", "unused")
+ROW_FIELDS = ("component_id", "value", "baseline", "pct", "zero", "anomaly")
+ALERT_FIELDS = (
+    "day",
+    "component_id",
+    "expected",
+    "actual",
+    "usual",
+    "pct_vs_expected",
+    "pct_vs_usual",
+    "anomaly",
+    "zero",
+)
+SERIES_FIELDS = ("value", "expected", "upper", "lower", "anomaly")
+
+
+def _number(v: Any) -> Any:
+    """1234.0 as 1234, to save the ".0" on every whole number."""
+    if isinstance(v, float) and v.is_integer() and abs(v) < 2**53:
+        return int(v)
+    return v
+
+
+def _pack_series(points: list[list[Any]]) -> dict[str, Any]:
+    """One list per field, one entry per day from the first day. A missing day is null."""
+    first = date.fromisoformat(points[0][0])
+    days = (date.fromisoformat(points[-1][0]) - first).days + 1
+    out: dict[str, Any] = {"start": points[0][0]}
+    for i, field in enumerate(SERIES_FIELDS, start=1):
+        column: list[Any] = [None] * days
+        for p in points:
+            column[(date.fromisoformat(p[0]) - first).days] = _number(p[i])
+        out[field] = column
+    return out
+
+
+def pack_view(view: dict[str, Any]) -> dict[str, Any]:
+    """The view with each component's name and group stored once, and rows as lists.
+
+    The day and week tables repeated every component's name, kind and group 8 times, and
+    every chart point repeated its date. For 410 components, the page went from 4.1 MB to
+    1.9 MB.
+    """
+    views = view.get("views", {})
+    components: dict[str, list[Any]] = {}
+    for rows in views.values():
+        for r in rows:
+            components.setdefault(r["component_id"], [r[f] for f in COMPONENT_FIELDS])
+    packed = dict(view)
+    packed["components"] = components
+    packed["views"] = {
+        k: [[_number(r[f]) for f in ROW_FIELDS] for r in rows] for k, rows in views.items()
+    }
+    packed["alerts"] = [[_number(a[f]) for f in ALERT_FIELDS] for a in view.get("alerts", [])]
+    packed["series"] = {
+        cid: _pack_series(points) for cid, points in view.get("series", {}).items() if points
+    }
+    packed["packed"] = {
+        "component": COMPONENT_FIELDS,
+        "row": ROW_FIELDS,
+        "alert": ALERT_FIELDS,
+        "series": SERIES_FIELDS,
+    }
+    return packed
+
+
 def _json_for_script(view: dict[str, Any]) -> Markup:
-    text = json.dumps(view, allow_nan=False, ensure_ascii=False, separators=(",", ":"))
+    text = json.dumps(pack_view(view), allow_nan=False, ensure_ascii=False, separators=(",", ":"))
     text = text.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
     # U+2028 and U+2029 are valid JSON but are line breaks to some parsers.
     text = text.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
