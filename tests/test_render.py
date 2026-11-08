@@ -477,3 +477,11 @@ def test_copy_buttons():
     assert "An email program such as Outlook or Gmail pastes the table" in html
     v["issues"] = []
     assert 'id="copy-problems"' not in render_html(v)
+
+
+def test_every_form_control_has_a_name():
+    import re
+
+    html = render_html(sample_view())
+    textarea = re.search(r"<textarea[^>]*>", html).group(0)
+    assert 'aria-label="Alert summary as text"' in textarea
