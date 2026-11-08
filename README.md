@@ -25,6 +25,29 @@ DuckDB is a database that runs inside the `ahd` program itself, so there is no d
 - **No credentials inside.** The file holds report data, e.g., component names and daily values. It never holds your credential. Treat it with the same care as the reports.
 - **Easy to reset or inspect.** To start over, delete the file. To look inside it, open it with the DuckDB command line tool, e.g., `duckdb data/ahd.duckdb "select * from runs"`.
 
+### How runs are stored
+
+Each time you use `ahd run`, the tool saves a new run in the DuckDB file. It never changes or overwrites an earlier run.
+
+- **Run numbers.** Runs are numbered 1, 2, 3 and so on, in the order you make them. The number appears in the report's file name, e.g., `ahd_my_suite_2026-11-07_run3.html`.
+- **Each run is complete.** A run holds its own copy of everything its report needs. This includes the full 92 days of data, even when those days overlap with an earlier run. Runs never share or merge data. So if you run twice on the same day, you get two runs, and their numbers can differ a little if Adobe was still processing data in between.
+- **One file, many suites.** Runs for different report suites go into the same file. To keep them apart, give each suite its own file with `--db`.
+- **Status.** A run starts as "running" and ends as "ok", "partial" or "failed". A run that stopped in the middle, e.g., because you closed the window, stays "running".
+- **Listing and rebuilding.** `ahd runs` lists every stored run with its number, report suite, date and status, newest first. `ahd render --run 3` rebuilds the report for run 3 from the file, with no calls to Adobe. A rebuilt report uses the current version of the page design.
+- **Size.** One run of a suite with about 400 components takes about 3 MB. The file keeps growing, because the tool never deletes runs. To remove old runs, delete the file and start again.
+
+Inside the file, every row carries its run number. The tables are:
+
+| Table | What it holds, for each run |
+|---|---|
+| `runs` | One row per run: report suite, segment, run date, time zone, status, start and end times, and the chosen dimension and metric |
+| `components` | The events, eVars, props and solution components that were checked, with their names and groups |
+| `daily_values` | One row per component per day: the value, Adobe's expected value, the expected range, and whether Adobe flagged it |
+| `top_items` | The top 100 values for yesterday and for the 90 days before |
+| `breakdowns` and `breakdown_totals` | The browser and device tables and their totals |
+| `issues` | Anything that could not be read, with the reason |
+| `schema_version` | The version of this layout, so a newer tool can upgrade an older file |
+
 ### The report
 
 The report is one HTML file with its styles, script and data inside it. Open it in any browser by double clicking it. It loads nothing from the internet, so it also works offline. It has three tabs:
