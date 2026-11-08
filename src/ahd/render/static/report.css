@@ -125,6 +125,17 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .issue { margin: 8px 0; }
 .issue-heading { margin: 0; font-weight: 600; }
 .issue-items { margin: 4px 0; padding-left: 20px; font-size: 0.9rem; color: var(--text-2); }
+.change-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 16px 0 0;
+}
+.change-alert input[type="range"] { flex: 1 1 160px; max-width: 320px; accent-color: var(--flag); }
+.change-alert output { font-weight: 600; min-width: 3.5em; }
+.change-alert .hint { flex-basis: 100%; margin: 0; }
+.unused-badge { margin-left: 6px; font-size: 0.8rem; }
 .warning {
   border-left: 4px solid var(--flag);
   background: var(--flag-wash);

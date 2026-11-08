@@ -66,9 +66,17 @@ The report is one HTML file with its styles, script and data inside it. Open it 
 
 - **Components Summary:** every custom event, eVar and prop, with trend charts. You can view it by day or by week, and show only the flagged components. Each chart has a Type filter. The Metric chart filters by metric group, e.g., custom events or reserved purchase events. It lists only the groups that have data in the run. The Dimension chart filters by eVars, props or other dimensions.
 - **Individual Component Summary:** one dimension in more depth. By default this is Page by Occurrences. It shows a trend, the top 100 values, and the top values for each browser group and device type.
-- **Alerts Summary:** the values Adobe flagged as unusual yesterday, then the components with no data. You can copy the list as text.
+- **Alerts Summary:** the alerts for yesterday, in these groups:
+  - **Unusual values.** Adobe's anomaly detection flagged the value as outside the expected range.
+  - **Large drops.** The value was further below the usual value for the weekday than the slider allows. Adobe did not flag it.
+  - **Dropped to zero.** The value was 0, but the component had data on other days in the run.
+  - **Never collected data.** The value was 0 on every day in the run. These are often unused slots, so they are not alerts. They are in a closed list at the end.
+
+  You can copy the alerts as text.
 
 Summary tiles at the top give yesterday's counts. Every table can be sorted, and a switch at the top right chooses light mode, dark mode, or your computer's setting.
+
+A slider above the tiles sets the percent for a large drop. It goes from 10 to 100 percent, and it starts at 30 percent. A drop is measured against the usual value for the weekday, which is the 12-week average. Components with a usual value under 10 are skipped, because small numbers change a lot from day to day. The same percent sets when the tables show an arrow. When you move the slider, the tiles, the tables, the "Show only flagged" filter and the alerts change at once.
 
 Working offline does not mean the report is cleared for sharing. It contains your component names and values, so share it only where your organization allows.
 
@@ -150,6 +158,12 @@ uv run ahd run --rsid my_suite --segment s300000000_abc --batch-size 20 --worker
 uv run ahd run --rsid my_suite --date 2026-11-07 --out ./reports/
 ```
 
+To start the slider at another percent, add `--change-alert` to `run` or `render`. It takes 10 to 100, in steps of 5:
+
+```
+uv run ahd render --run 3 --change-alert 50
+```
+
 Exit codes for `run`: 0 when everything worked, 1 when it failed, and 3 when it finished but some columns or requests had problems (the report lists them).
 
 Rebuild a report from a stored run without any API calls, and list stored runs:
@@ -193,7 +207,9 @@ The tests use saved Adobe responses and never call Adobe. Every test runs with t
 - The week is the 7 days ending yesterday. The baseline is the 84 days from 91 days ago through 8 days ago, divided by 12 to give a weekly average.
 - "Today" is today in the report suite's time zone, not your computer's time zone. The workbook asks for today's partial data as well. The tool fetches that row and ignores it.
 - The top 100 tables compare yesterday with the 90 days before it (from 91 days ago through 2 days ago). The browser and device tables use yesterday.
-- An arrow shows when the change is more than 20 percent. When the baseline is zero, there is no percent change and no arrow.
+- An arrow shows when the change is more than the slider's percent, 30 percent by default. The workbook uses a fixed 20 percent. When the baseline is zero, there is no percent change and no arrow.
+- The workbook alerts on every component with a value of 0. The tool lists a component that dropped to 0 as an alert, and it lists a component that was 0 on every day separately as never collected data.
+- The workbook alerts only on Adobe's anomaly flags and on zero values. The tool also alerts on drops larger than the slider's percent.
 - A column the credential cannot read is listed as a problem. It is never shown as zero.
 - A currency metric shows its values in the report suite's currency, e.g., $1,234.56 for US dollars. This applies to the tables, the alerts and the charts. Other metrics show as plain numbers. Runs stored by an older version have no metric types, so their values show as plain numbers.
 - eVars are treated as dimensions, like props. They appear in the Dimension chart, which has a filter for eVars, props or other dimensions. The workbook filed them under events. Each eVar is still counted with its instances metric, as in the workbook.

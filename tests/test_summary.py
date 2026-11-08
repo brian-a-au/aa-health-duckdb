@@ -82,11 +82,11 @@ def test_same_weekday_baseline(friday):
     row = friday["views"]["day:2026-11-06"][0]
     assert row["component_id"] == "metrics/event1"
     assert row["value"] == 13
-    assert row["baseline"] == 10 and row["pct"] == pytest.approx(0.3) and row["arrow"] == "up"
+    assert row["baseline"] == 10 and row["pct"] == pytest.approx(0.3)
     assert row["zero"] is False and row["anomaly"] is None
     # a non-Friday selectable day: baseline is the average of that weekday = 1
     thu = friday["views"]["day:2026-11-05"][0]
-    assert thu["value"] == 1 and thu["baseline"] == 1 and thu["pct"] == 0 and thu["arrow"] is None
+    assert thu["value"] == 1 and thu["baseline"] == 1 and thu["pct"] == 0
 
 
 def test_view_keys_are_seven_days_and_week(friday):
@@ -100,8 +100,7 @@ def test_week_sum_and_baseline(friday):
     assert row["value"] == 19
     # baseline 2026-08-08..2026-10-30: 12 Fridays of 10 plus 72 days of 1 = 192, / 12
     assert row["baseline"] == 16
-    # 19 / 16 - 1 = 0.1875 is under the 20 percent threshold, so no arrow
-    assert row["pct"] == pytest.approx(0.1875) and row["arrow"] is None
+    assert row["pct"] == pytest.approx(0.1875)
     assert row["anomaly"] is None
 
 
@@ -128,10 +127,10 @@ def test_zero_baseline_no_pct(tmp_path):  # Review Focus 4
         row = view["views"][key][0]
         assert row["value"] == 4
         assert row["baseline"] == 0
-        assert row["pct"] is None and row["arrow"] is None
+        assert row["pct"] is None
     # a selectable day with no stored value at all
     empty = view["views"]["day:2026-11-04"][0]
-    assert empty["value"] is None and empty["pct"] is None and empty["arrow"] is None
+    assert empty["value"] is None and empty["pct"] is None
     assert empty["zero"] is False
 
 
@@ -142,7 +141,7 @@ def test_down_arrow_and_zero(tmp_path):
     store, rid = _build(tmp_path, [_comp(cid, "Dropped", number=4)], vals)
     row = build_view(store, rid)["views"]["day:2026-11-06"][0]
     assert row["value"] == 0 and row["zero"] is True
-    assert row["baseline"] == 10 and row["pct"] == -1 and row["arrow"] == "down"
+    assert row["baseline"] == 10 and row["pct"] == -1
 
 
 def test_anomaly_high_low(tmp_path):
@@ -163,7 +162,7 @@ def test_anomaly_high_low(tmp_path):
     assert view["views"]["week"][0]["anomaly"] is None
 
 
-def test_alerts_zero_and_anomaly_only(tmp_path):
+def test_alerts_zero_and_anomaly(tmp_path):
     comps = [
         _comp("metrics/event1", "Normal", number=1),
         _comp("metrics/event2", "Spike", number=2),
@@ -186,14 +185,16 @@ def test_alerts_zero_and_anomaly_only(tmp_path):
         "metric_type": None,
         "expected": 20,
         "actual": 30,
+        "usual": 0,
         "pct_vs_expected": pytest.approx(0.5),
-        "arrow": "up",
+        "pct_vs_usual": None,
         "anomaly": "high",
         "zero": False,
+        "unused": False,
     }
     assert zero["actual"] == 0 and zero["expected"] is None
-    assert zero["anomaly"] is None and zero["zero"] is True
-    assert zero["pct_vs_expected"] is None and zero["arrow"] is None
+    assert zero["anomaly"] is None and zero["zero"] is True and zero["unused"] is True
+    assert zero["pct_vs_expected"] is None
 
 
 def test_alert_zero_expected_has_no_pct(tmp_path):
@@ -202,7 +203,7 @@ def test_alert_zero_expected_has_no_pct(tmp_path):
         tmp_path, [_comp(cid, "E", number=1)], [_dv(cid, YESTERDAY, 0.0, 0.0, 0.0, 0.0, False)]
     )
     alert = build_view(store, rid)["alerts"][0]
-    assert alert["pct_vs_expected"] is None and alert["arrow"] is None
+    assert alert["pct_vs_expected"] is None
 
 
 def test_movement_index(tmp_path):
@@ -525,3 +526,65 @@ def test_component_drops_ignores_growth_and_empty_before(tmp_path):
         tmp_path, {"custom_events": 2}, {"custom_events": 9, "custom_props": 1}
     )
     assert component_drops(s, b) == []
+
+
+def _series(cid, friday_value, yesterday_value):
+    """friday_value on every Friday, 0 on other days, yesterday_value yesterday."""
+    out = []
+    for d in _days(START, TODAY):
+        v = friday_value if d.weekday() == 4 else 0.0
+        out.append(_dv(cid, d, yesterday_value if d == YESTERDAY else v))
+    return out
+
+
+def test_unused_versus_dropped_to_zero(tmp_path):
+    comps = [
+        _comp("metrics/event1", "Dropped", number=1),
+        _comp("metrics/event2", "Never used", number=2),
+    ]
+    vals = _series("metrics/event1", 5.0, 0.0) + _series("metrics/event2", 0.0, 0.0)
+    # A value today does not count: today is not a full day.
+    vals.append(_dv("metrics/event2", TODAY, 0.0))
+    store, rid = _build(tmp_path, comps, vals)
+    view = build_view(store, rid)
+    alerts = {a["component_id"]: a for a in view["alerts"]}
+    assert alerts["metrics/event1"]["zero"] and not alerts["metrics/event1"]["unused"]
+    assert alerts["metrics/event2"]["zero"] and alerts["metrics/event2"]["unused"]
+    for key in ("week", "day:2026-11-06"):
+        rows = {r["component_id"]: r for r in view["views"][key]}
+        assert rows["metrics/event1"]["unused"] is False
+        assert rows["metrics/event2"]["unused"] is True
+
+
+@pytest.mark.parametrize(
+    ("friday_value", "yesterday_value", "included"),
+    [
+        (100.0, 85.0, True),  # 15 percent below a usual of 100
+        (100.0, 95.0, False),  # 5 percent below: under the slider's lowest setting
+        (100.0, 150.0, False),  # a rise is never a drop alert
+        (8.0, 1.0, False),  # usual under 10: small numbers are skipped
+    ],
+)
+def test_drop_candidates(tmp_path, friday_value, yesterday_value, included):
+    cid = "metrics/event1"
+    store, rid = _build(
+        tmp_path, [_comp(cid, "E", number=1)], _series(cid, friday_value, yesterday_value)
+    )
+    alerts = build_view(store, rid)["alerts"]
+    assert bool(alerts) is included
+    if included:
+        a = alerts[0]
+        assert a["usual"] == pytest.approx(friday_value * 12 / 12)
+        assert a["pct_vs_usual"] == pytest.approx(yesterday_value / friday_value - 1)
+        assert a["zero"] is False and a["anomaly"] is None
+
+
+def test_view_carries_change_alert_settings(tmp_path):
+    from ahd.summary import DEFAULT_CHANGE_ALERT, MIN_USUAL
+
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E", number=1)], _series(cid, 1.0, 1.0))
+    view = build_view(store, rid)
+    assert view["change_alert"] == DEFAULT_CHANGE_ALERT == 0.30
+    assert view["min_usual"] == MIN_USUAL == 10
+    assert build_view(store, rid, change_alert=0.45)["change_alert"] == 0.45
