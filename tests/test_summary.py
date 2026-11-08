@@ -469,3 +469,57 @@ def test_standard_metric_gets_plain_name(tmp_path):
     assert _display_name(store, rid, "metrics/occurrences", False) == "Occurrences"
     assert _display_name(store, rid, "metrics/pageviews", False) == "Page Views"
     assert _display_name(store, rid, "metrics/unknownthing", False) == "metrics/unknownthing"
+
+
+def _drops_store(tmp_path, before, now):
+    from datetime import date
+
+    from ahd.api.reports import Column
+    from ahd.catalog import Component
+
+    def comps(counts):
+        out = []
+        for group, n in counts.items():
+            for i in range(n):
+                cid = f"{group}/{i}"
+                out.append(Component(cid, cid, "metric", group, i, Column(cid, "m", None), True))
+        return out
+
+    s = Store.open(tmp_path / "d.duckdb")
+    ids = []
+    for counts in (before, now):
+        rid = s.create_run("rs1", "N", None, date(2026, 11, 7), "UTC", "0.1")
+        s.add_components(rid, comps(counts))
+        s.finish_run(rid, "ok")
+        ids.append(rid)
+    return s, ids
+
+
+def test_component_drops_over_threshold(tmp_path):
+    from ahd.summary import component_drops
+
+    s, (a, b) = _drops_store(
+        tmp_path,
+        {"custom_events": 100, "custom_evars": 10, "custom_props": 5},
+        {"custom_events": 80, "custom_evars": 7, "custom_props": 0, "Reserved eVars": 3},
+    )
+    drops = component_drops(s, b)
+    # 100 -> 80 is exactly 20 percent, so no warning. 10 -> 7 and 5 -> 0 are more.
+    assert [d["group"] for d in drops] == ["custom_evars", "custom_props"]
+    assert drops[0] == {
+        "group": "custom_evars",
+        "previous_run": a,
+        "before": 10,
+        "now": 7,
+        "message": f"This run sees 7 eVars. Run {a} for the same report suite saw 10.",
+    }
+    assert component_drops(s, a) == []
+
+
+def test_component_drops_ignores_growth_and_empty_before(tmp_path):
+    from ahd.summary import component_drops
+
+    s, (_, b) = _drops_store(
+        tmp_path, {"custom_events": 2}, {"custom_events": 9, "custom_props": 1}
+    )
+    assert component_drops(s, b) == []

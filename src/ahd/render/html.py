@@ -147,6 +147,8 @@ def render_html(view: dict[str, Any]) -> str:
         individual_label=individual_label(run),
         breakdown_notes=BREAKDOWN_NOTES,
         issue_groups=_issue_groups(view.get("issues", [])),
+        component_drops=view.get("component_drops", []),
+        component_drop_cause=view.get("component_drop_cause", ""),
         ranges=RANGES,
         no_bands_note=NO_BANDS_NOTE,
         week_note=WEEK_NOTE,
