@@ -67,6 +67,10 @@ class SignInError(Exception):
 class SignIn:
     company_id: str
     header: dict
+    company_name: str = ""
+    # How many login companies the credential can see. With more than one, the caller can
+    # say which one was used.
+    companies: int = 1
 
 
 def _json(resp: Any) -> Any:
@@ -122,7 +126,10 @@ def header_for(token: str, creds: Credentials, company_id: str) -> dict:
     }
 
 
-def find_company(session: Any, token: str, creds: Credentials, company_id: str | None) -> str:
+def find_company(
+    session: Any, token: str, creds: Credentials, company_id: str | None
+) -> tuple[str, str, int]:
+    """The chosen login company as (global company ID, name, how many the credential sees)."""
     resp = session.get(
         DISCOVERY_URL,
         headers={
@@ -157,12 +164,12 @@ def find_company(session: Any, token: str, creds: Credentials, company_id: str |
     if not companies:
         raise SignInError(NO_COMPANY)
     if company_id is None:
-        return companies[0][0]
+        return companies[0][0], companies[0][1], len(companies)
     # The login company may be given by its global company ID or by its name.
     wanted = company_id.strip().lower()
     for cid, name in companies:
         if wanted in (cid.lower(), name.lower()):
-            return cid
+            return cid, name, len(companies)
     names = ", ".join(f"{name or '(no name)'} ({cid})" for cid, name in companies)
     raise SignInError(
         f"This credential cannot see the login company {company_id!r}. It can see: {names}."
@@ -171,5 +178,5 @@ def find_company(session: Any, token: str, creds: Credentials, company_id: str |
 
 def sign_in(session: Any, creds: Credentials, company_id: str | None = None) -> SignIn:
     token = get_token(session, creds)
-    cid = find_company(session, token, creds, company_id)
-    return SignIn(cid, header_for(token, creds, cid))
+    cid, name, count = find_company(session, token, creds, company_id)
+    return SignIn(cid, header_for(token, creds, cid), name, count)

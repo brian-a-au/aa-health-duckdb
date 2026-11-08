@@ -14,7 +14,7 @@ from ahd.catalog import Component
 
 # Bump when the tables change. ahd does not upgrade files: a file with another version is
 # refused, and you start a new file.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _SCHEMA = """
 CREATE TABLE schema_version (version INTEGER);
@@ -69,15 +69,50 @@ class SchemaVersionError(ValueError):
     """The database file was written by a different version of ahd."""
 
 
+class StoreError(Exception):
+    """The database file could not be opened. The message says why in plain words."""
+
+
+def _connect(path: Path, read_only: bool) -> duckdb.DuckDBPyConnection:
+    if read_only and not path.exists():
+        raise StoreError(
+            f"There is no database at {path}. Make a run first, or choose the file with --db."
+        )
+    try:
+        return duckdb.connect(str(path), read_only=read_only)
+    except duckdb.Error as e:
+        text = str(e)
+        if "could not set lock" in text.lower() or "conflicting lock" in text.lower():
+            raise StoreError(
+                f"The database {path} is in use by another program, e.g., a DuckDB session or "
+                "another ahd command that writes to it. Close that program or wait for it to "
+                "finish, then try again."
+            ) from None
+        if "not a valid DuckDB database" in text:
+            raise StoreError(
+                f"The file {path} is not a DuckDB database. Choose another file with --db."
+            ) from None
+        raise StoreError(f"Could not open the database {path} ({type(e).__name__}).") from None
+
+
 class Store:
     def __init__(self, con: duckdb.DuckDBPyConnection) -> None:
         self.con = con
 
     @classmethod
-    def open(cls, path: Path) -> Store:
+    def open(cls, path: Path, read_only: bool = False, create: bool = True) -> Store:
+        """Open the database, and create it when create is true.
+
+        read_only opens an existing file without a write lock, so it can be read while a DuckDB
+        session also has it open read-only. Commands that only work on stored runs pass
+        create=False, so that a wrong path does not leave a new empty file behind.
+        """
         path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        con = duckdb.connect(str(path))
+        if not (read_only or create) and not path.exists():
+            raise StoreError(f"There is no database at {path}. Choose the file with --db.")
+        if not read_only:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        con = _connect(path, read_only)
         try:
             tables = {
                 r[0]
@@ -85,6 +120,8 @@ class Store:
                     "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
                 ).fetchall()
             }
+            if not tables and read_only:
+                raise StoreError(f"The database {path} holds no ahd runs.")
             if not tables:
                 con.execute(_SCHEMA)
                 con.execute(_views())
@@ -103,9 +140,18 @@ class Store:
             raise
         return cls(con)
 
-    def _many(self, sql: str, rows: list[tuple]) -> None:
-        if rows:
-            self.con.executemany(sql, rows)
+    def _insert(self, table: str, columns: str, types: str, rows: list[tuple]) -> None:
+        """Insert many rows with one statement.
+
+        executemany runs one statement per row and took about 0.5 s for the 1,840 rows of one
+        trend batch. This passes each column as one list and unnests them together, which
+        takes about 10 ms. columns and types are comma-separated lists in the same order.
+        """
+        if not rows:
+            return
+        lists = [list(col) for col in zip(*rows, strict=True)]
+        select = ", ".join(f"unnest(?::{t.strip()}[])" for t in types.split(","))
+        self.con.execute(f"INSERT INTO {table} ({columns}) SELECT {select}", lists)
 
     def create_run(
         self,
@@ -179,10 +225,12 @@ class Store:
         )
 
     def add_components(self, run_id: int, components: list[Component]) -> None:
-        self._many(
-            'INSERT INTO components (run_id, component_id, name, kind, "group", number,'
-            " metric_id, exists_dimension, allowed_for_reporting, metric_type)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        self._insert(
+            "components",
+            'run_id, component_id, name, kind, "group", number, metric_id, exists_dimension,'
+            " allowed_for_reporting, metric_type",
+            "INTEGER, VARCHAR, VARCHAR, VARCHAR, VARCHAR, INTEGER, VARCHAR, VARCHAR, BOOLEAN,"
+            " VARCHAR",
             [
                 (
                     run_id,
@@ -201,9 +249,10 @@ class Store:
         )
 
     def add_daily_values(self, run_id: int, values: list[DailyValue]) -> None:
-        self._many(
-            "INSERT INTO daily_values (run_id, component_id, day, value, expected, upper,"
-            " lower, anomaly) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        self._insert(
+            "daily_values",
+            "run_id, component_id, day, value, expected, upper, lower, anomaly",
+            "INTEGER, VARCHAR, DATE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, BOOLEAN",
             [
                 (run_id, v.component_id, v.day, v.value, v.expected, v.upper, v.lower, v.anomaly)
                 for v in values
@@ -217,9 +266,10 @@ class Store:
         rows: list[tuple[int, str, float]],
         pair: int = 1,
     ) -> None:
-        self._many(
-            "INSERT INTO top_items (run_id, pair, period, rank, item, value)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+        self._insert(
+            "top_items",
+            "run_id, pair, period, rank, item, value",
+            "INTEGER, INTEGER, VARCHAR, INTEGER, VARCHAR, DOUBLE",
             [(run_id, pair, period, r, item, v) for r, item, v in rows],
         )
 
@@ -232,9 +282,10 @@ class Store:
         totals: list[float],
         pair: int = 1,
     ) -> None:
-        self._many(
-            "INSERT INTO breakdowns (run_id, pair, kind, col_index, label, rank, item, value)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        self._insert(
+            "breakdowns",
+            "run_id, pair, kind, col_index, label, rank, item, value",
+            "INTEGER, INTEGER, VARCHAR, INTEGER, VARCHAR, INTEGER, VARCHAR, DOUBLE",
             [
                 (run_id, pair, kind, i, label, rank, item, vals[i])
                 for rank, (item, vals) in enumerate(rows, start=1)
@@ -242,9 +293,10 @@ class Store:
                 if i < len(vals)
             ],
         )
-        self._many(
-            "INSERT INTO breakdown_totals (run_id, pair, kind, col_index, label, total)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+        self._insert(
+            "breakdown_totals",
+            "run_id, pair, kind, col_index, label, total",
+            "INTEGER, INTEGER, VARCHAR, INTEGER, VARCHAR, DOUBLE",
             [
                 (run_id, pair, kind, i, label, totals[i])
                 for i, label in enumerate(labels)
@@ -303,6 +355,28 @@ class Store:
         self.con.execute("COMMIT")
         # Write the change to the file now, so the space can be reused.
         self.con.execute("CHECKPOINT")
+
+    def delete_pair(self, run_id: int, pair: int, series_id: str) -> None:
+        """Remove one pair and every row stored for it, all or nothing.
+
+        Used only when ahd individual stops part way, so that the same pair can be tried again.
+        series_id is the component_id of the pair's daily trend, e.g. "individual/2".
+        """
+        self.con.execute("BEGIN TRANSACTION")
+        try:
+            for table in ("pairs", "top_items", "breakdowns", "breakdown_totals"):
+                self.con.execute(
+                    f"DELETE FROM {table} WHERE run_id = ? AND pair = ?", [run_id, pair]
+                )
+            for table in ("daily_values", "issues"):
+                self.con.execute(
+                    f"DELETE FROM {table} WHERE run_id = ? AND component_id = ?",
+                    [run_id, series_id],
+                )
+        except BaseException:
+            self.con.execute("ROLLBACK")
+            raise
+        self.con.execute("COMMIT")
 
     def component_counts(self, run_id: int, groups: list[str]) -> dict[str, int]:
         """How many components of each group the run stored."""

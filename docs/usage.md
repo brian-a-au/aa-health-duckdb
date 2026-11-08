@@ -34,12 +34,12 @@ uv run ahd runs                           # list what is stored
 | Option | What it does |
 |---|---|
 | `--profile NAME` | Uses the credential in `~/.aa/orgs/NAME/config.json`, and the database in the same folder. You can put it before or after the command. `AA_PROFILE` sets it too. See [Configuration](configuration.md). |
-| `--config PATH` | Uses this credential file instead of `./config.json`. For the commands that sign in. |
-| `--company ID_OR_NAME` | Chooses the login company, by global company ID or by name, when the credential sees more than one. For the commands that sign in. |
+| `--config PATH` | Uses this credential file instead of `./config.json`. It cannot be used with a profile. For the commands that sign in. |
+| `--company ID_OR_NAME` | Chooses the login company, by global company ID or by name, when the credential sees more than one. Without it, the tool uses the first one and prints its name. For the commands that sign in. |
 | `--db PATH` | Uses this database file. For the commands that read or write a database. |
 | `--verbose` | Writes debug detail to stderr. Put it before the command, e.g., `ahd --verbose run ...`. |
 
-The commands that sign in are `check`, `suites`, `segments`, `run` and `individual`. The others only read the database and never call Adobe.
+The commands that sign in are `check`, `suites`, `segments`, `run` and `individual`. The others never call Adobe. `runs` and `render` only read the database. `prune` deletes runs from it. Only `run` creates a new database. The other commands stop when the file does not exist.
 
 Where a command takes a report suite, segment, dimension or metric, it accepts an ID or a name, in any case. If two items have the same name, the tool lists their IDs and asks you to use one.
 
@@ -84,8 +84,8 @@ uv run ahd run --rsid my_suite --date 2026-11-07 --out ./reports/
 | `--date` | Treats this date as today, e.g., to repeat an earlier day. By default, today is today in the report suite's time zone. |
 | `--change-alert` | Where the report's large drop slider starts: 10 to 100, in steps of 5. The default is 30. See [The report](report.md#the-large-drop-slider). |
 | `--out` | The folder for the HTML report. The default is `./reports/`. |
-| `--batch-size` | How many columns go into one trend request. The default is 20. |
-| `--workers` | How many requests run at the same time. The default is 4. |
+| `--batch-size` | How many columns go into one trend request, from 1 to 100. The default is 20. |
+| `--workers` | How many requests run at the same time, from 1 to 16. The default is 4. |
 
 While it runs, it prints its progress on stderr, e.g., "Daily trends: 12 of 21 requests done". When it ends, it prints the path of the report and the run's status. If the run sees far fewer components than the run before it, it prints a warning. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 
@@ -137,8 +137,9 @@ It lists the runs it will delete and asks you to type y first. `--yes` skips the
 |---|---|
 | 0 | Everything worked. |
 | 1 | The command failed. The message on stderr says why. `prune` also exits with 1 when you answer no. |
-| 2 | `check` found limited access, or a check could not be run. `suites` found no report suites. |
+| 2 | `check` found limited access, or a check could not be run. `suites` found no report suites. Any command also exits with 2 when an option is wrong, e.g., `--change-alert 12`, and prints its usage. |
 | 3 | `run` or `individual` finished, but some columns or requests had problems. The report's status section lists them. |
+| 130 | You stopped the command with Ctrl-C. A run that `ahd run` had started is marked "failed". A pair that `ahd individual` was adding is removed. |
 
 ## Defaults
 

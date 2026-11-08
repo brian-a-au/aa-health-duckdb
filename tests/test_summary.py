@@ -624,13 +624,19 @@ def test_duration_text(seconds, text):
 
 
 def _report_alerts(view, day, threshold=0.30):
-    """The report's Alerts tab rules, as report.js applies them to view["alerts"]."""
+    """The report's Alerts tab rules, as splitAlerts in report.js applies them to view["alerts"].
+
+    Keep this in the same order as report.js: an Adobe flag comes first, before the check for
+    a component that never collected data.
+    """
     out = {}
     for a in view["alerts"]:
-        if a["day"] != day or (a["zero"] and a["unused"]):
+        if a["day"] != day:
             continue
         if a["anomaly"]:
             out[a["component_id"]] = "unusual"
+        elif a["zero"] and a["unused"]:
+            continue
         elif a["zero"]:
             out[a["component_id"]] = "dropped to zero"
         elif a["usual"] >= 10 and a["pct_vs_usual"] is not None and a["pct_vs_usual"] < -threshold:
@@ -640,7 +646,7 @@ def _report_alerts(view, day, threshold=0.30):
 
 @pytest.mark.parametrize("threshold", [0.10, 0.30, 0.60])
 def test_alerts_macro_matches_the_report(tmp_path, threshold):
-    comps = [_comp(f"metrics/event{i}", f"E{i}", number=i) for i in range(1, 7)]
+    comps = [_comp(f"metrics/event{i}", f"E{i}", number=i) for i in range(1, 8)]
     vals = (
         _series("metrics/event1", 100.0, 85.0)  # 15 percent drop
         + _series("metrics/event2", 100.0, 50.0)  # 50 percent drop
@@ -649,6 +655,9 @@ def test_alerts_macro_matches_the_report(tmp_path, threshold):
         + _series("metrics/event5", 8.0, 1.0)  # small usual value: skipped
         + [v for v in _series("metrics/event6", 100.0, 100.0) if v.day != YESTERDAY]
         + [_dv("metrics/event6", YESTERDAY, 140.0, 100.0, 120.0, 80.0, True)]  # Adobe flag
+        # Never collected data, but Adobe flags yesterday's 0 as below its range.
+        + [v for v in _series("metrics/event7", 0.0, 0.0) if v.day != YESTERDAY]
+        + [_dv("metrics/event7", YESTERDAY, 0.0, 50.0, 80.0, 20.0, True)]
     )
     store, rid = _build(tmp_path, comps, vals)
     view = build_view(store, rid)
@@ -658,10 +667,46 @@ def test_alerts_macro_matches_the_report(tmp_path, threshold):
     ).fetchall()
     assert dict(rows) == _report_alerts(view, day, threshold)
     assert dict(rows)["metrics/event6"] == "unusual"
+    assert "metrics/event7" not in dict(rows)
+    day_row = next(r for r in view["views"][f"day:{day}"] if r["component_id"] == "metrics/event7")
+    assert day_row["anomaly"] is None and day_row["unused"]
     other = store.con.execute(
         "select count(*) from alerts(?, for_day := ?)", [rid, "2026-11-05"]
     ).fetchone()[0]
     assert other == len(_report_alerts(view, "2026-11-05"))
+
+
+@pytest.mark.parametrize(
+    ("friday", "yesterday", "threshold"),
+    [(10.0, 7.0, 0.30), (100.0, 85.0, 0.15), (100.0, 70.0, 0.30), (100.0, 80.0, 0.20)],
+)
+def test_a_drop_of_exactly_the_threshold_is_not_flagged(tmp_path, friday, yesterday, threshold):
+    store, rid = _build(
+        tmp_path,
+        [_comp("metrics/event1", "E1", number=1)],
+        _series("metrics/event1", friday, yesterday),
+    )
+    view = build_view(store, rid, threshold)
+    day = YESTERDAY.isoformat()
+    row = view["views"][f"day:{day}"][0]
+    assert row["pct"] == -threshold
+    assert _report_alerts(view, day, threshold) == {}
+    rows = store.con.execute("select * from alerts(?, threshold := ?)", [rid, threshold])
+    assert rows.fetchall() == []
+
+
+def test_nan_values_count_as_empty_for_never_collected(tmp_path):
+    # NaN on some days and 0 on the rest: the page and the macro both call it never collected.
+    vals = [
+        _dv("metrics/event1", d, 0.0 if (d == YESTERDAY or d.day % 2) else float("nan"))
+        for d in _days(START, TODAY)
+    ]
+    store, rid = _build(tmp_path, [_comp("metrics/event1", "E1", number=1)], vals)
+    view = build_view(store, rid)
+    row = view["views"][f"day:{YESTERDAY.isoformat()}"][0]
+    assert row["zero"] and row["unused"]
+    assert _report_alerts(view, YESTERDAY.isoformat()) == {}
+    assert store.con.execute("select count(*) from alerts(?)", [rid]).fetchone()[0] == 0
 
 
 def test_component_days_matches_the_report_view(tmp_path):

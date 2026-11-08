@@ -17,11 +17,22 @@ from ahd.config import Credentials
 log = logging.getLogger(__name__)
 
 BASE = "https://analytics.adobe.io/api"
-BACKOFF_BASE = 0.5
-BACKOFF_CAP = 10.0
+# Waits between tries: about 1, 2, 4, 8, 16 and 30 seconds. Six tries wait 30.5 to 61 seconds
+# in all, long enough to outlast a short rate limit.
+BACKOFF_BASE = 1.0
+BACKOFF_CAP = 30.0
+MAX_RETRIES = 6
 TIMEOUT = 120
 # Adobe's "temporarily unavailable" code. It comes with HTTP 403 but clears on a retry.
 TEMPORARY_403 = "403025"
+NOT_JSON = "Adobe sent an answer that could not be read as JSON."
+# Network errors that are worth another try. ChunkedEncodingError means the connection
+# dropped while the answer was being read.
+RETRIED_ERRORS = (
+    requests.ConnectionError,
+    requests.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+)
 
 
 class ApiError(Exception):
@@ -63,7 +74,9 @@ class AdobeClient:
         company_id: str,
         relogin: Callable[[], dict],
         sleep: Callable[[float], None] = time.sleep,
-        max_retries: int = 4,
+        max_retries: int = MAX_RETRIES,
+        company_name: str = "",
+        companies: int = 1,
     ):
         self._session = session
         self._header = dict(header)
@@ -72,6 +85,8 @@ class AdobeClient:
         self._header_lock = threading.Lock()
         self._header_gen = 0
         self.company_id = company_id
+        self.company_name = company_name
+        self.companies = companies
         self._relogin = relogin
         self._sleep = sleep
         self.max_retries = max_retries
@@ -91,7 +106,14 @@ class AdobeClient:
         def relogin() -> dict:
             return header_for(get_token(session, creds), creds, first.company_id)
 
-        return cls(session, first.header, first.company_id, relogin)
+        return cls(
+            session,
+            first.header,
+            first.company_id,
+            relogin,
+            company_name=first.company_name,
+            companies=first.companies,
+        )
 
     def get(self, path: str, params: dict | None = None) -> Any:
         return self._request("GET", path, params=params)
@@ -110,7 +132,7 @@ class AdobeClient:
                 resp = self._session.request(
                     method, url, headers=header, params=params, json=json, timeout=TIMEOUT
                 )
-            except (requests.ConnectionError, requests.Timeout) as e:
+            except RETRIED_ERRORS as e:
                 if attempt >= self.max_retries:
                     raise
                 attempt += 1
@@ -164,7 +186,10 @@ class AdobeClient:
 
     @staticmethod
     def _backoff(attempt: int) -> float:
-        return random.uniform(0, min(BACKOFF_CAP, BACKOFF_BASE * 2**attempt))
+        """Half the step plus a random part up to the other half. The random part spreads the
+        workers out, and the fixed half keeps the total wait long enough."""
+        step = min(BACKOFF_CAP, BACKOFF_BASE * 2**attempt)
+        return step / 2 + random.uniform(0, step / 2)
 
     @staticmethod
     def _finish(resp: Any) -> Any:
@@ -175,4 +200,7 @@ class AdobeClient:
             raise ApiError(status, err[1] or "Adobe returned an error", err[0])
         if status >= 400:
             raise ApiError(status, f"Adobe returned HTTP {status}")
+        if not isinstance(body, (dict, list)):
+            # e.g. an HTML page from a proxy, or a body cut off in the middle.
+            raise ApiError(status, NOT_JSON, "invalid_response")
         return body

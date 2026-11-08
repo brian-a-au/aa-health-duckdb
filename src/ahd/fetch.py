@@ -7,8 +7,9 @@ All store writes happen on the calling thread; worker threads only call the API.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, wait
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from importlib import metadata
@@ -147,6 +148,23 @@ def _batches(columns: list[Column], size: int) -> list[list[Column]]:
     return [columns[i : i + size] for i in range(0, len(columns), size)]
 
 
+@contextmanager
+def _pool(workers: int) -> Iterator[ThreadPoolExecutor]:
+    """A worker pool that drops its waiting requests when the caller stops, e.g. on Ctrl-C.
+
+    A plain `with ThreadPoolExecutor()` waits for every queued request before it lets an
+    exception through, so Ctrl-C would still send the whole run. Requests that already
+    started finish, because a thread cannot be stopped from outside.
+    """
+    pool = ThreadPoolExecutor(max_workers=max(1, workers))
+    try:
+        yield pool
+    except BaseException:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown(wait=True)
+
+
 def _quiet(message: str) -> None:
     """The default progress callback: say nothing."""
 
@@ -228,7 +246,7 @@ def _run(
         opts.metric_type,
     )
 
-    with ThreadPoolExecutor(max_workers=max(1, opts.workers)) as pool:
+    with _pool(opts.workers) as pool:
         batch_futures: list[tuple[list[Column], Future]] = [
             (
                 batch,
@@ -265,9 +283,10 @@ def _run(
                 issue("column", err.component_id, err.error_code, err.message)
 
         label = _pair_label(opts.dimension_name or opts.dimension, opts.metric_name or opts.metric)
-        value_count += _store_pair(
+        pair_values, _stored = _store_pair(
             store, run_id, pair, trend_col, ind_futures, label, issue, progress
         )
+        value_count += pair_values
 
     if value_count == 0:
         return "failed"
@@ -326,10 +345,14 @@ def _store_pair(
     label: str,
     issue: Callable[[str, str | None, str, str], None],
     progress: Callable[[str], None],
-) -> int:
-    """Write one pair's results on the calling thread. Returns the number of daily values."""
+) -> tuple[int, int]:
+    """Write one pair's results on the calling thread.
+
+    Returns the number of daily values, and how many of the 5 requests stored any rows.
+    """
     cid = trend_col.component_id
     value_count = 0
+    stored = 0
     for done, (kind, fut) in enumerate(futures.items(), start=1):
         wait([fut])
         progress(f"Individual Component Summary: {done} of {len(futures)} requests done.")
@@ -346,11 +369,13 @@ def _store_pair(
             rows, _total = parse_ranked(resp)
             store.add_top_items(run_id, kind, rows, pair=pair)
             empty = not rows
+            got_rows = bool(rows)
         elif kind in ("browser", "device"):
             rows, totals = parse_breakdown(resp)
             labels = BROWSER_LABELS if kind == "browser" else DEVICE_LABELS
             store.add_breakdown(run_id, kind, labels, rows, totals, pair=pair)
             empty = not rows
+            got_rows = bool(rows)
         else:
             values, errors = parse_trend(resp, [trend_col])
             store.add_daily_values(run_id, values)
@@ -358,10 +383,12 @@ def _store_pair(
             for err in errors:
                 issue("individual", cid, err.error_code, f"{what}: {err.message}")
             empty = not values and not errors
+            got_rows = bool(values)
         if empty:
             # Spec section 7: zero rows may be a permission gap, not "no data".
             issue("individual", cid, "no_rows", _no_rows_message(kind, label))
-    return value_count
+        stored += got_rows
+    return value_count, stored
 
 
 def add_pair(
@@ -378,7 +405,8 @@ def add_pair(
     """Fetch one more pair for a stored run, for the same suite, segment and dates.
 
     Returns the pair number and how many problems it had. A run that was "ok" becomes
-    "partial" when the new pair had problems.
+    "partial" when the new pair had problems. A run that was "failed" becomes "partial" when
+    the new pair stored some data.
     """
     run = store.get_run(run_id)
     if run["status"] == "running":
@@ -403,11 +431,30 @@ def add_pair(
         store.add_issue(run_id, scope, component_id, code, message)
 
     label = _pair_label(dimension_name or dimension, metric_name or metric)
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        trend_col, futures = _submit_pair(
-            pool, client, run["rsid"], run["segment_id"], window, anomaly, dimension, metric, pair
-        )
-        _store_pair(store, run_id, pair, trend_col, futures, label, issue, progress)
+    try:
+        with _pool(5) as pool:
+            trend_col, futures = _submit_pair(
+                pool,
+                client,
+                run["rsid"],
+                run["segment_id"],
+                window,
+                anomaly,
+                dimension,
+                metric,
+                pair,
+            )
+            _values, stored = _store_pair(
+                store, run_id, pair, trend_col, futures, label, issue, progress
+            )
+    except BaseException:
+        # A pair that stopped part way, e.g. on Ctrl-C or a failed sign-in, would block a retry
+        # of the same dimension and metric. Remove it, so the run looks as it did before.
+        store.delete_pair(run_id, pair, pair_series_id(pair))
+        raise
     if problems and run["status"] == "ok":
+        store.set_status(run_id, "partial")
+    elif stored and run["status"] == "failed":
+        # The run now holds some data, so "Failed. No data could be read." is no longer true.
         store.set_status(run_id, "partial")
     return pair, problems

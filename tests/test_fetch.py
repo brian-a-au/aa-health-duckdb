@@ -572,6 +572,43 @@ def test_add_pair_problems_make_an_ok_run_partial(store):
     assert len(ind) == 5 and all("(Five by Orders)" in r[3] for r in ind)
 
 
+def test_add_pair_with_data_makes_a_failed_run_partial(store):
+    from ahd.fetch import add_pair
+
+    rid = run_fetch(
+        fake_for("rs1", events(1), custom_dims(), default_post=ApiError(500, "down")),
+        store,
+        opts(),
+    )
+    assert store.get_run(rid)["status"] == "failed"
+    assert add_pair(
+        fake_for("rs1", events(1), custom_dims()), store, rid, "variables/evar1", "metrics/orders"
+    ) == (2, 0)
+    assert store.get_run(rid)["status"] == "partial"
+
+
+def test_add_pair_with_only_column_errors_keeps_a_failed_run_failed(store):
+    from fakes import trend_response
+
+    from ahd.fetch import add_pair
+
+    down = fake_for("rs1", events(1), custom_dims(), default_post=ApiError(500, "down"))
+    rid = run_fetch(down, store, opts())
+    # Only the trend answers, and its one column has an error.
+    down.posts = [(is_trend, lambda b: trend_response(b, column_errors={0: "unauthorized"}))]
+    _pair, problems = add_pair(down, store, rid, "variables/evar1", "metrics/orders")
+    assert problems == 5 and store.get_run(rid)["status"] == "failed"
+
+
+def test_add_pair_without_data_keeps_a_failed_run_failed(store):
+    from ahd.fetch import add_pair
+
+    down = fake_for("rs1", events(1), custom_dims(), default_post=ApiError(500, "down"))
+    rid = run_fetch(down, store, opts())
+    _pair, problems = add_pair(down, store, rid, "variables/evar1", "metrics/orders")
+    assert problems == 5 and store.get_run(rid)["status"] == "failed"
+
+
 def test_add_pair_refuses_duplicates_and_running_runs(store):
     from ahd.config import ConfigError
     from ahd.fetch import add_pair
@@ -583,3 +620,62 @@ def test_add_pair_refuses_duplicates_and_running_runs(store):
     store.set_status(rid, "running")
     with pytest.raises(ConfigError, match="still marked"):
         add_pair(fake, store, rid, "variables/evar1", "metrics/orders")
+
+
+def test_add_pair_that_stops_part_way_can_be_tried_again(store):
+    from ahd.api.auth import SignInError
+    from ahd.fetch import add_pair
+
+    fake = fake_for("rs1", events(1), custom_dims())
+    rid = run_fetch(fake, store, opts())
+
+    def fail_after_some(body):
+        # The browser table fails after the top 100 tables were stored.
+        if breakdown_dimension(body):
+            raise SignInError("sign-in renewal failed")
+        return trend_response(body) if is_trend(body) else {"rows": [{"value": "x", "data": [1]}]}
+
+    broken = fake_for("rs1", events(1), custom_dims(), default_post=fail_after_some)
+    with pytest.raises(SignInError):
+        add_pair(broken, store, rid, "variables/evar1", "metrics/orders")
+    assert [p["pair"] for p in store.list_pairs(rid)] == [1]
+    for table in ("top_items", "breakdowns", "breakdown_totals"):
+        count = store.con.execute(f"select count(*) from {table} where pair = 2").fetchone()[0]
+        assert count == 0, table
+    assert values_for(store, rid, "individual/2") == 0
+    assert add_pair(fake, store, rid, "variables/evar1", "metrics/orders") == (2, 0)
+
+
+def test_ctrl_c_drops_the_requests_that_have_not_started(store):
+    import time
+
+    from fakes import auto_response
+
+    def slow(body):
+        time.sleep(0.05)
+        return auto_response(body)
+
+    fake = fake_for("rs1", events(200), custom_dims(), default_post=slow)
+
+    def stop(message):
+        if message.startswith("Daily trends"):
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        run_fetch(fake, store, opts(workers=1, batch_size=20), progress=stop)
+    # 1 probe, 11 trend batches and 5 pair requests were queued. Only the first few were sent.
+    assert len(fake.posted()) <= 3
+    assert store.list_runs()[0]["status"] == "failed"
+
+
+def test_a_batch_that_is_not_json_becomes_issues(store):
+    from ahd.api.client import NOT_JSON
+
+    fake = fake_for(
+        "rs1",
+        events(3),
+        custom_dims(),
+        posts=[(after_probe(is_trend), ApiError(200, NOT_JSON, "invalid_response"))],
+    )
+    rid = run_fetch(fake, store, opts())
+    assert "invalid_response" in issue_codes(store, rid)

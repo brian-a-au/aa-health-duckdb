@@ -31,7 +31,8 @@ SELECT dv.run_id, dv.day, dv.day = dv.today - 1 AS is_yesterday,
     CASE WHEN dv.anomaly THEN CASE WHEN dv.value > dv.upper THEN 'high' ELSE 'low' END END
         AS anomaly,
     coalesce(u.usual, 0) AS usual,
-    CASE WHEN u.usual <> 0 THEN dv.value / u.usual - 1 END AS pct_vs_usual,
+    -- Rounded so that a drop of exactly the threshold is not "more than" it, as in the report.
+    CASE WHEN u.usual <> 0 THEN round(dv.value / u.usual - 1, 9) END AS pct_vs_usual,
     coalesce(dv.value = 0, false) AS zero,
     NOT coalesce(used.had_data, false) AS unused
 FROM dv

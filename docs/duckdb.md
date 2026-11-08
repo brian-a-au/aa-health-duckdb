@@ -65,7 +65,7 @@ duckdb -readonly data/ahd.duckdb
 
 `-readonly` means your queries can never change or delete data. Use it for everything in this guide.
 
-While `ahd run` or `ahd individual` writes to a file, no other program can open it. DuckDB stops with "Could not set lock on file". Wait for the run to finish, then try again.
+While `ahd run`, `ahd individual` or `ahd prune` writes to a file, no other program can open it. DuckDB stops with "Could not set lock on file". Wait for the command to finish, then try again. In the same way, an open `duckdb` session blocks `ahd run` until you close it.
 
 ### Pick an output format
 
@@ -84,7 +84,7 @@ The `duckdb` command can print a result in the format you need:
 ### Or use the notebook in your browser
 
 ```
-duckdb -ui data/ahd.duckdb
+duckdb -readonly -ui data/ahd.duckdb
 ```
 
 This opens DuckDB's notebook interface in your browser, with a list of tables and a cell for each query. It installs DuckDB's `ui` extension the first time, and it loads the interface from DuckDB's website. The data stays on your computer.
@@ -115,7 +115,7 @@ Every file comes with two views and one table macro. A view is a saved query tha
 The newest finished run of each report suite and segment.
 
 ```sql
-FROM latest_runs SELECT run_id, rsid_name, today, status;
+FROM latest_runs SELECT run_id, rsid_name, today, status ORDER BY run_id DESC;
 ```
 
 ```
@@ -143,7 +143,7 @@ One row per run, component and full day, with everything the report computes:
 
 The alerts of one run, by the report's rules:
 
-- `run`: the run number. It can be a query, e.g., `(SELECT run_id FROM latest_runs WHERE rsid = 'my_suite')`.
+- `run`: the run number. It can be a query, e.g., `(SELECT max(run_id) FROM latest_runs WHERE rsid = 'my_suite' AND segment_id IS NULL)`. The query must return one run. `latest_runs` holds one row for each segment of a suite, so name the segment, or use `segment_id IS NULL` for the run without a segment.
 - `threshold`: the percent for a large drop, as a share. The default is `0.30`, the same as the report's slider.
 - `min_usual`: a large drop needs a usual value of at least this much. The default is `10`.
 - `for_day`: the day to check. The default is yesterday.
@@ -178,7 +178,7 @@ On the report's Alerts tab, click **Copy alerts**. The copy holds a formatted ta
 
 ```
 duckdb -readonly data/ahd.duckdb -markdown -c "
-FROM alerts((SELECT run_id FROM latest_runs WHERE rsid = 'my_suite'))
+FROM alerts((SELECT max(run_id) FROM latest_runs WHERE rsid = 'my_suite' AND segment_id IS NULL))
 SELECT alert, name, round(usual) AS usual, value, round(pct_vs_usual * 100) AS pct"
 ```
 
@@ -198,13 +198,23 @@ SELECT alert, name, round(usual) AS usual, value, round(pct_vs_usual * 100) AS p
 uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
 ```
 
-Without mail settings, it writes `alerts.eml`, which you can open and check first. To send, set `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` and `MAIL_TO`. It exits with 0 when it sent or wrote a message and with 2 when there was nothing to send.
+It reads the latest finished run without a segment. Add `--segment ID` for the latest run with that segment. A third argument sets the large drop percent as a share, e.g., `0.20` for 20 percent. The default is `0.30`.
+
+Without `SMTP_HOST`, it writes `alerts.eml` in the current folder, which you can open and check first. To send, set `SMTP_HOST`, `MAIL_FROM` and `MAIL_TO`. Set `SMTP_PORT` when the server does not use 587. Set `SMTP_USER` and `SMTP_PASSWORD` when the server needs a login.
+
+It exits with these codes:
+
+- 0 when it sent or wrote a message
+- 1 when something is wrong, e.g., the file holds no finished run of the suite
+- 2 when there was nothing to send
 
 To run it every morning, add a run and the email to a schedule, e.g., with `crontab -e` on macOS or Linux:
 
 ```
-30 7 * * * cd ~/aa-health-duckdb && uv run ahd run --profile prod --rsid my_suite && uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
+30 7 * * * cd ~/aa-health-duckdb && uv run ahd run --profile prod --rsid my_suite; test $? -ne 1 && uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
 ```
+
+`test $? -ne 1` sends the email after a run that ended "ok" (exit code 0) or "partial" (exit code 3), and skips it after a failed run.
 
 ### Send only what is new since the last run
 
@@ -261,16 +271,16 @@ FROM routed GROUP BY ALL ORDER BY alerts DESC;
 
 `read_csv` reads the file directly, with no import step. `QUALIFY` keeps the first matching owner for each alert. `list(...)[1:3]` gathers the three worst drops into one cell.
 
-### Send one weekly digest for every suite
+### Send one digest for every suite
 
-One row per report suite, from the latest run of each:
+One row per report suite, with yesterday's alerts from the latest run of each. Each alert counts once, by the same rules as the `alerts` macro. An Adobe flag comes first, then a value of 0, then a large drop.
 
 ```sql
 SELECT r.rsid_name AS suite, r.today - 1 AS day,
-    count(*) FILTER (WHERE d.anomaly IS NOT NULL) AS unusual,
-    count(*) FILTER (WHERE d.zero AND NOT d.unused) AS dropped_to_zero,
+    count(*) FILTER (WHERE d.anomaly IS NOT NULL AND NOT (d.zero AND d.unused)) AS unusual,
+    count(*) FILTER (WHERE d.zero AND NOT d.unused AND d.anomaly IS NULL) AS dropped_to_zero,
     count(*) FILTER (WHERE d.usual >= 10 AND d.pct_vs_usual < -0.30
-                     AND d.anomaly IS NULL) AS large_drops,
+                     AND NOT d.zero AND d.anomaly IS NULL) AS large_drops,
     count(*) FILTER (WHERE d.unused) AS never_collected,
     (SELECT count(*) FROM issues i WHERE i.run_id = r.run_id) AS problems
 FROM latest_runs r JOIN component_days d ON d.run_id = r.run_id AND d.is_yesterday
@@ -335,7 +345,7 @@ GROUP BY ALL ORDER BY suite, never_collected DESC;
 
 ### Health over time, with a chart in the terminal
 
-How many values Adobe flagged in each run's 92 days, with a bar drawn by `bar()`:
+How many values Adobe flagged in each run's 91 full days, with a bar drawn by `bar()`:
 
 ```sql
 SELECT run_id, rsid, today,
@@ -385,23 +395,30 @@ GROUP BY "group" ORDER BY "group";
 ```
 
 ```
-┌──────────────────────────┬────────────┬─────────┐
-│          group           │ large drop │ unusual │
-├──────────────────────────┼────────────┼─────────┤
-│ Reserved Purchase Events │          8 │       0 │
-│ custom_evars             │        113 │       1 │
-│ custom_events            │        165 │       4 │
-└──────────────────────────┴────────────┴─────────┘
+┌──────────────────────────────┬────────────┬─────────┐
+│            group             │ large drop │ unusual │
+├──────────────────────────────┼────────────┼─────────┤
+│ List Variables               │          1 │       0 │
+│ Reserved Props               │          2 │       0 │
+│ Reserved Purchase Events     │          8 │       0 │
+│ Reserved Traffic Events      │          3 │       0 │
+│ Reserved eVars               │          2 │       0 │
+│ Target Integration Instances │          1 │       0 │
+│ custom_evars                 │        113 │       1 │
+│ custom_events                │        165 │       4 │
+│ custom_props                 │         15 │       0 │
+└──────────────────────────────┴────────────┴─────────┘
 ```
 
 ### A history longer than 92 days
 
-Each run holds 92 days. Runs made on different days overlap, so together they cover more. This query keeps each day once, from the newest run that has it:
+Each run holds 92 days. Runs made on different days overlap, so together they cover more. This query keeps each day once, from the newest finished run of one suite that has it. It leaves out runs with a segment, because their values are smaller:
 
 ```sql
 SELECT component_id, count(*) AS days, min(day) AS first_day, max(day) AS last_day
 FROM (
-    FROM component_days
+    FROM component_days JOIN runs USING (run_id)
+    WHERE rsid = 'my_suite' AND segment_id IS NULL AND status IN ('ok', 'partial')
     QUALIFY row_number() OVER (PARTITION BY component_id, day ORDER BY run_id DESC) = 1
 )
 WHERE component_id = 'metrics/visits'
@@ -469,7 +486,8 @@ import duckdb
 
 with duckdb.connect("data/ahd.duckdb", read_only=True) as con:
     rows = con.execute(
-        "FROM alerts((SELECT run_id FROM latest_runs WHERE rsid = $rsid)) SELECT name, alert",
+        "FROM alerts((SELECT max(run_id) FROM latest_runs"
+        " WHERE rsid = $rsid AND segment_id IS NULL)) SELECT name, alert",
         {"rsid": "my_suite"},
     ).fetchall()
 ```

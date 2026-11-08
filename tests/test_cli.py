@@ -197,6 +197,45 @@ def test_missing_config_is_one_line(tmp_path, capsys, monkeypatch):
     assert err.count("\n") == 1 and "Traceback" not in err
 
 
+def test_ctrl_c_is_one_line(tmp_path, cfg, capsys):
+    def stop(creds, company_id=None):
+        raise KeyboardInterrupt
+
+    code = main(args(tmp_path, cfg, "run", "--rsid", "rs1"), client_factory=stop)
+    err = capsys.readouterr().err
+    assert code == 130
+    assert err.startswith("Stopped by Ctrl-C. A run that ahd run had started is marked failed.")
+
+
+@pytest.mark.parametrize("company", [None, "co2"])
+def test_says_which_login_company_it_used(tmp_path, cfg, capsys, company):
+    fake = fake_for("rs1", events(1), custom_dims(), company_id=company or "co1")
+    fake.companies, fake.company_name = 2, "Name co1"
+    argv = ["suites", "--config", str(cfg)] + (["--company", company] if company else [])
+    assert main(argv, client_factory=lambda c, company_id=None: fake) == 0
+    out = capsys.readouterr().out
+    note = "This credential sees 2 login companies. Using Name co1 (co1). Choose another"
+    assert (note in out) == (company is None)
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--batch-size", "0"),
+        ("--batch-size", "-5"),
+        ("--batch-size", "101"),
+        ("--batch-size", "ten"),
+        ("--workers", "0"),
+        ("--workers", "17"),
+    ],
+)
+def test_batch_size_and_workers_must_be_in_range(tmp_path, cfg, capsys, option, value):
+    with pytest.raises(SystemExit) as e:
+        main(args(tmp_path, cfg, "run", "--rsid", "rs1", option, value))
+    assert e.value.code == 2
+    assert "is not a whole number from 1 to" in capsys.readouterr().err
+
+
 def test_api_error_is_one_line(tmp_path, cfg, capsys):
     def factory(creds, company_id=None):
         raise ApiError(401, "bad sign in", "unauthorized")
@@ -241,6 +280,106 @@ def test_newer_database_is_one_line_error(tmp_path, cfg, capsys):
     assert (
         code == 1 and err.count("\n") == 1 and "different version" in err and "Traceback" not in err
     )
+
+
+def test_locked_database_is_one_line_error(tmp_path, cfg, capsys):
+    import subprocess
+    import sys
+
+    from ahd.store import Store
+
+    db = tmp_path / "t.duckdb"
+    Store.open(db).con.close()
+    # Another process holds the file open for writing, as ahd run does.
+    holder = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                f"import duckdb, time; c = duckdb.connect({str(db)!r}); "
+                "print('ready', flush=True); time.sleep(30)"
+            ),
+        ],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert holder.stdout.readline().strip() == "ready"
+        called = []
+
+        def sign_in(creds, company_id=None):
+            called.append(1)
+
+        for argv in (["runs", "--db", str(db)], args(tmp_path, cfg, "run", "--rsid", "rs1")):
+            code = main(argv, client_factory=sign_in)
+            err = capsys.readouterr().err
+            assert code == 1 and err.count("\n") == 1 and "Traceback" not in err
+            assert "is in use by another program" in err
+            assert not called  # ahd run stops before it signs in
+    finally:
+        holder.kill()
+        holder.wait()
+
+
+def test_file_that_is_not_a_database_is_one_line_error(tmp_path, capsys):
+    db = tmp_path / "notes.duckdb"
+    db.write_text("not a database")
+    assert main(["runs", "--db", str(db)]) == 1
+    assert "is not a DuckDB database" in capsys.readouterr().err
+
+
+def test_runs_and_render_do_not_create_a_database(tmp_path, capsys):
+    db = tmp_path / "new" / "t.duckdb"
+    assert main(["runs", "--db", str(db)]) == 1
+    assert main(["render", "--run", "1", "--db", str(db)]) == 1
+    assert "There is no database at" in capsys.readouterr().err
+    assert not db.parent.exists()
+
+
+def test_runs_reads_a_database_that_a_reader_has_open(tmp_path, cfg, capsys):
+    import duckdb
+
+    from ahd.store import Store
+
+    db = tmp_path / "t.duckdb"
+    Store.open(db).con.close()
+    reader = duckdb.connect(str(db), read_only=True)
+    try:
+        assert main(["runs", "--db", str(db)]) == 0
+    finally:
+        reader.close()
+
+
+def test_prune_and_individual_do_not_create_a_database(tmp_path, cfg, capsys):
+    db = tmp_path / "new" / "t.duckdb"
+    assert main(["prune", "--run", "1", "--yes", "--db", str(db)]) == 1
+    argv = args(tmp_path, cfg, "individual", "--run", "1", "--dimension", "page", "--metric", "x")
+    argv[argv.index("--db") + 1] = str(db)
+    assert main(argv, client_factory=lambda c, company_id=None: pytest.fail("signed in")) == 1
+    assert "There is no database at" in capsys.readouterr().err
+    assert not db.parent.exists()
+
+
+def test_a_damaged_file_is_not_called_locked(tmp_path, monkeypatch):
+    import duckdb
+
+    from ahd.store import Store, StoreError
+
+    def broken(path, read_only=False):
+        raise duckdb.IOException("Corrupt database file: block 7 is invalid")
+
+    monkeypatch.setattr(duckdb, "connect", broken)
+    with pytest.raises(StoreError, match="Could not open the database"):
+        Store.open(tmp_path / "t.duckdb")
+
+
+def test_empty_duckdb_file_is_not_an_ahd_database(tmp_path, capsys):
+    import duckdb
+
+    db = tmp_path / "other.duckdb"
+    duckdb.connect(str(db)).close()
+    assert main(["runs", "--db", str(db)]) == 1
+    assert "holds no ahd runs" in capsys.readouterr().err
 
 
 # ---- profiles ----------------------------------------------------------------
@@ -289,6 +428,19 @@ def test_aa_profile_variable_picks_profile(tmp_path, capsys, monkeypatch):
     )
     assert code == 0 and "profile stage" in capsys.readouterr().out
     assert (folder / "ahd.duckdb").exists()
+
+
+@pytest.mark.parametrize("how", ["flag", "variable"])
+def test_profile_and_config_together_is_an_error(tmp_path, cfg, capsys, monkeypatch, how):
+    _profile("prod")
+    argv = ["suites", "--config", str(cfg)]
+    if how == "flag":
+        argv += ["--profile", "prod"]
+    else:
+        monkeypatch.setenv("AA_PROFILE", "prod")
+    code = main(argv, client_factory=lambda c, company_id=None: pytest.fail("signed in"))
+    assert code == 1
+    assert "Use a profile or --config, not both" in capsys.readouterr().err
 
 
 def test_db_flag_wins_over_profile(tmp_path, capsys):
@@ -694,6 +846,10 @@ def test_individual_with_problems_exits_3(tmp_path, cfg, capsys):
 
 
 def test_individual_unknown_run(tmp_path, cfg, capsys):
+    from ahd.store import Store
+
+    Store.open(tmp_path / "t.duckdb").con.close()
+
     def boom(*a, **k):
         raise AssertionError("must not sign in")
 

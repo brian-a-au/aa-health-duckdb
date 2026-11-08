@@ -1,7 +1,9 @@
 import pytest
 import requests
 
-from ahd.api.client import AdobeClient, ApiError
+from ahd.api.client import MAX_RETRIES, AdobeClient, ApiError
+
+TRIES = MAX_RETRIES + 1
 
 HEADER = {"Authorization": "Bearer SECRET-TOKEN", "x-api-key": "KEY123"}
 
@@ -63,11 +65,11 @@ def test_retries_429_then_succeeds():
 
 
 def test_gives_up_after_max_retries():
-    c, s, sleeps = make([(503, None, {})] * 5)
+    c, s, sleeps = make([(503, None, {})] * TRIES)
     with pytest.raises(ApiError) as e:
         c.get("/dimensions")
     assert e.value.status == 503
-    assert len(s.calls) == 5 and len(sleeps) == 4
+    assert len(s.calls) == TRIES and len(sleeps) == MAX_RETRIES
 
 
 def test_401_relogs_once():
@@ -148,21 +150,28 @@ def make_raising(script):
     return c, session, sleeps
 
 
-@pytest.mark.parametrize("exc", [requests.ConnectionError("reset"), requests.Timeout("slow")])
+@pytest.mark.parametrize(
+    "exc",
+    [
+        requests.ConnectionError("reset"),
+        requests.Timeout("slow"),
+        requests.exceptions.ChunkedEncodingError("Connection broken: IncompleteRead"),
+    ],
+)
 def test_network_errors_retried_then_succeed(exc):
     c, s, sleeps = make_raising([exc, exc, (200, {"ok": 1}, {})])
     assert c.post_report({}) == {"ok": 1}
     assert len(s.calls) == 3 and len(sleeps) == 2
-    assert all(0 <= d <= 10.0 for d in sleeps)
+    assert 0.5 <= sleeps[0] <= 1.0 and 1.0 <= sleeps[1] <= 2.0
 
 
 def test_network_error_raised_after_max_retries():
-    errors = [requests.Timeout(f"slow {i}") for i in range(5)]
+    errors = [requests.Timeout(f"slow {i}") for i in range(TRIES)]
     c, s, sleeps = make_raising(list(errors))
     with pytest.raises(requests.Timeout) as e:
         c.get("/dimensions")
     assert e.value is errors[-1]
-    assert len(s.calls) == 5 and len(sleeps) == 4
+    assert len(s.calls) == TRIES and len(sleeps) == MAX_RETRIES
 
 
 TEMP_403 = {"errorCode": "403025", "errorDescription": "temporarily unavailable"}
@@ -175,11 +184,11 @@ def test_403025_is_retried_with_backoff():
 
 
 def test_403025_raises_after_last_try():
-    c, s, sleeps = make([(403, TEMP_403, {})] * 5)
+    c, s, sleeps = make([(403, TEMP_403, {})] * TRIES)
     with pytest.raises(ApiError) as e:
         c.post_report({})
     assert e.value.status == 403 and e.value.error_code == "403025"
-    assert len(s.calls) == 5 and len(sleeps) == 4
+    assert len(s.calls) == TRIES and len(sleeps) == MAX_RETRIES
 
 
 def test_other_403_is_not_retried():
@@ -261,3 +270,20 @@ def test_connect_signs_in_and_relogin_gets_a_new_token(monkeypatch):
     assert c._header["Authorization"] == "Bearer T0"
     assert c._relogin()["Authorization"] == "Bearer T1"
     assert c._relogin()["x-proxy-global-company-id"] == "co7"
+
+
+@pytest.mark.parametrize("body", [None, "a string", 3])
+def test_a_2xx_answer_that_is_not_json_is_an_api_error(body):
+    from ahd.api.client import NOT_JSON
+
+    c, _session, _sleeps = make([(200, body, {})])
+    with pytest.raises(ApiError) as e:
+        c.post_report({})
+    assert (e.value.error_code, e.value.message) == ("invalid_response", NOT_JSON)
+
+
+def test_retries_wait_long_enough_to_outlast_a_short_rate_limit():
+    c, _session, sleeps = make([(429, None, {})] * TRIES)
+    with pytest.raises(ApiError):
+        c.post_report({})
+    assert 30.5 <= sum(sleeps) <= 61

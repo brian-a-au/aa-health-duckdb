@@ -20,6 +20,12 @@ PROFILE_ENV = "AA_PROFILE"
 _PROFILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
+NO_CREDENTIAL = (
+    "No credential was found. Use --profile NAME, set the AHD_ORG_ID, AHD_CLIENT_ID, AHD_SECRET "
+    "and AHD_SCOPES variables, or put a config.json file in this folder."
+)
+
+
 class ConfigError(Exception):
     """Raised when configuration is missing or unreadable."""
 
@@ -110,6 +116,8 @@ def load_credentials(path: Path | None, profile: str | None = None) -> Credentia
     if all(env.values()):
         return _build(env, "environment variables")
     if path is None:
+        if not any(env.values()):
+            raise ConfigError(NO_CREDENTIAL)
         return _build(env, "environment variables")
     data = read_config_object(Path(path), "Config file")
     values = {k: env[k] or _text(data.get(k)) for k in _KEYS}

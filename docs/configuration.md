@@ -43,6 +43,10 @@ The tool uses the first of these that it finds:
 2. **Environment variables.** Set all four of `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_SECRET` and `AHD_SCOPES`.
 3. **A config file.** Pass its path with `--config`, or put a file named `config.json` in the folder where you run the tool. If you also set some of the `AHD_*` variables, each one wins over the same key in the file.
 
+A profile and `--config` cannot be used together. The tool stops and says so, also when the profile comes from `AA_PROFILE`. When all four `AHD_*` variables are set, the tool uses them and does not read a config file.
+
+When the tool finds no credential at all, it stops and lists the three ways to give one.
+
 The tool reads a profile or config file as UTF-8 JSON. It accepts the byte-order mark that Windows PowerShell 5 adds. If the file is missing, is not valid JSON, or does not hold one JSON object, the tool stops and names the file.
 
 ### Profiles

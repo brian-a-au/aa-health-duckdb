@@ -5,7 +5,7 @@ Rules follow the workbook (spec 9.1 and 9.3):
 
 - Daily baseline = sum over the baseline window of the same weekday, divided by 12.
 - Week value = sum over the 7 days ending yesterday. Week baseline = baseline sum / 12.
-- pct = value / baseline - 1, empty when the baseline is 0 or missing.
+- pct = value / baseline - 1, rounded to 9 decimals, empty when the baseline is 0 or missing.
 
 Arrows and percent drop alerts use a threshold the reader sets with a slider in the page,
 so the page decides them, not this module.
@@ -54,13 +54,14 @@ dv AS (
 )"""
 
 # Catalog components that have at least one daily value, with their sort position.
-# unused: the value was 0 or empty on every day through yesterday.
+# unused: the value was 0 or empty on every day through yesterday. It reads dv, so NaN and
+# Infinity count as empty, as in the component_days view.
 _COMPS = """
 comps AS (
     SELECT c.component_id, c.name, c.kind, c."group", c.number, c.metric_type,
         coalesce(list_position($groups::VARCHAR[], c."group"), 1000000) AS gpos,
-        NOT EXISTS (SELECT 1 FROM daily_values d
-                    WHERE d.run_id = $run_id AND d.component_id = c.component_id
+        NOT EXISTS (SELECT 1 FROM dv d
+                    WHERE d.component_id = c.component_id
                       AND d.day BETWEEN $start AND $yesterday AND d.value <> 0) AS unused
     FROM components c
     WHERE c.run_id = $run_id AND NOT starts_with(c.component_id, 'individual/')
@@ -71,7 +72,25 @@ comps AS (
 _ANOMALY = """CASE WHEN {a}.anomaly
     THEN CASE WHEN {a}.value > {a}.upper THEN 'high' ELSE 'low' END END"""
 
+# A component that never collected data is not an alert, even when Adobe flags its 0.
+# The alerts macro in views.sql leaves out the same rows with NOT (zero AND unused).
+_ALERT_ANOMALY = (
+    "CASE WHEN c.unused AND coalesce(d.value = 0, false) THEN NULL ELSE "
+    + _ANOMALY.format(a="d")
+    + " END"
+)
+
 _ORDER = "gpos, number NULLS LAST, component_id"
+
+
+def _pct(value: str, base: str) -> str:
+    """value / base - 1, rounded to 9 decimals. Empty when base is 0 or missing.
+
+    The rounding removes floating point noise, e.g. 7 / 10 - 1 is -0.30000000000000004. Without
+    it, a drop of exactly 30 percent counts as "more than 30 percent". views.sql rounds the same.
+    """
+    return f"CASE WHEN {base} <> 0 THEN round({value} / {base} - 1, 9) END"
+
 
 _DAY_SQL = f"""
 WITH {_DV}, {_COMPS},
@@ -87,8 +106,8 @@ base AS (
 r AS (
     SELECT s.sel_day, c.component_id, c.name, c.kind, c."group", c.number, c.metric_type,
         c.unused, c.gpos, d.value, b.baseline,
-        CASE WHEN b.baseline <> 0 THEN d.value / b.baseline - 1 END AS pct,
-        {_ANOMALY.format(a="d")} AS anomaly
+        {_pct("d.value", "b.baseline")} AS pct,
+        {_ALERT_ANOMALY} AS anomaly
     FROM sel s CROSS JOIN comps c
     JOIN base b ON b.sel_day = s.sel_day AND b.component_id = c.component_id
     LEFT JOIN dv d ON d.component_id = c.component_id AND d.day = s.sel_day
@@ -109,16 +128,19 @@ r AS (
     FROM comps c LEFT JOIN dv d ON d.component_id = c.component_id
     GROUP BY ALL
 ),
-p AS (SELECT *, CASE WHEN baseline <> 0 THEN value / baseline - 1 END AS pct FROM r)
+p AS (SELECT *, {_pct("value", "baseline")} AS pct FROM r)
 SELECT component_id, name, kind, "group", number, metric_type, value, baseline, pct,
     coalesce(value = 0, false) AS zero, unused, NULL AS anomaly
 FROM p
 ORDER BY {_ORDER}
 """
 
+# The expected value and range only draw the chart, so 4 decimals are plenty. Adobe sends 16
+# digits, which made them most of the page's size.
 _SERIES_SQL = f"""
 WITH {_DV}
-SELECT component_id, CAST(day AS VARCHAR) AS day, value, expected, upper, lower,
+SELECT component_id, CAST(day AS VARCHAR) AS day, value, round(expected, 4) AS expected,
+    round(upper, 4) AS upper, round(lower, 4) AS lower,
     {_ANOMALY.format(a="dv")} AS anomaly
 FROM dv
 WHERE day BETWEEN $start AND $yesterday
@@ -142,9 +164,9 @@ usual AS (
 r AS (
     SELECT u.sel_day, c.name, c.component_id, c.metric_type, c.unused, c.gpos, c.number,
         d.expected, d.value AS actual, u.usual,
-        CASE WHEN d.expected <> 0 THEN d.value / d.expected - 1 END AS pct_vs_expected,
-        CASE WHEN u.usual <> 0 THEN d.value / u.usual - 1 END AS pct_vs_usual,
-        {_ANOMALY.format(a="d")} AS anomaly, coalesce(d.value = 0, false) AS zero
+        {_pct("d.value", "d.expected")} AS pct_vs_expected,
+        {_pct("d.value", "u.usual")} AS pct_vs_usual,
+        {_ALERT_ANOMALY} AS anomaly, coalesce(d.value = 0, false) AS zero
     FROM usual u JOIN comps c ON c.component_id = u.component_id
     JOIN dv d ON d.component_id = c.component_id AND d.day = u.sel_day
 )

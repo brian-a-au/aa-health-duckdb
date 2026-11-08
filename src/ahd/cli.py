@@ -26,7 +26,7 @@ from ahd.lookup import (
     resolve_suite,
 )
 from ahd.render.html import write_report
-from ahd.store import SchemaVersionError, Store
+from ahd.store import SchemaVersionError, Store, StoreError
 from ahd.summary import (
     DEFAULT_CHANGE_ALERT,
     DROP_CAUSE,
@@ -39,6 +39,12 @@ DEFAULT_DB = "./data/ahd.duckdb"
 PROFILE_DB = "ahd.duckdb"
 DEFAULT_OUT = "./reports/"
 EXIT_CODES = {"ok": 0, "failed": 1, "partial": 3}
+# The usual exit code after Ctrl-C: 128 plus the signal number of SIGINT.
+EXIT_STOPPED = 130
+STOPPED = (
+    "Stopped by Ctrl-C. A run that ahd run had started is marked failed. A pair that ahd "
+    "individual was adding is removed."
+)
 
 OUT_HELP = f"The folder for the HTML report (default {DEFAULT_OUT})."
 RSID_HELP = "A report suite ID or name. Run ahd suites to list them."
@@ -62,6 +68,23 @@ ACCESS_FIX = (
     'and the Report Suite Tools item "Anomaly Detection". Changes in the Admin Console can '
     "take a while to reach Analytics, so wait a little and run this check again."
 )
+
+
+def _whole_number(low: int, high: int) -> Callable[[str], int]:
+    """An argparse type for a whole number from low to high."""
+
+    def parse(text: str) -> int:
+        try:
+            value = int(text)
+        except ValueError:
+            value = low - 1
+        if not low <= value <= high:
+            raise argparse.ArgumentTypeError(
+                f"{text!r} is not a whole number from {low} to {high}."
+            )
+        return value
+
+    return parse
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -130,10 +153,16 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--dimension", default="page", help=DIMENSION_HELP + " Default: Page.")
     run.add_argument("--metric", default="occurrences", help=METRIC_HELP + " Default: Occurrences.")
     run.add_argument(
-        "--batch-size", type=int, default=20, help="Columns per trend request (default 20)."
+        "--batch-size",
+        type=_whole_number(1, 100),
+        default=20,
+        help="Columns per trend request, 1 to 100 (default 20).",
     )
     run.add_argument(
-        "--workers", type=int, default=4, help="Requests that run at the same time (default 4)."
+        "--workers",
+        type=_whole_number(1, 16),
+        default=4,
+        help="Requests that run at the same time, 1 to 16 (default 4).",
     )
     run.add_argument("--out", type=Path, default=Path(DEFAULT_OUT), help=OUT_HELP)
     change_alert(run)
@@ -198,13 +227,27 @@ def _db_path(args: argparse.Namespace) -> Path:
 
 def _connect(args: argparse.Namespace, factory: Callable[..., Any]) -> Any:
     path = args.config
+    profile = _profile(args)
+    if path is not None and profile:
+        # A profile always wins, so --config would be ignored without a word.
+        raise ConfigError(
+            f"Use a profile or --config, not both. The profile {profile!r} comes from --profile "
+            "or the AA_PROFILE variable."
+        )
     if path is None and Path("config.json").exists():
         path = Path("config.json")
-    creds = load_credentials(path, _profile(args))
+    creds = load_credentials(path, profile)
     company = getattr(args, "company", None)
     client = factory(creds, company_id=company) if company else factory(creds)
     # Only the name of the source, never a value from it.
     print(f"Signed in using {creds.source}")
+    count = getattr(client, "companies", 1)
+    if count > 1 and not company:
+        name = getattr(client, "company_name", "") or "(no name)"
+        print(
+            f"This credential sees {count} login companies. Using {name} "
+            f"({client.company_id}). Choose another with --company."
+        )
     return client
 
 
@@ -305,13 +348,13 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
 
 
 def _run(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
-    db = _db_path(args)
+    # Open the file first, so a locked file stops the run before any call to Adobe.
+    store = Store.open(_db_path(args))
     client = _connect(args, factory)
     rsid = resolve_suite(client, args.rsid)
     segment = resolve_segment(client, rsid, args.segment) if args.segment else None
     dim = resolve_component(client, rsid, "dimension", args.dimension)
     met = resolve_component(client, rsid, "metric", args.metric)
-    store = Store.open(db)
     opts = RunOptions(
         rsid=rsid,
         segment_id=segment,
@@ -343,7 +386,7 @@ def _run(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
 
 
 def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
-    store = Store.open(_db_path(args))
+    store = Store.open(_db_path(args), create=False)
     try:
         run = store.get_run(args.run)
     except KeyError:
@@ -375,7 +418,7 @@ def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
 
 
 def _render(args: argparse.Namespace) -> int:
-    store = Store.open(_db_path(args))
+    store = Store.open(_db_path(args), read_only=True)
     try:
         store.get_run(args.run)
     except KeyError:
@@ -401,7 +444,7 @@ def _confirm(question: str) -> bool:
 def _prune(args: argparse.Namespace) -> int:
     if not args.run and args.before is None:
         raise ConfigError("Say which runs to delete with --run N or --before YYYY-MM-DD.")
-    store = Store.open(_db_path(args))
+    store = Store.open(_db_path(args), create=False)
     found = store.runs_to_prune(args.run, args.before)
     for n in sorted(set(args.run) - {r["run_id"] for r in found}):
         print(f"There is no stored run {n}.")
@@ -433,7 +476,7 @@ def _prune(args: argparse.Namespace) -> int:
 
 
 def _runs(args: argparse.Namespace) -> int:
-    _print_runs(Store.open(_db_path(args)).list_runs())
+    _print_runs(Store.open(_db_path(args), read_only=True).list_runs())
     return 0
 
 
@@ -461,12 +504,15 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
         if args.command == "segments":
             return _segments(args, client_factory)
         return _runs(args)
-    except (ConfigError, ApiError, SignInError, SchemaVersionError) as e:
+    except (ConfigError, ApiError, SignInError, SchemaVersionError, StoreError) as e:
         print(f"Error: {e}", file=sys.stderr)
     except requests.RequestException as e:
         print(
             f"Error: the request failed with a network error ({type(e).__name__}).", file=sys.stderr
         )
+    except KeyboardInterrupt:
+        print(STOPPED, file=sys.stderr)
+        return EXIT_STOPPED
     return 1
 
 
