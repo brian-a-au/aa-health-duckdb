@@ -30,6 +30,13 @@
   </dl>
 </header>
 
+<div class="change-alert">
+  <label for="change-alert">Flag drops larger than</label>
+  <input type="range" id="change-alert" min="10" max="100" step="5" value="{{ change_alert_pct }}" aria-describedby="change-alert-hint">
+  <output for="change-alert" id="change-alert-value">{{ change_alert_pct }}%</output>
+  <p class="hint" id="change-alert-hint">A drop is measured against the usual value for the weekday. Components with a usual value under {{ min_usual }} are skipped. The same percent sets when the tables show an arrow.</p>
+</div>
+
 <section class="tiles" id="tiles" aria-label="Yesterday at a glance"></section>
 
 <section class="status-section" id="status" aria-labelledby="status-title">
@@ -157,7 +164,7 @@
 
 <section class="panel" role="tabpanel" id="panel-alerts" aria-labelledby="tab-alerts" hidden>
   <h2>Alerts for yesterday</h2>
-  <p class="hint">Components that Adobe flagged as unusual, or that had a value of 0.</p>
+  <p class="hint">Components that Adobe flagged as unusual, that fell further below their usual value than the slider allows, or that dropped to 0.</p>
   <div class="copy-row">
     <button type="button" id="copy-alerts">Copy alert summary</button>
     <span id="copy-result" role="status" aria-live="polite"></span>

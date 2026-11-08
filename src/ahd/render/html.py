@@ -148,6 +148,8 @@ def render_html(view: dict[str, Any]) -> str:
         breakdown_notes=BREAKDOWN_NOTES,
         issue_groups=_issue_groups(view.get("issues", [])),
         component_drops=view.get("component_drops", []),
+        change_alert_pct=round(view.get("change_alert", 0.3) * 100),
+        min_usual=view.get("min_usual", 10),
         component_drop_cause=view.get("component_drop_cause", ""),
         ranges=RANGES,
         no_bands_note=NO_BANDS_NOTE,

@@ -434,3 +434,35 @@ def test_prune_keeps_running_runs_without_force(three_runs, capsys):
     assert _stored(three_runs) == [3, 2, 1]
     assert main(["prune", "--db", str(three_runs), "--run", "2", "--yes", "--force"]) == 0
     assert _stored(three_runs) == [3, 1]
+
+
+def test_change_alert_option(tmp_path, cfg):
+    fake = fake_for("rs1", events(3), custom_dims())
+    out = tmp_path / "o"
+    code = main(
+        args(
+            tmp_path,
+            cfg,
+            "run",
+            "--rsid",
+            "rs1",
+            "--date",
+            "2026-11-07",
+            "--out",
+            str(out),
+            "--change-alert",
+            "45",
+        ),
+        client_factory=lambda creds, company_id=None: fake,
+    )
+    assert code == 0
+    assert 'value="45"' in next(out.glob("*.html")).read_text()
+    out2 = tmp_path / "o2"
+    main(["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--out", str(out2)])
+    assert 'value="30"' in next(out2.glob("*.html")).read_text()
+
+
+@pytest.mark.parametrize("bad", ["5", "33", "105"])
+def test_change_alert_must_be_a_slider_step(tmp_path, bad):
+    with pytest.raises(SystemExit):
+        main(["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--change-alert", bad])

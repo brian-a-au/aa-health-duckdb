@@ -445,3 +445,16 @@ def test_metric_type_filter_and_currency_data():
     assert "currency" in data["run"]
     assert all("metric_type" in r for r in data["views"]["week"])
     assert all("metric_type" in a for a in data["alerts"])
+
+
+def test_change_alert_slider():
+    v = sample_view()
+    html = render_html(v)
+    assert '<input type="range" id="change-alert" min="10" max="100" step="5" value="30"' in html
+    assert '<output for="change-alert" id="change-alert-value">30%</output>' in html
+    assert "usual value under 10 are skipped" in html
+    v["change_alert"] = 0.45
+    html = render_html(v)
+    assert 'value="45"' in html and ">45%</output>" in html
+    data = _data_json(html)
+    assert data["change_alert"] == 0.45 and data["min_usual"] == 10

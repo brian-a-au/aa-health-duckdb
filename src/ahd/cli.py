@@ -20,7 +20,7 @@ from ahd.dates import RunWindow, today_in_zone
 from ahd.fetch import RunOptions, fetch_catalog, probe_anomaly, run_fetch
 from ahd.render.html import write_report
 from ahd.store import SchemaVersionError, Store
-from ahd.summary import DROP_CAUSE, build_view, component_drops
+from ahd.summary import DEFAULT_CHANGE_ALERT, DROP_CAUSE, build_view, component_drops
 
 DEFAULT_DB = "./data/ahd.duckdb"
 PROFILE_DB = "ahd.duckdb"
@@ -61,6 +61,18 @@ def _parser() -> argparse.ArgumentParser:
                 help=f"DuckDB file (default {DEFAULT_DB}, or ahd.duckdb in the profile folder).",
             )
 
+    def change_alert(sp: argparse.ArgumentParser) -> None:
+        sp.add_argument(
+            "--change-alert",
+            type=int,
+            default=round(DEFAULT_CHANGE_ALERT * 100),
+            choices=range(10, 101, 5),
+            metavar="PERCENT",
+            help="Start the report's slider here: flag drops larger than this percent below "
+            "the usual value, and show arrows for changes larger than it. 10 to 100, in "
+            "steps of 5 (default 30).",
+        )
+
     check = sub.add_parser("check", help="Sign in and check what this credential can see.")
     common(check, db=False)
     check.add_argument("--rsid")
@@ -75,11 +87,13 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--batch-size", type=int, default=20)
     run.add_argument("--workers", type=int, default=4)
     run.add_argument("--out", type=Path, default=Path(DEFAULT_OUT))
+    change_alert(run)
 
     render = sub.add_parser("render", help="Write the HTML from a stored run. No API calls.")
     common(render, config=False)
     render.add_argument("--run", type=int, required=True)
     render.add_argument("--out", type=Path, default=Path(DEFAULT_OUT))
+    change_alert(render)
 
     runs = sub.add_parser("runs", help="List stored runs.")
     common(runs, config=False)
@@ -191,7 +205,7 @@ def _run(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     )
     run_id = run_fetch(client, store, opts)
     status = store.get_run(run_id)["status"]
-    path = write_report(build_view(store, run_id), args.out)
+    path = write_report(build_view(store, run_id, args.change_alert / 100), args.out)
     print(path)
     print(f"Run {run_id} finished with status: {status}")
     drops = component_drops(store, run_id)
@@ -209,7 +223,7 @@ def _render(args: argparse.Namespace) -> int:
         store.get_run(args.run)
     except KeyError:
         raise ConfigError(f"There is no stored run {args.run}.") from None
-    print(write_report(build_view(store, args.run), args.out))
+    print(write_report(build_view(store, args.run, args.change_alert / 100), args.out))
     return 0
 
 

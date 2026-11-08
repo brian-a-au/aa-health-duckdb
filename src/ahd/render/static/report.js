@@ -144,7 +144,11 @@
   var dayKeys = Object.keys(data.views).filter(function (k) { return k.indexOf("day:") === 0; })
     .map(function (k) { return k.slice(4); }).sort().reverse();
   var yesterday = dayKeys[0] || "";
-  var state = { gran: "day", day: yesterday, range: "", flagged: false };
+  // t: the slider's share. A drop below usual by more than t is flagged, and a change by more
+  // than t either way gets an arrow.
+  var state = { gran: "day", day: yesterday, range: "", flagged: false,
+    t: typeof data.change_alert === "number" ? data.change_alert : 0.3 };
+  var MIN_USUAL = typeof data.min_usual === "number" ? data.min_usual : 10;
   var sortState = {};
   var anomalyBlocked = (data.issues || []).some(function (i) {
     return i.code === "anomaly_not_allowed";
@@ -314,7 +318,24 @@
     if (a === "low") return badge("flag", "▼", "Below range", "Adobe flagged this value as below the expected range.");
     return null;
   }
-  function zeroBadge() { return badge("zero", "●", "Zero data", "This component had a value of 0."); }
+  function zeroBadge() {
+    return badge("zero", "●", "Zero data",
+      "This component had a value of 0, but it had data on other days in this run.");
+  }
+  function unusedMark() {
+    return el("span", { "class": "muted unused-badge",
+      title: "This component had a value of 0 on every day in this run." }, "never collected data");
+  }
+
+  function arrowFor(pct) {
+    if (pct === null || pct === undefined || Math.abs(pct) <= state.t) return null;
+    return pct > 0 ? "up" : "down";
+  }
+  // A value that fell further below the usual value than the slider allows. Zero is its own alert.
+  function isLargeDrop(value, usual, pct) {
+    return value !== 0 && pct !== null && pct !== undefined && pct < -state.t &&
+      usual !== null && usual >= MIN_USUAL;
+  }
 
   function changeCell(arrow, pct) {
     var span = el("span");
@@ -344,7 +365,7 @@
     if (!row.zero) return { c: row.name, k: row.name };
     var span = el("span");
     span.appendChild(document.createTextNode(row.name));
-    span.appendChild(zeroBadge());
+    span.appendChild(row.unused ? unusedMark() : zeroBadge());
     return { c: span, k: row.name };
   }
 
@@ -355,7 +376,10 @@
     return { c: anomalyBlocked ? el("span", { "class": "muted" }, "Not available") : "", k: null };
   }
 
-  function isFlagged(row) { return !!(row.anomaly || row.zero); }
+  function isFlagged(row) {
+    return !!(row.anomaly || (row.zero && !row.unused) ||
+      isLargeDrop(row.value, row.baseline, row.pct));
+  }
 
   function inRange(row) {
     if (!state.range || CUSTOM.indexOf(row.group) < 0) return true;
@@ -381,7 +405,7 @@
       cells.push(nameCell(r));
       cells.push({ c: fmtNum(r.value, r.metric_type), k: r.value });
       cells.push({ c: fmtRound(r.baseline, r.metric_type), k: r.baseline });
-      cells.push(changeCell(r.arrow, r.pct));
+      cells.push(changeCell(arrowFor(r.pct), r.pct));
       if (daily) cells.push(anomalyCell(r.anomaly));
       return cells;
     });
@@ -776,22 +800,32 @@
     if (a.anomaly === "low") return a.actual === 0 ? "below the expected range, value is 0" :
       "below the expected range";
     if (a.anomaly === "high") return "above the expected range";
+    if (!a.zero) return fmtPct(a.pct_vs_usual).replace("-", "") + " below the usual value";
     return "value is 0";
   }
 
   function splitAlerts() {
     var alerts = data.alerts || [];
+    function plain(a) { return !a.anomaly; }
     return {
       unusual: alerts.filter(function (a) { return !!a.anomaly; }),
-      zero: alerts.filter(function (a) { return !a.anomaly; })
+      drops: alerts.filter(function (a) {
+        return plain(a) && !a.zero && isLargeDrop(a.actual, a.usual, a.pct_vs_usual);
+      }),
+      zero: alerts.filter(function (a) { return plain(a) && a.zero && !a.unused; }),
+      unused: alerts.filter(function (a) { return plain(a) && a.zero && a.unused; })
     };
   }
 
   function alertLine(a) {
     var s = "- " + a.name + " (" + a.component_id + "): " + alertReason(a) +
       ". Actual " + fmtNum(a.actual, a.metric_type);
-    if (a.expected !== null) s += ", expected " + fmtRound(a.expected, a.metric_type);
-    if (a.pct_vs_expected !== null) s += ", change " + fmtPct(a.pct_vs_expected);
+    if (a.anomaly) {
+      if (a.expected !== null) s += ", expected " + fmtRound(a.expected, a.metric_type);
+      if (a.pct_vs_expected !== null) s += ", change " + fmtPct(a.pct_vs_expected);
+    } else if (a.usual !== null) {
+      s += ", usual " + fmtRound(a.usual, a.metric_type);
+    }
     return s + ".";
   }
 
@@ -802,17 +836,21 @@
     lines.push("Analytics Health alerts for " + (run.rsid_name || run.rsid) + " (" + run.rsid +
       "), " + yesterday);
     lines.push("Segment: " + (run.segment_id || "none (all visits)"));
-    if (!parts.unusual.length && !parts.zero.length) {
+    function section(title, list) {
+      if (!list.length) return;
+      lines.push(title + " (" + list.length + "):");
+      list.forEach(function (a) { lines.push(alertLine(a)); });
+    }
+    if (!parts.unusual.length && !parts.drops.length && !parts.zero.length) {
       lines.push("No alerts for this day.");
     } else {
-      if (parts.unusual.length) {
-        lines.push("Unusual values (" + parts.unusual.length + "):");
-        parts.unusual.forEach(function (a) { lines.push(alertLine(a)); });
-      }
-      if (parts.zero.length) {
-        lines.push("Zero data (" + parts.zero.length + "):");
-        parts.zero.forEach(function (a) { lines.push(alertLine(a)); });
-      }
+      section("Unusual values", parts.unusual);
+      section("Drops of more than " + Math.round(state.t * 100) + "% below usual", parts.drops);
+      section("Dropped to zero", parts.zero);
+    }
+    if (parts.unused.length) {
+      lines.push(parts.unused.length + (parts.unused.length === 1 ? " component" : " components") +
+        " never collected data in this run. They are not listed.");
     }
     if ((data.issues || []).length) {
       lines.push("Some data could not be read in this run. See the status section of the report.");
@@ -820,16 +858,28 @@
     return lines.join("\n");
   }
 
+  function groupHeading(id, title, count) {
+    var h = el("h3", { "class": "group-title", id: id }, title);
+    h.appendChild(el("span", { "class": "group-count" },
+      count === 1 ? "1 component" : count + " components"));
+    return h;
+  }
+  function nameIdCells(a) {
+    return [{ c: a.name, k: a.name }, { c: el("code", null, a.component_id), k: a.component_id }];
+  }
+  function expectedCell(a) {
+    return { c: a.expected === null ? "Not available" : fmtRound(a.expected, a.metric_type),
+      k: a.expected };
+  }
+
   function renderAlerts() {
     var host = byId("alerts");
     clear(host);
     var parts = splitAlerts();
+    var pct = Math.round(state.t * 100) + "%";
 
     var g1 = el("section", { "class": "alert-group", "aria-labelledby": "unusual-title" });
-    var h1 = el("h3", { "class": "group-title", id: "unusual-title" }, "Unusual values");
-    h1.appendChild(el("span", { "class": "group-count" },
-      parts.unusual.length === 1 ? "1 component" : parts.unusual.length + " components"));
-    g1.appendChild(h1);
+    g1.appendChild(groupHeading("unusual-title", "Unusual values", parts.unusual.length));
     if (parts.unusual.length) {
       g1.appendChild(el("p", { "class": "hint" },
         "Adobe flagged these values as outside the expected range. The bar shows the size of " +
@@ -839,11 +889,9 @@
          { label: "Expected", num: true }, { label: "Actual", num: true },
          { label: "Change from expected", num: true }],
         parts.unusual.map(function (a) {
-          return [{ c: a.name, k: a.name }, { c: el("code", null, a.component_id), k: a.component_id },
-            anomalyCell(a.anomaly),
-            { c: a.expected === null ? "Not available" : fmtRound(a.expected, a.metric_type),
-              k: a.expected },
-            { c: fmtNum(a.actual, a.metric_type), k: a.actual }, devCell(a.arrow, a.pct_vs_expected)];
+          return nameIdCells(a).concat([anomalyCell(a.anomaly), expectedCell(a),
+            { c: fmtNum(a.actual, a.metric_type), k: a.actual },
+            devCell(arrowFor(a.pct_vs_expected), a.pct_vs_expected)]);
         }), null, "alerts-unusual"));
     } else {
       g1.appendChild(el("p", { "class": "empty" }, anomalyBlocked ?
@@ -852,50 +900,78 @@
     }
     host.appendChild(g1);
 
-    var g2 = el("details", { "class": "alert-group" });
-    if (parts.zero.length && parts.zero.length <= 10) g2.open = true;
-    var expectedZero = parts.zero.filter(function (a) { return a.expected === 0; }).length;
-    g2.appendChild(el("summary", null, "Zero data (" + parts.zero.length + ")"));
-    if (parts.zero.length) {
-      var note = expectedZero === parts.zero.length ?
-        "These components had a value of 0 yesterday. Adobe expected 0 for all of them, so " +
-        "they may be unused." :
-        "These components had a value of 0 yesterday. " + (parts.zero.length - expectedZero) +
-        (parts.zero.length - expectedZero === 1 ? " of them was" : " of them were") +
-        " expected to have a value, so check those first.";
-      g2.appendChild(el("p", { "class": "hint" }, note));
+    var g2 = el("section", { "class": "alert-group", "aria-labelledby": "drops-title" });
+    g2.appendChild(groupHeading("drops-title", "Drops of more than " + pct + " below usual",
+      parts.drops.length));
+    if (parts.drops.length) {
+      g2.appendChild(el("p", { "class": "hint" },
+        "These values were more than " + pct + " below the usual value for the weekday, but " +
+        "Adobe did not flag them. Move the slider at the top of the page to change the percent."));
       g2.appendChild(table(
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
-         { label: "Expected", num: true }, { label: "Actual", num: true }],
+         { label: "Usual", num: true }, { label: "Actual", num: true },
+         { label: "Change from usual", num: true }],
+        parts.drops.map(function (a) {
+          return nameIdCells(a).concat([{ c: fmtRound(a.usual, a.metric_type), k: a.usual },
+            { c: fmtNum(a.actual, a.metric_type), k: a.actual },
+            devCell(arrowFor(a.pct_vs_usual), a.pct_vs_usual)]);
+        }), null, "alerts-drops"));
+    } else {
+      g2.appendChild(el("p", { "class": "empty" },
+        "No other component was more than " + pct + " below its usual value yesterday."));
+    }
+    host.appendChild(g2);
+
+    var g3 = el("section", { "class": "alert-group", "aria-labelledby": "zero-title" });
+    g3.appendChild(groupHeading("zero-title", "Dropped to zero", parts.zero.length));
+    if (parts.zero.length) {
+      g3.appendChild(el("p", { "class": "hint" },
+        "These components had data on other days in this run, but a value of 0 yesterday."));
+      g3.appendChild(table(
+        [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
+         { label: "Usual", num: true }, { label: "Expected", num: true },
+         { label: "Actual", num: true }],
         parts.zero.map(function (a) {
           var name = el("span");
           name.appendChild(document.createTextNode(a.name));
           name.appendChild(zeroBadge());
           return [{ c: name, k: a.name }, { c: el("code", null, a.component_id), k: a.component_id },
-            { c: a.expected === null ? "Not available" : fmtRound(a.expected, a.metric_type),
-              k: a.expected },
+            { c: fmtRound(a.usual, a.metric_type), k: a.usual }, expectedCell(a),
             { c: fmtNum(a.actual, a.metric_type), k: a.actual }];
         }), null, "alerts-zero"));
     } else {
-      g2.appendChild(el("p", { "class": "empty" }, "No component had a value of 0 yesterday."));
+      g3.appendChild(el("p", { "class": "empty" },
+        "No component that collects data had a value of 0 yesterday."));
     }
-    host.appendChild(g2);
+    host.appendChild(g3);
 
-    var text = alertText();
-    byId("alert-text").value = text;
-    var result = byId("copy-result");
-    byId("copy-alerts").addEventListener("click", function () {
-      function failed() {
-        result.textContent = "Could not copy. Open \"Show the alert summary as text\" below " +
-          "and copy it from there.";
-        document.querySelector(".copy-fallback").open = true;
-      }
-      if (!navigator.clipboard || !navigator.clipboard.writeText) { failed(); return; }
-      navigator.clipboard.writeText(text).then(function () {
-        result.textContent = "Copied. You can paste it into an email or chat.";
-      }, failed);
-    });
+    if (parts.unused.length) {
+      var g4 = el("details", { "class": "alert-group" });
+      g4.appendChild(el("summary", null, "Never collected data (" + parts.unused.length + ")"));
+      g4.appendChild(el("p", { "class": "hint" },
+        "These components had a value of 0 on every day in this run, so they are not alerts. " +
+        "They are often unused slots. If you expected data from one, check its tracking."));
+      g4.appendChild(table([{ label: "Name", cls: "name" }, { label: "ID", cls: "id" }],
+        parts.unused.map(nameIdCells), null, "alerts-unused"));
+      host.appendChild(g4);
+    }
+
+    byId("alert-text").value = alertText();
   }
+
+  var copyResult = byId("copy-result");
+  byId("copy-alerts").addEventListener("click", function () {
+    var text = byId("alert-text").value;
+    function failed() {
+      copyResult.textContent = "Could not copy. Open \"Show the alert summary as text\" below " +
+        "and copy it from there.";
+      document.querySelector(".copy-fallback").open = true;
+    }
+    if (!navigator.clipboard || !navigator.clipboard.writeText) { failed(); return; }
+    navigator.clipboard.writeText(text).then(function () {
+      copyResult.textContent = "Copied. You can paste it into an email or chat.";
+    }, failed);
+  });
 
   // ---- summary tiles ------------------------------------------------------------
   function renderTiles() {
@@ -904,7 +980,12 @@
     var rows = data.views["day:" + yesterday] || [];
     var high = rows.filter(function (r) { return r.anomaly === "high"; }).length;
     var low = rows.filter(function (r) { return r.anomaly === "low"; }).length;
-    var zero = rows.filter(function (r) { return r.zero; }).length;
+    // Each alert counts once: a zero that Adobe flagged is in the "Below expected range" tile.
+    var zero = rows.filter(function (r) { return r.zero && !r.unused && !r.anomaly; }).length;
+    var unused = rows.filter(function (r) { return r.zero && r.unused; }).length;
+    var drops = rows.filter(function (r) {
+      return !r.anomaly && isLargeDrop(r.value, r.baseline, r.pct);
+    }).length;
     var problems = (data.issues || []).length;
     var dayText = yesterday ? fmtDay(yesterday, false) : "";
 
@@ -930,7 +1011,10 @@
       tile("flag", "▲", "Above expected range", numFmt.format(high), "Flagged by Adobe", toAlerts);
       tile("flag", "▼", "Below expected range", numFmt.format(low), "Flagged by Adobe", toAlerts);
     }
-    tile("zero", "●", "Zero data", numFmt.format(zero), "Value of 0 " + (dayText ? "on " + dayText : ""),
+    tile("flag", "▼", "Large drops", numFmt.format(drops),
+      "More than " + Math.round(state.t * 100) + "% below usual", toAlerts);
+    tile("zero", "●", "Dropped to zero", numFmt.format(zero),
+      unused ? numFmt.format(unused) + " others never collected data" : "Had data on other days",
       toAlerts);
     tile(problems ? "flag" : "good", problems ? "!" : "✓", "Problems in this run",
       numFmt.format(problems), problems ? "See the status section" : "Everything was read",
@@ -957,6 +1041,16 @@
   byId("flagged-only").addEventListener("change", function (e) {
     state.flagged = e.target.checked;
     renderTables();
+  });
+
+  var slider = byId("change-alert");
+  slider.value = String(Math.round(state.t * 100));
+  slider.addEventListener("input", function () {
+    state.t = Number(slider.value) / 100;
+    byId("change-alert-value").textContent = slider.value + "%";
+    renderTiles();
+    renderTables();
+    renderAlerts();
   });
 
   renderTiles();

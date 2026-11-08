@@ -6,7 +6,9 @@ Rules follow the workbook (spec 9.1 and 9.3):
 - Daily baseline = sum over the baseline window of the same weekday, divided by 12.
 - Week value = sum over the 7 days ending yesterday. Week baseline = baseline sum / 12.
 - pct = value / baseline - 1, empty when the baseline is 0 or missing.
-- Arrow when abs(pct) > 0.2.
+
+Arrows and percent drop alerts use a threshold the reader sets with a slider in the page,
+so the page decides them, not this module.
 """
 
 from __future__ import annotations
@@ -18,7 +20,13 @@ from ahd.catalog import CUSTOM_GROUPS, GROUP_ORDER
 from ahd.dates import RunWindow
 from ahd.store import Store
 
-ARROW_THRESHOLD = 0.2
+# The default for the page's slider, as a share. ahd run --change-alert sets it.
+DEFAULT_CHANGE_ALERT = 0.30
+# The slider's lowest setting. Alerts hold every row this far below usual, so the page can
+# filter them for any setting.
+MIN_CHANGE_ALERT = 0.10
+# A percent drop alert needs a usual value of at least this much. Small numbers swing a lot.
+MIN_USUAL = 10
 # Warn when a run sees more than this share fewer custom components than the run before.
 DROP_THRESHOLD = 0.2
 GROUP_LABELS = {
@@ -46,18 +54,19 @@ dv AS (
 )"""
 
 # Catalog components that have at least one daily value, with their sort position.
+# unused: the value was 0 or empty on every day through yesterday.
 _COMPS = """
 comps AS (
     SELECT c.component_id, c.name, c.kind, c."group", c.number, c.metric_type,
-        coalesce(list_position($groups::VARCHAR[], c."group"), 1000000) AS gpos
+        coalesce(list_position($groups::VARCHAR[], c."group"), 1000000) AS gpos,
+        NOT EXISTS (SELECT 1 FROM daily_values d
+                    WHERE d.run_id = $run_id AND d.component_id = c.component_id
+                      AND d.day BETWEEN $start AND $yesterday AND d.value <> 0) AS unused
     FROM components c
     WHERE c.run_id = $run_id AND c.component_id <> $individual
       AND EXISTS (SELECT 1 FROM daily_values d
                   WHERE d.run_id = $run_id AND d.component_id = c.component_id)
 )"""
-
-_ARROW = f"""CASE WHEN abs(pct) > {ARROW_THRESHOLD}
-    THEN CASE WHEN pct > 0 THEN 'up' ELSE 'down' END END"""
 
 _ANOMALY = """CASE WHEN {a}.anomaly
     THEN CASE WHEN {a}.value > {a}.upper THEN 'high' ELSE 'low' END END"""
@@ -77,7 +86,7 @@ base AS (
 ),
 r AS (
     SELECT s.sel_day, c.component_id, c.name, c.kind, c."group", c.number, c.metric_type,
-        c.gpos, d.value, b.baseline,
+        c.unused, c.gpos, d.value, b.baseline,
         CASE WHEN b.baseline <> 0 THEN d.value / b.baseline - 1 END AS pct,
         {_ANOMALY.format(a="d")} AS anomaly
     FROM sel s CROSS JOIN comps c
@@ -85,7 +94,7 @@ r AS (
     LEFT JOIN dv d ON d.component_id = c.component_id AND d.day = s.sel_day
 )
 SELECT CAST(sel_day AS VARCHAR) AS sel_day, component_id, name, kind, "group", number,
-    metric_type, value, baseline, pct, {_ARROW} AS arrow, coalesce(value = 0, false) AS zero, anomaly
+    metric_type, value, baseline, pct, coalesce(value = 0, false) AS zero, unused, anomaly
 FROM r
 ORDER BY sel_day DESC, {_ORDER}
 """
@@ -93,7 +102,7 @@ ORDER BY sel_day DESC, {_ORDER}
 _WEEK_SQL = f"""
 WITH {_DV}, {_COMPS},
 r AS (
-    SELECT c.component_id, c.name, c.kind, c."group", c.number, c.metric_type, c.gpos,
+    SELECT c.component_id, c.name, c.kind, c."group", c.number, c.metric_type, c.unused, c.gpos,
         sum(d.value) FILTER (WHERE d.day BETWEEN $week_start AND $week_end) AS value,
         coalesce(sum(d.value) FILTER (WHERE d.day BETWEEN $baseline_start AND $baseline_end), 0)
             / 12 AS baseline
@@ -102,7 +111,7 @@ r AS (
 ),
 p AS (SELECT *, CASE WHEN baseline <> 0 THEN value / baseline - 1 END AS pct FROM r)
 SELECT component_id, name, kind, "group", number, metric_type, value, baseline, pct,
-    {_ARROW} AS arrow, coalesce(value = 0, false) AS zero, NULL AS anomaly
+    coalesce(value = 0, false) AS zero, unused, NULL AS anomaly
 FROM p
 ORDER BY {_ORDER}
 """
@@ -116,18 +125,31 @@ WHERE day BETWEEN $start AND $yesterday
 ORDER BY component_id, day
 """
 
+# Yesterday's rows that may be an alert: Adobe flagged them, the value is 0, or the value is
+# more than MIN_CHANGE_ALERT below the usual value for the weekday. The page picks from these.
 _ALERTS_SQL = f"""
 WITH {_DV}, {_COMPS},
+usual AS (
+    SELECT c.component_id, coalesce(sum(d.value), 0) / 12 AS usual
+    FROM comps c LEFT JOIN dv d ON d.component_id = c.component_id
+        AND d.day BETWEEN $baseline_start AND $baseline_end
+        AND dayofweek(d.day) = dayofweek($yesterday::DATE)
+    GROUP BY c.component_id
+),
 r AS (
-    SELECT c.name, c.component_id, c.metric_type, c.gpos, c.number, d.expected, d.value AS actual,
-        CASE WHEN d.expected <> 0 THEN d.value / d.expected - 1 END AS pct,
+    SELECT c.name, c.component_id, c.metric_type, c.unused, c.gpos, c.number, d.expected,
+        d.value AS actual, u.usual,
+        CASE WHEN d.expected <> 0 THEN d.value / d.expected - 1 END AS pct_vs_expected,
+        CASE WHEN u.usual <> 0 THEN d.value / u.usual - 1 END AS pct_vs_usual,
         {_ANOMALY.format(a="d")} AS anomaly, coalesce(d.value = 0, false) AS zero
     FROM comps c JOIN dv d ON d.component_id = c.component_id AND d.day = $yesterday
-    WHERE d.anomaly OR d.value = 0
+    JOIN usual u ON u.component_id = c.component_id
 )
-SELECT name, component_id, metric_type, expected, actual, pct AS pct_vs_expected, {_ARROW} AS arrow,
-    anomaly, zero
+SELECT name, component_id, metric_type, expected, actual, usual, pct_vs_expected, pct_vs_usual,
+    anomaly, zero, unused
 FROM r
+WHERE anomaly IS NOT NULL OR zero
+    OR (usual >= {MIN_USUAL} AND pct_vs_usual < -{MIN_CHANGE_ALERT})
 ORDER BY {_ORDER}
 """
 
@@ -274,7 +296,9 @@ def component_drops(store: Store, run_id: int) -> list[dict[str, Any]]:
     return drops
 
 
-def build_view(store: Store, run_id: int) -> dict[str, Any]:
+def build_view(
+    store: Store, run_id: int, change_alert: float = DEFAULT_CHANGE_ALERT
+) -> dict[str, Any]:
     run = _run_block(store, run_id)
     w = RunWindow.for_today(date.fromisoformat(run["today"]))
     p: dict[str, Any] = {
@@ -327,5 +351,7 @@ def build_view(store: Store, run_id: int) -> dict[str, Any]:
         "device": tables["device"],
         "issues": _rows(store, _ISSUES_SQL, p),
         "component_drops": component_drops(store, run_id),
+        "change_alert": change_alert,
+        "min_usual": MIN_USUAL,
         "component_drop_cause": DROP_CAUSE,
     }
