@@ -62,7 +62,7 @@ RUN_TABLES = (
 
 def _views() -> str:
     """The views and the alerts macro from ahd/sql/views.sql."""
-    return resources.files("ahd").joinpath("sql/views.sql").read_text()
+    return resources.files("ahd").joinpath("sql/views.sql").read_text(encoding="utf-8")
 
 
 class SchemaVersionError(ValueError):
@@ -71,6 +71,17 @@ class SchemaVersionError(ValueError):
 
 class StoreError(Exception):
     """The database file could not be opened. The message says why in plain words."""
+
+
+# DuckDB's words for a file that another program holds open. The first two come on Linux and
+# macOS. The last two come on Windows: the first when Windows can name the other program, the
+# second when it cannot.
+LOCKED_WORDS = (
+    "could not set lock",
+    "conflicting lock",
+    "file is already open in",
+    "being used by another process",
+)
 
 
 def _connect(path: Path, read_only: bool) -> duckdb.DuckDBPyConnection:
@@ -82,7 +93,7 @@ def _connect(path: Path, read_only: bool) -> duckdb.DuckDBPyConnection:
         return duckdb.connect(str(path), read_only=read_only)
     except duckdb.Error as e:
         text = str(e)
-        if "could not set lock" in text.lower() or "conflicting lock" in text.lower():
+        if any(words in text.lower() for words in LOCKED_WORDS):
             raise StoreError(
                 f"The database {path} is in use by another program, e.g., a DuckDB session or "
                 "another ahd command that writes to it. Close that program or wait for it to "

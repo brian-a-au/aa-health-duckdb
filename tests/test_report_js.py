@@ -331,7 +331,7 @@ def test_ahd_chrome_chooses_the_program(monkeypatch, tmp_path):
     import chrome as module
 
     program = tmp_path / "my-chrome"
-    program.write_text("")
+    program.write_text("", encoding="utf-8")
     monkeypatch.setenv("AHD_CHROME", str(program))
     assert module.find_chrome() == str(program)
     monkeypatch.setenv("AHD_CHROME", str(tmp_path / "missing"))

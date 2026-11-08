@@ -24,7 +24,7 @@ uv run ruff check
 uv run ruff format --check
 ```
 
-The tests must pass on Python 3.12, 3.13 and 3.14, and branch coverage must stay at 95 percent or more. CI also runs `uv lock --check`, so run `uv lock` after you change `pyproject.toml`.
+The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 on Windows and macOS. Branch coverage must stay at 95 percent or more. CI also runs `uv lock --check`, so run `uv lock` after you change `pyproject.toml`.
 
 ## Where things are
 

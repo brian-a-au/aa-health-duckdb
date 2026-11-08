@@ -37,7 +37,7 @@ def custom_dims():
 @pytest.fixture
 def cfg(tmp_path):
     p = tmp_path / "config.json"
-    p.write_text(json.dumps(CONFIG))
+    p.write_text(json.dumps(CONFIG), encoding="utf-8")
     return p
 
 
@@ -323,7 +323,7 @@ def test_locked_database_is_one_line_error(tmp_path, cfg, capsys):
 
 def test_file_that_is_not_a_database_is_one_line_error(tmp_path, capsys):
     db = tmp_path / "notes.duckdb"
-    db.write_text("not a database")
+    db.write_text("not a database", encoding="utf-8")
     assert main(["runs", "--db", str(db)]) == 1
     assert "is not a DuckDB database" in capsys.readouterr().err
 
@@ -360,6 +360,30 @@ def test_prune_and_individual_do_not_create_a_database(tmp_path, cfg, capsys):
     assert not db.parent.exists()
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        'Could not set lock on file "t.duckdb": Conflicting lock is held in python (PID 7)',
+        "File is already open in \nC:\\Python\\python.exe (PID 7)",
+        (
+            'Cannot open file "t.duckdb": The process cannot access the file because it is being '
+            "used by another process."
+        ),
+    ],
+)
+def test_each_systems_lock_message_is_called_locked(tmp_path, monkeypatch, message):
+    import duckdb
+
+    from ahd.store import Store, StoreError
+
+    def locked(path, read_only=False):
+        raise duckdb.IOException(message)
+
+    monkeypatch.setattr(duckdb, "connect", locked)
+    with pytest.raises(StoreError, match="is in use by another program"):
+        Store.open(tmp_path / "t.duckdb")
+
+
 def test_a_damaged_file_is_not_called_locked(tmp_path, monkeypatch):
     import duckdb
 
@@ -390,7 +414,7 @@ def _profile(name="prod"):
 
     folder = profile_dir(name)
     folder.mkdir(parents=True)
-    (folder / "config.json").write_text(json.dumps(CONFIG))
+    (folder / "config.json").write_text(json.dumps(CONFIG), encoding="utf-8")
     return folder
 
 
@@ -611,10 +635,10 @@ def test_change_alert_option(tmp_path, cfg):
         client_factory=lambda creds, company_id=None: fake,
     )
     assert code == 0
-    assert 'value="45"' in next(out.glob("*.html")).read_text()
+    assert 'value="45"' in next(out.glob("*.html")).read_text(encoding="utf-8")
     out2 = tmp_path / "o2"
     main(["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--out", str(out2)])
-    assert 'value="30"' in next(out2.glob("*.html")).read_text()
+    assert 'value="30"' in next(out2.glob("*.html")).read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("bad", ["5", "33", "105"])
@@ -793,7 +817,7 @@ def test_individual_adds_a_pair_and_rewrites_the_report(tmp_path, cfg, capsys):
     stdout = capsys.readouterr().out
     assert code == 0
     assert "Added Internal Search Term by Cart Additions to run 1." in stdout
-    html = next(out.glob("*.html")).read_text()
+    html = next(out.glob("*.html")).read_text(encoding="utf-8")
     assert "Page by Occurrences, and 1 more pair" in html
     pairs = Store.open(tmp_path / "t.duckdb").list_pairs(1)
     assert [(p["dimension"], p["metric"]) for p in pairs] == [

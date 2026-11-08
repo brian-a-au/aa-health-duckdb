@@ -5,8 +5,8 @@ from ahd.api.reports import Column
 from ahd.catalog import SOLUTION_GROUPS, build_catalog, load_solution
 
 FIX = Path(__file__).parent / "fixtures"
-METRICS = json.loads((FIX / "metrics.json").read_text())
-DIMS = json.loads((FIX / "dimensions.json").read_text())
+METRICS = json.loads((FIX / "metrics.json").read_text(encoding="utf-8"))
+DIMS = json.loads((FIX / "dimensions.json").read_text(encoding="utf-8"))
 
 
 def catalog():

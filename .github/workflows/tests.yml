@@ -11,20 +11,30 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     permissions:
       contents: read
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.12", "3.13", "3.14"]
-        # Coverage runs once; the 95% floor does not depend on the Python version.
         include:
-          - python-version: "3.14"
+          # Coverage runs once. The 95 percent floor does not depend on the Python version.
+          - os: ubuntu-latest
+            python-version: "3.14"
             coverage: true
+          # Windows and macOS run on the newest Python only, to keep the matrix small.
+          - os: windows-latest
+            python-version: "3.14"
+          - os: macos-latest
+            python-version: "3.14"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
