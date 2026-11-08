@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -88,7 +89,7 @@ def test_profile_accepts_byte_order_mark():
 def test_profile_missing_names_the_path():
     with pytest.raises(ConfigError, match="Profile 'nope' was not found") as e:
         load_credentials(None, "nope")
-    assert ".aa/orgs/nope/config.json" in str(e.value)
+    assert str(Path(".aa", "orgs", "nope", "config.json")) in str(e.value)
 
 
 @pytest.mark.parametrize(
@@ -165,8 +166,6 @@ def test_unreadable_file(tmp_path):
 
 def test_profiles_folder_without_home(monkeypatch):
     # Windows does not set HOME. The profiles are then under the user's own folder.
-    from pathlib import Path
-
     from ahd.config import profiles_base
 
     monkeypatch.delenv("HOME", raising=False)

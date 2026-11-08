@@ -360,6 +360,30 @@ def test_prune_and_individual_do_not_create_a_database(tmp_path, cfg, capsys):
     assert not db.parent.exists()
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        'Could not set lock on file "t.duckdb": Conflicting lock is held in python (PID 7)',
+        "File is already open in \nC:\\Python\\python.exe (PID 7)",
+        (
+            'Cannot open file "t.duckdb": The process cannot access the file because it is being '
+            "used by another process."
+        ),
+    ],
+)
+def test_each_systems_lock_message_is_called_locked(tmp_path, monkeypatch, message):
+    import duckdb
+
+    from ahd.store import Store, StoreError
+
+    def locked(path, read_only=False):
+        raise duckdb.IOException(message)
+
+    monkeypatch.setattr(duckdb, "connect", locked)
+    with pytest.raises(StoreError, match="is in use by another program"):
+        Store.open(tmp_path / "t.duckdb")
+
+
 def test_a_damaged_file_is_not_called_locked(tmp_path, monkeypatch):
     import duckdb
 
