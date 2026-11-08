@@ -115,7 +115,7 @@ Every file comes with two views and one table macro. A view is a saved query tha
 The newest finished run of each report suite and segment.
 
 ```sql
-FROM latest_runs SELECT run_id, rsid_name, today, status;
+FROM latest_runs SELECT run_id, rsid_name, today, status ORDER BY run_id DESC;
 ```
 
 ```
@@ -345,7 +345,7 @@ GROUP BY ALL ORDER BY suite, never_collected DESC;
 
 ### Health over time, with a chart in the terminal
 
-How many values Adobe flagged in each run's 92 days, with a bar drawn by `bar()`:
+How many values Adobe flagged in each run's 91 full days, with a bar drawn by `bar()`:
 
 ```sql
 SELECT run_id, rsid, today,
@@ -395,13 +395,19 @@ GROUP BY "group" ORDER BY "group";
 ```
 
 ```
-┌──────────────────────────┬────────────┬─────────┐
-│          group           │ large drop │ unusual │
-├──────────────────────────┼────────────┼─────────┤
-│ Reserved Purchase Events │          8 │       0 │
-│ custom_evars             │        113 │       1 │
-│ custom_events            │        165 │       4 │
-└──────────────────────────┴────────────┴─────────┘
+┌──────────────────────────────┬────────────┬─────────┐
+│            group             │ large drop │ unusual │
+├──────────────────────────────┼────────────┼─────────┤
+│ List Variables               │          1 │       0 │
+│ Reserved Props               │          2 │       0 │
+│ Reserved Purchase Events     │          8 │       0 │
+│ Reserved Traffic Events      │          3 │       0 │
+│ Reserved eVars               │          2 │       0 │
+│ Target Integration Instances │          1 │       0 │
+│ custom_evars                 │        113 │       1 │
+│ custom_events                │        165 │       4 │
+│ custom_props                 │         15 │       0 │
+└──────────────────────────────┴────────────┴─────────┘
 ```
 
 ### A history longer than 92 days

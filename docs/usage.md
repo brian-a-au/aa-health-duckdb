@@ -137,7 +137,7 @@ It lists the runs it will delete and asks you to type y first. `--yes` skips the
 |---|---|
 | 0 | Everything worked. |
 | 1 | The command failed. The message on stderr says why. `prune` also exits with 1 when you answer no. |
-| 2 | `check` found limited access, or a check could not be run. `suites` found no report suites. |
+| 2 | `check` found limited access, or a check could not be run. `suites` found no report suites. Any command also exits with 2 when an option is wrong, e.g., `--change-alert 12`, and prints its usage. |
 | 3 | `run` or `individual` finished, but some columns or requests had problems. The report's status section lists them. |
 | 130 | You stopped the command with Ctrl-C. A run that had started is marked "failed". |
 
