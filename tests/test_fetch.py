@@ -328,7 +328,11 @@ def test_fetch_catalog_calls():
     assert suite["timezoneZoneinfo"] == "US/Pacific"
     assert {c.id for c in catalog} == {"metrics/event1", "variables/prop1", "variables/page"}
     assert fake.calls == [
-        ("GET", "/reportsuites/collections/suites/rs1", {"expansion": "name,timezoneZoneinfo"}),
+        (
+            "GET",
+            "/reportsuites/collections/suites/rs1",
+            {"expansion": "name,timezoneZoneinfo,currency"},
+        ),
         ("GET", "/metrics", {"rsid": "rs1", "expansion": "allowedForReporting"}),
         ("GET", "/dimensions", {"rsid": "rs1", "expansion": "allowedForReporting"}),
     ]
@@ -480,3 +484,19 @@ def test_network_error_in_individual_request_is_one_issue(store):
     assert [(r[1], r[2]) for r in ind] == [("individual", "network_error")]
     assert values_for(store, rid, "individual") == 92
     assert store.get_run(rid)["status"] == "partial"
+
+
+@pytest.mark.parametrize(("currency", "stored"), [("EUR", "EUR"), (None, None), (5, None)])
+def test_run_stores_suite_currency_and_metric_types(tmp_path, currency, stored):
+    from fakes import suite as fake_suite
+
+    metrics = [{"id": "metrics/event1", "name": "Rev", "type": "currency"}]
+    fake = fake_for("rs1", metrics, custom_dims())
+    fake.gets["/reportsuites/collections/suites/rs1"] = {**fake_suite(), "currency": currency}
+    store = Store.open(tmp_path / "c.duckdb")
+    rid = run_fetch(fake, store, RunOptions(rsid="rs1", today=date(2026, 11, 7)))
+    assert store.get_run(rid)["currency"] == stored
+    row = store.con.execute(
+        "select metric_type from components where component_id = 'metrics/event1'"
+    ).fetchone()
+    assert row == ("currency",)

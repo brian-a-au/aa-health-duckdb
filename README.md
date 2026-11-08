@@ -52,8 +52,8 @@ Inside the file, every row carries its run number. The tables are:
 
 | Table | What it holds, for each run |
 |---|---|
-| `runs` | One row per run: report suite, segment, run date, time zone, status, start and end times, and the chosen dimension and metric |
-| `components` | The events, eVars, props and solution components that were checked, with their names and groups |
+| `runs` | One row per run: report suite, segment, run date, time zone, currency, status, start and end times, and the chosen dimension and metric |
+| `components` | The events, eVars, props and solution components that were checked, with their names, groups and Adobe's metric type |
 | `daily_values` | One row per component per day: the value, Adobe's expected value, the expected range, and whether Adobe flagged it |
 | `top_items` | The top 100 values for yesterday and for the 90 days before |
 | `breakdowns` and `breakdown_totals` | The browser and device tables and their totals |
@@ -64,7 +64,7 @@ Inside the file, every row carries its run number. The tables are:
 
 The report is one HTML file with its styles, script and data inside it. Open it in any browser by double clicking it. It loads nothing from the internet, so it also works offline. It has three tabs:
 
-- **Components Summary:** every custom event, eVar and prop, with trend charts. You can view it by day or by week, and show only the flagged components.
+- **Components Summary:** every custom event, eVar and prop, with trend charts. You can view it by day or by week, and show only the flagged components. Each chart has a Type filter. The Metric chart filters by Adobe's type for the metric: whole numbers, decimals or currency. The Dimension chart filters by eVars, props or other dimensions.
 - **Individual Component Summary:** one dimension in more depth. By default this is Page by Occurrences. It shows a trend, the top 100 values, and the top values for each browser group and device type.
 - **Alerts Summary:** the values Adobe flagged as unusual yesterday, then the components with no data. You can copy the list as text.
 
@@ -195,6 +195,7 @@ The tests use saved Adobe responses and never call Adobe. Every test runs with t
 - The top 100 tables compare yesterday with the 90 days before it (from 91 days ago through 2 days ago). The browser and device tables use yesterday.
 - An arrow shows when the change is more than 20 percent. When the baseline is zero, there is no percent change and no arrow.
 - A column the credential cannot read is listed as a problem. It is never shown as zero.
+- A currency metric shows its values in the report suite's currency, e.g., $1,234.56 for US dollars. This applies to the tables, the alerts and the charts. Other metrics show as plain numbers. Runs stored by an older version have no metric types, so their values show as plain numbers.
 - eVars are treated as dimensions, like props. They appear in the Dimension chart, which has a filter for eVars, props or other dimensions. The workbook filed them under events. Each eVar is still counted with its instances metric, as in the workbook.
 
 ## Known limits

@@ -42,6 +42,8 @@ class Component:
     number: int | None
     column: Column
     allowed_for_reporting: bool | None
+    # Adobe's type for the metric that counts it, e.g. "int", "decimal" or "currency".
+    metric_type: str | None = None
 
 
 def load_solution() -> dict[str, list[str]]:
@@ -71,15 +73,16 @@ def build_catalog(
     for m in metrics:
         cid = m["id"]
         name = m.get("name") or cid
+        mtype = m.get("type") if isinstance(m.get("type"), str) else None
         if mt := _EVENT.match(cid):
             out[cid] = Component(
-                cid, name, "metric", "custom_events", int(mt[1]), Column(cid, cid), None
+                cid, name, "metric", "custom_events", int(mt[1]), Column(cid, cid), None, mtype
             )
         elif mt := _EVAR.match(cid):
             name = name.removesuffix(" Instances")
             # An eVar is a dimension. It is counted with its instances metric.
             out[cid] = Component(
-                cid, name, "dimension", "custom_evars", int(mt[1]), Column(cid, cid), None
+                cid, name, "dimension", "custom_evars", int(mt[1]), Column(cid, cid), None, mtype
             )
         elif cid in wanted:
             if (
@@ -89,7 +92,7 @@ def build_catalog(
             ):
                 continue  # exact id exists; it wins over the instances fallback
             kind = "dimension" if wanted[cid] == "Reserved eVars" else "metric"
-            out[cid] = Component(cid, name, kind, wanted[cid], None, Column(cid, cid), None)
+            out[cid] = Component(cid, name, kind, wanted[cid], None, Column(cid, cid), None, mtype)
 
     for d in dimensions:
         cid = d["id"]

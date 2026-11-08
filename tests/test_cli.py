@@ -231,7 +231,7 @@ def test_newer_database_is_one_line_error(tmp_path, cfg, capsys):
     db = tmp_path / "t.duckdb"
     Store.open(db).con.close()
     con = duckdb.connect(str(db))
-    con.execute("update schema_version set version = 2")
+    con.execute("update schema_version set version = 99")
     con.close()
     code = main(["runs", "--db", str(db)])
     err = capsys.readouterr().err
