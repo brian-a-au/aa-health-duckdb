@@ -117,18 +117,18 @@ def test_no_credentials_column(tmp_path):
 
 def test_new_file_gets_schema_version(tmp_path):
     s = Store.open(tmp_path / "a.duckdb")
-    assert SCHEMA_VERSION == 2
-    assert s.con.execute("select version from schema_version").fetchall() == [(2,)]
+    assert SCHEMA_VERSION == 3
+    assert s.con.execute("select version from schema_version").fetchall() == [(3,)]
     s.con.close()
     s2 = Store.open(tmp_path / "a.duckdb")  # reopening does not add a second row
-    assert s2.con.execute("select version from schema_version").fetchall() == [(2,)]
+    assert s2.con.execute("select version from schema_version").fetchall() == [(3,)]
 
 
 @pytest.mark.parametrize(
     "setup",
     [
         "update schema_version set version = 99",
-        "update schema_version set version = 1",
+        "update schema_version set version = 2",
         "drop table schema_version",
     ],
 )
@@ -257,3 +257,14 @@ def test_pairs_are_numbered_per_run(tmp_path):
     assert rows == [(1, 2), (2, 1)]
     s.set_status(a, "ok")
     assert s.get_run(a)["status"] == "ok"
+
+
+def test_latest_runs_view(tmp_path):
+    s = Store.open(tmp_path / "a.duckdb")
+    a = _fill(s, "rs1")
+    b = _fill(s, "rs1")
+    c = _fill(s, "rs2")
+    running = s.create_run("rs2", "N", "seg", date(2026, 11, 7), "UTC", "0.1")
+    rows = s.con.execute("select run_id from latest_runs order by run_id").fetchall()
+    # One per suite and segment; a run still marked running is never the latest.
+    assert rows == [(b,), (c,)] and a not in rows and running not in rows

@@ -56,6 +56,10 @@
   {% endif %}
   {% if issue_groups %}
   <p>Some data could not be read in this run. Each item below says what is missing and why.</p>
+  <div class="copy-row">
+    <button type="button" id="copy-problems">Copy problems</button>
+    <span id="copy-problems-result" role="status" aria-live="polite"></span>
+  </div>
   <ul class="issues">
     {% for g in issue_groups %}
     <li class="issue">
@@ -182,9 +186,10 @@
   </div>
   <p class="hint">Components that Adobe flagged as unusual, that fell further below their usual value than the slider allows, or that dropped to 0.</p>
   <div class="copy-row">
-    <button type="button" id="copy-alerts">Copy alert summary</button>
+    <button type="button" id="copy-alerts">Copy alerts</button>
     <span id="copy-result" role="status" aria-live="polite"></span>
   </div>
+  <p class="hint">The copy holds a formatted table and plain text. An email program such as Outlook or Gmail pastes the table, and a chat or text editor pastes the text.</p>
   <div id="alerts"></div>
   <details class="copy-fallback">
     <summary>Show the alert summary as text</summary>

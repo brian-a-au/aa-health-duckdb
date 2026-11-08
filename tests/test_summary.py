@@ -621,3 +621,63 @@ def test_duration_text(seconds, text):
     start = datetime(2026, 11, 8, 9, 0, 0)
     assert duration_text(start, start + timedelta(seconds=seconds)) == text
     assert duration_text(start, None) is None and duration_text(None, start) is None
+
+
+def _report_alerts(view, day, threshold=0.30):
+    """The report's Alerts tab rules, as report.js applies them to view["alerts"]."""
+    out = {}
+    for a in view["alerts"]:
+        if a["day"] != day or (a["zero"] and a["unused"]):
+            continue
+        if a["anomaly"]:
+            out[a["component_id"]] = "unusual"
+        elif a["zero"]:
+            out[a["component_id"]] = "dropped to zero"
+        elif a["usual"] >= 10 and a["pct_vs_usual"] is not None and a["pct_vs_usual"] < -threshold:
+            out[a["component_id"]] = "large drop"
+    return out
+
+
+@pytest.mark.parametrize("threshold", [0.10, 0.30, 0.60])
+def test_alerts_macro_matches_the_report(tmp_path, threshold):
+    comps = [_comp(f"metrics/event{i}", f"E{i}", number=i) for i in range(1, 7)]
+    vals = (
+        _series("metrics/event1", 100.0, 85.0)  # 15 percent drop
+        + _series("metrics/event2", 100.0, 50.0)  # 50 percent drop
+        + _series("metrics/event3", 100.0, 0.0)  # dropped to zero
+        + _series("metrics/event4", 0.0, 0.0)  # never collected data
+        + _series("metrics/event5", 8.0, 1.0)  # small usual value: skipped
+        + [v for v in _series("metrics/event6", 100.0, 100.0) if v.day != YESTERDAY]
+        + [_dv("metrics/event6", YESTERDAY, 140.0, 100.0, 120.0, 80.0, True)]  # Adobe flag
+    )
+    store, rid = _build(tmp_path, comps, vals)
+    view = build_view(store, rid)
+    day = YESTERDAY.isoformat()
+    rows = store.con.execute(
+        "select component_id, alert from alerts(?, threshold := ?)", [rid, threshold]
+    ).fetchall()
+    assert dict(rows) == _report_alerts(view, day, threshold)
+    assert dict(rows)["metrics/event6"] == "unusual"
+    other = store.con.execute(
+        "select count(*) from alerts(?, for_day := ?)", [rid, "2026-11-05"]
+    ).fetchone()[0]
+    assert other == len(_report_alerts(view, "2026-11-05"))
+
+
+def test_component_days_matches_the_report_view(tmp_path):
+    store, rid = _build(
+        tmp_path, [_comp("metrics/event1", "Event 1", number=1)], _friday_series("metrics/event1")
+    )
+    row = store.con.execute(
+        "select value, usual, pct_vs_usual, zero, unused from component_days"
+        " where run_id = ? and is_yesterday",
+        [rid],
+    ).fetchone()
+    day = build_view(store, rid)["views"]["day:2026-11-06"][0]
+    assert row[0] == day["value"] and row[1] == day["baseline"]
+    assert row[2] == pytest.approx(day["pct"]) and (row[3], row[4]) == (False, False)
+    # Today is not a full day, so component_days leaves it out.
+    days = store.con.execute(
+        "select min(day), max(day), count(*) from component_days where run_id = ?", [rid]
+    ).fetchone()
+    assert days == (START, YESTERDAY, 91)
