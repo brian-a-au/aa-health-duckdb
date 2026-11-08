@@ -230,7 +230,7 @@ def test_three_tabs_and_status():
     # a code with a heading still lists its items with the message
     assert "unauthorized_metric" in html and "You do not have access to this metric." in html
     assert "metrics/event9" in html
-    assert "Copy alert summary" in html
+    assert "Copy alerts" in html
 
 
 def test_no_custom_components_heading():
@@ -465,3 +465,14 @@ def test_change_alert_slider():
     assert 'value="45"' in html and ">45%</output>" in html
     data = _data_json(html)
     assert data["change_alert"] == 0.45 and data["min_usual"] == 10
+
+
+def test_copy_buttons():
+    v = sample_view()
+    assert v["issues"]
+    html = render_html(v)
+    assert '<button type="button" id="copy-alerts">Copy alerts</button>' in html
+    assert '<button type="button" id="copy-problems">Copy problems</button>' in html
+    assert "An email program such as Outlook or Gmail pastes the table" in html
+    v["issues"] = []
+    assert 'id="copy-problems"' not in render_html(v)

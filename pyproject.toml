@@ -8,7 +8,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "requests",
-    "duckdb",
+    "duckdb>=2.0",
     "jinja2",
 ]
 

@@ -32,7 +32,7 @@ DuckDB is a database that runs inside the `ahd` program itself, so there is no d
 - **One local file.** The whole database is one file on your disk. Each run adds to it, and older runs stay in it. You can rebuild any stored run's report with `ahd render`, without calling Adobe again.
 - **Nothing is uploaded.** The tool never sends the file anywhere.
 - **No credentials inside.** The file holds report data, e.g., component names and daily values. It never holds your credential. Treat it with the same care as the reports.
-- **Easy to clean up or inspect.** To remove some runs, use `ahd prune`. To start over, delete the file. To look inside it, open it with the DuckDB command line tool, e.g., `duckdb data/ahd.duckdb "select * from runs"`.
+- **Easy to clean up or inspect.** To remove some runs, use `ahd prune`. To start over, delete the file. To look inside it, open it with the DuckDB command line tool, version 2.0 or newer, e.g., `duckdb -readonly data/ahd.duckdb -c "from latest_runs"`. An older `duckdb` cannot open the file. See [Use the database](#use-the-database).
 
 ### How runs are stored
 
@@ -61,6 +61,8 @@ Inside the file, every row carries its run number. The tables are:
 | `issues` | Anything that could not be read, with the reason |
 | `schema_version` | The version of this layout. The tool refuses a file made with a different layout, and you start a new file |
 
+The file also holds two views and a table macro for your own SQL: `latest_runs`, `component_days` and `alerts()`. They follow the same rules as the report. The [DuckDB guide](docs/duckdb.md) explains them.
+
 ### The report
 
 The report is one HTML file with its styles, script and data inside it. Open it in any browser by double clicking it. It loads nothing from the internet, so it also works offline. It has three tabs:
@@ -73,7 +75,7 @@ The report is one HTML file with its styles, script and data inside it. Open it 
   - **Dropped to zero.** The value was 0, but the component had data on other days in the run.
   - **Never collected data.** The value was 0 on every day in the run. These are often unused slots, so they are not alerts. They are in a closed list at the end.
 
-  You can copy the alerts as text.
+  **Copy alerts** copies the alerts as a formatted table and as plain text, so an email program pastes a table and a chat pastes text. When a run had problems, **Copy problems** in the status section does the same for them.
 
 Summary tiles at the top give yesterday's counts. Every table can be sorted, and a switch at the top right chooses light mode, dark mode, or your computer's setting.
 
@@ -215,6 +217,20 @@ uv run ahd prune --before 2026-10-01 --yes
 
 Defaults: the database is `./data/ahd.duckdb`, or `~/.aa/orgs/<name>/ahd.duckdb` with a profile, the report folder is `./reports/`, the batch size is 20 columns per request, and 4 requests run at the same time. Add `--verbose` before the command for debug logging on stderr.
 
+## Use the database
+
+Every run stays in the DuckDB file, so you can query all runs, suites and organizations with SQL. The [DuckDB guide](docs/duckdb.md) has tested recipes, e.g.:
+
+- email the alerts every morning, but only when there are any, with [`docs/examples/send_alerts.py`](docs/examples/send_alerts.py)
+- email only the alerts that are new since the last run
+- send each alert to its owner, from a CSV file of patterns and email addresses
+- one digest for every report suite, or every organization with `ATTACH`
+- a list of variables that never collected data, for cleanup
+- values that dropped out of the top 100
+- export to CSV, JSON, Parquet or Excel
+
+You need DuckDB 2.0 or newer for the `duckdb` command. The Python package comes with `ahd`.
+
 ## Tests
 
 Run the tests and the lint checks the same way GitHub Actions does:
@@ -226,6 +242,10 @@ uv run ruff format --check
 ```
 
 The tests use saved Adobe responses and never call Adobe. Every test runs with the network blocked, so a test fails if it tries to open a connection. The tests also ignore your own `AA_PROFILE`, `AHD_*` variables and `~/.aa` profiles. GitHub Actions runs them on Python 3.12, 3.13 and 3.14 for every push to `main` and every pull request. The run fails if branch coverage drops below 95 percent.
+
+## Working on the code
+
+[AGENTS.md](AGENTS.md) explains the layout, the rules and the checks for anyone who changes the code, including AI coding agents. `CLAUDE.md` points to it.
 
 ## How the numbers differ from Excel
 

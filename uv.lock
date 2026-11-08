@@ -29,7 +29,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "duckdb" },
+    { name = "duckdb", specifier = ">=2.0" },
     { name = "jinja2" },
     { name = "requests" },
 ]

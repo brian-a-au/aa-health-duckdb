@@ -1067,19 +1067,166 @@
     byId("alert-text").value = alertText();
   }
 
-  var copyResult = byId("copy-result");
-  byId("copy-alerts").addEventListener("click", function () {
-    var text = byId("alert-text").value;
-    function failed() {
-      copyResult.textContent = "Could not copy. Open \"Show the alert summary as text\" below " +
-        "and copy it from there.";
-      document.querySelector(".copy-fallback").open = true;
+  // ---- copying ------------------------------------------------------------------
+  // Puts HTML and plain text on the clipboard together. An email program pastes the HTML as a
+  // formatted table; a chat or text editor pastes the text. Without the rich clipboard (older
+  // browsers), it copies the text only.
+  function copyBoth(html, text, done, failed) {
+    function plain() {
+      if (!navigator.clipboard || !navigator.clipboard.writeText) { failed(); return; }
+      navigator.clipboard.writeText(text).then(function () { done(false); }, failed);
     }
-    if (!navigator.clipboard || !navigator.clipboard.writeText) { failed(); return; }
-    navigator.clipboard.writeText(text).then(function () {
-      copyResult.textContent = "Copied. You can paste it into an email or chat.";
-    }, failed);
-  });
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      var item = new window.ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([text], { type: "text/plain" })
+      });
+      navigator.clipboard.write([item]).then(function () { done(true); }, plain);
+    } else {
+      plain();
+    }
+  }
+
+  // Inline styles only: email programs drop style blocks in the head.
+  var MAIL = {
+    wrap: "font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2328;",
+    h: "font-size:16px;margin:16px 0 6px;",
+    p: "margin:0 0 6px;",
+    table: "border-collapse:collapse;margin:0 0 12px;",
+    th: "text-align:left;padding:4px 10px;border-bottom:2px solid #d0d7de;background:#f6f8fa;",
+    thNum: "text-align:right;padding:4px 10px;border-bottom:2px solid #d0d7de;background:#f6f8fa;",
+    td: "padding:4px 10px;border-bottom:1px solid #eaeef2;",
+    tdNum: "padding:4px 10px;border-bottom:1px solid #eaeef2;text-align:right;" +
+      "font-variant-numeric:tabular-nums;",
+    muted: "color:#59636e;font-size:12px;margin:8px 0 0;"
+  };
+  function mailTable(headers, rows) {
+    var t = el("table", { style: MAIL.table, cellpadding: 0, cellspacing: 0 });
+    var tr = el("tr");
+    headers.forEach(function (h) {
+      tr.appendChild(el("th", { style: h.num ? MAIL.thNum : MAIL.th }, h.label));
+    });
+    t.appendChild(tr);
+    rows.forEach(function (row) {
+      var r = el("tr");
+      row.forEach(function (cell, i) {
+        r.appendChild(el("td", { style: headers[i].num ? MAIL.tdNum : MAIL.td }, cell));
+      });
+      t.appendChild(r);
+    });
+    return t;
+  }
+
+  function alertHtml() {
+    var run = data.run || {};
+    var parts = splitAlerts();
+    var pct = Math.round(state.t * 100) + "%";
+    var box = el("div", { style: MAIL.wrap });
+    box.appendChild(el("p", { style: MAIL.h + "margin-top:0;" },
+      "Analytics Health alerts for " + (run.rsid_name || run.rsid) + ", " + alertDayText()));
+    box.appendChild(el("p", { style: MAIL.p }, "Report suite " + run.rsid + ". Segment: " +
+      (run.segment_id || "none (all visits)") + "."));
+    function name(a) { return a.name + " (" + a.component_id + ")"; }
+    function section(title, list, headers, cells) {
+      if (!list.length) return;
+      box.appendChild(el("p", { style: MAIL.h }, title + " (" + list.length + ")"));
+      box.appendChild(mailTable(headers, list.map(cells)));
+    }
+    if (!parts.unusual.length && !parts.drops.length && !parts.zero.length) {
+      box.appendChild(el("p", { style: MAIL.p }, "No alerts for this day."));
+    }
+    section("Unusual values, flagged by Adobe", parts.unusual,
+      [{ label: "Component" }, { label: "Flag" }, { label: "Expected", num: true },
+       { label: "Actual", num: true }, { label: "Change", num: true }],
+      function (a) {
+        return [name(a), a.anomaly === "high" ? "Above range" : "Below range",
+          a.expected === null ? "Not available" : fmtRound(a.expected, a.metric_type),
+          fmtNum(a.actual, a.metric_type), fmtPct(a.pct_vs_expected)];
+      });
+    section("Drops of more than " + pct + " below usual", parts.drops,
+      [{ label: "Component" }, { label: "Usual", num: true }, { label: "Actual", num: true },
+       { label: "Change", num: true }],
+      function (a) {
+        return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type),
+          fmtPct(a.pct_vs_usual)];
+      });
+    section("Dropped to zero", parts.zero,
+      [{ label: "Component" }, { label: "Usual", num: true }, { label: "Actual", num: true }],
+      function (a) {
+        return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type)];
+      });
+    var notes = [];
+    if (parts.unused.length) {
+      notes.push(parts.unused.length + (parts.unused.length === 1 ? " component" : " components") +
+        " never collected data in this run, so they are not listed.");
+    }
+    if ((data.issues || []).length) {
+      notes.push("Some data could not be read in this run. See the status section of the report.");
+    }
+    notes.push("Run " + run.id + ", made with ahd " + (run.tool_version || "") + ".");
+    box.appendChild(el("p", { style: MAIL.muted }, notes.join(" ")));
+    return box.outerHTML;
+  }
+
+  function copyButton(buttonId, resultId, getHtml, getText, fallback) {
+    var result = byId(resultId);
+    var button = byId(buttonId);
+    if (!button) return;
+    button.addEventListener("click", function () {
+      copyBoth(getHtml(), getText(), function (rich) {
+        result.textContent = rich ?
+          "Copied. An email program pastes it formatted, and a chat pastes plain text." :
+          "Copied as plain text. This browser could not copy the formatted version.";
+      }, function () {
+        result.textContent = "Could not copy. " + fallback;
+        var f = document.querySelector(".copy-fallback");
+        if (f && buttonId === "copy-alerts") f.open = true;
+      });
+    });
+  }
+  copyButton("copy-alerts", "copy-result", alertHtml, function () { return byId("alert-text").value; },
+    "Open \"Show the alert summary as text\" below and copy it from there.");
+
+  // The problems as the status section shows them: one heading per problem code, then items.
+  function problemGroups() {
+    return [].map.call(document.querySelectorAll("#status .issue"), function (li) {
+      var heading = li.querySelector(".issue-heading");
+      return {
+        heading: heading ? heading.textContent.replace(/\s+/g, " ").trim() : "",
+        items: [].map.call(li.querySelectorAll(".issue-items li"), function (x) {
+          return x.textContent.replace(/\s+/g, " ").trim();
+        })
+      };
+    });
+  }
+  function problemsTitle() {
+    var run = data.run || {};
+    return "Problems in run " + run.id + " for " + (run.rsid_name || run.rsid) + " (" + run.rsid +
+      "), " + run.today;
+  }
+  function problemsText() {
+    var lines = [problemsTitle()];
+    problemGroups().forEach(function (g) {
+      lines.push(g.heading);
+      g.items.forEach(function (i) { lines.push("- " + i); });
+    });
+    return lines.join("\n");
+  }
+  function problemsHtml() {
+    var box = el("div", { style: MAIL.wrap });
+    box.appendChild(el("p", { style: MAIL.h + "margin-top:0;" }, problemsTitle()));
+    problemGroups().forEach(function (g) {
+      box.appendChild(el("p", { style: MAIL.p + "font-weight:bold;" }, g.heading));
+      if (g.items.length) {
+        var ul = el("ul", { style: "margin:0 0 10px;padding-left:20px;" });
+        g.items.forEach(function (i) { ul.appendChild(el("li", null, i)); });
+        box.appendChild(ul);
+      }
+    });
+    return box.outerHTML;
+  }
+  copyButton("copy-problems", "copy-problems-result", problemsHtml, problemsText,
+    "Select the problems above and copy them by hand.");
 
   // ---- summary tiles ------------------------------------------------------------
   function renderTiles() {

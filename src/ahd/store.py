@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from importlib import resources
 from pathlib import Path
 from typing import Literal
 
@@ -13,7 +14,7 @@ from ahd.catalog import Component
 
 # Bump when the tables change. ahd does not upgrade files: a file with another version is
 # refused, and you start a new file.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE schema_version (version INTEGER);
@@ -59,6 +60,11 @@ RUN_TABLES = (
 )
 
 
+def _views() -> str:
+    """The views and the alerts macro from ahd/sql/views.sql."""
+    return resources.files("ahd").joinpath("sql/views.sql").read_text()
+
+
 class SchemaVersionError(ValueError):
     """The database file was written by a different version of ahd."""
 
@@ -81,6 +87,7 @@ class Store:
             }
             if not tables:
                 con.execute(_SCHEMA)
+                con.execute(_views())
                 con.execute("INSERT INTO schema_version (version) VALUES (?)", [SCHEMA_VERSION])
             else:
                 found = None
