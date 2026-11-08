@@ -163,19 +163,24 @@ def _unpack(d: dict) -> dict:
     """The same steps as unpackView in report.js, so tests can read the page data."""
     f = d["packed"]
 
-    def with_component(o):
-        return {**o, **dict(zip(f["component"], d["components"].get(o["component_id"], [])))}
+    def with_component(o, names):
+        c = dict(zip(f["component"], d["components"].get(o["component_id"], [])))
+        return {**o, **{k: v for k, v in c.items() if k in names}}
 
     d["views"] = {
-        k: [with_component(dict(zip(f["row"], r))) for r in rows] for k, rows in d["views"].items()
+        k: [with_component(dict(zip(f["row"], r)), f["component"]) for r in rows]
+        for k, rows in d["views"].items()
     }
-    d["alerts"] = [with_component(dict(zip(f["alert"], a))) for a in d["alerts"]]
+    d["alerts"] = [
+        with_component(dict(zip(f["alert"], a)), f["alert_component"]) for a in d["alerts"]
+    ]
     series = {}
     for cid, s in d["series"].items():
         start = date.fromisoformat(s["start"])
         series[cid] = [
             [(start + timedelta(days=i)).isoformat(), *(s[name][i] for name in f["series"])]
             for i in range(len(s[f["series"][0]]))
+            if i not in s.get("gaps", [])
         ]
     d["series"] = series
     return d
@@ -531,7 +536,7 @@ def test_packed_page_data_unpacks_to_the_view():
     for key, rows in view["views"].items():
         assert [{k: _plain(r[k]) for k in r} for r in data["views"][key]] == _plain(rows), key
     for packed, original in zip(data["alerts"], view["alerts"], strict=True):
-        assert {k: _plain(packed[k]) for k in original} == _plain(original)
+        assert _plain(packed) == _plain(original)
     for cid, points in view["series"].items():
         assert _plain(data["series"][cid]) == _plain(points), cid
 
@@ -541,3 +546,25 @@ def test_packed_page_data_is_smaller():
     plain = len(json.dumps(view, separators=(",", ":")))
     m = DATA_RE.search(render_html(view))
     assert len(m.group(1)) < plain * 0.6
+
+
+def test_packed_series_keeps_missing_days_out():
+    from ahd.render.html import pack_view
+
+    view = {
+        "views": {},
+        "alerts": [],
+        "series": {
+            "metrics/a": [
+                ["2026-11-01", 1.0, None, None, None, None],
+                ["2026-11-02", None, None, None, None, None],  # a point with no value
+                ["2026-11-04", 4.0, 3.0, 5.0, 2.0, "high"],  # 2026-11-03 is missing
+            ]
+        },
+    }
+    packed = pack_view(view)
+    assert packed["series"]["metrics/a"]["gaps"] == [2]
+    assert packed["series"]["metrics/a"]["value"] == [1, None, None, 4]
+    assert _unpack(json.loads(json.dumps(packed)))["series"] == view["series"]
+    view["series"]["metrics/a"].pop()
+    assert "gaps" not in pack_view(view)["series"]["metrics/a"]
