@@ -6,6 +6,7 @@ import logging
 import random
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -94,6 +95,50 @@ def _error_fields(body: Any) -> tuple[str, str] | None:
     return str(code), str(msg)
 
 
+# Adobe's published limit for the Analytics 2.0 API: 120 requests a minute for each user,
+# counted as 12 requests in any 6 seconds. A request over the limit gets HTTP 429.
+PACE_LIMIT = 12
+PACE_WINDOW = 6.0
+
+
+class Pacer:
+    """Starts at most `limit` requests in any `window` seconds, across all threads.
+
+    With 8 workers and answers that take under 4 seconds, e.g., answers that Adobe saved from
+    an earlier run, the workers would start more than 12 requests in 6 seconds without it.
+    """
+
+    def __init__(
+        self,
+        limit: int = PACE_LIMIT,
+        window: float = PACE_WINDOW,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+    ):
+        self.limit = limit
+        self.window = window
+        self._clock = clock
+        self._sleep = sleep
+        self._starts: deque[float] = deque()
+        # A thread that must wait keeps the lock while it sleeps. The other threads then wait
+        # behind it, in turn.
+        self._lock = threading.Lock()
+
+    def wait(self) -> None:
+        """Return when another request may start, and count it."""
+        with self._lock:
+            while True:
+                now = self._clock()
+                while self._starts and now - self._starts[0] >= self.window:
+                    self._starts.popleft()
+                if len(self._starts) < self.limit:
+                    self._starts.append(now)
+                    return
+                delay = self.window - (now - self._starts[0])
+                log.debug("%d requests in %.0fs, waiting %.1fs", self.limit, self.window, delay)
+                self._sleep(delay)
+
+
 class AdobeClient:
     def __init__(
         self,
@@ -104,8 +149,10 @@ class AdobeClient:
         sleep: Callable[[float], None] = time.sleep,
         company_name: str = "",
         companies: int = 1,
+        pacer: Pacer | None = None,
     ):
         self._session = session
+        self._pacer = pacer
         self._header = dict(header)
         # Guards _header. The generation counts sign-ins, so that when several threads see an
         # expired token at once, only the first signs in again and the rest reuse its header.
@@ -121,8 +168,10 @@ class AdobeClient:
         return f"AdobeClient(company_id={self.company_id!r})"
 
     @classmethod
-    def _from_parts(cls, session, header, company_id, relogin, sleep=time.sleep) -> AdobeClient:
-        return cls(session, header, company_id, relogin, sleep=sleep)
+    def _from_parts(
+        cls, session, header, company_id, relogin, sleep=time.sleep, pacer=None
+    ) -> AdobeClient:
+        return cls(session, header, company_id, relogin, sleep=sleep, pacer=pacer)
 
     @classmethod
     def connect(cls, creds: Credentials, company_id: str | None = None) -> AdobeClient:
@@ -139,6 +188,7 @@ class AdobeClient:
             relogin,
             company_name=first.company_name,
             companies=first.companies,
+            pacer=Pacer(),
         )
 
     def get(self, path: str, params: dict | None = None) -> Any:
@@ -153,6 +203,8 @@ class AdobeClient:
         # Retries so far for each kind of error. Each kind has its own limit.
         tries = {BUSY: 0, FAILED: 0}
         while True:
+            if self._pacer is not None:
+                self._pacer.wait()
             with self._header_lock:
                 header, gen = self._header, self._header_gen
             try:

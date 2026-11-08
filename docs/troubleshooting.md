@@ -63,6 +63,8 @@ When a request fails in a way that may pass, the tool waits and tries again. How
 - **A rate limit (HTTP 429) or Adobe's temporary error 403025.** Adobe is busy. The tool tries up to 6 more times and waits 30 to 60 seconds in all.
 - **A server error (HTTP 500 to 599) or a network error.** The tool tries up to 3 more times and waits 3 to 7 seconds in all. An Adobe outage or a computer with no network shows within seconds, e.g., in `ahd check`.
 
+Adobe allows 12 requests in any 6 seconds for each user. The tool starts no more than that, even with many workers, so a run by itself should not get a rate limit. Two `ahd` commands at the same time with the same credential each keep their own count, so together they can go over the limit.
+
 When Adobe asks for a longer wait with a Retry-After header, the tool waits that long, up to 2 minutes. The tool also waits at most 10 seconds for a connection to Adobe. It records a problem only when the last try also fails.
 
 **Copy problems** in the status section copies the list for an email or a ticket.

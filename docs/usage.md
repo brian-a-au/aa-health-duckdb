@@ -85,7 +85,7 @@ uv run ahd run --rsid my_suite --date 2026-11-07 --out ./reports/
 | `--change-alert` | Where the report's large drop slider starts: 10 to 100, in steps of 5. The default is 30. See [The report](report.md#the-large-drop-slider). |
 | `--out` | The folder for the HTML report. The default is `./reports/`. |
 | `--batch-size` | How many columns go into one trend request, from 1 to 100. The default is 20. |
-| `--workers` | How many requests run at the same time, from 1 to 16. The default is 8. |
+| `--workers` | How many requests run at the same time, from 1 to 16. The default is 8. The tool starts no more than 12 requests in any 6 seconds, which is Adobe's limit. |
 
 While it runs, it prints its progress on stderr, e.g., "Daily trends: 12 of 21 requests done". When it ends, it prints the path of the report and the run's status. If the run sees far fewer components than the run before it, it prints a warning. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 

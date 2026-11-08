@@ -92,6 +92,7 @@ def _network_message(e: requests.RequestException) -> str:
 
 # Requests that run at the same time. In live timing runs on 410 components, a run took about 1
 # minute with 8 workers, 2 minutes with 4 and 3 minutes with 2. Adobe sent no rate limit errors.
+# The client's Pacer keeps any number of workers within Adobe's limit of 12 requests in 6 s.
 DEFAULT_WORKERS = 8
 
 
