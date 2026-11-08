@@ -96,11 +96,23 @@
 
   <div class="charts">
     <figure class="chart-card">
-      <label>Metric chart <select id="metric-pick"></select></label>
+      <div class="picker-row">
+        <label class="picker-main">Metric chart <select id="metric-pick"></select></label>
+      </div>
       <div class="chart" id="metric-chart"></div>
     </figure>
     <figure class="chart-card">
-      <label>Dimension chart <select id="dimension-pick"></select></label>
+      <div class="picker-row">
+        <label class="picker-type">Type
+          <select id="dimension-type">
+            <option value="">All</option>
+            <option value="evars">eVars</option>
+            <option value="props">Props</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label class="picker-main">Dimension chart <select id="dimension-pick"></select></label>
+      </div>
       <div class="chart" id="dimension-chart"></div>
     </figure>
   </div>

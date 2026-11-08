@@ -77,8 +77,9 @@ def build_catalog(
             )
         elif mt := _EVAR.match(cid):
             name = name.removesuffix(" Instances")
+            # An eVar is a dimension. It is counted with its instances metric.
             out[cid] = Component(
-                cid, name, "metric", "custom_evars", int(mt[1]), Column(cid, cid), None
+                cid, name, "dimension", "custom_evars", int(mt[1]), Column(cid, cid), None
             )
         elif cid in wanted:
             if (
@@ -87,7 +88,8 @@ def build_catalog(
                 and cid.removesuffix("instances") in wanted
             ):
                 continue  # exact id exists; it wins over the instances fallback
-            out[cid] = Component(cid, name, "metric", wanted[cid], None, Column(cid, cid), None)
+            kind = "dimension" if wanted[cid] == "Reserved eVars" else "metric"
+            out[cid] = Component(cid, name, kind, wanted[cid], None, Column(cid, cid), None)
 
     for d in dimensions:
         cid = d["id"]

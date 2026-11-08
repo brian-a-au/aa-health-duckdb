@@ -159,6 +159,7 @@ The tests use saved Adobe responses and never call Adobe. GitHub Actions runs th
 - The top 100 tables compare yesterday with the 90 days before it (from 91 days ago through 2 days ago). The browser and device tables use yesterday.
 - An arrow shows when the change is more than 20 percent. When the baseline is zero, there is no percent change and no arrow.
 - A column the credential cannot read is listed as a problem. It is never shown as zero.
+- eVars are treated as dimensions, like props. They appear in the Dimension chart, which has a filter for eVars, props or other dimensions. The workbook filed them under events. Each eVar is still counted with its instances metric, as in the workbook.
 
 ## Known limits
 

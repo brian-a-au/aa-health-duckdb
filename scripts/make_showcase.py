@@ -129,7 +129,7 @@ def components() -> list[Component]:
         out.append(Component(cid, name, "metric", "custom_events", i, Column(cid, cid), True))
     for i, name in enumerate(EVARS, 1):
         cid = f"metrics/evar{i}instances"
-        out.append(Component(cid, name, "metric", "custom_evars", i, Column(cid, cid), True))
+        out.append(Component(cid, name, "dimension", "custom_evars", i, Column(cid, cid), True))
     for i, name in enumerate(PROPS, 1):
         cid = f"variables/prop{i}"
         out.append(
