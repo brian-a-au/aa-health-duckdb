@@ -17,7 +17,14 @@ from ahd.api.client import AdobeClient, ApiError
 from ahd.catalog import CUSTOM_GROUPS
 from ahd.config import ConfigError, chosen_profile, load_credentials, profile_dir
 from ahd.dates import RunWindow, today_in_zone
-from ahd.fetch import RunOptions, add_pair, fetch_catalog, probe_anomaly, run_fetch
+from ahd.fetch import (
+    DEFAULT_WORKERS,
+    RunOptions,
+    add_pair,
+    fetch_catalog,
+    probe_anomaly,
+    run_fetch,
+)
 from ahd.lookup import (
     list_segments,
     list_suites,
@@ -161,8 +168,8 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--workers",
         type=_whole_number(1, 16),
-        default=4,
-        help="Requests that run at the same time, 1 to 16 (default 4).",
+        default=DEFAULT_WORKERS,
+        help=f"Requests that run at the same time, 1 to 16 (default {DEFAULT_WORKERS}).",
     )
     run.add_argument("--out", type=Path, default=Path(DEFAULT_OUT), help=OUT_HELP)
     change_alert(run)

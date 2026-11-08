@@ -236,6 +236,16 @@ def test_batch_size_and_workers_must_be_in_range(tmp_path, cfg, capsys, option, 
     assert "is not a whole number from 1 to" in capsys.readouterr().err
 
 
+def test_run_defaults_to_8_workers_and_batches_of_20():
+    from ahd.cli import _parser
+    from ahd.fetch import RunOptions
+
+    parsed = _parser().parse_args(["run", "--rsid", "rs1"])
+    assert (parsed.workers, parsed.batch_size) == (8, 20)
+    defaults = RunOptions(rsid="rs1", segment_id=None, today=None)
+    assert (defaults.workers, defaults.batch_size) == (8, 20)
+
+
 def test_api_error_is_one_line(tmp_path, cfg, capsys):
     def factory(creds, company_id=None):
         raise ApiError(401, "bad sign in", "unauthorized")

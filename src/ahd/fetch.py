@@ -90,6 +90,11 @@ def _network_message(e: requests.RequestException) -> str:
     return f"The request failed with a network error ({type(e).__name__})."
 
 
+# Requests that run at the same time. In live timing runs on 410 components, a run took about 1
+# minute with 8 workers, 2 minutes with 4 and 3 minutes with 2. Adobe sent no rate limit errors.
+DEFAULT_WORKERS = 8
+
+
 @dataclass
 class RunOptions:
     rsid: str
@@ -101,7 +106,7 @@ class RunOptions:
     metric_name: str | None = "Occurrences"
     metric_type: str | None = "int"
     batch_size: int = 20
-    workers: int = 4
+    workers: int = DEFAULT_WORKERS
 
 
 def _tool_version() -> str:
