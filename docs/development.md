@@ -20,7 +20,7 @@ uv run ruff format --check
 - The example script in `docs/examples` has tests too.
 - The tests in `tests/test_report_js.py` open reports in headless Google Chrome or Chromium. They check the page script, e.g., that the alert lists match the `alerts` macro. The tests look for Chrome in the usual places. To choose the program, set `AHD_CHROME` to its path. Without Chrome these tests are skipped, but on GitHub Actions they fail.
 
-GitHub Actions runs the tests on Python 3.12, 3.13 and 3.14 for every push to `main` and every pull request. A run fails if branch coverage drops below 95 percent.
+GitHub Actions runs the tests for every push to `main` and every pull request. On Linux the tests run on Python 3.12, 3.13 and 3.14. On Windows and macOS they run on Python 3.14. A run fails if branch coverage drops below 95 percent.
 
 ## Remake the slideshow
 

@@ -62,7 +62,7 @@ RUN_TABLES = (
 
 def _views() -> str:
     """The views and the alerts macro from ahd/sql/views.sql."""
-    return resources.files("ahd").joinpath("sql/views.sql").read_text()
+    return resources.files("ahd").joinpath("sql/views.sql").read_text(encoding="utf-8")
 
 
 class SchemaVersionError(ValueError):

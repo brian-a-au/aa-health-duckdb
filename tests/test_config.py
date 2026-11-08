@@ -21,7 +21,7 @@ KEYS = {
 
 def _write(tmp_path, data):
     p = tmp_path / "config.json"
-    p.write_text(json.dumps(data))
+    p.write_text(json.dumps(data), encoding="utf-8")
     return p
 
 
@@ -61,7 +61,7 @@ def _profile(name, data, raw=None):
     if raw is not None:
         path.write_bytes(raw)
     else:
-        path.write_text(json.dumps(data))
+        path.write_text(json.dumps(data), encoding="utf-8")
     return path
 
 
@@ -161,3 +161,14 @@ def test_file_not_found(tmp_path):
 def test_unreadable_file(tmp_path):
     with pytest.raises(ConfigError, match="could not read"):
         read_config_object(tmp_path, "Config file")  # a folder, not a file
+
+
+def test_profiles_folder_without_home(monkeypatch):
+    # Windows does not set HOME. The profiles are then under the user's own folder.
+    from pathlib import Path
+
+    from ahd.config import profiles_base
+
+    monkeypatch.delenv("HOME", raising=False)
+    assert profiles_base() == Path.home() / ".aa" / "orgs"
+    assert profiles_base().is_absolute()

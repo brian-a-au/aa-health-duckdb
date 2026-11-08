@@ -17,7 +17,7 @@ RANGE = "2026-08-08T00:00:00.000/2026-11-08T00:00:00.000"
 
 
 def load(name):
-    return json.loads((FIX / name).read_text())
+    return json.loads((FIX / name).read_text(encoding="utf-8"))
 
 
 def test_trend_body_exists_column_shape():

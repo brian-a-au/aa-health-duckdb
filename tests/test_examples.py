@@ -52,7 +52,7 @@ def test_send_alerts_writes_a_draft_without_smtp(tmp_path, monkeypatch):
     mod = _load("send_alerts")
     db = _db(tmp_path, 5_000_000.0)
     assert mod.main([str(db), "rs1"]) == 0
-    eml = (tmp_path / "alerts.eml").read_text()
+    eml = (tmp_path / "alerts.eml").read_text(encoding="utf-8")
     assert "Subject: 1 Analytics Health alerts for rs1 on 2026-11-06" in eml
     assert "25,000,000" in eml and "e+07" not in eml
     assert "Big &lt;event&gt;" in eml  # names are escaped in the HTML part

@@ -47,7 +47,9 @@ class Component:
 
 
 def load_solution() -> dict[str, list[str]]:
-    text = resources.files("ahd").joinpath("data/solution_components.json").read_text()
+    text = (
+        resources.files("ahd").joinpath("data/solution_components.json").read_text(encoding="utf-8")
+    )
     return json.loads(text)
 
 

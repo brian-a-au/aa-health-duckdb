@@ -517,7 +517,9 @@ def test_every_form_control_has_a_name():
 def test_currency_values_keep_the_currency_decimals():
     # report.js formats money with the currency's own decimals, e.g. none for yen. A fixed
     # digits option would show "¥0.00". Checked in Chrome for USD, JPY, KWD and no code.
-    js = (Path(__file__).parent.parent / "src/ahd/render/static/report.js").read_text()
+    js = (Path(__file__).parent.parent / "src/ahd/render/static/report.js").read_text(
+        encoding="utf-8"
+    )
     assert "var money = currencyFmt({});" in js
 
 
