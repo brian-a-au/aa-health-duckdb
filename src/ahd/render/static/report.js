@@ -17,17 +17,25 @@
       names.forEach(function (name, i) { o[name] = list[i]; });
       return o;
     }
-    function withComponent(o) {
+    // Adds the named fields of the row's component to the row.
+    function withComponent(o, names) {
       var c = d.components[o.component_id];
-      return c ? obj(f.component, c, o) : o;
+      if (c) {
+        f.component.forEach(function (name, i) { if (names.indexOf(name) >= 0) o[name] = c[i]; });
+      }
+      return o;
     }
     Object.keys(d.views).forEach(function (k) {
-      d.views[k] = d.views[k].map(function (r) { return withComponent(obj(f.row, r)); });
+      d.views[k] = d.views[k].map(function (r) { return withComponent(obj(f.row, r), f.component); });
     });
-    d.alerts = (d.alerts || []).map(function (a) { return withComponent(obj(f.alert, a)); });
+    d.alerts = (d.alerts || []).map(function (a) {
+      return withComponent(obj(f.alert, a), f.alert_component);
+    });
     Object.keys(d.series).forEach(function (cid) {
       var s = d.series[cid], start = Date.parse(s.start + "T00:00:00Z"), points = [];
+      var gaps = s.gaps || [];
       s[f.series[0]].forEach(function (_, i) {
+        if (gaps.indexOf(i) >= 0) return;
         var day = new Date(start + i * 864e5).toISOString().slice(0, 10);
         points.push([day].concat(f.series.map(function (name) { return s[name][i]; })));
       });

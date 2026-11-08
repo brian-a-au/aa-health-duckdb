@@ -623,29 +623,9 @@ def test_duration_text(seconds, text):
     assert duration_text(start, None) is None and duration_text(None, start) is None
 
 
-def _report_alerts(view, day, threshold=0.30):
-    """The report's Alerts tab rules, as splitAlerts in report.js applies them to view["alerts"].
-
-    Keep this in the same order as report.js: an Adobe flag comes first, before the check for
-    a component that never collected data.
-    """
-    out = {}
-    for a in view["alerts"]:
-        if a["day"] != day:
-            continue
-        if a["anomaly"]:
-            out[a["component_id"]] = "unusual"
-        elif a["zero"] and a["unused"]:
-            continue
-        elif a["zero"]:
-            out[a["component_id"]] = "dropped to zero"
-        elif a["usual"] >= 10 and a["pct_vs_usual"] is not None and a["pct_vs_usual"] < -threshold:
-            out[a["component_id"]] = "large drop"
-    return out
-
-
 @pytest.mark.parametrize("threshold", [0.10, 0.30, 0.60])
-def test_alerts_macro_matches_the_report(tmp_path, threshold):
+def test_alerts_macro(tmp_path, threshold):
+    # tests/test_report_js.py checks that the page shows the same alerts as this macro.
     comps = [_comp(f"metrics/event{i}", f"E{i}", number=i) for i in range(1, 8)]
     vals = (
         _series("metrics/event1", 100.0, 85.0)  # 15 percent drop
@@ -665,15 +645,19 @@ def test_alerts_macro_matches_the_report(tmp_path, threshold):
     rows = store.con.execute(
         "select component_id, alert from alerts(?, threshold := ?)", [rid, threshold]
     ).fetchall()
-    assert dict(rows) == _report_alerts(view, day, threshold)
-    assert dict(rows)["metrics/event6"] == "unusual"
-    assert "metrics/event7" not in dict(rows)
+    want = {"metrics/event3": "dropped to zero", "metrics/event6": "unusual"}
+    if threshold < 0.15:
+        want["metrics/event1"] = "large drop"
+    if threshold < 0.50:
+        want["metrics/event2"] = "large drop"
+    assert dict(rows) == want
     day_row = next(r for r in view["views"][f"day:{day}"] if r["component_id"] == "metrics/event7")
     assert day_row["anomaly"] is None and day_row["unused"]
     other = store.con.execute(
         "select count(*) from alerts(?, for_day := ?)", [rid, "2026-11-05"]
     ).fetchone()[0]
-    assert other == len(_report_alerts(view, "2026-11-05"))
+    # On that Thursday every component is 0. Events 4 and 7 never collected data.
+    assert other == 5
 
 
 @pytest.mark.parametrize(
@@ -690,7 +674,6 @@ def test_a_drop_of_exactly_the_threshold_is_not_flagged(tmp_path, friday, yester
     day = YESTERDAY.isoformat()
     row = view["views"][f"day:{day}"][0]
     assert row["pct"] == -threshold
-    assert _report_alerts(view, day, threshold) == {}
     rows = store.con.execute("select * from alerts(?, threshold := ?)", [rid, threshold])
     assert rows.fetchall() == []
 
@@ -705,7 +688,6 @@ def test_nan_values_count_as_empty_for_never_collected(tmp_path):
     view = build_view(store, rid)
     row = view["views"][f"day:{YESTERDAY.isoformat()}"][0]
     assert row["zero"] and row["unused"]
-    assert _report_alerts(view, YESTERDAY.isoformat()) == {}
     assert store.con.execute("select count(*) from alerts(?)", [rid]).fetchone()[0] == 0
 
 

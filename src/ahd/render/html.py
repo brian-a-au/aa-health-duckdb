@@ -96,6 +96,8 @@ def _inline(text: str, tag: str) -> Markup:
 # The page data is packed to keep the file small. report.js unpacks it with unpackView into
 # the shape build_view returns. Keep both in step: the field order below is the order there.
 COMPONENT_FIELDS = ("name", "kind", "group", "number", "metric_type", "unused")
+# An alert carries only these fields of its component.
+ALERT_COMPONENT_FIELDS = ("name", "metric_type", "unused")
 ROW_FIELDS = ("component_id", "value", "baseline", "pct", "zero", "anomaly")
 ALERT_FIELDS = (
     "day",
@@ -119,15 +121,23 @@ def _number(v: Any) -> Any:
 
 
 def _pack_series(points: list[list[Any]]) -> dict[str, Any]:
-    """One list per field, one entry per day from the first day. A missing day is null."""
+    """One list per field, one entry per day from the first day.
+
+    A day without a point is null in every list, and its place is in "gaps". A day with a
+    point may also be null in every list, so the gaps tell the two apart.
+    """
     first = date.fromisoformat(points[0][0])
     days = (date.fromisoformat(points[-1][0]) - first).days + 1
+    places = [(date.fromisoformat(p[0]) - first).days for p in points]
     out: dict[str, Any] = {"start": points[0][0]}
     for i, field in enumerate(SERIES_FIELDS, start=1):
         column: list[Any] = [None] * days
-        for p in points:
-            column[(date.fromisoformat(p[0]) - first).days] = _number(p[i])
+        for at, p in zip(places, points, strict=True):
+            column[at] = _number(p[i])
         out[field] = column
+    gaps = sorted(set(range(days)) - set(places))
+    if gaps:
+        out["gaps"] = gaps
     return out
 
 
@@ -154,6 +164,7 @@ def pack_view(view: dict[str, Any]) -> dict[str, Any]:
     }
     packed["packed"] = {
         "component": COMPONENT_FIELDS,
+        "alert_component": ALERT_COMPONENT_FIELDS,
         "row": ROW_FIELDS,
         "alert": ALERT_FIELDS,
         "series": SERIES_FIELDS,
