@@ -1,6 +1,6 @@
 # Use the database with DuckDB
 
-[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · **DuckDB guide** · [Troubleshooting](troubleshooting.md)
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · **DuckDB guide** · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md)
 
 Every `ahd` run is saved in one DuckDB file. The HTML report shows one run at a time. The file holds every run, for every report suite, and you can ask it any question with SQL. This guide shows what you can do with it, from a daily alert email to an audit of unused variables across all your organizations.
 
@@ -210,13 +210,7 @@ It exits with these codes:
 - 1 when something is wrong, e.g., the file holds no finished run of a suite. The alerts of the other suites are still sent.
 - 2 when there was nothing to send
 
-To run it every morning, add a run and the email to a schedule, e.g., with `crontab -e` on macOS or Linux:
-
-```
-30 7 * * * cd ~/aa-health-duckdb && uv run ahd run --profile prod --rsid my_suite; test $? -ne 1 && uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
-```
-
-`test $? -ne 1` sends the email after a run that ended "ok" (exit code 0) or "partial" (exit code 3), and skips it after a failed run.
+To run the check and the email every morning on Windows, macOS or Linux, see [Run it every day](scheduling.md).
 
 ### Send only what is new since the last run
 

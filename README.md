@@ -83,6 +83,7 @@ If something fails, see [Troubleshooting](docs/troubleshooting.md).
 | [Configuration](docs/configuration.md) | Where the tool finds your credential, profiles, and the Admin Console permissions it needs |
 | [The report](docs/report.md) | A walkthrough of the HTML report: the slider, tiles, tabs, alerts and copying |
 | [How runs are stored](docs/runs.md) | The DuckDB file, run numbers, deleting runs, and the tables inside |
+| [Run it every day](docs/scheduling.md) | A daily check of every suite with an alert email, on Windows, macOS and Linux |
 | [DuckDB guide](docs/duckdb.md) | SQL recipes: alert emails, owner routing, digests across suites and organizations, audits and exports |
 | [Troubleshooting](docs/troubleshooting.md) | Sign-in problems, limited access, warnings and database errors |
 | [Compared with the Excel workbook](docs/excel-comparison.md) | How the numbers differ, what the tool adds, and what it leaves out |
