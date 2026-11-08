@@ -58,13 +58,13 @@ Inside the file, every row carries its run number. The tables are:
 | `top_items` | The top 100 values for yesterday and for the 90 days before |
 | `breakdowns` and `breakdown_totals` | The browser and device tables and their totals |
 | `issues` | Anything that could not be read, with the reason |
-| `schema_version` | The version of this layout, so a newer tool can upgrade an older file |
+| `schema_version` | The version of this layout. The tool refuses a file made with a different layout, and you start a new file |
 
 ### The report
 
 The report is one HTML file with its styles, script and data inside it. Open it in any browser by double clicking it. It loads nothing from the internet, so it also works offline. It has three tabs:
 
-- **Components Summary:** every custom event, eVar and prop, with trend charts. You can view it by day or by week, and show only the flagged components. Each chart has a Type filter. The Metric chart filters by Adobe's type for the metric: whole numbers, decimals or currency. The Dimension chart filters by eVars, props or other dimensions.
+- **Components Summary:** every custom event, eVar and prop, with trend charts. You can view it by day or by week, and show only the flagged components. Each chart has a Type filter. The Metric chart filters by metric group, e.g., custom events or reserved purchase events. It lists only the groups that have data in the run. The Dimension chart filters by eVars, props or other dimensions.
 - **Individual Component Summary:** one dimension in more depth. By default this is Page by Occurrences. It shows a trend, the top 100 values, and the top values for each browser group and device type.
 - **Alerts Summary:** the values Adobe flagged as unusual yesterday, then the components with no data. You can copy the list as text.
 

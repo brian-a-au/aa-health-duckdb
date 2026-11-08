@@ -111,66 +111,32 @@ def test_no_credentials_column(tmp_path):
 
 def test_new_file_gets_schema_version(tmp_path):
     s = Store.open(tmp_path / "a.duckdb")
-    assert SCHEMA_VERSION == 2
-    assert s.con.execute("select version from schema_version").fetchall() == [(2,)]
+    assert SCHEMA_VERSION == 1
+    assert s.con.execute("select version from schema_version").fetchall() == [(1,)]
     s.con.close()
     s2 = Store.open(tmp_path / "a.duckdb")  # reopening does not add a second row
-    assert s2.con.execute("select version from schema_version").fetchall() == [(2,)]
+    assert s2.con.execute("select version from schema_version").fetchall() == [(1,)]
 
 
-def test_newer_schema_version_is_refused(tmp_path):
+@pytest.mark.parametrize(
+    "setup",
+    [
+        "update schema_version set version = 99",
+        "update schema_version set version = 0",
+        "drop table schema_version",
+    ],
+)
+def test_other_version_is_refused(tmp_path, setup):
     p = tmp_path / "a.duckdb"
     Store.open(p).con.close()
     con = duckdb.connect(str(p))
-    con.execute("update schema_version set version = 99")
+    con.execute(setup)
     con.close()
     with pytest.raises(SchemaVersionError) as e:
         Store.open(p)
     assert isinstance(e.value, ValueError)
-    assert "99" in str(e.value) and "newer" in str(e.value)
+    assert "different version of ahd" in str(e.value) and "Delete the file" in str(e.value)
     duckdb.connect(str(p)).close()  # the refused file was closed again
-
-
-def test_old_file_without_version_is_upgraded(tmp_path):
-    p = tmp_path / "old.duckdb"
-    con = duckdb.connect(str(p))
-    con.execute("""CREATE SEQUENCE run_seq START 1;
-        CREATE TABLE runs (run_id INTEGER PRIMARY KEY, rsid VARCHAR, rsid_name VARCHAR,
-            segment_id VARCHAR, today DATE, timezone VARCHAR, tool_version VARCHAR,
-            status VARCHAR, started_at TIMESTAMP, finished_at TIMESTAMP);
-        INSERT INTO runs VALUES (nextval('run_seq'), 'rs0', 'Old', NULL, DATE '2026-11-01',
-            'UTC', '0.0', 'ok', NULL, NULL);""")
-    con.close()
-    s = Store.open(p)
-    assert s.con.execute("select version from schema_version").fetchall() == [(2,)]
-    old = s.get_run(1)
-    assert old["rsid"] == "rs0" and old["dimension"] is None and old["metric"] is None
-    assert old["currency"] is None
-    assert _fill(s) == 2
-
-
-def test_version_1_file_gets_currency_and_metric_type(tmp_path):
-    p = tmp_path / "v1.duckdb"
-    con = duckdb.connect(str(p))
-    con.execute("""CREATE SEQUENCE run_seq START 1;
-        CREATE TABLE schema_version (version INTEGER);
-        INSERT INTO schema_version VALUES (1);
-        CREATE TABLE runs (run_id INTEGER PRIMARY KEY, rsid VARCHAR, rsid_name VARCHAR,
-            segment_id VARCHAR, today DATE, timezone VARCHAR, tool_version VARCHAR,
-            status VARCHAR, started_at TIMESTAMP, finished_at TIMESTAMP, dimension VARCHAR,
-            metric VARCHAR);
-        CREATE TABLE components (run_id INTEGER, component_id VARCHAR, name VARCHAR,
-            kind VARCHAR, "group" VARCHAR, number INTEGER, metric_id VARCHAR,
-            exists_dimension VARCHAR, allowed_for_reporting BOOLEAN);
-        INSERT INTO runs VALUES (nextval('run_seq'), 'rs0', 'Old', NULL, DATE '2026-11-01',
-            'UTC', '0.0', 'ok', NULL, NULL, NULL, NULL);
-        INSERT INTO components VALUES (1, 'metrics/event1', 'E1', 'metric', 'custom_events',
-            1, 'metrics/event1', NULL, NULL);""")
-    con.close()
-    s = Store.open(p)
-    assert s.con.execute("select version from schema_version").fetchall() == [(2,)]
-    assert s.get_run(1)["currency"] is None
-    assert s.con.execute("select metric_type from components").fetchall() == [(None,)]
 
 
 def test_currency_and_metric_type_are_stored(tmp_path):

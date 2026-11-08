@@ -11,37 +11,33 @@ import duckdb
 from ahd.api.reports import DailyValue
 from ahd.catalog import Component
 
-# Bump when the tables change, and add the upgrade steps to Store.open.
-SCHEMA_VERSION = 2
+# Bump when the tables change. ahd does not upgrade files: a file with another version is
+# refused, and you start a new file.
+SCHEMA_VERSION = 1
 
 _SCHEMA = """
-CREATE SEQUENCE IF NOT EXISTS run_seq START 1;
-CREATE TABLE IF NOT EXISTS runs (
+CREATE TABLE schema_version (version INTEGER);
+CREATE SEQUENCE run_seq START 1;
+CREATE TABLE runs (
     run_id INTEGER PRIMARY KEY, rsid VARCHAR, rsid_name VARCHAR, segment_id VARCHAR,
     today DATE, timezone VARCHAR, tool_version VARCHAR, status VARCHAR,
     started_at TIMESTAMP, finished_at TIMESTAMP, dimension VARCHAR, metric VARCHAR,
     currency VARCHAR);
--- Files written before version 1 have no dimension and metric columns.
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS dimension VARCHAR;
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS metric VARCHAR;
--- Files written before version 2 have no currency and metric_type columns.
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS currency VARCHAR;
-CREATE TABLE IF NOT EXISTS components (
+CREATE TABLE components (
     run_id INTEGER, component_id VARCHAR, name VARCHAR, kind VARCHAR, "group" VARCHAR,
     number INTEGER, metric_id VARCHAR, exists_dimension VARCHAR, allowed_for_reporting BOOLEAN,
     metric_type VARCHAR);
-ALTER TABLE components ADD COLUMN IF NOT EXISTS metric_type VARCHAR;
-CREATE TABLE IF NOT EXISTS daily_values (
+CREATE TABLE daily_values (
     run_id INTEGER, component_id VARCHAR, day DATE, value DOUBLE,
     expected DOUBLE, upper DOUBLE, lower DOUBLE, anomaly BOOLEAN);
-CREATE TABLE IF NOT EXISTS top_items (
+CREATE TABLE top_items (
     run_id INTEGER, period VARCHAR, rank INTEGER, item VARCHAR, value DOUBLE);
-CREATE TABLE IF NOT EXISTS breakdowns (
+CREATE TABLE breakdowns (
     run_id INTEGER, kind VARCHAR, col_index INTEGER, label VARCHAR,
     rank INTEGER, item VARCHAR, value DOUBLE);
-CREATE TABLE IF NOT EXISTS breakdown_totals (
+CREATE TABLE breakdown_totals (
     run_id INTEGER, kind VARCHAR, col_index INTEGER, label VARCHAR, total DOUBLE);
-CREATE TABLE IF NOT EXISTS issues (
+CREATE TABLE issues (
     run_id INTEGER, scope VARCHAR, component_id VARCHAR, code VARCHAR, message VARCHAR);
 """
 
@@ -59,7 +55,7 @@ RUN_TABLES = (
 
 
 class SchemaVersionError(ValueError):
-    """The database file was written by a newer version of ahd."""
+    """The database file was written by a different version of ahd."""
 
 
 class Store:
@@ -72,19 +68,24 @@ class Store:
         path.parent.mkdir(parents=True, exist_ok=True)
         con = duckdb.connect(str(path))
         try:
-            con.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER)")
-            found = con.execute("SELECT max(version) FROM schema_version").fetchone()[0]
-            if found is not None and found > SCHEMA_VERSION:
-                raise SchemaVersionError(
-                    f"The database {path} uses schema version {found}, which is newer than "
-                    f"this version of ahd knows about ({SCHEMA_VERSION}). Update ahd, or use "
-                    "a different database file with --db."
-                )
-            con.execute(_SCHEMA)
-            if found is None:
+            tables = {
+                r[0]
+                for r in con.execute(
+                    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+                ).fetchall()
+            }
+            if not tables:
+                con.execute(_SCHEMA)
                 con.execute("INSERT INTO schema_version (version) VALUES (?)", [SCHEMA_VERSION])
-            elif found < SCHEMA_VERSION:
-                con.execute("UPDATE schema_version SET version = ?", [SCHEMA_VERSION])
+            else:
+                found = None
+                if "schema_version" in tables:
+                    found = con.execute("SELECT max(version) FROM schema_version").fetchone()[0]
+                if found != SCHEMA_VERSION:
+                    raise SchemaVersionError(
+                        f"The database {path} was made by a different version of ahd. "
+                        "Delete the file to start again, or choose another file with --db."
+                    )
         except BaseException:
             con.close()
             raise
