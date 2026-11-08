@@ -215,6 +215,13 @@ def _connect(args: argparse.Namespace, factory: Callable[..., Any]) -> Any:
     client = factory(creds, company_id=company) if company else factory(creds)
     # Only the name of the source, never a value from it.
     print(f"Signed in using {creds.source}")
+    count = getattr(client, "companies", 1)
+    if count > 1 and not company:
+        name = getattr(client, "company_name", "") or "(no name)"
+        print(
+            f"This credential sees {count} login companies. Using {name} "
+            f"({client.company_id}). Choose another with --company."
+        )
     return client
 
 

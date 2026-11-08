@@ -69,6 +69,7 @@ def test_sign_in_builds_header():
     s = Session(GOOD_TOKEN, orgs(org(companies=("co1", "co2"))))
     result = sign_in(s, CREDS)
     assert result.company_id == "co1"
+    assert (result.company_name, result.companies) == ("Name co1", 2)
     assert result.header["Authorization"] == "Bearer TOKEN-1"
     assert result.header["x-api-key"] == "client-abc"
     assert result.header["x-proxy-global-company-id"] == "co1"

@@ -207,6 +207,17 @@ def test_ctrl_c_is_one_line(tmp_path, cfg, capsys):
     assert err == "Stopped by Ctrl-C. A run that had started is marked failed.\n"
 
 
+@pytest.mark.parametrize("company", [None, "co2"])
+def test_says_which_login_company_it_used(tmp_path, cfg, capsys, company):
+    fake = fake_for("rs1", events(1), custom_dims(), company_id=company or "co1")
+    fake.companies, fake.company_name = 2, "Name co1"
+    argv = ["suites", "--config", str(cfg)] + (["--company", company] if company else [])
+    assert main(argv, client_factory=lambda c, company_id=None: fake) == 0
+    out = capsys.readouterr().out
+    note = "This credential sees 2 login companies. Using Name co1 (co1). Choose another"
+    assert (note in out) == (company is None)
+
+
 def test_api_error_is_one_line(tmp_path, cfg, capsys):
     def factory(creds, company_id=None):
         raise ApiError(401, "bad sign in", "unauthorized")

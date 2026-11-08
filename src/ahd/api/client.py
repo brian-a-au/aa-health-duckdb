@@ -75,6 +75,8 @@ class AdobeClient:
         relogin: Callable[[], dict],
         sleep: Callable[[float], None] = time.sleep,
         max_retries: int = MAX_RETRIES,
+        company_name: str = "",
+        companies: int = 1,
     ):
         self._session = session
         self._header = dict(header)
@@ -83,6 +85,8 @@ class AdobeClient:
         self._header_lock = threading.Lock()
         self._header_gen = 0
         self.company_id = company_id
+        self.company_name = company_name
+        self.companies = companies
         self._relogin = relogin
         self._sleep = sleep
         self.max_retries = max_retries
@@ -102,7 +106,14 @@ class AdobeClient:
         def relogin() -> dict:
             return header_for(get_token(session, creds), creds, first.company_id)
 
-        return cls(session, first.header, first.company_id, relogin)
+        return cls(
+            session,
+            first.header,
+            first.company_id,
+            relogin,
+            company_name=first.company_name,
+            companies=first.companies,
+        )
 
     def get(self, path: str, params: dict | None = None) -> Any:
         return self._request("GET", path, params=params)

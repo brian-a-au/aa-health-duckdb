@@ -35,7 +35,7 @@ uv run ahd runs                           # list what is stored
 |---|---|
 | `--profile NAME` | Uses the credential in `~/.aa/orgs/NAME/config.json`, and the database in the same folder. You can put it before or after the command. `AA_PROFILE` sets it too. See [Configuration](configuration.md). |
 | `--config PATH` | Uses this credential file instead of `./config.json`. It cannot be used with a profile. For the commands that sign in. |
-| `--company ID_OR_NAME` | Chooses the login company, by global company ID or by name, when the credential sees more than one. For the commands that sign in. |
+| `--company ID_OR_NAME` | Chooses the login company, by global company ID or by name, when the credential sees more than one. Without it, the tool uses the first one and prints its name. For the commands that sign in. |
 | `--db PATH` | Uses this database file. For the commands that read or write a database. |
 | `--verbose` | Writes debug detail to stderr. Put it before the command, e.g., `ahd --verbose run ...`. |
 
