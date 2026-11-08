@@ -1,6 +1,41 @@
-# ahd
+# aa-health-duckdb
 
-ahd rebuilds Adobe's Excel "Analytics Health Dashboard 3.07" as a command line tool. It reads data from the Adobe Analytics 2.0 API, stores it in DuckDB, and writes one self-contained HTML report that you can open in any browser. The report loads nothing from the network.
+[![Slideshow of the report: summary tiles, trend charts with expected ranges, component tables, alerts, browser breakdowns, and light and dark mode](docs/showcase.gif)](docs/showcase.png)
+
+27-second loop of real report excerpts, made from synthetic data. Click the animation for a still image.
+
+aa-health-duckdb checks the health of an Adobe Analytics report suite. For every custom event, eVar and prop, it shows yesterday's value, the usual value, and whether Adobe's anomaly detection flagged it. It also lists the components that collected no data.
+
+It is an unofficial alternative to Adobe's Excel workbook "Analytics Health Dashboard 3.07", built on the Adobe Analytics 2.0 API. It does not replace the workbook. The command is `ahd`.
+
+## How it works
+
+`ahd run` does three things on your computer:
+
+1. **Fetch.** It signs in with your OAuth Server-to-Server credential and asks the Adobe Analytics 2.0 API for 92 days of daily data, with Adobe's expected values and anomaly flags. It only reads from Adobe.
+2. **Store.** It saves the data in a DuckDB file on your computer, by default `./data/ahd.duckdb`.
+3. **Report.** It works out the summaries with SQL on that file and writes one HTML file to `./reports/`.
+
+### DuckDB runs inside ahd
+
+DuckDB is a database that runs inside the `ahd` program itself, so there is no database server to install, start or connect to. `uv sync` installs it with the other Python packages.
+
+- **One local file.** The whole database is one file on your disk. Each run adds to it, and older runs stay in it. You can rebuild any stored run's report with `ahd render`, without calling Adobe again.
+- **Nothing is uploaded.** The tool never sends the file anywhere.
+- **No credentials inside.** The file holds report data, e.g., component names and daily values. It never holds your credential. Treat it with the same care as the reports.
+- **Easy to reset or inspect.** To start over, delete the file. To look inside it, open it with the DuckDB command line tool, e.g., `duckdb data/ahd.duckdb "select * from runs"`.
+
+### The report
+
+The report is one HTML file with its styles, script and data inside it. Open it in any browser by double clicking it. It loads nothing from the internet, so it also works offline. It has three tabs:
+
+- **Components Summary:** every custom event, eVar and prop, with trend charts. You can view it by day or by week, and show only the flagged components.
+- **Individual Component Summary:** one dimension in more depth. By default this is Page by Occurrences. It shows a trend, the top 100 values, and the top values for each browser group and device type.
+- **Alerts Summary:** the values Adobe flagged as unusual yesterday, then the components with no data. You can copy the list as text.
+
+Summary tiles at the top give yesterday's counts. Every table can be sorted, and a switch at the top right chooses light mode, dark mode, or your computer's setting.
+
+Working offline does not mean the report is cleared for sharing. It contains your component names and values, so share it only where your organization allows.
 
 ## Install
 
@@ -87,3 +122,13 @@ Defaults: the database is `./data/ahd.duckdb`, the report folder is `./reports/`
 - It is English only.
 - It does not send email.
 - Adobe publishes no rate limits, so the tool uses a small number of parallel requests and retries politely.
+
+## Remake the slideshow
+
+The slideshow at the top uses the real report, filled with synthetic data from `scripts/make_showcase.py`. It uses no Adobe API, credential or customer data. You need Google Chrome and FFmpeg installed. Run:
+
+```
+uv run python scripts/make_showcase.py --out docs
+```
+
+This writes `docs/showcase.gif` and `docs/showcase.png`.
