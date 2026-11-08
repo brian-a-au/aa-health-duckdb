@@ -114,7 +114,7 @@ This tab lists the alerts for one day. It starts on yesterday, and the Day picke
 - **Unusual values.** Adobe's anomaly detection flagged the value as outside the expected range.
 - **Drops of more than 30% below usual.** The heading shows the slider's percent. The value was further below the usual value than the slider allows, and Adobe did not flag it.
 - **Dropped to zero.** The value was 0, but the component had data on other days in the run.
-- **Never collected data.** The value was 0 on every day in the run. These are often unused slots, so they are not alerts. They are in a closed list at the end.
+- **Never collected data.** The value was 0 on every day in the run. These are often unused slots, so they are not alerts, even when Adobe flags the 0. They are in a closed list at the end.
 
 ### Copying
 

@@ -71,6 +71,14 @@ comps AS (
 _ANOMALY = """CASE WHEN {a}.anomaly
     THEN CASE WHEN {a}.value > {a}.upper THEN 'high' ELSE 'low' END END"""
 
+# A component that never collected data is not an alert, even when Adobe flags its 0.
+# The alerts macro in views.sql leaves out the same rows with NOT (zero AND unused).
+_ALERT_ANOMALY = (
+    "CASE WHEN c.unused AND coalesce(d.value = 0, false) THEN NULL ELSE "
+    + _ANOMALY.format(a="d")
+    + " END"
+)
+
 _ORDER = "gpos, number NULLS LAST, component_id"
 
 _DAY_SQL = f"""
@@ -88,7 +96,7 @@ r AS (
     SELECT s.sel_day, c.component_id, c.name, c.kind, c."group", c.number, c.metric_type,
         c.unused, c.gpos, d.value, b.baseline,
         CASE WHEN b.baseline <> 0 THEN d.value / b.baseline - 1 END AS pct,
-        {_ANOMALY.format(a="d")} AS anomaly
+        {_ALERT_ANOMALY} AS anomaly
     FROM sel s CROSS JOIN comps c
     JOIN base b ON b.sel_day = s.sel_day AND b.component_id = c.component_id
     LEFT JOIN dv d ON d.component_id = c.component_id AND d.day = s.sel_day
@@ -144,7 +152,7 @@ r AS (
         d.expected, d.value AS actual, u.usual,
         CASE WHEN d.expected <> 0 THEN d.value / d.expected - 1 END AS pct_vs_expected,
         CASE WHEN u.usual <> 0 THEN d.value / u.usual - 1 END AS pct_vs_usual,
-        {_ANOMALY.format(a="d")} AS anomaly, coalesce(d.value = 0, false) AS zero
+        {_ALERT_ANOMALY} AS anomaly, coalesce(d.value = 0, false) AS zero
     FROM usual u JOIN comps c ON c.component_id = u.component_id
     JOIN dv d ON d.component_id = c.component_id AND d.day = u.sel_day
 )
