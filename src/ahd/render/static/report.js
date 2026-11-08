@@ -616,11 +616,9 @@
     }
   }
 
-  // eVars are dimensions. Runs stored before this rule list them as metrics, so the
-  // group decides for them.
+  // The type filter in the Dimension card sorts dimensions by their group.
   var EVAR_GROUPS = ["custom_evars", "Reserved eVars"];
   var PROP_GROUPS = ["custom_props", "Reserved Props"];
-  function kindOf(r) { return EVAR_GROUPS.indexOf(r.group) >= 0 ? "dimension" : r.kind; }
   function typeOf(r) {
     if (EVAR_GROUPS.indexOf(r.group) >= 0) return "evars";
     if (PROP_GROUPS.indexOf(r.group) >= 0) return "props";
@@ -633,7 +631,7 @@
 
   function fillPicker(select, kind, chartId, typeSelect) {
     var all = (data.views.week || []).filter(function (r) {
-      return kindOf(r) === kind && data.series[r.component_id];
+      return r.kind === kind && data.series[r.component_id];
     });
     var rows = all;
     var host = byId(chartId);

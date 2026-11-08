@@ -163,3 +163,101 @@ def test_network_error_raised_after_max_retries():
         c.get("/dimensions")
     assert e.value is errors[-1]
     assert len(s.calls) == 5 and len(sleeps) == 4
+
+
+TEMP_403 = {"errorCode": "403025", "errorDescription": "temporarily unavailable"}
+
+
+def test_403025_is_retried_with_backoff():
+    c, s, sleeps = make([(403, TEMP_403, {}), (403, TEMP_403, {}), (200, {"ok": 1}, {})])
+    assert c.post_report({}) == {"ok": 1}
+    assert len(s.calls) == 3 and len(sleeps) == 2
+
+
+def test_403025_raises_after_last_try():
+    c, s, sleeps = make([(403, TEMP_403, {})] * 5)
+    with pytest.raises(ApiError) as e:
+        c.post_report({})
+    assert e.value.status == 403 and e.value.error_code == "403025"
+    assert len(s.calls) == 5 and len(sleeps) == 4
+
+
+def test_other_403_is_not_retried():
+    c, s, sleeps = make([(403, {"errorCode": "invalid_access", "errorDescription": "no"}, {})])
+    with pytest.raises(ApiError):
+        c.post_report({})
+    assert len(s.calls) == 1 and sleeps == []
+
+
+def test_403_without_body_is_not_retried():
+    c, s, sleeps = make([(403, None, {})])
+    with pytest.raises(ApiError):
+        c.get("/x")
+    assert len(s.calls) == 1 and sleeps == []
+
+
+class ExpiringSession:
+    """Answers 401 to the old token until every worker has seen it, then 200 to the new one."""
+
+    def __init__(self, workers):
+        import threading
+
+        self.barrier = threading.Barrier(workers, timeout=5)
+        self.lock = threading.Lock()
+        self.tokens = []
+
+    def request(self, method, url, headers=None, params=None, json=None, timeout=None):
+        token = headers["Authorization"]
+        with self.lock:
+            self.tokens.append(token)
+        if token == "Bearer OLD":
+            self.barrier.wait()  # every worker holds the old token before any renewal
+            return FakeResponse(401, None)
+        return FakeResponse(200, {"token": token})
+
+
+def test_parallel_401s_sign_in_once():
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    workers = 6
+    session = ExpiringSession(workers)
+    logins = []
+    lock = threading.Lock()
+
+    def relogin():
+        with lock:
+            logins.append(1)
+            n = len(logins)
+        time.sleep(0.05)  # a slow sign-in, so the other threads must wait for it
+        return {"Authorization": f"Bearer NEW{n}"}
+
+    c = AdobeClient._from_parts(
+        session, {"Authorization": "Bearer OLD"}, "co1", relogin, sleep=lambda d: None
+    )
+    with ThreadPoolExecutor(workers) as pool:
+        results = list(pool.map(lambda _: c.post_report({}), range(workers)))
+    assert len(logins) == 1
+    assert results == [{"token": "Bearer NEW1"}] * workers
+    assert session.tokens.count("Bearer OLD") == workers
+
+
+def test_connect_signs_in_and_relogin_gets_a_new_token(monkeypatch):
+    from ahd.api import client as client_mod
+    from ahd.api.auth import SignIn
+    from ahd.config import Credentials
+
+    creds = Credentials("ORG@AdobeOrg", "cid", "sec", "openid")
+    tokens = iter(["T1", "T2"])
+    monkeypatch.setattr(
+        client_mod,
+        "sign_in",
+        lambda session, c, company_id=None: SignIn("co7", client_mod.header_for("T0", c, "co7")),
+    )
+    monkeypatch.setattr(client_mod, "get_token", lambda session, c: next(tokens))
+    c = AdobeClient.connect(creds)
+    assert c.company_id == "co7"
+    assert c._header["Authorization"] == "Bearer T0"
+    assert c._relogin()["Authorization"] == "Bearer T1"
+    assert c._relogin()["x-proxy-global-company-id"] == "co7"

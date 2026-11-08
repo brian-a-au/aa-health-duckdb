@@ -146,3 +146,80 @@ def test_old_file_without_version_is_upgraded(tmp_path):
     old = s.get_run(1)
     assert old["rsid"] == "rs0" and old["dimension"] is None and old["metric"] is None
     assert _fill(s) == 2
+
+
+def _custom(group, n, kind="metric"):
+    prefix = {"custom_events": "metrics/event", "custom_evars": "variables/evar"}.get(
+        group, "variables/prop"
+    )
+    return [
+        Component(f"{prefix}{i}", f"C{i}", kind, group, i, Column(f"{prefix}{i}", "m", None), True)
+        for i in range(1, n + 1)
+    ]
+
+
+def _counts():
+    return {"custom_events": 0, "custom_evars": 0, "custom_props": 0}
+
+
+def test_prune_finds_by_number_and_date(tmp_path):
+    s = Store.open(tmp_path / "a.duckdb")
+    a = _fill(s)
+    s.con.execute("UPDATE runs SET today = DATE '2026-09-01' WHERE run_id = ?", [a])
+    b = _fill(s)
+    c = _fill(s)
+    assert [r["run_id"] for r in s.runs_to_prune([c], None)] == [c]
+    assert [r["run_id"] for r in s.runs_to_prune([], date(2026, 10, 1))] == [a]
+    assert [r["run_id"] for r in s.runs_to_prune([c, 99], date(2026, 10, 1))] == [a, c]
+    assert s.runs_to_prune([], None) == []
+    assert b not in [r["run_id"] for r in s.runs_to_prune([c], date(2026, 10, 1))]
+
+
+def test_delete_runs_clears_every_table(tmp_path):
+    from ahd.store import RUN_TABLES
+
+    s = Store.open(tmp_path / "a.duckdb")
+    a = _fill(s)
+    b = _fill(s)
+    s.delete_runs([a])
+    for table in RUN_TABLES:
+        ids = {r[0] for r in s.con.execute(f"SELECT DISTINCT run_id FROM {table}").fetchall()}
+        assert ids == {b}, table
+    s.delete_runs([])
+    # Run numbers are never reused, so report file names stay unique.
+    assert _fill(s) == b + 1
+
+
+def test_delete_runs_is_all_or_nothing(tmp_path, monkeypatch):
+    import ahd.store as store_mod
+
+    s = Store.open(tmp_path / "a.duckdb")
+    a = _fill(s)
+    monkeypatch.setattr(store_mod, "RUN_TABLES", ("components", "no_such_table", "runs"))
+    with pytest.raises(duckdb.Error):
+        s.delete_runs([a])
+    assert s.con.execute("SELECT count(*) FROM components WHERE run_id = ?", [a]).fetchone()[0]
+    assert s.get_run(a)["run_id"] == a
+
+
+def test_component_counts_and_previous_run(tmp_path):
+    from ahd.catalog import CUSTOM_GROUPS
+
+    s = Store.open(tmp_path / "a.duckdb")
+    a = _fill(s, "rs1")
+    s.add_components(a, _custom("custom_events", 3) + _custom("custom_props", 2, "dimension"))
+    other = _fill(s, "rs2")
+    b = _fill(s, "rs1")
+    empty = s.create_run("rs1", "N", None, date(2026, 11, 7), "UTC", "0.1")
+    c = _fill(s, "rs1")
+    assert s.component_counts(a, CUSTOM_GROUPS) == {
+        **_counts(),
+        "custom_events": 3,
+        "custom_props": 2,
+    }
+    assert s.component_counts(b, CUSTOM_GROUPS) == _counts()
+    assert s.previous_run(a) is None
+    assert s.previous_run(b) == a
+    assert s.previous_run(other) is None
+    assert s.previous_run(c) == b  # the run with no components is skipped
+    assert s.previous_run(empty) == b

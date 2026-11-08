@@ -41,6 +41,18 @@ CREATE TABLE IF NOT EXISTS issues (
 """
 
 
+# Every table whose rows belong to a run. `runs` goes last.
+RUN_TABLES = (
+    "components",
+    "daily_values",
+    "top_items",
+    "breakdowns",
+    "breakdown_totals",
+    "issues",
+    "runs",
+)
+
+
 class SchemaVersionError(ValueError):
     """The database file was written by a newer version of ahd."""
 
@@ -204,3 +216,53 @@ class Store:
         if row is None:
             raise KeyError(f"no run {run_id}")
         return dict(zip(cols, row))
+
+    def runs_to_prune(self, run_ids: list[int], before: date | None) -> list[dict]:
+        """The stored runs that match any given run number, or whose run date is before `before`."""
+        if not run_ids and before is None:
+            return []
+        cur = self.con.execute(
+            "SELECT * FROM runs WHERE list_contains(?::INTEGER[], run_id)"
+            " OR (?::DATE IS NOT NULL AND today < ?::DATE) ORDER BY run_id",
+            [list(run_ids), before, before],
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+    def delete_runs(self, run_ids: list[int]) -> None:
+        """Delete these runs from every table, all or nothing."""
+        if not run_ids:
+            return
+        ids = list(run_ids)
+        self.con.execute("BEGIN TRANSACTION")
+        try:
+            for table in RUN_TABLES:
+                self.con.execute(
+                    f"DELETE FROM {table} WHERE list_contains(?::INTEGER[], run_id)", [ids]
+                )
+        except BaseException:
+            self.con.execute("ROLLBACK")
+            raise
+        self.con.execute("COMMIT")
+        # Write the change to the file now, so the space can be reused.
+        self.con.execute("CHECKPOINT")
+
+    def component_counts(self, run_id: int, groups: list[str]) -> dict[str, int]:
+        """How many components of each group the run stored."""
+        rows = self.con.execute(
+            'SELECT "group", count(*) FROM components WHERE run_id = ?'
+            ' AND list_contains(?::VARCHAR[], "group") GROUP BY "group"',
+            [run_id, list(groups)],
+        ).fetchall()
+        found = dict(rows)
+        return {g: found.get(g, 0) for g in groups}
+
+    def previous_run(self, run_id: int) -> int | None:
+        """The latest earlier run of the same report suite that stored components."""
+        row = self.con.execute(
+            "SELECT max(p.run_id) FROM runs p JOIN runs r ON r.run_id = ? AND p.rsid = r.rsid"
+            " WHERE p.run_id < r.run_id"
+            " AND EXISTS (SELECT 1 FROM components c WHERE c.run_id = p.run_id)",
+            [run_id],
+        ).fetchone()
+        return row[0] if row else None

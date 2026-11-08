@@ -34,6 +34,17 @@
 
 <section class="status-section" id="status" aria-labelledby="status-title">
   <h2 id="status-title">Status</h2>
+  {% if component_drops %}
+  <div class="warning" id="component-drops">
+    <p class="issue-heading"><span class="badge badge-flag"><span class="icon" aria-hidden="true">!</span>Warning</span> This run sees fewer components than the run before it.</p>
+    <ul class="issue-items">
+      {% for d in component_drops %}
+      <li>{{ d.message }}</li>
+      {% endfor %}
+    </ul>
+    <p class="warning-cause">{{ component_drop_cause }}</p>
+  </div>
+  {% endif %}
   {% if issue_groups %}
   <p>Some data could not be read in this run. Each item below says what is missing and why.</p>
   <ul class="issues">

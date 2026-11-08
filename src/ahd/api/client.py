@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 import time
 from collections.abc import Callable
 from typing import Any
 
 import requests
 
+from ahd.api.auth import get_token, header_for, sign_in
 from ahd.config import Credentials
 
 log = logging.getLogger(__name__)
@@ -18,6 +20,8 @@ BASE = "https://analytics.adobe.io/api"
 BACKOFF_BASE = 0.5
 BACKOFF_CAP = 10.0
 TIMEOUT = 120
+# Adobe's "temporarily unavailable" code. It comes with HTTP 403 but clears on a retry.
+TEMPORARY_403 = "403025"
 
 
 class ApiError(Exception):
@@ -63,6 +67,10 @@ class AdobeClient:
     ):
         self._session = session
         self._header = dict(header)
+        # Guards _header. The generation counts sign-ins, so that when several threads see an
+        # expired token at once, only the first signs in again and the rest reuse its header.
+        self._header_lock = threading.Lock()
+        self._header_gen = 0
         self.company_id = company_id
         self._relogin = relogin
         self._sleep = sleep
@@ -77,27 +85,13 @@ class AdobeClient:
 
     @classmethod
     def connect(cls, creds: Credentials, company_id: str | None = None) -> AdobeClient:
-        import aanalytics2
+        session = requests.Session()
+        first = sign_in(session, creds, company_id)
 
-        def sign_in() -> tuple[str, dict]:
-            aanalytics2.configure(
-                org_id=creds.org_id,
-                client_id=creds.client_id,
-                secret=creds.secret,
-                scopes=creds.scopes,
-            )
-            companies = aanalytics2.Login().getCompanyId()
-            if not companies:
-                raise ApiError(
-                    0,
-                    "No Adobe Analytics company was found for these credentials. "
-                    "The credential is probably not added to an Adobe Analytics product profile.",
-                )
-            cid = company_id or companies[0]["globalCompanyId"]
-            return cid, dict(aanalytics2.Analytics(cid).header)
+        def relogin() -> dict:
+            return header_for(get_token(session, creds), creds, first.company_id)
 
-        cid, header = sign_in()
-        return cls(requests.Session(), header, cid, lambda: sign_in()[1])
+        return cls(session, first.header, first.company_id, relogin)
 
     def get(self, path: str, params: dict | None = None) -> Any:
         return self._request("GET", path, params=params)
@@ -110,9 +104,11 @@ class AdobeClient:
         relogged = False
         attempt = 0
         while True:
+            with self._header_lock:
+                header, gen = self._header, self._header_gen
             try:
                 resp = self._session.request(
-                    method, url, headers=self._header, params=params, json=json, timeout=TIMEOUT
+                    method, url, headers=header, params=params, json=json, timeout=TIMEOUT
                 )
             except (requests.ConnectionError, requests.Timeout) as e:
                 if attempt >= self.max_retries:
@@ -132,9 +128,9 @@ class AdobeClient:
             status = resp.status_code
             if status == 401 and not relogged:
                 relogged = True
-                self._header = dict(self._relogin())
+                self._renew(gen)
                 continue
-            if (status == 429 or status >= 500) and attempt < self.max_retries:
+            if self._temporary(resp) and attempt < self.max_retries:
                 delay = self._backoff(attempt)
                 retry_after = resp.headers.get("Retry-After")
                 try:
@@ -148,6 +144,23 @@ class AdobeClient:
                 self._sleep(delay)
                 continue
             return self._finish(resp)
+
+    def _renew(self, seen_gen: int) -> None:
+        """Sign in again, unless another thread already did since `seen_gen`."""
+        with self._header_lock:
+            if self._header_gen == seen_gen:
+                self._header = dict(self._relogin())
+                self._header_gen += 1
+
+    @staticmethod
+    def _temporary(resp: Any) -> bool:
+        status = resp.status_code
+        if status == 429 or status >= 500:
+            return True
+        if status != 403:
+            return False
+        err = _error_fields(_json_or_none(resp))
+        return err is not None and err[0] == TEMPORARY_403
 
     @staticmethod
     def _backoff(attempt: int) -> float:

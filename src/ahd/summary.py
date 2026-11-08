@@ -14,11 +14,23 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from ahd.catalog import GROUP_ORDER
+from ahd.catalog import CUSTOM_GROUPS, GROUP_ORDER
 from ahd.dates import RunWindow
 from ahd.store import Store
 
 ARROW_THRESHOLD = 0.2
+# Warn when a run sees more than this share fewer custom components than the run before.
+DROP_THRESHOLD = 0.2
+GROUP_LABELS = {
+    "custom_events": "custom events",
+    "custom_evars": "eVars",
+    "custom_props": "props",
+}
+DROP_CAUSE = (
+    "The usual cause is a change to the product profile of the credential in the Adobe Admin "
+    "Console, or a run made with a different credential. Data did not stop, but this run cannot "
+    "see the missing components, so the report does not check them."
+)
 INDIVIDUAL = "individual"
 
 # Daily values for the run, with NaN and Infinity turned into NULL so the output stays JSON-safe.
@@ -235,6 +247,32 @@ def _movement(row: dict[str, Any]) -> int | str:
     return "-" if row["movement"] == 0 else row["movement"]
 
 
+def component_drops(store: Store, run_id: int) -> list[dict[str, Any]]:
+    """Custom groups with more than DROP_THRESHOLD fewer components than the previous run."""
+    prev = store.previous_run(run_id)
+    if prev is None:
+        return []
+    before = store.component_counts(prev, CUSTOM_GROUPS)
+    now = store.component_counts(run_id, CUSTOM_GROUPS)
+    drops = []
+    for g in CUSTOM_GROUPS:
+        if before[g] > 0 and now[g] < before[g] * (1 - DROP_THRESHOLD):
+            label = GROUP_LABELS[g]
+            drops.append(
+                {
+                    "group": g,
+                    "previous_run": prev,
+                    "before": before[g],
+                    "now": now[g],
+                    "message": (
+                        f"This run sees {now[g]} {label}. Run {prev} for the same report suite "
+                        f"saw {before[g]}."
+                    ),
+                }
+            )
+    return drops
+
+
 def build_view(store: Store, run_id: int) -> dict[str, Any]:
     run = _run_block(store, run_id)
     w = RunWindow.for_today(date.fromisoformat(run["today"]))
@@ -287,4 +325,6 @@ def build_view(store: Store, run_id: int) -> dict[str, Any]:
         "browser": tables["browser"],
         "device": tables["device"],
         "issues": _rows(store, _ISSUES_SQL, p),
+        "component_drops": component_drops(store, run_id),
+        "component_drop_cause": DROP_CAUSE,
     }

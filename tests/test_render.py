@@ -413,9 +413,22 @@ def test_theme_toggle_has_three_choices_and_css_scopes():
     assert "localStorage" in html and "try {" in html
 
 
-def test_dimension_chart_has_type_filter_and_evars_count_as_dimensions():
+def test_dimension_chart_has_type_filter():
     html = render_html(sample_view())
     for value, label in (("", "All"), ("evars", "eVars"), ("props", "Props"), ("other", "Other")):
         assert f'<option value="{value}">{label}</option>' in html
-    # Older stored runs list eVars as metrics; the page moves them by group.
-    assert 'var EVAR_GROUPS = ["custom_evars", "Reserved eVars"];' in html
+    # The page uses the stored kind. It does not move eVars by group.
+    assert "kindOf" not in html
+    assert "r.kind === kind" in html
+
+
+def test_component_drop_warning_is_shown_and_escaped():
+    v = sample_view()
+    assert v["component_drops"] == []
+    assert 'id="component-drops"' not in render_html(v)
+    v["component_drops"] = [{"message": "This run sees 7 eVars. <b>Run 1</b> saw 10."}]
+    html = render_html(v)
+    assert 'id="component-drops"' in html
+    assert "fewer components than the run before it" in html
+    assert "&lt;b&gt;Run 1&lt;/b&gt;" in html
+    assert "product profile of the credential" in html

@@ -125,6 +125,15 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .issue { margin: 8px 0; }
 .issue-heading { margin: 0; font-weight: 600; }
 .issue-items { margin: 4px 0; padding-left: 20px; font-size: 0.9rem; color: var(--text-2); }
+.warning {
+  border-left: 4px solid var(--flag);
+  background: var(--flag-wash);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 8px 0 12px;
+}
+.warning .badge { margin-right: 6px; }
+.warning-cause { margin: 4px 0 0; font-size: 0.9rem; color: var(--text-2); }
 details summary { cursor: pointer; color: var(--text-2); font-size: 0.9rem; }
 
 .tabs {
