@@ -583,3 +583,25 @@ def test_add_pair_refuses_duplicates_and_running_runs(store):
     store.set_status(rid, "running")
     with pytest.raises(ConfigError, match="still marked"):
         add_pair(fake, store, rid, "variables/evar1", "metrics/orders")
+
+
+def test_ctrl_c_drops_the_requests_that_have_not_started(store):
+    import time
+
+    from fakes import auto_response
+
+    def slow(body):
+        time.sleep(0.05)
+        return auto_response(body)
+
+    fake = fake_for("rs1", events(200), custom_dims(), default_post=slow)
+
+    def stop(message):
+        if message.startswith("Daily trends"):
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        run_fetch(fake, store, opts(workers=1, batch_size=20), progress=stop)
+    # 1 probe, 11 trend batches and 5 pair requests were queued. Only the first few were sent.
+    assert len(fake.posted()) <= 3
+    assert store.list_runs()[0]["status"] == "failed"

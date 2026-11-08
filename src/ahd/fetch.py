@@ -7,8 +7,9 @@ All store writes happen on the calling thread; worker threads only call the API.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, wait
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from importlib import metadata
@@ -147,6 +148,23 @@ def _batches(columns: list[Column], size: int) -> list[list[Column]]:
     return [columns[i : i + size] for i in range(0, len(columns), size)]
 
 
+@contextmanager
+def _pool(workers: int) -> Iterator[ThreadPoolExecutor]:
+    """A worker pool that drops its waiting requests when the caller stops, e.g. on Ctrl-C.
+
+    A plain `with ThreadPoolExecutor()` waits for every queued request before it lets an
+    exception through, so Ctrl-C would still send the whole run. Requests that already
+    started finish, because a thread cannot be stopped from outside.
+    """
+    pool = ThreadPoolExecutor(max_workers=max(1, workers))
+    try:
+        yield pool
+    except BaseException:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown(wait=True)
+
+
 def _quiet(message: str) -> None:
     """The default progress callback: say nothing."""
 
@@ -228,7 +246,7 @@ def _run(
         opts.metric_type,
     )
 
-    with ThreadPoolExecutor(max_workers=max(1, opts.workers)) as pool:
+    with _pool(opts.workers) as pool:
         batch_futures: list[tuple[list[Column], Future]] = [
             (
                 batch,
@@ -403,7 +421,7 @@ def add_pair(
         store.add_issue(run_id, scope, component_id, code, message)
 
     label = _pair_label(dimension_name or dimension, metric_name or metric)
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with _pool(5) as pool:
         trend_col, futures = _submit_pair(
             pool, client, run["rsid"], run["segment_id"], window, anomaly, dimension, metric, pair
         )

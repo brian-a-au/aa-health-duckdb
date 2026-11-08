@@ -139,6 +139,7 @@ It lists the runs it will delete and asks you to type y first. `--yes` skips the
 | 1 | The command failed. The message on stderr says why. `prune` also exits with 1 when you answer no. |
 | 2 | `check` found limited access, or a check could not be run. `suites` found no report suites. |
 | 3 | `run` or `individual` finished, but some columns or requests had problems. The report's status section lists them. |
+| 130 | You stopped the command with Ctrl-C. A run that had started is marked "failed". |
 
 ## Defaults
 

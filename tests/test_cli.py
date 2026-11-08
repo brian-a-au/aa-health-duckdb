@@ -197,6 +197,16 @@ def test_missing_config_is_one_line(tmp_path, capsys, monkeypatch):
     assert err.count("\n") == 1 and "Traceback" not in err
 
 
+def test_ctrl_c_is_one_line(tmp_path, cfg, capsys):
+    def stop(creds, company_id=None):
+        raise KeyboardInterrupt
+
+    code = main(args(tmp_path, cfg, "run", "--rsid", "rs1"), client_factory=stop)
+    err = capsys.readouterr().err
+    assert code == 130
+    assert err == "Stopped by Ctrl-C. A run that had started is marked failed.\n"
+
+
 def test_api_error_is_one_line(tmp_path, cfg, capsys):
     def factory(creds, company_id=None):
         raise ApiError(401, "bad sign in", "unauthorized")

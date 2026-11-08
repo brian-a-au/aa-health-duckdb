@@ -39,6 +39,9 @@ DEFAULT_DB = "./data/ahd.duckdb"
 PROFILE_DB = "ahd.duckdb"
 DEFAULT_OUT = "./reports/"
 EXIT_CODES = {"ok": 0, "failed": 1, "partial": 3}
+# The usual exit code after Ctrl-C: 128 plus the signal number of SIGINT.
+EXIT_STOPPED = 130
+STOPPED = "Stopped by Ctrl-C. A run that had started is marked failed."
 
 OUT_HELP = f"The folder for the HTML report (default {DEFAULT_OUT})."
 RSID_HELP = "A report suite ID or name. Run ahd suites to list them."
@@ -467,6 +470,9 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
         print(
             f"Error: the request failed with a network error ({type(e).__name__}).", file=sys.stderr
         )
+    except KeyboardInterrupt:
+        print(STOPPED, file=sys.stderr)
+        return EXIT_STOPPED
     return 1
 
 
