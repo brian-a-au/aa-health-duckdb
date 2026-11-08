@@ -629,3 +629,16 @@ def test_ctrl_c_drops_the_requests_that_have_not_started(store):
     # 1 probe, 11 trend batches and 5 pair requests were queued. Only the first few were sent.
     assert len(fake.posted()) <= 3
     assert store.list_runs()[0]["status"] == "failed"
+
+
+def test_a_batch_that_is_not_json_becomes_issues(store):
+    from ahd.api.client import NOT_JSON
+
+    fake = fake_for(
+        "rs1",
+        events(3),
+        custom_dims(),
+        posts=[(after_probe(is_trend), ApiError(200, NOT_JSON, "invalid_response"))],
+    )
+    rid = run_fetch(fake, store, opts())
+    assert "invalid_response" in issue_codes(store, rid)

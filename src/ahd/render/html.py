@@ -39,6 +39,9 @@ ISSUE_HEADINGS = {
     "network_error": (
         "Some requests failed because of network problems. Running again may fix this."
     ),
+    "invalid_response": (
+        "Adobe sent an answer that could not be read for some requests. Running again may fix this."
+    ),
     "no_rows": (
         "Some parts of the Individual Component Summary came back empty. The credential's "
         "product profile may hide the chosen dimension, or there was no data."

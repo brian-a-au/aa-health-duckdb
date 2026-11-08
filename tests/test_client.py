@@ -261,3 +261,13 @@ def test_connect_signs_in_and_relogin_gets_a_new_token(monkeypatch):
     assert c._header["Authorization"] == "Bearer T0"
     assert c._relogin()["Authorization"] == "Bearer T1"
     assert c._relogin()["x-proxy-global-company-id"] == "co7"
+
+
+@pytest.mark.parametrize("body", [None, "a string", 3])
+def test_a_2xx_answer_that_is_not_json_is_an_api_error(body):
+    from ahd.api.client import NOT_JSON
+
+    c, _session, _sleeps = make([(200, body, {})])
+    with pytest.raises(ApiError) as e:
+        c.post_report({})
+    assert (e.value.error_code, e.value.message) == ("invalid_response", NOT_JSON)

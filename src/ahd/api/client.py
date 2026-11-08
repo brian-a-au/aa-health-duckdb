@@ -22,6 +22,7 @@ BACKOFF_CAP = 10.0
 TIMEOUT = 120
 # Adobe's "temporarily unavailable" code. It comes with HTTP 403 but clears on a retry.
 TEMPORARY_403 = "403025"
+NOT_JSON = "Adobe sent an answer that could not be read as JSON."
 
 
 class ApiError(Exception):
@@ -175,4 +176,7 @@ class AdobeClient:
             raise ApiError(status, err[1] or "Adobe returned an error", err[0])
         if status >= 400:
             raise ApiError(status, f"Adobe returned HTTP {status}")
+        if not isinstance(body, (dict, list)):
+            # e.g. an HTML page from a proxy, or a body cut off in the middle.
+            raise ApiError(status, NOT_JSON, "invalid_response")
         return body
