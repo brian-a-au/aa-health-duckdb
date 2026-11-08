@@ -308,6 +308,7 @@ def test_individual_pairs_in_header_and_data():
     assert '<select id="pair-dimension"></select>' in html
     assert '<select id="pair-metric"></select>' in html
     assert f"ahd individual --run {v['run']['id']} --dimension" in html
+    assert "Add the same <code>--profile</code> or <code>--db</code> option" in html
     [pair] = _data_json(html)["pairs"]
     assert pair["dimension_name"] == "Page" and pair["metric_name"] == "Orders"
     v["pairs"].append({**pair, "pair": 2, "dimension_name": "Search", "metric_name": "Carts"})

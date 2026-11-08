@@ -105,7 +105,7 @@ This tab looks at one dimension by one metric in more depth, e.g., Page by Occur
 
 A run starts with one pair, set by `--dimension` and `--metric` on `ahd run`. Add more with `ahd individual`, e.g., `ahd individual --run 3 --dimension evar17 --metric "Cart Additions"`. It takes a few seconds and writes the report again. Then the Dimension and Metric dropdowns switch between the pairs at once.
 
-The page cannot fetch a new pair by itself, because it works offline. The hint on the tab shows the exact command for the run.
+The page cannot fetch a new pair by itself, because it works offline. The hint on the tab shows the command with the run number. Add the same `--profile` or `--db` option that you used for the run, so that the command finds the same database.
 
 ## Alerts Summary
 
