@@ -340,3 +340,12 @@ def test_flag_colors_are_not_good_and_bad():
     css = render_html(sample_view())
     assert ".mark-low, .mark-high { fill: var(--flag)" in css
     assert "--high:" not in css and "--low:" not in css
+
+
+def test_theme_toggle_has_three_choices_and_css_scopes():
+    html = render_html(sample_view())
+    for choice in ("auto", "light", "dark"):
+        assert f'data-theme-choice="{choice}"' in html
+    assert ':root:not([data-theme="light"])' in html  # a light choice beats a dark computer
+    assert ':root[data-theme="dark"]' in html          # a dark choice beats a light computer
+    assert "localStorage" in html and "try {" in html

@@ -12,7 +12,14 @@
 </head>
 <body>
 <header class="page-head">
-  <h1>Analytics Health Dashboard</h1>
+  <div class="head-row">
+    <h1>Analytics Health Dashboard</h1>
+    <div class="theme-toggle" role="group" aria-label="Color theme">
+      <button type="button" data-theme-choice="auto" aria-pressed="true" title="Follow the computer's setting">Auto</button>
+      <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
+      <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
+    </div>
+  </div>
   <dl class="facts">
     <div><dt>Report suite</dt><dd>{{ run.rsid_name or run.rsid }} <span class="muted">({{ run.rsid }})</span></dd></div>
     <div><dt>Individual component</dt><dd>{{ individual_label }}{% if run.dimension and run.metric %} <span class="muted">({{ run.dimension }}, {{ run.metric }})</span>{% endif %}</dd></div>

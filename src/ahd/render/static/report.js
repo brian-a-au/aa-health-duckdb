@@ -94,6 +94,31 @@
     return n ? n + ": " + row.name : row.name;
   }
 
+  // ---- light / dark toggle ---------------------------------------------------
+  // "auto" follows the computer's setting. The choice is kept in this browser only.
+  var THEME_KEY = "ahd-theme";
+  function applyTheme(choice) {
+    if (choice === "light" || choice === "dark") {
+      document.documentElement.setAttribute("data-theme", choice);
+    } else {
+      choice = "auto";
+      document.documentElement.removeAttribute("data-theme");
+    }
+    Array.prototype.forEach.call(document.querySelectorAll("[data-theme-choice]"), function (b) {
+      b.setAttribute("aria-pressed", b.getAttribute("data-theme-choice") === choice ? "true" : "false");
+    });
+    return choice;
+  }
+  var savedTheme = null;
+  try { savedTheme = window.localStorage.getItem(THEME_KEY); } catch (e) { savedTheme = null; }
+  applyTheme(savedTheme);
+  Array.prototype.forEach.call(document.querySelectorAll("[data-theme-choice]"), function (b) {
+    b.addEventListener("click", function () {
+      var choice = applyTheme(b.getAttribute("data-theme-choice"));
+      try { window.localStorage.setItem(THEME_KEY, choice); } catch (e) { /* storage blocked */ }
+    });
+  });
+
   // ---- state ---------------------------------------------------------------
   var dayKeys = Object.keys(data.views).filter(function (k) { return k.indexOf("day:") === 0; })
     .map(function (k) { return k.slice(4); }).sort().reverse();

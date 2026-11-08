@@ -292,3 +292,11 @@ td.shade { background: rgba(var(--shade), var(--a, 0)); }
   .tile { padding: 10px 12px; }
   .tile-value { font-size: 1.5rem; }
 }
+
+/* ---- light / dark toggle ---- */
+.head-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 8px; }
+.head-row h1 { margin: 0; }
+.theme-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; padding: 2px; background: var(--surface); }
+.theme-toggle button { border: 0; background: none; border-radius: 6px; padding: 4px 12px; font-size: 0.85rem; color: var(--text-2); }
+.theme-toggle button[aria-pressed="true"] { background: var(--surface-2); color: var(--text); font-weight: 600; }
+.theme-toggle button:hover { color: var(--text); }
