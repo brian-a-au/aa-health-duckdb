@@ -369,11 +369,13 @@ def _store_pair(
             rows, _total = parse_ranked(resp)
             store.add_top_items(run_id, kind, rows, pair=pair)
             empty = not rows
+            got_rows = bool(rows)
         elif kind in ("browser", "device"):
             rows, totals = parse_breakdown(resp)
             labels = BROWSER_LABELS if kind == "browser" else DEVICE_LABELS
             store.add_breakdown(run_id, kind, labels, rows, totals, pair=pair)
             empty = not rows
+            got_rows = bool(rows)
         else:
             values, errors = parse_trend(resp, [trend_col])
             store.add_daily_values(run_id, values)
@@ -381,11 +383,11 @@ def _store_pair(
             for err in errors:
                 issue("individual", cid, err.error_code, f"{what}: {err.message}")
             empty = not values and not errors
+            got_rows = bool(values)
         if empty:
             # Spec section 7: zero rows may be a permission gap, not "no data".
             issue("individual", cid, "no_rows", _no_rows_message(kind, label))
-        else:
-            stored += 1
+        stored += got_rows
     return value_count, stored
 
 

@@ -82,7 +82,7 @@ def _connect(path: Path, read_only: bool) -> duckdb.DuckDBPyConnection:
         return duckdb.connect(str(path), read_only=read_only)
     except duckdb.Error as e:
         text = str(e)
-        if "lock" in text.lower():
+        if "could not set lock" in text.lower() or "conflicting lock" in text.lower():
             raise StoreError(
                 f"The database {path} is in use by another program, e.g., a DuckDB session or "
                 "another ahd command that writes to it. Close that program or wait for it to "
@@ -100,10 +100,16 @@ class Store:
         self.con = con
 
     @classmethod
-    def open(cls, path: Path, read_only: bool = False) -> Store:
-        """Open or create the database. read_only opens an existing file without a write lock,
-        so it can be read while a DuckDB session also has it open read-only."""
+    def open(cls, path: Path, read_only: bool = False, create: bool = True) -> Store:
+        """Open the database, and create it when create is true.
+
+        read_only opens an existing file without a write lock, so it can be read while a DuckDB
+        session also has it open read-only. Commands that only work on stored runs pass
+        create=False, so that a wrong path does not leave a new empty file behind.
+        """
         path = Path(path)
+        if not (read_only or create) and not path.exists():
+            raise StoreError(f"There is no database at {path}. Choose the file with --db.")
         if not read_only:
             path.parent.mkdir(parents=True, exist_ok=True)
         con = _connect(path, read_only)

@@ -587,6 +587,19 @@ def test_add_pair_with_data_makes_a_failed_run_partial(store):
     assert store.get_run(rid)["status"] == "partial"
 
 
+def test_add_pair_with_only_column_errors_keeps_a_failed_run_failed(store):
+    from fakes import trend_response
+
+    from ahd.fetch import add_pair
+
+    down = fake_for("rs1", events(1), custom_dims(), default_post=ApiError(500, "down"))
+    rid = run_fetch(down, store, opts())
+    # Only the trend answers, and its one column has an error.
+    down.posts = [(is_trend, lambda b: trend_response(b, column_errors={0: "unauthorized"}))]
+    _pair, problems = add_pair(down, store, rid, "variables/evar1", "metrics/orders")
+    assert problems == 5 and store.get_run(rid)["status"] == "failed"
+
+
 def test_add_pair_without_data_keeps_a_failed_run_failed(store):
     from ahd.fetch import add_pair
 

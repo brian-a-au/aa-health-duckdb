@@ -39,7 +39,7 @@ uv run ahd runs                           # list what is stored
 | `--db PATH` | Uses this database file. For the commands that read or write a database. |
 | `--verbose` | Writes debug detail to stderr. Put it before the command, e.g., `ahd --verbose run ...`. |
 
-The commands that sign in are `check`, `suites`, `segments`, `run` and `individual`. The others never call Adobe. `runs` and `render` only read the database, and they never create one. `prune` deletes runs from it.
+The commands that sign in are `check`, `suites`, `segments`, `run` and `individual`. The others never call Adobe. `runs` and `render` only read the database. `prune` deletes runs from it. Only `run` creates a new database. The other commands stop when the file does not exist.
 
 Where a command takes a report suite, segment, dimension or metric, it accepts an ID or a name, in any case. If two items have the same name, the tool lists their IDs and asks you to use one.
 
@@ -139,7 +139,7 @@ It lists the runs it will delete and asks you to type y first. `--yes` skips the
 | 1 | The command failed. The message on stderr says why. `prune` also exits with 1 when you answer no. |
 | 2 | `check` found limited access, or a check could not be run. `suites` found no report suites. Any command also exits with 2 when an option is wrong, e.g., `--change-alert 12`, and prints its usage. |
 | 3 | `run` or `individual` finished, but some columns or requests had problems. The report's status section lists them. |
-| 130 | You stopped the command with Ctrl-C. A run that had started is marked "failed". |
+| 130 | You stopped the command with Ctrl-C. A run that `ahd run` had started is marked "failed". A pair that `ahd individual` was adding is removed. |
 
 ## Defaults
 

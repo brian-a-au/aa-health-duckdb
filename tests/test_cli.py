@@ -204,7 +204,7 @@ def test_ctrl_c_is_one_line(tmp_path, cfg, capsys):
     code = main(args(tmp_path, cfg, "run", "--rsid", "rs1"), client_factory=stop)
     err = capsys.readouterr().err
     assert code == 130
-    assert err == "Stopped by Ctrl-C. A run that had started is marked failed.\n"
+    assert err.startswith("Stopped by Ctrl-C. A run that ahd run had started is marked failed.")
 
 
 @pytest.mark.parametrize("company", [None, "co2"])
@@ -348,6 +348,29 @@ def test_runs_reads_a_database_that_a_reader_has_open(tmp_path, cfg, capsys):
         assert main(["runs", "--db", str(db)]) == 0
     finally:
         reader.close()
+
+
+def test_prune_and_individual_do_not_create_a_database(tmp_path, cfg, capsys):
+    db = tmp_path / "new" / "t.duckdb"
+    assert main(["prune", "--run", "1", "--yes", "--db", str(db)]) == 1
+    argv = args(tmp_path, cfg, "individual", "--run", "1", "--dimension", "page", "--metric", "x")
+    argv[argv.index("--db") + 1] = str(db)
+    assert main(argv, client_factory=lambda c, company_id=None: pytest.fail("signed in")) == 1
+    assert "There is no database at" in capsys.readouterr().err
+    assert not db.parent.exists()
+
+
+def test_a_damaged_file_is_not_called_locked(tmp_path, monkeypatch):
+    import duckdb
+
+    from ahd.store import Store, StoreError
+
+    def broken(path, read_only=False):
+        raise duckdb.IOException("Corrupt database file: block 7 is invalid")
+
+    monkeypatch.setattr(duckdb, "connect", broken)
+    with pytest.raises(StoreError, match="Could not open the database"):
+        Store.open(tmp_path / "t.duckdb")
 
 
 def test_empty_duckdb_file_is_not_an_ahd_database(tmp_path, capsys):
@@ -823,6 +846,10 @@ def test_individual_with_problems_exits_3(tmp_path, cfg, capsys):
 
 
 def test_individual_unknown_run(tmp_path, cfg, capsys):
+    from ahd.store import Store
+
+    Store.open(tmp_path / "t.duckdb").con.close()
+
     def boom(*a, **k):
         raise AssertionError("must not sign in")
 

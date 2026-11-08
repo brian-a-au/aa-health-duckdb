@@ -19,8 +19,8 @@ def today_in_zone(zoneinfo_name: str, now_utc: datetime) -> date:
         # ValueError: a name that is not a valid key, e.g. an absolute path.
         raise ConfigError(
             f"The report suite uses the time zone {zoneinfo_name!r}, which this computer does "
-            "not know. Run uv sync to install the time zone data, then try again. Or give the "
-            "date with --date YYYY-MM-DD."
+            "not know. Run uv sync to install the time zone data, then try again. For ahd run, "
+            "you can also give the date with --date YYYY-MM-DD."
         ) from None
     return now_utc.astimezone(zone).date()
 

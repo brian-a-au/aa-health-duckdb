@@ -143,7 +143,7 @@ One row per run, component and full day, with everything the report computes:
 
 The alerts of one run, by the report's rules:
 
-- `run`: the run number. It can be a query, e.g., `(SELECT max(run_id) FROM latest_runs WHERE rsid = 'my_suite' AND segment_id IS NULL)`. The query must return one run, and `latest_runs` holds one row for each segment of a suite, so name the segment or `segment_id IS NULL`.
+- `run`: the run number. It can be a query, e.g., `(SELECT max(run_id) FROM latest_runs WHERE rsid = 'my_suite' AND segment_id IS NULL)`. The query must return one run. `latest_runs` holds one row for each segment of a suite, so name the segment, or use `segment_id IS NULL` for the run without a segment.
 - `threshold`: the percent for a large drop, as a share. The default is `0.30`, the same as the report's slider.
 - `min_usual`: a large drop needs a usual value of at least this much. The default is `10`.
 - `for_day`: the day to check. The default is yesterday.
@@ -273,7 +273,7 @@ FROM routed GROUP BY ALL ORDER BY alerts DESC;
 
 ### Send one digest for every suite
 
-One row per report suite, with yesterday's alerts from the latest run of each. Each alert counts once, by the same rules as the `alerts` macro: an Adobe flag first, then a value of 0, then a large drop.
+One row per report suite, with yesterday's alerts from the latest run of each. Each alert counts once, by the same rules as the `alerts` macro. An Adobe flag comes first, then a value of 0, then a large drop.
 
 ```sql
 SELECT r.rsid_name AS suite, r.today - 1 AS day,

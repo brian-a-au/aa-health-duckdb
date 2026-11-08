@@ -64,7 +64,7 @@ The tool already waits and tries again after a rate limit, a server error, a net
 
 ## Time zones
 
-- **"which this computer does not know"**: the time zone data is missing, e.g., on Windows after an incomplete install. Run `uv sync` to install it. To run anyway, give the date with `--date YYYY-MM-DD`.
+- **"which this computer does not know"**: the time zone data is missing, e.g., on Windows after an incomplete install. Run `uv sync` to install it. To make a run anyway, give the date with `ahd run --date YYYY-MM-DD`.
 
 ## Profiles and config files
 

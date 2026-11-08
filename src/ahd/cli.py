@@ -41,7 +41,10 @@ DEFAULT_OUT = "./reports/"
 EXIT_CODES = {"ok": 0, "failed": 1, "partial": 3}
 # The usual exit code after Ctrl-C: 128 plus the signal number of SIGINT.
 EXIT_STOPPED = 130
-STOPPED = "Stopped by Ctrl-C. A run that had started is marked failed."
+STOPPED = (
+    "Stopped by Ctrl-C. A run that ahd run had started is marked failed. A pair that ahd "
+    "individual was adding is removed."
+)
 
 OUT_HELP = f"The folder for the HTML report (default {DEFAULT_OUT})."
 RSID_HELP = "A report suite ID or name. Run ahd suites to list them."
@@ -383,7 +386,7 @@ def _run(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
 
 
 def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
-    store = Store.open(_db_path(args))
+    store = Store.open(_db_path(args), create=False)
     try:
         run = store.get_run(args.run)
     except KeyError:
@@ -441,7 +444,7 @@ def _confirm(question: str) -> bool:
 def _prune(args: argparse.Namespace) -> int:
     if not args.run and args.before is None:
         raise ConfigError("Say which runs to delete with --run N or --before YYYY-MM-DD.")
-    store = Store.open(_db_path(args))
+    store = Store.open(_db_path(args), create=False)
     found = store.runs_to_prune(args.run, args.before)
     for n in sorted(set(args.run) - {r["run_id"] for r in found}):
         print(f"There is no stored run {n}.")
