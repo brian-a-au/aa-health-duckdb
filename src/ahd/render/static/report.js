@@ -49,13 +49,16 @@
 
   // ---- formatting ----------------------------------------------------------
   var numFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
-  // Currency metrics use the report suite's currency, e.g. "$1,234.56" for USD.
-  // Without a valid currency code they show as plain numbers with two decimals.
+  // Currency metrics use the report suite's currency, e.g. "$1,234.56" for USD and "¥1,235"
+  // for JPY. Without opts.digits, a currency keeps its own number of decimals. Without a valid
+  // currency code the values show as plain numbers with two decimals.
   function currencyFmt(opts) {
     var code = (data.run || {}).currency;
     function options(withCode) {
+      var digits = opts.digits === undefined && !withCode ? 2 : opts.digits;
       var o = opts.compact ? { notation: "compact", maximumFractionDigits: 1 } :
-        { minimumFractionDigits: opts.digits, maximumFractionDigits: opts.digits };
+        digits === undefined ? {} :
+        { minimumFractionDigits: digits, maximumFractionDigits: digits };
       if (withCode) { o.style = "currency"; o.currency = code; }
       return o;
     }
@@ -64,7 +67,7 @@
     } catch (e) { /* not a currency code the browser knows */ }
     return opts.compact ? null : new Intl.NumberFormat(undefined, options(false));
   }
-  var money = currencyFmt({ digits: 2 });
+  var money = currencyFmt({});
   var moneyRound = currencyFmt({ digits: 0 });
   var moneyShort = currencyFmt({ compact: true });
   function fmtNum(v, type) {

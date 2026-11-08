@@ -485,3 +485,10 @@ def test_every_form_control_has_a_name():
     html = render_html(sample_view())
     textarea = re.search(r"<textarea[^>]*>", html).group(0)
     assert 'aria-label="Alert summary as text"' in textarea
+
+
+def test_currency_values_keep_the_currency_decimals():
+    # report.js formats money with the currency's own decimals, e.g. none for yen. A fixed
+    # digits option would show "¥0.00". Checked in Chrome for USD, JPY, KWD and no code.
+    js = (Path(__file__).parent.parent / "src/ahd/render/static/report.js").read_text()
+    assert "var money = currencyFmt({});" in js

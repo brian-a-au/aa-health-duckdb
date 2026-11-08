@@ -129,9 +129,9 @@ To send alerts on a schedule, or only when something is new, see the [DuckDB gui
 
 ## How values are shown
 
-- **Currency metrics** show in the report suite's currency, e.g., $1,234.56 for US dollars, in the tables, the alerts and the charts.
+- **Currency metrics** show in the report suite's currency, in the tables, the alerts and the charts. They keep the currency's own number of decimals, e.g., $1,234.56 for US dollars and ¥1,235 for yen. Without a currency code they show as plain numbers with two decimals.
 - **Other metrics** show as plain numbers, with up to two decimals.
-- **Usual and expected values** are rounded: whole numbers from 100 up, one decimal below that.
+- **Usual and expected values** are rounded: whole numbers from 100 up, one decimal below that. A currency value below 100 keeps the currency's own decimals.
 - **A value that could not be read** says "No data". It is never shown as 0.
 
 For how these numbers compare with the Excel workbook, see [Compared with the Excel workbook](excel-comparison.md).
