@@ -17,8 +17,11 @@ from ahd.config import Credentials
 log = logging.getLogger(__name__)
 
 BASE = "https://analytics.adobe.io/api"
-BACKOFF_BASE = 0.5
-BACKOFF_CAP = 10.0
+# Waits between tries: about 1, 2, 4, 8, 16 and 30 seconds. Six tries wait 30.5 to 61 seconds
+# in all, long enough to outlast a short rate limit.
+BACKOFF_BASE = 1.0
+BACKOFF_CAP = 30.0
+MAX_RETRIES = 6
 TIMEOUT = 120
 # Adobe's "temporarily unavailable" code. It comes with HTTP 403 but clears on a retry.
 TEMPORARY_403 = "403025"
@@ -71,7 +74,7 @@ class AdobeClient:
         company_id: str,
         relogin: Callable[[], dict],
         sleep: Callable[[float], None] = time.sleep,
-        max_retries: int = 4,
+        max_retries: int = MAX_RETRIES,
     ):
         self._session = session
         self._header = dict(header)
@@ -172,7 +175,10 @@ class AdobeClient:
 
     @staticmethod
     def _backoff(attempt: int) -> float:
-        return random.uniform(0, min(BACKOFF_CAP, BACKOFF_BASE * 2**attempt))
+        """Half the step plus a random part up to the other half. The random part spreads the
+        workers out, and the fixed half keeps the total wait long enough."""
+        step = min(BACKOFF_CAP, BACKOFF_BASE * 2**attempt)
+        return step / 2 + random.uniform(0, step / 2)
 
     @staticmethod
     def _finish(resp: Any) -> Any:
