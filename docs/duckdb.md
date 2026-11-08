@@ -143,7 +143,7 @@ One row per run, component and full day, with everything the report computes:
 
 The alerts of one run, by the report's rules:
 
-- `run`: the run number. It can be a query, e.g., `(SELECT run_id FROM latest_runs WHERE rsid = 'my_suite')`.
+- `run`: the run number. It can be a query, e.g., `(SELECT max(run_id) FROM latest_runs WHERE rsid = 'my_suite' AND segment_id IS NULL)`. The query must return one run, and `latest_runs` holds one row for each segment of a suite, so name the segment or `segment_id IS NULL`.
 - `threshold`: the percent for a large drop, as a share. The default is `0.30`, the same as the report's slider.
 - `min_usual`: a large drop needs a usual value of at least this much. The default is `10`.
 - `for_day`: the day to check. The default is yesterday.
@@ -178,7 +178,7 @@ On the report's Alerts tab, click **Copy alerts**. The copy holds a formatted ta
 
 ```
 duckdb -readonly data/ahd.duckdb -markdown -c "
-FROM alerts((SELECT run_id FROM latest_runs WHERE rsid = 'my_suite'))
+FROM alerts((SELECT max(run_id) FROM latest_runs WHERE rsid = 'my_suite' AND segment_id IS NULL))
 SELECT alert, name, round(usual) AS usual, value, round(pct_vs_usual * 100) AS pct"
 ```
 
@@ -198,13 +198,23 @@ SELECT alert, name, round(usual) AS usual, value, round(pct_vs_usual * 100) AS p
 uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
 ```
 
-Without mail settings, it writes `alerts.eml`, which you can open and check first. To send, set `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` and `MAIL_TO`. It exits with 0 when it sent or wrote a message and with 2 when there was nothing to send.
+It reads the latest finished run without a segment. Add `--segment ID` for the latest run with that segment. A third argument sets the large drop percent as a share, e.g., `0.20` for 20 percent. The default is `0.30`.
+
+Without `SMTP_HOST`, it writes `alerts.eml` in the current folder, which you can open and check first. To send, set `SMTP_HOST`, `MAIL_FROM` and `MAIL_TO`. Set `SMTP_PORT` when the server does not use 587. Set `SMTP_USER` and `SMTP_PASSWORD` when the server needs a login.
+
+It exits with these codes:
+
+- 0 when it sent or wrote a message
+- 1 when something is wrong, e.g., the file holds no finished run of the suite
+- 2 when there was nothing to send
 
 To run it every morning, add a run and the email to a schedule, e.g., with `crontab -e` on macOS or Linux:
 
 ```
-30 7 * * * cd ~/aa-health-duckdb && uv run ahd run --profile prod --rsid my_suite && uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
+30 7 * * * cd ~/aa-health-duckdb && uv run ahd run --profile prod --rsid my_suite; test $? -ne 1 && uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
 ```
+
+`test $? -ne 1` sends the email after a run that ended "ok" (exit code 0) or "partial" (exit code 3), and skips it after a failed run.
 
 ### Send only what is new since the last run
 
@@ -469,7 +479,8 @@ import duckdb
 
 with duckdb.connect("data/ahd.duckdb", read_only=True) as con:
     rows = con.execute(
-        "FROM alerts((SELECT run_id FROM latest_runs WHERE rsid = $rsid)) SELECT name, alert",
+        "FROM alerts((SELECT max(run_id) FROM latest_runs"
+        " WHERE rsid = $rsid AND segment_id IS NULL)) SELECT name, alert",
         {"rsid": "my_suite"},
     ).fetchall()
 ```
