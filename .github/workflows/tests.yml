@@ -1,0 +1,65 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+        # Coverage runs once; the 95% floor does not depend on the Python version.
+        include:
+          - python-version: "3.14"
+            coverage: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: 0.13.6
+          enable-cache: true
+          prune-cache: false
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Sync dependencies
+        run: uv sync --locked --dev
+
+      - name: Verify Python runtime
+        run: |
+          uv run --locked python - <<'PYTHON'
+          import os
+          import sys
+
+          expected = tuple(map(int, os.environ["UV_PYTHON"].split(".")))
+          actual = sys.version_info[:2]
+          print(f"Requested Python {os.environ['UV_PYTHON']}; running {sys.version}", flush=True)
+          if actual != expected:
+              raise SystemExit(f"Python version mismatch: expected {expected}, got {actual}")
+          PYTHON
+
+      - name: Test
+        if: ${{ !matrix.coverage }}
+        run: uv run --locked pytest --durations=10
+
+      - name: Test with coverage
+        if: ${{ matrix.coverage }}
+        run: uv run --locked pytest --durations=10 --cov=ahd --cov-branch --cov-report=term-missing --cov-fail-under=95

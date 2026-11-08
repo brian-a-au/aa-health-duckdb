@@ -1,5 +1,13 @@
 # aa-health-duckdb
 
+[![Tests](https://github.com/brian-a-au/aa-health-duckdb/actions/workflows/tests.yml/badge.svg)](https://github.com/brian-a-au/aa-health-duckdb/actions/workflows/tests.yml)
+[![Lint](https://github.com/brian-a-au/aa-health-duckdb/actions/workflows/lint.yml/badge.svg)](https://github.com/brian-a-au/aa-health-duckdb/actions/workflows/lint.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
+[![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](https://github.com/brian-a-au/aa-health-duckdb/tree/main/tests)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![DuckDB](https://img.shields.io/badge/DuckDB-local%20file-fff000.svg)](https://duckdb.org/)
+
 [![Slideshow of the report: summary tiles, trend charts with expected ranges, component tables, alerts, browser breakdowns, and light and dark mode](docs/showcase.gif)](docs/showcase.png)
 
 27-second loop of real report excerpts, made from synthetic data. Click the animation for a still image.
@@ -130,6 +138,18 @@ uv run ahd render --run 3
 ```
 
 Defaults: the database is `./data/ahd.duckdb`, the report folder is `./reports/`, the batch size is 20 columns per request, and 4 requests run at the same time. Add `--verbose` before the command for debug logging on stderr.
+
+## Tests
+
+Run the tests and the lint checks the same way GitHub Actions does:
+
+```
+uv run pytest --cov=ahd --cov-branch
+uv run ruff check
+uv run ruff format --check
+```
+
+The tests use saved Adobe responses and never call Adobe. GitHub Actions runs them on Python 3.12, 3.13 and 3.14 for every push to `main` and every pull request. The run fails if branch coverage drops below 95 percent.
 
 ## How the numbers differ from Excel
 
