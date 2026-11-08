@@ -108,11 +108,13 @@ _ALERTS_SQL = f"""
 WITH {_DV}, {_COMPS},
 r AS (
     SELECT c.name, c.component_id, c.gpos, c.number, d.expected, d.value AS actual,
-        CASE WHEN d.expected <> 0 THEN d.value / d.expected - 1 END AS pct
+        CASE WHEN d.expected <> 0 THEN d.value / d.expected - 1 END AS pct,
+        {_ANOMALY.format(a="d")} AS anomaly, coalesce(d.value = 0, false) AS zero
     FROM comps c JOIN dv d ON d.component_id = c.component_id AND d.day = $yesterday
     WHERE d.anomaly OR d.value = 0
 )
-SELECT name, component_id, expected, actual, pct AS pct_vs_expected, {_ARROW} AS arrow
+SELECT name, component_id, expected, actual, pct AS pct_vs_expected, {_ARROW} AS arrow,
+    anomaly, zero
 FROM r
 ORDER BY {_ORDER}
 """
@@ -188,12 +190,22 @@ LIMIT 1
 """
 
 
+# Standard metrics that are not catalog components, so a run has no stored name for them.
+STANDARD_NAMES = {
+    "metrics/occurrences": "Occurrences",
+    "metrics/pageviews": "Page Views",
+    "metrics/visits": "Visits",
+    "metrics/visitors": "Unique Visitors",
+    "variables/page": "Page",
+}
+
+
 def _display_name(store: Store, run_id: int, cid: str | None, dimension: bool) -> str | None:
     """The component's name in this run, else its raw id. A dimension may be an exists column."""
     if not cid:
         return None
     row = store.con.execute(_NAME_SQL, {"run_id": run_id, "id": cid, "dims": dimension}).fetchone()
-    return row[0] if row and row[0] else cid
+    return row[0] if row and row[0] else STANDARD_NAMES.get(cid, cid)
 
 
 def _run_block(store: Store, run_id: int) -> dict[str, Any]:

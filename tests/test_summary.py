@@ -167,8 +167,10 @@ def test_alerts_zero_and_anomaly_only(tmp_path):
     assert spike == {
         "name": "Spike", "component_id": "metrics/event2", "expected": 20,
         "actual": 30, "pct_vs_expected": pytest.approx(0.5), "arrow": "up",
+        "anomaly": "high", "zero": False,
     }
     assert zero["actual"] == 0 and zero["expected"] is None
+    assert zero["anomaly"] is None and zero["zero"] is True
     assert zero["pct_vs_expected"] is None and zero["arrow"] is None
 
 
@@ -262,8 +264,8 @@ def test_run_block(friday):
                         "status", "started_at", "finished_at", "tool_version",
                         "dimension", "metric", "dimension_name", "metric_name"}
     assert run["dimension"] == "variables/page" and run["metric"] == "metrics/event1"
-    # Page is not in this run's components, so its raw id is shown; Event 1 is.
-    assert run["dimension_name"] == "variables/page" and run["metric_name"] == "Event 1"
+    # Page is not in this run's components, so its standard name is used; Event 1 is.
+    assert run["dimension_name"] == "Page" and run["metric_name"] == "Event 1"
     assert run["rsid"] == "rs1" and run["rsid_name"] == "Suite One"
     assert run["segment_id"] == "seg1" and run["today"] == "2026-11-07"
     assert run["timezone"] == "US/Pacific" and run["status"] == "partial"
@@ -331,8 +333,8 @@ def test_run_block_names_from_exists_dimension(tmp_path):
     store.finish_run(rid, "ok")
     run = build_view(store, rid)["run"]
     assert run["dimension_name"] == "Search term"
-    # occurrences is the exists column's metric, but not a component of its own
-    assert run["metric_name"] == "metrics/occurrences"
+    # occurrences is the exists column's metric, not a component, so it gets its standard name
+    assert run["metric_name"] == "Occurrences"
 
 
 def test_run_block_without_dimension(tmp_path):
@@ -342,3 +344,19 @@ def test_run_block_without_dimension(tmp_path):
     run = build_view(store, rid)["run"]
     assert run["dimension"] is None and run["dimension_name"] is None
     assert run["metric"] is None and run["metric_name"] is None
+
+
+def test_alert_below_range_is_low(tmp_path):
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "Dip", number=1)],
+                        [_dv(cid, YESTERDAY, 5.0, 20.0, 25.0, 15.0, True)])
+    alert = build_view(store, rid)["alerts"][0]
+    assert alert["anomaly"] == "low" and alert["zero"] is False
+
+
+def test_standard_metric_gets_plain_name(tmp_path):
+    from ahd.summary import _display_name
+    store, rid = _build(tmp_path, [], [])
+    assert _display_name(store, rid, "metrics/occurrences", False) == "Occurrences"
+    assert _display_name(store, rid, "metrics/pageviews", False) == "Page Views"
+    assert _display_name(store, rid, "metrics/unknownthing", False) == "metrics/unknownthing"
