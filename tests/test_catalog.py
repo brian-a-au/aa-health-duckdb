@@ -22,7 +22,8 @@ def test_evar_instances_become_custom_evars():
     assert c.group == "custom_evars"
     assert c.number == 5
     assert c.name == "Internal Search Term"
-    assert c.kind == "metric"
+    # An eVar is a dimension, even though it is counted with its instances metric.
+    assert c.kind == "dimension"
     assert c.column == Column("metrics/evar5instances", "metrics/evar5instances")
 
 
@@ -105,7 +106,7 @@ def test_order_custom_first_then_solution():
 def test_instances_fallback_and_group():
     c = by_id()["metrics/campaigninstances"]
     assert c.group == "Reserved eVars"
-    assert c.kind == "metric"
+    assert c.kind == "dimension"
     assert c.column == Column("metrics/campaigninstances", "metrics/campaigninstances")
     assert "variables/campaign" not in by_id()
     assert by_id()["metrics/clickmaplinkinstances"].group == "Activity Map Instances"

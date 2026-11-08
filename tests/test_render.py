@@ -411,3 +411,11 @@ def test_theme_toggle_has_three_choices_and_css_scopes():
     assert ':root:not([data-theme="light"])' in html  # a light choice beats a dark computer
     assert ':root[data-theme="dark"]' in html  # a dark choice beats a light computer
     assert "localStorage" in html and "try {" in html
+
+
+def test_dimension_chart_has_type_filter_and_evars_count_as_dimensions():
+    html = render_html(sample_view())
+    for value, label in (("", "All"), ("evars", "eVars"), ("props", "Props"), ("other", "Other")):
+        assert f'<option value="{value}">{label}</option>' in html
+    # Older stored runs list eVars as metrics; the page moves them by group.
+    assert 'var EVAR_GROUPS = ["custom_evars", "Reserved eVars"];' in html

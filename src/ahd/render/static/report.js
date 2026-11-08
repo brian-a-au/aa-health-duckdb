@@ -616,27 +616,63 @@
     }
   }
 
-  function fillPicker(select, kind, chartId) {
-    var rows = (data.views.week || []).filter(function (r) {
-      return r.kind === kind && data.series[r.component_id];
+  // eVars are dimensions. Runs stored before this rule list them as metrics, so the
+  // group decides for them.
+  var EVAR_GROUPS = ["custom_evars", "Reserved eVars"];
+  var PROP_GROUPS = ["custom_props", "Reserved Props"];
+  function kindOf(r) { return EVAR_GROUPS.indexOf(r.group) >= 0 ? "dimension" : r.kind; }
+  function typeOf(r) {
+    if (EVAR_GROUPS.indexOf(r.group) >= 0) return "evars";
+    if (PROP_GROUPS.indexOf(r.group) >= 0) return "props";
+    return "other";
+  }
+  var TYPE_EMPTY = {
+    evars: "No eVar data was read.", props: "No prop data was read.",
+    other: "No other dimension data was read."
+  };
+
+  function fillPicker(select, kind, chartId, typeSelect) {
+    var all = (data.views.week || []).filter(function (r) {
+      return kindOf(r) === kind && data.series[r.component_id];
     });
-    clear(select);
-    rows.forEach(function (r) {
-      select.appendChild(el("option", { value: r.component_id }, componentLabel(r)));
-    });
+    var rows = all;
     var host = byId(chartId);
+
+    function fill() {
+      var keep = rows[select.selectedIndex];
+      var type = typeSelect ? typeSelect.value : "";
+      rows = all.filter(function (r) { return !type || typeOf(r) === type; });
+      clear(select);
+      var group = null, parent = select;
+      rows.forEach(function (r) {
+        if (r.group !== group) {
+          group = r.group;
+          parent = el("optgroup", { label: CUSTOM_TITLES[group] || group });
+          select.appendChild(parent);
+        }
+        parent.appendChild(el("option", { value: r.component_id }, componentLabel(r)));
+      });
+      var at = keep ? rows.indexOf(keep) : -1;
+      select.selectedIndex = at >= 0 ? at : (rows.length ? 0 : -1);
+      select.disabled = !rows.length;
+    }
     function draw() {
       var r = rows[select.selectedIndex];
       if (!r) {
         clear(host);
-        host.appendChild(el("p", { "class": "chart-empty" },
-          kind === "metric" ? "No metric data was read." : "No dimension data was read."));
+        var type = typeSelect ? typeSelect.value : "";
+        host.appendChild(el("p", { "class": "chart-empty" }, TYPE_EMPTY[type] ||
+          (kind === "metric" ? "No metric data was read." : "No dimension data was read.")));
         return;
       }
       drawChart(host, data.series[r.component_id], componentLabel(r));
     }
-    select.disabled = !rows.length;
+    fill();
     select.addEventListener("change", draw);
+    if (typeSelect) {
+      typeSelect.disabled = !all.length;
+      typeSelect.addEventListener("change", function () { fill(); draw(); });
+    }
     redrawers.push(draw);
     draw();
   }
@@ -894,7 +930,7 @@
   renderTiles();
   renderTables();
   fillPicker(byId("metric-pick"), "metric", "metric-chart");
-  fillPicker(byId("dimension-pick"), "dimension", "dimension-chart");
+  fillPicker(byId("dimension-pick"), "dimension", "dimension-chart", byId("dimension-type"));
   renderIndividual();
   renderAlerts();
 })();

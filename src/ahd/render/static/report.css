@@ -300,3 +300,9 @@ td.shade { background: rgba(var(--shade), var(--a, 0)); }
 .theme-toggle button { border: 0; background: none; border-radius: 6px; padding: 4px 12px; font-size: 0.85rem; color: var(--text-2); }
 .theme-toggle button[aria-pressed="true"] { background: var(--surface-2); color: var(--text); font-weight: 600; }
 .theme-toggle button:hover { color: var(--text); }
+
+/* ---- chart pickers: an optional type filter beside the component list ---- */
+.picker-row { display: flex; gap: 8px; align-items: flex-end; }
+.picker-main { flex: 1 1 auto; }
+.picker-main select { width: 100%; }
+.picker-type { flex: none; }
