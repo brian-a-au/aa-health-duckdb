@@ -268,3 +268,29 @@ def test_latest_runs_view(tmp_path):
     rows = s.con.execute("select run_id from latest_runs order by run_id").fetchall()
     # One per suite and segment; a run still marked running is never the latest.
     assert rows == [(b,), (c,)] and a not in rows and running not in rows
+
+
+def test_bulk_insert_keeps_every_value(tmp_path):
+    import math
+
+    s = Store.open(tmp_path / "t.duckdb")
+    rows = [
+        DailyValue("metrics/event1", date(2026, 11, 1), 1.5, None, None, None, None),
+        DailyValue("metrics/event1", date(2026, 11, 2), float("nan"), 2.0, 3.0, 1.0, True),
+        DailyValue("metrics/event2", date(2026, 11, 2), float("inf"), -1.0, 0.0, -2.0, False),
+    ]
+    s.add_daily_values(7, rows)
+    got = s.con.execute(
+        "select component_id, day, value, expected, upper, lower, anomaly from daily_values"
+        " where run_id = 7 order by component_id, day"
+    ).fetchall()
+    assert got[0] == ("metrics/event1", date(2026, 11, 1), 1.5, None, None, None, None)
+    assert math.isnan(got[1][2]) and got[1][3:] == (2.0, 3.0, 1.0, True)
+    assert got[2][2] == float("inf") and got[2][6] is False
+    s.add_top_items(7, "current", [(1, 'a\'b "c"', 3.0), (2, "<x>", 1.0)], pair=2)
+    assert s.con.execute(
+        "select rank, item, value, pair from top_items order by rank"
+    ).fetchall() == [
+        (1, 'a\'b "c"', 3.0, 2),
+        (2, "<x>", 1.0, 2),
+    ]

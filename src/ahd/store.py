@@ -134,9 +134,18 @@ class Store:
             raise
         return cls(con)
 
-    def _many(self, sql: str, rows: list[tuple]) -> None:
-        if rows:
-            self.con.executemany(sql, rows)
+    def _insert(self, table: str, columns: str, types: str, rows: list[tuple]) -> None:
+        """Insert many rows with one statement.
+
+        executemany runs one statement per row and took about 0.5 s for the 1,840 rows of one
+        trend batch. This passes each column as one list and unnests them together, which
+        takes about 10 ms. columns and types are comma-separated lists in the same order.
+        """
+        if not rows:
+            return
+        lists = [list(col) for col in zip(*rows, strict=True)]
+        select = ", ".join(f"unnest(?::{t.strip()}[])" for t in types.split(","))
+        self.con.execute(f"INSERT INTO {table} ({columns}) SELECT {select}", lists)
 
     def create_run(
         self,
@@ -210,10 +219,12 @@ class Store:
         )
 
     def add_components(self, run_id: int, components: list[Component]) -> None:
-        self._many(
-            'INSERT INTO components (run_id, component_id, name, kind, "group", number,'
-            " metric_id, exists_dimension, allowed_for_reporting, metric_type)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        self._insert(
+            "components",
+            'run_id, component_id, name, kind, "group", number, metric_id, exists_dimension,'
+            " allowed_for_reporting, metric_type",
+            "INTEGER, VARCHAR, VARCHAR, VARCHAR, VARCHAR, INTEGER, VARCHAR, VARCHAR, BOOLEAN,"
+            " VARCHAR",
             [
                 (
                     run_id,
@@ -232,9 +243,10 @@ class Store:
         )
 
     def add_daily_values(self, run_id: int, values: list[DailyValue]) -> None:
-        self._many(
-            "INSERT INTO daily_values (run_id, component_id, day, value, expected, upper,"
-            " lower, anomaly) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        self._insert(
+            "daily_values",
+            "run_id, component_id, day, value, expected, upper, lower, anomaly",
+            "INTEGER, VARCHAR, DATE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, BOOLEAN",
             [
                 (run_id, v.component_id, v.day, v.value, v.expected, v.upper, v.lower, v.anomaly)
                 for v in values
@@ -248,9 +260,10 @@ class Store:
         rows: list[tuple[int, str, float]],
         pair: int = 1,
     ) -> None:
-        self._many(
-            "INSERT INTO top_items (run_id, pair, period, rank, item, value)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+        self._insert(
+            "top_items",
+            "run_id, pair, period, rank, item, value",
+            "INTEGER, INTEGER, VARCHAR, INTEGER, VARCHAR, DOUBLE",
             [(run_id, pair, period, r, item, v) for r, item, v in rows],
         )
 
@@ -263,9 +276,10 @@ class Store:
         totals: list[float],
         pair: int = 1,
     ) -> None:
-        self._many(
-            "INSERT INTO breakdowns (run_id, pair, kind, col_index, label, rank, item, value)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        self._insert(
+            "breakdowns",
+            "run_id, pair, kind, col_index, label, rank, item, value",
+            "INTEGER, INTEGER, VARCHAR, INTEGER, VARCHAR, INTEGER, VARCHAR, DOUBLE",
             [
                 (run_id, pair, kind, i, label, rank, item, vals[i])
                 for rank, (item, vals) in enumerate(rows, start=1)
@@ -273,9 +287,10 @@ class Store:
                 if i < len(vals)
             ],
         )
-        self._many(
-            "INSERT INTO breakdown_totals (run_id, pair, kind, col_index, label, total)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+        self._insert(
+            "breakdown_totals",
+            "run_id, pair, kind, col_index, label, total",
+            "INTEGER, INTEGER, VARCHAR, INTEGER, VARCHAR, DOUBLE",
             [
                 (run_id, pair, kind, i, label, totals[i])
                 for i, label in enumerate(labels)
