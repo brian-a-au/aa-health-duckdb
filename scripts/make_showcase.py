@@ -400,6 +400,36 @@ def screenshot(
     subprocess.run(cmd + [page.as_uri()], check=True, capture_output=True)
 
 
+def excerpt_html(html: str, scene: tuple) -> str:
+    """The report with the scene's setup run and only the parts the scene shows left."""
+    _step, _title, _desc, _proof, setup, keep, theme = scene
+    theme_js = f"document.querySelector('[data-theme-choice={theme}]').click();"
+    script = setup + theme_js + KEEP_JS % repr(keep)
+    return html.replace("</body>", f"<script>{script}</script></body>")
+
+
+def frame_html(i: int, shot_name: str) -> str:
+    """The slide for scene i, around the screenshot of its excerpt."""
+    step, title, desc, proof, _setup, _keep, theme = SCENES[i]
+    steps = "".join(
+        f'<span class="{"on" if j == i else ""}"><b>{j + 1:02d}</b> {s[0]}</span>'
+        for j, s in enumerate(SCENES)
+    )
+    fields = {
+        "kicker": f"{i + 1:02d} / {step}",
+        "title": title,
+        "description": desc,
+        "proof": proof,
+        "theme": theme,
+        "shot": shot_name,
+        "steps": steps,
+    }
+    text = FRAME
+    for key, value in fields.items():
+        text = text.replace("{{" + key + "}}", value)
+    return text
+
+
 def make(out_dir: Path) -> None:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -411,34 +441,14 @@ def make(out_dir: Path) -> None:
         store, rid = build_store(work / "showcase.duckdb")
         html = render_html(build_view(store, rid))
         stills = []
-        for i, (step, title, desc, proof, setup, keep, theme) in enumerate(SCENES):
-            theme_js = f"document.querySelector('[data-theme-choice={theme}]').click();"
-            script = setup + theme_js + KEEP_JS % repr(keep)
+        for i, scene in enumerate(SCENES):
             page = work / f"excerpt{i}.html"
-            page.write_text(
-                html.replace("</body>", f"<script>{script}</script></body>"), encoding="utf-8"
-            )
+            page.write_text(excerpt_html(html, scene), encoding="utf-8")
             # Excerpts render at 920 CSS pixels wide and are scaled to the 732 pixel window.
             shot = work / f"excerpt{i}.png"
-            screenshot(browser, page, shot, 920, 650, 2, dark=theme == "dark")
-            steps = "".join(
-                f'<span class="{"on" if j == i else ""}"><b>{j + 1:02d}</b> {s[0]}</span>'
-                for j, s in enumerate(SCENES)
-            )
+            screenshot(browser, page, shot, 920, 650, 2, dark=scene[6] == "dark")
             frame = work / f"frame{i}.html"
-            fields = {
-                "kicker": f"{i + 1:02d} / {step}",
-                "title": title,
-                "description": desc,
-                "proof": proof,
-                "theme": theme,
-                "shot": shot.name,
-                "steps": steps,
-            }
-            text = FRAME
-            for key, value in fields.items():
-                text = text.replace("{{" + key + "}}", value)
-            frame.write_text(text, encoding="utf-8")
+            frame.write_text(frame_html(i, shot.name), encoding="utf-8")
             still = work / f"scene{i}.png"
             screenshot(browser, frame, still, 1120, 720, 1)
             stills.append(still)

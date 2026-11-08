@@ -31,3 +31,5 @@ uv run python scripts/make_showcase.py --out docs
 ```
 
 This writes `docs/showcase.gif` and `docs/showcase.png`.
+
+`tests/test_showcase.py` opens each scene of the slideshow in Chrome, without FFmpeg. It fails when a scene keeps a part of the report that is gone, or when a scene's setup script fails. Run the script again after you change what a scene shows.
