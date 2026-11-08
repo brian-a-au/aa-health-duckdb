@@ -2,7 +2,7 @@
 
 [README](../README.md) · [Usage](usage.md) · [The report](report.md) · [DuckDB guide](duckdb.md) · **Compared with the Excel workbook**
 
-aa-health-duckdb is an unofficial alternative to Adobe's Excel workbook "Analytics Health Dashboard 3.07". It covers what the workbook does, and it changes a few things where that gives a better result. This page lists the differences.
+aa-health-duckdb is an unofficial alternative to Adobe's Excel workbook ["Analytics Health Dashboard"](https://new.express.adobe.com/webpage/y6DGOeWmpo7Uh). It covers what the workbook does, and it changes a few things where that gives a better result. This page lists the differences.
 
 ## How the numbers differ
 

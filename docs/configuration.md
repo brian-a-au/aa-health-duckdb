@@ -2,7 +2,23 @@
 
 [README](../README.md) · [Usage](usage.md) · **Configuration** · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Troubleshooting](troubleshooting.md)
 
-The tool signs in to Adobe with an OAuth Server-to-Server credential, which you create in the Adobe Developer Console. This page explains where the tool looks for it, and which permissions the credential needs.
+The tool signs in to Adobe with an [OAuth Server-to-Server credential](https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/), which you create in the [Adobe Developer Console](https://developer.adobe.com/console/). This page explains how to create it, where the tool looks for it, and which permissions it needs.
+
+## Create the credential
+
+You need permission to create projects in the Adobe Developer Console. If you don't have it, ask a System Administrator of your Adobe organization.
+
+1. Open the [Adobe Developer Console](https://developer.adobe.com/console/) and create a new project, or open an existing one.
+2. Click **Add API**, choose **Adobe Analytics**, and choose **OAuth Server-to-Server** as the authentication type.
+3. Open the new credential. Copy the **Client ID**, the **Client Secret**, the **Organization ID** and the **Scopes**.
+4. Open the [Adobe Admin Console](https://adminconsole.adobe.com/). Under Adobe Analytics, open a product profile that holds the report suites you want to check, and add the credential's technical account to it under **API credentials**. See [Permissions](#permissions) for what the product profile must include.
+5. Save the four values as described below, then run `ahd check`.
+
+Adobe's guides explain each step in more depth:
+
+- [OAuth Server-to-Server credentials](https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/) in the Developer Console documentation
+- [Getting started with the Analytics API](https://developer.adobe.com/analytics-apis/docs/2.0/guides/)
+- [Product profiles for Adobe Analytics](https://experienceleague.adobe.com/en/docs/analytics/admin/admin-console/permissions/product-profile) on Experience League
 
 ## The credential
 
@@ -17,7 +33,7 @@ The tool needs the four values of the credential:
 }
 ```
 
-Copy them from the credential's page in the Adobe Developer Console. The scopes must include `openid`, `AdobeID` and `additional_info.projectedProductContext`.
+Copy them from the credential's page in the Adobe Developer Console. The scopes must include `openid`, `AdobeID` and `additional_info.projectedProductContext`. Copy the full list from the console, e.g., with `read_organizations` too, rather than only these three.
 
 ## Where the tool looks
 
@@ -31,13 +47,57 @@ The tool reads a profile or config file as UTF-8 JSON. It accepts the byte-order
 
 ### Profiles
 
-A profile is the same file that aa_auto_sdr uses, so a profile you made with `aa_auto_sdr --profile-add` works in both tools, and one `AA_PROFILE` setting picks the organization for both. The tool only reads profiles. Use aa_auto_sdr to create, test or change them.
+A profile is the same file that [aa_auto_sdr](https://github.com/brian-a-au/aa_auto_sdr) uses, so a profile you made with `aa_auto_sdr --profile-add` works in both tools, and one `AA_PROFILE` setting picks the organization for both. The tool only reads profiles. Use aa_auto_sdr to create, test or change them, e.g., `aa_auto_sdr --profile-test prod`.
 
 A profile also keeps its own database, `~/.aa/orgs/<name>/ahd.duckdb`, so data from different organizations never shares a file. `--db` still wins over this. See [How runs are stored](runs.md).
 
+## Share one credential across tools
+
+One OAuth Server-to-Server credential can serve this tool and its two companion tools:
+
+| Tool | What it does | Where it keeps profiles |
+|---|---|---|
+| `ahd` (this tool) | Health checks for Adobe Analytics report suites | `~/.aa/orgs/<name>/config.json` |
+| [aa_auto_sdr](https://github.com/brian-a-au/aa_auto_sdr) | Solution Design Reference for Adobe Analytics report suites | `~/.aa/orgs/<name>/config.json` |
+| [cja_auto_sdr](https://github.com/brian-a-au/cja_auto_sdr) | Solution Design Reference for Customer Journey Analytics data views | `~/.cja/orgs/<name>/config.json` |
+
+All three read the same four values: `org_id`, `client_id`, `secret` and `scopes`.
+
+### ahd and aa_auto_sdr
+
+These two share the profile folder. Create a profile once with `aa_auto_sdr --profile-add prod`, and both tools use it with `--profile prod` or `AA_PROFILE=prod`. Each tool only needs the Adobe Analytics API on the credential.
+
+### Adding cja_auto_sdr
+
+A project in the Adobe Developer Console can hold several APIs on one credential. To use one credential for all three tools:
+
+1. In the [Adobe Developer Console](https://developer.adobe.com/console/), open the project that holds the credential.
+2. Click **Add API** and add each API that the credential is missing: **Adobe Analytics** for `ahd` and aa_auto_sdr, and **Customer Journey Analytics** and **Adobe Experience Platform** for cja_auto_sdr. cja_auto_sdr needs the Experience Platform API too. Its [quickstart](https://github.com/brian-a-au/cja_auto_sdr/blob/main/docs/QUICKSTART_GUIDE.md#15-add-the-adobe-experience-platform-aep-api) explains why.
+3. When the console asks for the authentication type, choose the existing **OAuth Server-to-Server** credential, so every API shares it.
+4. Copy the scopes again. Adding an API can add scopes, and the credential's page lists the full set.
+5. In the [Adobe Admin Console](https://adminconsole.adobe.com/), add the credential's technical account to a product profile for each product: Adobe Analytics, Customer Journey Analytics and Adobe Experience Platform. Adding an API in the Developer Console does not give access to data by itself.
+
+Then put the same values in both profile folders. Copy the file:
+
+```
+mkdir -p ~/.aa/orgs/prod
+cp ~/.cja/orgs/prod/config.json ~/.aa/orgs/prod/config.json
+```
+
+Or link it, so a rotated secret only needs to change in one place:
+
+```
+mkdir -p ~/.aa/orgs/prod
+ln -s ~/.cja/orgs/prod/config.json ~/.aa/orgs/prod/config.json
+```
+
+Run `ahd check --profile prod` and `aa_auto_sdr --profile-test prod` afterwards. If `ahd check` signs in but sees no report suites, the technical account is not yet in an Adobe Analytics product profile. See [Troubleshooting](troubleshooting.md#sign-in-problems).
+
+The live checks for this tool use exactly this setup: a credential made for cja_auto_sdr, with the Adobe Analytics API added.
+
 ## Permissions
 
-The credential's technical account must be added to an Adobe Analytics product profile in the Adobe Admin Console. The product profile must include:
+The credential's technical account must be added to an [Adobe Analytics product profile](https://experienceleague.adobe.com/en/docs/analytics/admin/admin-console/permissions/product-profile) in the [Adobe Admin Console](https://adminconsole.adobe.com/). The product profile must include:
 
 - **The report suite's metrics and dimensions**, so that the custom events, eVars and props are visible.
 - **The Report Suite Tools item "Anomaly Detection"**, so that the expected values and anomaly flags can be fetched.
@@ -56,3 +116,12 @@ Changes in the Admin Console can take a while to reach Analytics. Run `ahd check
 Keep `config.json` out of version control. This repository's `.gitignore` already does.
 
 If sign-in fails, see [Troubleshooting](troubleshooting.md#sign-in-problems).
+
+## Adobe resources
+
+- [Adobe Developer Console](https://developer.adobe.com/console/)
+- [Adobe Admin Console](https://adminconsole.adobe.com/)
+- [OAuth Server-to-Server credentials](https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/)
+- [Adobe Analytics 2.0 API documentation](https://developer.adobe.com/analytics-apis/docs/2.0/)
+- [Getting started with the Analytics API](https://developer.adobe.com/analytics-apis/docs/2.0/guides/)
+- [Product profiles for Adobe Analytics](https://experienceleague.adobe.com/en/docs/analytics/admin/admin-console/permissions/product-profile)

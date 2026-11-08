@@ -15,7 +15,7 @@
 
 aa-health-duckdb checks the health of an Adobe Analytics report suite. For every custom event, eVar and prop, it shows yesterday's value, the usual value, and whether Adobe's anomaly detection flagged it. It also finds large drops, values that dropped to zero, and components that never collected data.
 
-It is an unofficial alternative to Adobe's Excel workbook "Analytics Health Dashboard 3.07", built on the Adobe Analytics 2.0 API. The command is `ahd`.
+It is an unofficial alternative to Adobe's Excel workbook ["Analytics Health Dashboard"](https://new.express.adobe.com/webpage/y6DGOeWmpo7Uh), built on the [Adobe Analytics 2.0 API](https://developer.adobe.com/analytics-apis/docs/2.0/). The command is `ahd`.
 
 ## What it does
 
@@ -30,7 +30,13 @@ It is an unofficial alternative to Adobe's Excel workbook "Analytics Health Dash
 
 ## Quick start
 
-You need Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), and an Adobe OAuth Server-to-Server credential with access to Adobe Analytics.
+You need:
+
+- Python 3.12 or newer and [uv](https://docs.astral.sh/uv/)
+- an [OAuth Server-to-Server credential](https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/) for the Adobe Analytics API, made in the [Adobe Developer Console](https://developer.adobe.com/console/)
+- the credential's technical account in an [Adobe Analytics product profile](https://experienceleague.adobe.com/en/docs/analytics/admin/admin-console/permissions/product-profile), in the [Adobe Admin Console](https://adminconsole.adobe.com/)
+
+[Configuration](docs/configuration.md#create-the-credential) walks through both steps.
 
 1. Install the tool from the project folder:
 
@@ -79,6 +85,13 @@ If something fails, see [Troubleshooting](docs/troubleshooting.md).
 | [Troubleshooting](docs/troubleshooting.md) | Sign-in problems, limited access, warnings and database errors |
 | [Compared with the Excel workbook](docs/excel-comparison.md) | How the numbers differ, what the tool adds, and what it leaves out |
 | [Development](docs/development.md) | Tests, lint and the README slideshow. See also [AGENTS.md](AGENTS.md) |
+
+## Related tools
+
+These read-only tools use the same kind of credential. One credential can serve all three. See [Share one credential across tools](docs/configuration.md#share-one-credential-across-tools).
+
+- [aa_auto_sdr](https://github.com/brian-a-au/aa_auto_sdr) builds a Solution Design Reference for Adobe Analytics report suites. It shares its profiles with `ahd`.
+- [cja_auto_sdr](https://github.com/brian-a-au/cja_auto_sdr) does the same for Customer Journey Analytics data views.
 
 ## Known limits
 
