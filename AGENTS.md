@@ -42,6 +42,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14, and branch coverage must stay
 | `src/ahd/summary.py` | Turns a stored run into the data the page shows. Every number is computed in SQL |
 | `src/ahd/render/` | The Jinja template, CSS and JavaScript of the HTML report |
 | `tests/fakes.py` | A fake Adobe client. Tests use it instead of the network |
+| `tests/chrome.py`, `tests/test_report_js.py` | Run `report.js` in headless Chrome and read the results back |
 | `scripts/make_showcase.py` | Builds the README slideshow from synthetic data |
 | `docs/` | The user documentation. The README is a short landing page that links to it. Update the matching page when behavior changes |
 | `docs/duckdb.md` | SQL recipes for the database, including alert emails |
@@ -60,6 +61,8 @@ The tests must pass on Python 3.12, 3.13 and 3.14, and branch coverage must stay
 - Tests never use the network. `tests/conftest.py` blocks it and fails any test that tries. Use `tests/fakes.py` and the saved responses in `tests/fixtures/`.
 - `tests/conftest.py` also hides the maintainer's own `AA_PROFILE`, `AHD_*` variables and `~/.aa` profiles from every test.
 - Add or update a test for every change in behavior.
+- `tests/test_report_js.py` runs `report.js` in headless Chrome. It skips without Chrome, and fails without Chrome when `CI` is set. Set `AHD_CHROME` to choose the Chrome program. Add a test there for every change to what the page does.
+- A test that waits for another thread or process must wait for a signal, e.g., a `threading.Event`, and never for a fixed time.
 
 ### The database
 
@@ -76,7 +79,7 @@ The rules for unusual values, large drops, zero values and components that never
 2. `src/ahd/summary.py`, which selects the candidate rows for the page
 3. `src/ahd/sql/views.sql`, which holds the `alerts` macro for your own SQL
 
-Change all three together. `test_alerts_macro_matches_the_report` in `tests/test_summary.py` fails when they disagree.
+Change all three together. `test_alert_lists_match_the_alerts_macro` and `test_tiles_match_the_alerts_macro` in `tests/test_report_js.py` fail when the page and the macro disagree. `test_alerts_macro_matches_the_report` in `tests/test_summary.py` does the same check with a Python copy of the page's rule.
 
 ### The HTML report
 
