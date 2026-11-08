@@ -52,7 +52,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14, and branch coverage must stay
 
 - The tool only reads from Adobe. The only request with a body is `POST /reports`, and it only reads data. Never add a request that changes anything in Adobe.
 - Never print, log or store a credential value or a token. Messages may name where a credential came from, e.g., "profile prod", but never a value. Exceptions carry only the exception type when the message could hold a URL.
-- Never send usage data or telemetry anywhere. The workbook does this, and the tool must not.
+- Never send usage data or telemetry anywhere.
 - Live checks use a credential that lives outside this repository. Ask the maintainer before you make live API calls. Keep any database or report you make for a check outside the repository.
 
 ### Tests

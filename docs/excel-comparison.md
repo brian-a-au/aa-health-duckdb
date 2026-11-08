@@ -28,7 +28,6 @@ aa-health-duckdb is an unofficial alternative to Adobe's Excel workbook ["Analyt
 
 ## What it leaves out, on purpose
 
-- **Usage tracking.** The workbook sends usage data to Adobe. The tool never sends anything.
 - **The version check on open.** It is not needed for a private tool.
 - **Languages.** The workbook offers 9 languages. The tool is in English only.
 - **Outlook email.** The workbook builds an Outlook email on Windows. The tool copies the alerts as a formatted table for any email program, and the DuckDB guide shows how to send them on a schedule.
