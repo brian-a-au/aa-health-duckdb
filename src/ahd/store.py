@@ -14,7 +14,7 @@ from ahd.catalog import Component
 
 # Bump when the tables change. ahd does not upgrade files: a file with another version is
 # refused, and you start a new file.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _SCHEMA = """
 CREATE TABLE schema_version (version INTEGER);

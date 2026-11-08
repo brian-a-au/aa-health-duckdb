@@ -117,11 +117,11 @@ def test_no_credentials_column(tmp_path):
 
 def test_new_file_gets_schema_version(tmp_path):
     s = Store.open(tmp_path / "a.duckdb")
-    assert SCHEMA_VERSION == 3
-    assert s.con.execute("select version from schema_version").fetchall() == [(3,)]
+    assert SCHEMA_VERSION == 4
+    assert s.con.execute("select version from schema_version").fetchall() == [(4,)]
     s.con.close()
     s2 = Store.open(tmp_path / "a.duckdb")  # reopening does not add a second row
-    assert s2.con.execute("select version from schema_version").fetchall() == [(3,)]
+    assert s2.con.execute("select version from schema_version").fetchall() == [(4,)]
 
 
 @pytest.mark.parametrize(

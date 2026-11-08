@@ -676,6 +676,25 @@ def test_alerts_macro_matches_the_report(tmp_path, threshold):
     assert other == len(_report_alerts(view, "2026-11-05"))
 
 
+@pytest.mark.parametrize(
+    ("friday", "yesterday", "threshold"),
+    [(10.0, 7.0, 0.30), (100.0, 85.0, 0.15), (100.0, 70.0, 0.30), (100.0, 80.0, 0.20)],
+)
+def test_a_drop_of_exactly_the_threshold_is_not_flagged(tmp_path, friday, yesterday, threshold):
+    store, rid = _build(
+        tmp_path,
+        [_comp("metrics/event1", "E1", number=1)],
+        _series("metrics/event1", friday, yesterday),
+    )
+    view = build_view(store, rid, threshold)
+    day = YESTERDAY.isoformat()
+    row = view["views"][f"day:{day}"][0]
+    assert row["pct"] == -threshold
+    assert _report_alerts(view, day, threshold) == {}
+    rows = store.con.execute("select * from alerts(?, threshold := ?)", [rid, threshold])
+    assert rows.fetchall() == []
+
+
 def test_nan_values_count_as_empty_for_never_collected(tmp_path):
     # NaN on some days and 0 on the rest: the page and the macro both call it never collected.
     vals = [

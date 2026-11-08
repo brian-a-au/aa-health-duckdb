@@ -5,7 +5,7 @@ Rules follow the workbook (spec 9.1 and 9.3):
 
 - Daily baseline = sum over the baseline window of the same weekday, divided by 12.
 - Week value = sum over the 7 days ending yesterday. Week baseline = baseline sum / 12.
-- pct = value / baseline - 1, empty when the baseline is 0 or missing.
+- pct = value / baseline - 1, rounded to 9 decimals, empty when the baseline is 0 or missing.
 
 Arrows and percent drop alerts use a threshold the reader sets with a slider in the page,
 so the page decides them, not this module.
@@ -82,6 +82,16 @@ _ALERT_ANOMALY = (
 
 _ORDER = "gpos, number NULLS LAST, component_id"
 
+
+def _pct(value: str, base: str) -> str:
+    """value / base - 1, rounded to 9 decimals. Empty when base is 0 or missing.
+
+    The rounding removes floating point noise, e.g. 7 / 10 - 1 is -0.30000000000000004. Without
+    it, a drop of exactly 30 percent counts as "more than 30 percent". views.sql rounds the same.
+    """
+    return f"CASE WHEN {base} <> 0 THEN round({value} / {base} - 1, 9) END"
+
+
 _DAY_SQL = f"""
 WITH {_DV}, {_COMPS},
 sel AS (SELECT unnest($days::DATE[]) AS sel_day),
@@ -96,7 +106,7 @@ base AS (
 r AS (
     SELECT s.sel_day, c.component_id, c.name, c.kind, c."group", c.number, c.metric_type,
         c.unused, c.gpos, d.value, b.baseline,
-        CASE WHEN b.baseline <> 0 THEN d.value / b.baseline - 1 END AS pct,
+        {_pct("d.value", "b.baseline")} AS pct,
         {_ALERT_ANOMALY} AS anomaly
     FROM sel s CROSS JOIN comps c
     JOIN base b ON b.sel_day = s.sel_day AND b.component_id = c.component_id
@@ -118,7 +128,7 @@ r AS (
     FROM comps c LEFT JOIN dv d ON d.component_id = c.component_id
     GROUP BY ALL
 ),
-p AS (SELECT *, CASE WHEN baseline <> 0 THEN value / baseline - 1 END AS pct FROM r)
+p AS (SELECT *, {_pct("value", "baseline")} AS pct FROM r)
 SELECT component_id, name, kind, "group", number, metric_type, value, baseline, pct,
     coalesce(value = 0, false) AS zero, unused, NULL AS anomaly
 FROM p
@@ -151,8 +161,8 @@ usual AS (
 r AS (
     SELECT u.sel_day, c.name, c.component_id, c.metric_type, c.unused, c.gpos, c.number,
         d.expected, d.value AS actual, u.usual,
-        CASE WHEN d.expected <> 0 THEN d.value / d.expected - 1 END AS pct_vs_expected,
-        CASE WHEN u.usual <> 0 THEN d.value / u.usual - 1 END AS pct_vs_usual,
+        {_pct("d.value", "d.expected")} AS pct_vs_expected,
+        {_pct("d.value", "u.usual")} AS pct_vs_usual,
         {_ALERT_ANOMALY} AS anomaly, coalesce(d.value = 0, false) AS zero
     FROM usual u JOIN comps c ON c.component_id = u.component_id
     JOIN dv d ON d.component_id = c.component_id AND d.day = u.sel_day
