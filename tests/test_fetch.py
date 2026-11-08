@@ -572,6 +572,30 @@ def test_add_pair_problems_make_an_ok_run_partial(store):
     assert len(ind) == 5 and all("(Five by Orders)" in r[3] for r in ind)
 
 
+def test_add_pair_with_data_makes_a_failed_run_partial(store):
+    from ahd.fetch import add_pair
+
+    rid = run_fetch(
+        fake_for("rs1", events(1), custom_dims(), default_post=ApiError(500, "down")),
+        store,
+        opts(),
+    )
+    assert store.get_run(rid)["status"] == "failed"
+    assert add_pair(
+        fake_for("rs1", events(1), custom_dims()), store, rid, "variables/evar1", "metrics/orders"
+    ) == (2, 0)
+    assert store.get_run(rid)["status"] == "partial"
+
+
+def test_add_pair_without_data_keeps_a_failed_run_failed(store):
+    from ahd.fetch import add_pair
+
+    down = fake_for("rs1", events(1), custom_dims(), default_post=ApiError(500, "down"))
+    rid = run_fetch(down, store, opts())
+    _pair, problems = add_pair(down, store, rid, "variables/evar1", "metrics/orders")
+    assert problems == 5 and store.get_run(rid)["status"] == "failed"
+
+
 def test_add_pair_refuses_duplicates_and_running_runs(store):
     from ahd.config import ConfigError
     from ahd.fetch import add_pair

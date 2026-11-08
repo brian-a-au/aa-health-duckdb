@@ -283,9 +283,10 @@ def _run(
                 issue("column", err.component_id, err.error_code, err.message)
 
         label = _pair_label(opts.dimension_name or opts.dimension, opts.metric_name or opts.metric)
-        value_count += _store_pair(
+        pair_values, _stored = _store_pair(
             store, run_id, pair, trend_col, ind_futures, label, issue, progress
         )
+        value_count += pair_values
 
     if value_count == 0:
         return "failed"
@@ -344,10 +345,14 @@ def _store_pair(
     label: str,
     issue: Callable[[str, str | None, str, str], None],
     progress: Callable[[str], None],
-) -> int:
-    """Write one pair's results on the calling thread. Returns the number of daily values."""
+) -> tuple[int, int]:
+    """Write one pair's results on the calling thread.
+
+    Returns the number of daily values, and how many of the 5 requests stored any rows.
+    """
     cid = trend_col.component_id
     value_count = 0
+    stored = 0
     for done, (kind, fut) in enumerate(futures.items(), start=1):
         wait([fut])
         progress(f"Individual Component Summary: {done} of {len(futures)} requests done.")
@@ -379,7 +384,9 @@ def _store_pair(
         if empty:
             # Spec section 7: zero rows may be a permission gap, not "no data".
             issue("individual", cid, "no_rows", _no_rows_message(kind, label))
-    return value_count
+        else:
+            stored += 1
+    return value_count, stored
 
 
 def add_pair(
@@ -396,7 +403,8 @@ def add_pair(
     """Fetch one more pair for a stored run, for the same suite, segment and dates.
 
     Returns the pair number and how many problems it had. A run that was "ok" becomes
-    "partial" when the new pair had problems.
+    "partial" when the new pair had problems. A run that was "failed" becomes "partial" when
+    the new pair stored some data.
     """
     run = store.get_run(run_id)
     if run["status"] == "running":
@@ -434,12 +442,17 @@ def add_pair(
                 metric,
                 pair,
             )
-            _store_pair(store, run_id, pair, trend_col, futures, label, issue, progress)
+            _values, stored = _store_pair(
+                store, run_id, pair, trend_col, futures, label, issue, progress
+            )
     except BaseException:
         # A pair that stopped part way, e.g. on Ctrl-C or a failed sign-in, would block a retry
         # of the same dimension and metric. Remove it, so the run looks as it did before.
         store.delete_pair(run_id, pair, pair_series_id(pair))
         raise
     if problems and run["status"] == "ok":
+        store.set_status(run_id, "partial")
+    elif stored and run["status"] == "failed":
+        # The run now holds some data, so "Failed. No data could be read." is no longer true.
         store.set_status(run_id, "partial")
     return pair, problems
