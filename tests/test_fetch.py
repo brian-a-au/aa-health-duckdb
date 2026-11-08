@@ -647,24 +647,35 @@ def test_add_pair_that_stops_part_way_can_be_tried_again(store):
 
 
 def test_ctrl_c_drops_the_requests_that_have_not_started(store):
-    import time
+    import threading
 
     from fakes import auto_response
 
-    def slow(body):
-        time.sleep(0.05)
+    # The probe and the first trend batch answer at once. Every later request waits until the
+    # test lets it go, so at most one request is in flight when Ctrl-C comes.
+    gate = threading.Event()
+    answered = []
+
+    def held(body):
+        answered.append(1)
+        if len(answered) > 2:
+            gate.wait(10)
         return auto_response(body)
 
-    fake = fake_for("rs1", events(200), custom_dims(), default_post=slow)
+    fake = fake_for("rs1", events(200), custom_dims(), default_post=held)
 
     def stop(message):
         if message.startswith("Daily trends"):
             raise KeyboardInterrupt
 
-    with pytest.raises(KeyboardInterrupt):
-        run_fetch(fake, store, opts(workers=1, batch_size=20), progress=stop)
-    # 1 probe, 11 trend batches and 5 pair requests were queued. Only the first few were sent.
-    assert len(fake.posted()) <= 3
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            run_fetch(fake, store, opts(workers=1, batch_size=20), progress=stop)
+    finally:
+        gate.set()
+    # 1 probe, 11 trend batches and 5 pair requests were queued. Only the probe, the first
+    # batch and at most the one request that the worker had already taken were sent.
+    assert 2 <= len(fake.posted()) <= 3
     assert store.list_runs()[0]["status"] == "failed"
 
 
