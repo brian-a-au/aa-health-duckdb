@@ -378,6 +378,19 @@ def test_aa_profile_variable_picks_profile(tmp_path, capsys, monkeypatch):
     assert (folder / "ahd.duckdb").exists()
 
 
+@pytest.mark.parametrize("how", ["flag", "variable"])
+def test_profile_and_config_together_is_an_error(tmp_path, cfg, capsys, monkeypatch, how):
+    _profile("prod")
+    argv = ["suites", "--config", str(cfg)]
+    if how == "flag":
+        argv += ["--profile", "prod"]
+    else:
+        monkeypatch.setenv("AA_PROFILE", "prod")
+    code = main(argv, client_factory=lambda c, company_id=None: pytest.fail("signed in"))
+    assert code == 1
+    assert "Use a profile or --config, not both" in capsys.readouterr().err
+
+
 def test_db_flag_wins_over_profile(tmp_path, capsys):
     folder = _profile()
     fake = fake_for("rs1", events(3), custom_dims())

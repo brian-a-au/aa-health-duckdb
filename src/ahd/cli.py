@@ -201,9 +201,16 @@ def _db_path(args: argparse.Namespace) -> Path:
 
 def _connect(args: argparse.Namespace, factory: Callable[..., Any]) -> Any:
     path = args.config
+    profile = _profile(args)
+    if path is not None and profile:
+        # A profile always wins, so --config would be ignored without a word.
+        raise ConfigError(
+            f"Use a profile or --config, not both. The profile {profile!r} comes from --profile "
+            "or the AA_PROFILE variable."
+        )
     if path is None and Path("config.json").exists():
         path = Path("config.json")
-    creds = load_credentials(path, _profile(args))
+    creds = load_credentials(path, profile)
     company = getattr(args, "company", None)
     client = factory(creds, company_id=company) if company else factory(creds)
     # Only the name of the source, never a value from it.

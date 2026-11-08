@@ -143,7 +143,13 @@ def test_sources(tmp_path, monkeypatch):
 
 
 def test_no_file_and_no_env():
-    with pytest.raises(ConfigError, match="environment variables: org_id"):
+    with pytest.raises(ConfigError, match="No credential was found. Use --profile NAME"):
+        load_credentials(None)
+
+
+def test_no_file_and_some_env(monkeypatch):
+    monkeypatch.setenv("AHD_ORG_ID", "o@AdobeOrg")
+    with pytest.raises(ConfigError, match="environment variables: client_id, secret, scopes"):
         load_credentials(None)
 
 

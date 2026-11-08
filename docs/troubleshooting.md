@@ -71,6 +71,8 @@ The tool already waits and tries again after a rate limit, a server error, a net
 - **"Profile 'x' was not found"**: the file `~/.aa/orgs/x/config.json` does not exist. Check the name, or create the profile with `aa_auto_sdr --profile-add`.
 - **"is not valid UTF-8 JSON"**: the file has a syntax error, e.g., a missing comma or quote.
 - **"must hold one JSON object"**: the file holds a list or a single value, not `{ ... }`.
+- **"No credential was found"**: there is no profile, no `AHD_*` variable and no `config.json` in the current folder. See [Configuration](configuration.md).
+- **"Use a profile or --config, not both"**: remove `--config`, or unset `AA_PROFILE` with `unset AA_PROFILE`.
 - **"Missing credential keys"**: one of `org_id`, `client_id`, `secret` or `scopes` is missing or empty. The message names the key and where the tool looked.
 
 ## The database
