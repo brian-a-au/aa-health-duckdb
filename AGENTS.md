@@ -43,6 +43,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14, and branch coverage must stay
 | `src/ahd/render/` | The Jinja template, CSS and JavaScript of the HTML report |
 | `tests/fakes.py` | A fake Adobe client. Tests use it instead of the network |
 | `scripts/make_showcase.py` | Builds the README slideshow from synthetic data |
+| `docs/` | The user documentation. The README is a short landing page that links to it. Update the matching page when behavior changes |
 | `docs/duckdb.md` | SQL recipes for the database, including alert emails |
 
 ## Rules

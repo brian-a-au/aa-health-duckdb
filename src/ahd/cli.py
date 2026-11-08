@@ -40,6 +40,7 @@ PROFILE_DB = "ahd.duckdb"
 DEFAULT_OUT = "./reports/"
 EXIT_CODES = {"ok": 0, "failed": 1, "partial": 3}
 
+OUT_HELP = f"The folder for the HTML report (default {DEFAULT_OUT})."
 RSID_HELP = "A report suite ID or name. Run ahd suites to list them."
 DIMENSION_HELP = (
     "The dimension for the Individual Component Summary: a full ID (variables/evar17), a "
@@ -128,9 +129,13 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--date", type=date.fromisoformat, help="Use this date as today (YYYY-MM-DD).")
     run.add_argument("--dimension", default="page", help=DIMENSION_HELP + " Default: Page.")
     run.add_argument("--metric", default="occurrences", help=METRIC_HELP + " Default: Occurrences.")
-    run.add_argument("--batch-size", type=int, default=20)
-    run.add_argument("--workers", type=int, default=4)
-    run.add_argument("--out", type=Path, default=Path(DEFAULT_OUT))
+    run.add_argument(
+        "--batch-size", type=int, default=20, help="Columns per trend request (default 20)."
+    )
+    run.add_argument(
+        "--workers", type=int, default=4, help="Requests that run at the same time (default 4)."
+    )
+    run.add_argument("--out", type=Path, default=Path(DEFAULT_OUT), help=OUT_HELP)
     change_alert(run)
 
     individual = sub.add_parser(
@@ -146,13 +151,13 @@ def _parser() -> argparse.ArgumentParser:
     individual.add_argument("--run", type=int, required=True, help="The stored run to add to.")
     individual.add_argument("--dimension", required=True, help=DIMENSION_HELP)
     individual.add_argument("--metric", required=True, help=METRIC_HELP)
-    individual.add_argument("--out", type=Path, default=Path(DEFAULT_OUT))
+    individual.add_argument("--out", type=Path, default=Path(DEFAULT_OUT), help=OUT_HELP)
     change_alert(individual)
 
     render = sub.add_parser("render", help="Write the HTML from a stored run. No API calls.")
     common(render, config=False)
-    render.add_argument("--run", type=int, required=True)
-    render.add_argument("--out", type=Path, default=Path(DEFAULT_OUT))
+    render.add_argument("--run", type=int, required=True, help="The stored run to rebuild.")
+    render.add_argument("--out", type=Path, default=Path(DEFAULT_OUT), help=OUT_HELP)
     change_alert(render)
 
     runs = sub.add_parser("runs", help="List stored runs.")
