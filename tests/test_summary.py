@@ -676,6 +676,20 @@ def test_alerts_macro_matches_the_report(tmp_path, threshold):
     assert other == len(_report_alerts(view, "2026-11-05"))
 
 
+def test_nan_values_count_as_empty_for_never_collected(tmp_path):
+    # NaN on some days and 0 on the rest: the page and the macro both call it never collected.
+    vals = [
+        _dv("metrics/event1", d, 0.0 if (d == YESTERDAY or d.day % 2) else float("nan"))
+        for d in _days(START, TODAY)
+    ]
+    store, rid = _build(tmp_path, [_comp("metrics/event1", "E1", number=1)], vals)
+    view = build_view(store, rid)
+    row = view["views"][f"day:{YESTERDAY.isoformat()}"][0]
+    assert row["zero"] and row["unused"]
+    assert _report_alerts(view, YESTERDAY.isoformat()) == {}
+    assert store.con.execute("select count(*) from alerts(?)", [rid]).fetchone()[0] == 0
+
+
 def test_component_days_matches_the_report_view(tmp_path):
     store, rid = _build(
         tmp_path, [_comp("metrics/event1", "Event 1", number=1)], _friday_series("metrics/event1")

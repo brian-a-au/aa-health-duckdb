@@ -54,13 +54,14 @@ dv AS (
 )"""
 
 # Catalog components that have at least one daily value, with their sort position.
-# unused: the value was 0 or empty on every day through yesterday.
+# unused: the value was 0 or empty on every day through yesterday. It reads dv, so NaN and
+# Infinity count as empty, as in the component_days view.
 _COMPS = """
 comps AS (
     SELECT c.component_id, c.name, c.kind, c."group", c.number, c.metric_type,
         coalesce(list_position($groups::VARCHAR[], c."group"), 1000000) AS gpos,
-        NOT EXISTS (SELECT 1 FROM daily_values d
-                    WHERE d.run_id = $run_id AND d.component_id = c.component_id
+        NOT EXISTS (SELECT 1 FROM dv d
+                    WHERE d.component_id = c.component_id
                       AND d.day BETWEEN $start AND $yesterday AND d.value <> 0) AS unused
     FROM components c
     WHERE c.run_id = $run_id AND NOT starts_with(c.component_id, 'individual/')
