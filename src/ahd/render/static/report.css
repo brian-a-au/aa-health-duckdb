@@ -135,6 +135,7 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .change-alert input[type="range"] { flex: 1 1 160px; max-width: 320px; accent-color: var(--flag); }
 .change-alert output { font-weight: 600; min-width: 3.5em; }
 .change-alert .hint { flex-basis: 100%; margin: 0; }
+.change-alert-result { flex-basis: 100%; margin: 4px 0 0; font-weight: 600; }
 .unused-badge { margin-left: 6px; font-size: 0.8rem; }
 .warning {
   border-left: 4px solid var(--flag);

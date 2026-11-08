@@ -146,7 +146,7 @@
   var yesterday = dayKeys[0] || "";
   // t: the slider's share. A drop below usual by more than t is flagged, and a change by more
   // than t either way gets an arrow.
-  var state = { gran: "day", day: yesterday, range: "", flagged: false,
+  var state = { gran: "day", day: yesterday, alertDay: yesterday, range: "", flagged: false,
     t: typeof data.change_alert === "number" ? data.change_alert : 0.3 };
   var MIN_USUAL = typeof data.min_usual === "number" ? data.min_usual : 10;
   var sortState = {};
@@ -327,6 +327,11 @@
       title: "This component had a value of 0 on every day in this run." }, "never collected data");
   }
 
+  function dropBadge() {
+    return badge("flag", "▼", "Large drop", "More than " + Math.round(state.t * 100) +
+      "% below the usual value. Set the percent with the slider at the top of the page.");
+  }
+
   function arrowFor(pct) {
     if (pct === null || pct === undefined || Math.abs(pct) <= state.t) return null;
     return pct > 0 ? "up" : "down";
@@ -376,6 +381,14 @@
     return { c: anomalyBlocked ? el("span", { "class": "muted" }, "Not available") : "", k: null };
   }
 
+  // The Flag column: Adobe's anomaly flag (daily only), else a large drop from the slider.
+  function flagCell(row, daily) {
+    var a = daily ? anomalyCell(row.anomaly) : { c: "", k: null };
+    if (row.anomaly) return a;
+    if (isLargeDrop(row.value, row.baseline, row.pct)) return { c: dropBadge(), k: 0.5 };
+    return a;
+  }
+
   function isFlagged(row) {
     return !!(row.anomaly || (row.zero && !row.unused) ||
       isLargeDrop(row.value, row.baseline, row.pct));
@@ -398,7 +411,7 @@
       num: true
     });
     headers.push({ label: "Change from usual", num: true });
-    if (daily) headers.push({ label: "Flag" });
+    headers.push({ label: "Flag" });
     var body = rows.map(function (r) {
       var cells = [];
       if (custom) cells.push({ c: numberLabel(r), k: r.number });
@@ -406,7 +419,7 @@
       cells.push({ c: fmtNum(r.value, r.metric_type), k: r.value });
       cells.push({ c: fmtRound(r.baseline, r.metric_type), k: r.baseline });
       cells.push(changeCell(arrowFor(r.pct), r.pct));
-      if (daily) cells.push(anomalyCell(r.anomaly));
+      cells.push(flagCell(r, daily));
       return cells;
     });
     return table(headers, body, null, id);
@@ -427,7 +440,14 @@
     return (state.gran === "week" ? data.views.week : data.views["day:" + state.day]) || [];
   }
 
+  function renderSliderResult() {
+    var when = state.gran === "week" ? "The week ending " + fmtDay(yesterday, false) :
+      fmtDay(state.day, false) + (state.day === yesterday ? " (yesterday)" : "");
+    byId("change-alert-result").textContent = dropSummary(currentRows(), when);
+  }
+
   function renderTables() {
+    renderSliderResult();
     var host = byId("tables");
     clear(host);
     var rows = currentRows();
@@ -707,6 +727,11 @@
         parent.appendChild(el("option", { value: r.component_id }, componentLabel(r)));
       });
       var at = keep ? rows.indexOf(keep) : -1;
+      if (!keep) {
+        // As in the workbook after a refresh: Occurrences and Page first, when they have data.
+        var first = kind === "metric" ? "metrics/occurrences" : "variables/page";
+        rows.forEach(function (r, i) { if (r.component_id === first) at = i; });
+      }
       select.selectedIndex = at >= 0 ? at : (rows.length ? 0 : -1);
       select.disabled = !rows.length;
     }
@@ -744,20 +769,65 @@
     return { c: String(m), k: null };
   }
 
-  function drawIndividual() {
-    var run = data.run || {};
-    var dim = run.dimension_name || run.dimension;
-    var metric = run.metric_name || run.metric;
-    drawChart(byId("individual-chart"), data.series[data.individual || "individual"],
-      dim && metric ? dim + " by " + metric : "the chosen dimension and metric");
+  // The Individual Component Summary shows one stored pair at a time.
+  var pairs = data.pairs || [];
+  var pairIndex = 0;
+  function pairLabel(p) {
+    return p ? (p.dimension_name || p.dimension) + " by " + (p.metric_name || p.metric) :
+      "the chosen dimension and metric";
   }
 
-  function renderIndividual() {
-    redrawers.push(drawIndividual);
+  function drawIndividual() {
+    var p = pairs[pairIndex];
+    drawChart(byId("individual-chart"), p ? data.series[p.series_id] : [], pairLabel(p),
+      p ? p.metric_type : null);
+  }
+
+  function fillPairPickers() {
+    var dimSel = byId("pair-dimension"), metSel = byId("pair-metric");
+    var dims = [];
+    pairs.forEach(function (p) { if (dims.indexOf(p.dimension) < 0) dims.push(p.dimension); });
+    clear(dimSel);
+    dims.forEach(function (d) {
+      var p = pairs.filter(function (x) { return x.dimension === d; })[0];
+      dimSel.appendChild(el("option", { value: d }, p.dimension_name || d));
+    });
+    function fillMetrics() {
+      clear(metSel);
+      pairs.forEach(function (p, i) {
+        if (p.dimension === dimSel.value) {
+          metSel.appendChild(el("option", { value: String(i) }, p.metric_name || p.metric));
+        }
+      });
+    }
+    var current = pairs[pairIndex];
+    if (current) dimSel.value = current.dimension;
+    fillMetrics();
+    if (current) metSel.value = String(pairIndex);
+    dimSel.disabled = dims.length < 2;
+    metSel.disabled = metSel.options.length < 2;
+    dimSel.addEventListener("change", function () {
+      fillMetrics();
+      metSel.disabled = metSel.options.length < 2;
+      pairIndex = Number(metSel.value);
+      renderPair();
+    });
+    metSel.addEventListener("change", function () {
+      pairIndex = Number(metSel.value);
+      renderPair();
+    });
+  }
+
+  function renderPair() {
+    var p = pairs[pairIndex];
+    var label = pairLabel(p);
+    byId("individual-title").textContent = label;
+    byId("individual-caption").textContent = "Trend for " + label;
     drawIndividual();
+    var type = p ? p.metric_type : null;
     var top = byId("top100");
     clear(top);
-    var rows = data.top100 || [];
+    var rows = p ? p.top100 : [];
     if (!rows.length) {
       top.appendChild(el("p", { "class": "empty" }, "No top values were returned."));
     } else {
@@ -766,13 +836,13 @@
          { label: "Count", num: true }],
         rows.map(function (r) {
           return [movementCell(r.movement), { c: String(r.rank), k: r.rank }, r.item,
-            { c: fmtNum(r.value), k: r.value }];
+            { c: fmtNum(r.value, type), k: r.value }];
         }), null, "top100"));
     }
     ["browser", "device"].forEach(function (kind) {
       var host = byId(kind);
       clear(host);
-      var b = data[kind] || { labels: [], rows: [], totals: [] };
+      var b = (p && p[kind]) || { labels: [], rows: [], totals: [] };
       if (!b.rows.length) {
         host.appendChild(el("p", { "class": "empty" }, "No data was returned."));
         return;
@@ -787,12 +857,19 @@
       var body = b.rows.map(function (r) {
         return [r.item].concat(r.values.map(function (v, j) {
           var a = colMax[j] > 0 && v ? 0.04 + 0.30 * (v / colMax[j]) : 0;
-          return { c: fmtNum(v), k: v, cls: "shade", a: a };
+          return { c: fmtNum(v, type), k: v, cls: "shade", a: a };
         }));
       });
-      var foot = b.totals && b.totals.length ? ["Total"].concat(b.totals.map(fmtNum)) : null;
+      var foot = b.totals && b.totals.length ?
+        ["Total"].concat(b.totals.map(function (v) { return fmtNum(v, type); })) : null;
       host.appendChild(table(headers, body, foot, kind));
     });
+  }
+
+  function renderIndividual() {
+    redrawers.push(drawIndividual);
+    fillPairPickers();
+    renderPair();
   }
 
   // ---- alerts tab ------------------------------------------------------------
@@ -805,7 +882,9 @@
   }
 
   function splitAlerts() {
-    var alerts = data.alerts || [];
+    var alerts = (data.alerts || []).filter(function (a) {
+      return !a.day || a.day === state.alertDay;
+    });
     function plain(a) { return !a.anomaly; }
     return {
       unusual: alerts.filter(function (a) { return !!a.anomaly; }),
@@ -834,7 +913,7 @@
     var parts = splitAlerts();
     var lines = [];
     lines.push("Analytics Health alerts for " + (run.rsid_name || run.rsid) + " (" + run.rsid +
-      "), " + yesterday);
+      "), " + state.alertDay);
     lines.push("Segment: " + (run.segment_id || "none (all visits)"));
     function section(title, list) {
       if (!list.length) return;
@@ -872,6 +951,34 @@
       k: a.expected };
   }
 
+  function alertDayText() {
+    return fmtDay(state.alertDay, false) + (state.alertDay === yesterday ? " (yesterday)" : "");
+  }
+
+  // One plain sentence about large drops in these rows, naming the largest drop even when it is
+  // under the slider, so a reader can see why nothing was flagged.
+  function dropSummary(rows, when) {
+    var pct = Math.round(state.t * 100) + "%";
+    var drops = rows.filter(function (r) { return isLargeDrop(r.value, r.baseline, r.pct); });
+    var flagged = drops.length;
+    var byAdobe = drops.filter(function (r) { return !!r.anomaly; }).length;
+    var worst = null;
+    rows.forEach(function (r) {
+      if (r.zero || r.pct === null || r.pct === undefined || r.pct >= 0) return;
+      if (r.baseline === null || r.baseline < MIN_USUAL) return;
+      if (!worst || r.pct < worst.pct) worst = r;
+    });
+    var head = flagged ?
+      when + ": " + flagged + (flagged === 1 ? " component is" : " components are") +
+        " more than " + pct + " below usual" + (byAdobe ? ", and Adobe also flagged " +
+        (byAdobe === flagged ? (flagged === 1 ? "it" : "all of them") : byAdobe + " of them") :
+        "") + "." :
+      when + ": no component is more than " + pct + " below usual.";
+    if (!worst) return head + " No component is below its usual value.";
+    return head + " The largest drop is " + fmtPct(worst.pct).replace("-", "") + " (" +
+      componentLabel(worst) + ").";
+  }
+
   function renderAlerts() {
     var host = byId("alerts");
     clear(host);
@@ -896,7 +1003,7 @@
     } else {
       g1.appendChild(el("p", { "class": "empty" }, anomalyBlocked ?
         "Anomaly detection is not available for this run, so no values could be flagged. " +
-        "See the status section." : "Adobe flagged no unusual values yesterday."));
+        "See the status section." : "Adobe flagged no unusual values on " + alertDayText() + "."));
     }
     host.appendChild(g1);
 
@@ -918,7 +1025,7 @@
         }), null, "alerts-drops"));
     } else {
       g2.appendChild(el("p", { "class": "empty" },
-        "No other component was more than " + pct + " below its usual value yesterday."));
+        dropSummary(data.views["day:" + state.alertDay] || [], alertDayText())));
     }
     host.appendChild(g2);
 
@@ -926,7 +1033,8 @@
     g3.appendChild(groupHeading("zero-title", "Dropped to zero", parts.zero.length));
     if (parts.zero.length) {
       g3.appendChild(el("p", { "class": "hint" },
-        "These components had data on other days in this run, but a value of 0 yesterday."));
+        "These components had data on other days in this run, but a value of 0 on " +
+        alertDayText() + "."));
       g3.appendChild(table(
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
          { label: "Usual", num: true }, { label: "Expected", num: true },
@@ -941,7 +1049,7 @@
         }), null, "alerts-zero"));
     } else {
       g3.appendChild(el("p", { "class": "empty" },
-        "No component that collects data had a value of 0 yesterday."));
+        "No component that collects data had a value of 0 on " + alertDayText() + "."));
     }
     host.appendChild(g3);
 
@@ -1041,6 +1149,16 @@
   byId("flagged-only").addEventListener("change", function (e) {
     state.flagged = e.target.checked;
     renderTables();
+  });
+
+  var alertDaySel = byId("alert-day");
+  dayKeys.forEach(function (d, i) {
+    alertDaySel.appendChild(el("option", { value: d },
+      fmtDay(d, true) + (i === 0 ? " (yesterday)" : "")));
+  });
+  alertDaySel.addEventListener("change", function () {
+    state.alertDay = alertDaySel.value;
+    renderAlerts();
   });
 
   var slider = byId("change-alert");

@@ -39,7 +39,7 @@ DROP_CAUSE = (
     "Console, or a run made with a different credential. Data did not stop, but this run cannot "
     "see the missing components, so the report does not check them."
 )
-INDIVIDUAL = "individual"
+INDIVIDUAL_PREFIX = "individual/"
 
 # Daily values for the run, with NaN and Infinity turned into NULL so the output stays JSON-safe.
 _DV = """
@@ -63,7 +63,7 @@ comps AS (
                     WHERE d.run_id = $run_id AND d.component_id = c.component_id
                       AND d.day BETWEEN $start AND $yesterday AND d.value <> 0) AS unused
     FROM components c
-    WHERE c.run_id = $run_id AND c.component_id <> $individual
+    WHERE c.run_id = $run_id AND NOT starts_with(c.component_id, 'individual/')
       AND EXISTS (SELECT 1 FROM daily_values d
                   WHERE d.run_id = $run_id AND d.component_id = c.component_id)
 )"""
@@ -125,75 +125,78 @@ WHERE day BETWEEN $start AND $yesterday
 ORDER BY component_id, day
 """
 
-# Yesterday's rows that may be an alert: Adobe flagged them, the value is 0, or the value is
-# more than MIN_CHANGE_ALERT below the usual value for the weekday. The page picks from these.
+# Rows that may be an alert, for each day the reader can pick: Adobe flagged them, the value
+# is 0, or the value is more than MIN_CHANGE_ALERT below the usual value for that weekday.
+# The page picks from these with its day picker and slider.
 _ALERTS_SQL = f"""
 WITH {_DV}, {_COMPS},
+sel AS (SELECT unnest($days::DATE[]) AS sel_day),
 usual AS (
-    SELECT c.component_id, coalesce(sum(d.value), 0) / 12 AS usual
-    FROM comps c LEFT JOIN dv d ON d.component_id = c.component_id
+    SELECT s.sel_day, c.component_id, coalesce(sum(d.value), 0) / 12 AS usual
+    FROM sel s CROSS JOIN comps c
+    LEFT JOIN dv d ON d.component_id = c.component_id
         AND d.day BETWEEN $baseline_start AND $baseline_end
-        AND dayofweek(d.day) = dayofweek($yesterday::DATE)
-    GROUP BY c.component_id
+        AND dayofweek(d.day) = dayofweek(s.sel_day)
+    GROUP BY s.sel_day, c.component_id
 ),
 r AS (
-    SELECT c.name, c.component_id, c.metric_type, c.unused, c.gpos, c.number, d.expected,
-        d.value AS actual, u.usual,
+    SELECT u.sel_day, c.name, c.component_id, c.metric_type, c.unused, c.gpos, c.number,
+        d.expected, d.value AS actual, u.usual,
         CASE WHEN d.expected <> 0 THEN d.value / d.expected - 1 END AS pct_vs_expected,
         CASE WHEN u.usual <> 0 THEN d.value / u.usual - 1 END AS pct_vs_usual,
         {_ANOMALY.format(a="d")} AS anomaly, coalesce(d.value = 0, false) AS zero
-    FROM comps c JOIN dv d ON d.component_id = c.component_id AND d.day = $yesterday
-    JOIN usual u ON u.component_id = c.component_id
+    FROM usual u JOIN comps c ON c.component_id = u.component_id
+    JOIN dv d ON d.component_id = c.component_id AND d.day = u.sel_day
 )
-SELECT name, component_id, metric_type, expected, actual, usual, pct_vs_expected, pct_vs_usual,
-    anomaly, zero, unused
+SELECT CAST(sel_day AS VARCHAR) AS day, name, component_id, metric_type, expected, actual,
+    usual, pct_vs_expected, pct_vs_usual, anomaly, zero, unused
 FROM r
 WHERE anomaly IS NOT NULL OR zero
     OR (usual >= {MIN_USUAL} AND pct_vs_usual < -{MIN_CHANGE_ALERT})
-ORDER BY {_ORDER}
+ORDER BY sel_day DESC, {_ORDER}
 """
 
 _TOP_SQL = """
 WITH hist AS (
     SELECT item, min(rank) AS rank FROM top_items
-    WHERE run_id = $run_id AND period = 'historical' GROUP BY item
+    WHERE run_id = $run_id AND pair = $pair AND period = 'historical' GROUP BY item
 )
 SELECT h.rank - c.rank AS movement, h.rank IS NULL AS is_new, c.rank, c.item,
     CASE WHEN isfinite(c.value) THEN c.value END AS value
 FROM top_items c LEFT JOIN hist h ON h.item = c.item
-WHERE c.run_id = $run_id AND c.period = 'current'
+WHERE c.run_id = $run_id AND c.pair = $pair AND c.period = 'current'
 ORDER BY c.rank, c.item
 """
 
 _LABELS_SQL = """
 WITH lab AS (
     SELECT kind, col_index, first(label) AS label FROM (
-        SELECT kind, col_index, label FROM breakdown_totals WHERE run_id = $run_id
+        SELECT kind, col_index, label FROM breakdown_totals WHERE run_id = $run_id AND pair = $pair
         UNION ALL
-        SELECT kind, col_index, label FROM breakdowns WHERE run_id = $run_id
+        SELECT kind, col_index, label FROM breakdowns WHERE run_id = $run_id AND pair = $pair
     ) GROUP BY kind, col_index
 )
 SELECT l.kind, list(l.label ORDER BY l.col_index) AS labels,
     list(CASE WHEN isfinite(t.total) THEN t.total END ORDER BY l.col_index) AS totals
 FROM lab l
 LEFT JOIN breakdown_totals t
-    ON t.run_id = $run_id AND t.kind = l.kind AND t.col_index = l.col_index
+    ON t.run_id = $run_id AND t.pair = $pair AND t.kind = l.kind AND t.col_index = l.col_index
 GROUP BY l.kind
 """
 
 _BREAKDOWN_ROWS_SQL = """
 WITH lab AS (
     SELECT DISTINCT kind, col_index FROM (
-        SELECT kind, col_index FROM breakdown_totals WHERE run_id = $run_id
+        SELECT kind, col_index FROM breakdown_totals WHERE run_id = $run_id AND pair = $pair
         UNION ALL
-        SELECT kind, col_index FROM breakdowns WHERE run_id = $run_id
+        SELECT kind, col_index FROM breakdowns WHERE run_id = $run_id AND pair = $pair
     )
 ),
-items AS (SELECT DISTINCT kind, rank, item FROM breakdowns WHERE run_id = $run_id)
+items AS (SELECT DISTINCT kind, rank, item FROM breakdowns WHERE run_id = $run_id AND pair = $pair)
 SELECT i.kind, i.rank, i.item,
     list(CASE WHEN isfinite(b.value) THEN b.value END ORDER BY l.col_index) AS "values"
 FROM items i JOIN lab l ON l.kind = i.kind
-LEFT JOIN breakdowns b ON b.run_id = $run_id AND b.kind = i.kind AND b.rank = i.rank
+LEFT JOIN breakdowns b ON b.run_id = $run_id AND b.pair = $pair AND b.kind = i.kind AND b.rank = i.rank
     AND b.item = i.item AND b.col_index = l.col_index
 GROUP BY i.kind, i.rank, i.item
 ORDER BY i.kind, i.rank, i.item
@@ -254,14 +257,63 @@ def _run_block(store: Store, run_id: int) -> dict[str, Any]:
         "started_at",
         "finished_at",
         "tool_version",
-        "dimension",
-        "metric",
         "currency",
     ]
     block = {"id": run["run_id"], **{k: _iso(run[k]) for k in keys}}
-    block["dimension_name"] = _display_name(store, run_id, run["dimension"], True)
-    block["metric_name"] = _display_name(store, run_id, run["metric"], False)
+    block["duration"] = duration_text(run["started_at"], run["finished_at"])
     return block
+
+
+def _pairs(store: Store, run_id: int, p: dict[str, Any]) -> list[dict[str, Any]]:
+    """Each Individual Component Summary pair with its names, top 100 and breakdown tables."""
+    out = []
+    for pair in store.list_pairs(run_id):
+        q = {**p, "pair": pair["pair"]}
+        top100 = [
+            {"movement": _movement(r), "rank": r["rank"], "item": r["item"], "value": r["value"]}
+            for r in _rows(store, _TOP_SQL, q)
+        ]
+        tables = {k: {"labels": [], "rows": [], "totals": []} for k in ("browser", "device")}
+        for r in _rows(store, _LABELS_SQL, q):
+            if r["kind"] in tables:
+                tables[r["kind"]]["labels"] = r["labels"]
+                tables[r["kind"]]["totals"] = r["totals"]
+        for r in _rows(store, _BREAKDOWN_ROWS_SQL, q):
+            if r["kind"] in tables:
+                tables[r["kind"]]["rows"].append(
+                    {"rank": r["rank"], "item": r["item"], "values": r["values"]}
+                )
+        out.append(
+            {
+                "pair": pair["pair"],
+                "series_id": f"{INDIVIDUAL_PREFIX}{pair['pair']}",
+                "dimension": pair["dimension"],
+                "metric": pair["metric"],
+                "dimension_name": pair["dimension_name"]
+                or _display_name(store, run_id, pair["dimension"], True),
+                "metric_name": pair["metric_name"]
+                or _display_name(store, run_id, pair["metric"], False),
+                "metric_type": pair["metric_type"],
+                "top100": top100,
+                "browser": tables["browser"],
+                "device": tables["device"],
+            }
+        )
+    return out
+
+
+def duration_text(started: datetime | None, finished: datetime | None) -> str | None:
+    """How long a run took, e.g. "1 min 51 s". None when it has no end time."""
+    if started is None or finished is None:
+        return None
+    seconds = max(0, round((finished - started).total_seconds()))
+    hours, rest = divmod(seconds, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours} h {minutes} min"
+    if minutes:
+        return f"{minutes} min {secs} s"
+    return f"{secs} s"
 
 
 def _movement(row: dict[str, Any]) -> int | str:
@@ -304,7 +356,6 @@ def build_view(
     p: dict[str, Any] = {
         "run_id": run_id,
         "groups": GROUP_ORDER,
-        "individual": INDIVIDUAL,
         "days": w.selectable_days,
         "yesterday": w.yesterday,
         "start": w.start,
@@ -325,30 +376,12 @@ def build_view(
             [row["day"], row["value"], row["expected"], row["upper"], row["lower"], row["anomaly"]]
         )
 
-    top100 = [
-        {"movement": _movement(r), "rank": r["rank"], "item": r["item"], "value": r["value"]}
-        for r in _rows(store, _TOP_SQL, p)
-    ]
-
-    tables = {k: {"labels": [], "rows": [], "totals": []} for k in ("browser", "device")}
-    for r in _rows(store, _LABELS_SQL, p):
-        if r["kind"] in tables:
-            tables[r["kind"]]["labels"] = r["labels"]
-            tables[r["kind"]]["totals"] = r["totals"]
-    for r in _rows(store, _BREAKDOWN_ROWS_SQL, p):
-        if r["kind"] in tables:
-            tables[r["kind"]]["rows"].append(
-                {"rank": r["rank"], "item": r["item"], "values": r["values"]}
-            )
-
     return {
         "run": run,
         "views": views,
         "series": series,
         "alerts": _rows(store, _ALERTS_SQL, p),
-        "top100": top100,
-        "browser": tables["browser"],
-        "device": tables["device"],
+        "pairs": _pairs(store, run_id, p),
         "issues": _rows(store, _ISSUES_SQL, p),
         "component_drops": component_drops(store, run_id),
         "change_alert": change_alert,

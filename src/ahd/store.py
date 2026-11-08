@@ -13,7 +13,7 @@ from ahd.catalog import Component
 
 # Bump when the tables change. ahd does not upgrade files: a file with another version is
 # refused, and you start a new file.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE schema_version (version INTEGER);
@@ -21,8 +21,12 @@ CREATE SEQUENCE run_seq START 1;
 CREATE TABLE runs (
     run_id INTEGER PRIMARY KEY, rsid VARCHAR, rsid_name VARCHAR, segment_id VARCHAR,
     today DATE, timezone VARCHAR, tool_version VARCHAR, status VARCHAR,
-    started_at TIMESTAMP, finished_at TIMESTAMP, dimension VARCHAR, metric VARCHAR,
-    currency VARCHAR);
+    started_at TIMESTAMP, finished_at TIMESTAMP, currency VARCHAR);
+-- The Individual Component Summary pairs of a run: one dimension by one metric each.
+-- Pair 1 is fetched by ahd run; ahd individual adds more.
+CREATE TABLE pairs (
+    run_id INTEGER, pair INTEGER, dimension VARCHAR, metric VARCHAR, dimension_name VARCHAR,
+    metric_name VARCHAR, metric_type VARCHAR, added_at TIMESTAMP);
 CREATE TABLE components (
     run_id INTEGER, component_id VARCHAR, name VARCHAR, kind VARCHAR, "group" VARCHAR,
     number INTEGER, metric_id VARCHAR, exists_dimension VARCHAR, allowed_for_reporting BOOLEAN,
@@ -31,12 +35,12 @@ CREATE TABLE daily_values (
     run_id INTEGER, component_id VARCHAR, day DATE, value DOUBLE,
     expected DOUBLE, upper DOUBLE, lower DOUBLE, anomaly BOOLEAN);
 CREATE TABLE top_items (
-    run_id INTEGER, period VARCHAR, rank INTEGER, item VARCHAR, value DOUBLE);
+    run_id INTEGER, pair INTEGER, period VARCHAR, rank INTEGER, item VARCHAR, value DOUBLE);
 CREATE TABLE breakdowns (
-    run_id INTEGER, kind VARCHAR, col_index INTEGER, label VARCHAR,
+    run_id INTEGER, pair INTEGER, kind VARCHAR, col_index INTEGER, label VARCHAR,
     rank INTEGER, item VARCHAR, value DOUBLE);
 CREATE TABLE breakdown_totals (
-    run_id INTEGER, kind VARCHAR, col_index INTEGER, label VARCHAR, total DOUBLE);
+    run_id INTEGER, pair INTEGER, kind VARCHAR, col_index INTEGER, label VARCHAR, total DOUBLE);
 CREATE TABLE issues (
     run_id INTEGER, scope VARCHAR, component_id VARCHAR, code VARCHAR, message VARCHAR);
 """
@@ -44,6 +48,7 @@ CREATE TABLE issues (
 
 # Every table whose rows belong to a run. `runs` goes last.
 RUN_TABLES = (
+    "pairs",
     "components",
     "daily_values",
     "top_items",
@@ -103,14 +108,12 @@ class Store:
         today: date,
         timezone: str,
         tool_version: str,
-        dimension: str | None = None,
-        metric: str | None = None,
         currency: str | None = None,
     ) -> int:
         row = self.con.execute(
             "INSERT INTO runs (run_id, rsid, rsid_name, segment_id, today, timezone,"
-            " tool_version, status, started_at, finished_at, dimension, metric, currency)"
-            " VALUES (nextval('run_seq'), ?, ?, ?, ?, ?, ?, 'running', ?, NULL, ?, ?, ?)"
+            " tool_version, status, started_at, finished_at, currency)"
+            " VALUES (nextval('run_seq'), ?, ?, ?, ?, ?, ?, 'running', ?, NULL, ?)"
             " RETURNING run_id",
             [
                 rsid,
@@ -120,12 +123,47 @@ class Store:
                 timezone,
                 tool_version,
                 datetime.now(),
-                dimension,
-                metric,
                 currency,
             ],
         ).fetchone()
         return row[0]
+
+    def set_status(self, run_id: int, status: str) -> None:
+        """Change only the status, e.g. when a pair added later had problems."""
+        self.con.execute("UPDATE runs SET status = ? WHERE run_id = ?", [status, run_id])
+
+    def add_pair(
+        self,
+        run_id: int,
+        dimension: str,
+        metric: str,
+        dimension_name: str | None = None,
+        metric_name: str | None = None,
+        metric_type: str | None = None,
+    ) -> int:
+        """Store a pair for the run and return its number: 1 for the first, then 2, 3 and so on."""
+        row = self.con.execute(
+            "INSERT INTO pairs (run_id, pair, dimension, metric, dimension_name, metric_name,"
+            " metric_type, added_at)"
+            " SELECT ?, coalesce(max(pair), 0) + 1, ?, ?, ?, ?, ?, ? FROM pairs WHERE run_id = ?"
+            " RETURNING pair",
+            [
+                run_id,
+                dimension,
+                metric,
+                dimension_name,
+                metric_name,
+                metric_type,
+                datetime.now(),
+                run_id,
+            ],
+        ).fetchone()
+        return row[0]
+
+    def list_pairs(self, run_id: int) -> list[dict]:
+        cur = self.con.execute("SELECT * FROM pairs WHERE run_id = ? ORDER BY pair", [run_id])
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
 
     def finish_run(self, run_id: int, status: Literal["ok", "partial", "failed"]) -> None:
         self.con.execute(
@@ -170,10 +208,12 @@ class Store:
         run_id: int,
         period: Literal["current", "historical"],
         rows: list[tuple[int, str, float]],
+        pair: int = 1,
     ) -> None:
         self._many(
-            "INSERT INTO top_items (run_id, period, rank, item, value) VALUES (?, ?, ?, ?, ?)",
-            [(run_id, period, r, item, v) for r, item, v in rows],
+            "INSERT INTO top_items (run_id, pair, period, rank, item, value)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            [(run_id, pair, period, r, item, v) for r, item, v in rows],
         )
 
     def add_breakdown(
@@ -183,22 +223,23 @@ class Store:
         labels: list[str],
         rows: list[tuple[str, list[float]]],
         totals: list[float],
+        pair: int = 1,
     ) -> None:
         self._many(
-            "INSERT INTO breakdowns (run_id, kind, col_index, label, rank, item, value)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO breakdowns (run_id, pair, kind, col_index, label, rank, item, value)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [
-                (run_id, kind, i, label, rank, item, vals[i])
+                (run_id, pair, kind, i, label, rank, item, vals[i])
                 for rank, (item, vals) in enumerate(rows, start=1)
                 for i, label in enumerate(labels)
                 if i < len(vals)
             ],
         )
         self._many(
-            "INSERT INTO breakdown_totals (run_id, kind, col_index, label, total)"
-            " VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO breakdown_totals (run_id, pair, kind, col_index, label, total)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
             [
-                (run_id, kind, i, label, totals[i])
+                (run_id, pair, kind, i, label, totals[i])
                 for i, label in enumerate(labels)
                 if i < len(totals)
             ],

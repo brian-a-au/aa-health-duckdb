@@ -20,15 +20,14 @@ def _fill(store, rsid="rs1"):
         date(2026, 11, 7),
         "US/Pacific",
         "0.1",
-        dimension="variables/page",
-        metric="metrics/occurrences",
     )
+    store.add_pair(rid, "variables/page", "metrics/occurrences", "Page", "Occurrences", "int")
     store.add_components(rid, [_comp()])
     store.add_daily_values(
         rid,
         [
             DailyValue("metrics/pageviews", date(2026, 11, 6), 5.0, 4.0, 6.0, 3.0, False),
-            DailyValue("individual", date(2026, 11, 6), 2.0, None, None, None, None),
+            DailyValue("individual/1", date(2026, 11, 6), 2.0, None, None, None, None),
         ],
     )
     store.add_top_items(rid, "current", [(1, "home", 10.0), (2, "about", 4.0)])
@@ -47,13 +46,20 @@ def test_roundtrip_run(tmp_path):
     assert run["status"] == "partial" and run["rsid"] == "rs1"
     assert run["today"] == date(2026, 11, 7)
     assert run["started_at"] is not None and run["finished_at"] is not None
-    assert run["dimension"] == "variables/page" and run["metric"] == "metrics/occurrences"
+    [pair] = s.list_pairs(rid)
+    assert (pair["dimension"], pair["metric"], pair["dimension_name"]) == (
+        "variables/page",
+        "metrics/occurrences",
+        "Page",
+    )
     c = s.con
     assert c.execute("select metric_id, exists_dimension from components").fetchall() == [
         ("metrics/pageviews", None)
     ]
     assert (
-        c.execute("select count(*) from daily_values where component_id='individual'").fetchone()[0]
+        c.execute("select count(*) from daily_values where component_id='individual/1'").fetchone()[
+            0
+        ]
         == 1
     )
     assert c.execute("select anomaly from daily_values where expected is not null").fetchone() == (
@@ -111,18 +117,18 @@ def test_no_credentials_column(tmp_path):
 
 def test_new_file_gets_schema_version(tmp_path):
     s = Store.open(tmp_path / "a.duckdb")
-    assert SCHEMA_VERSION == 1
-    assert s.con.execute("select version from schema_version").fetchall() == [(1,)]
+    assert SCHEMA_VERSION == 2
+    assert s.con.execute("select version from schema_version").fetchall() == [(2,)]
     s.con.close()
     s2 = Store.open(tmp_path / "a.duckdb")  # reopening does not add a second row
-    assert s2.con.execute("select version from schema_version").fetchall() == [(1,)]
+    assert s2.con.execute("select version from schema_version").fetchall() == [(2,)]
 
 
 @pytest.mark.parametrize(
     "setup",
     [
         "update schema_version set version = 99",
-        "update schema_version set version = 0",
+        "update schema_version set version = 1",
         "drop table schema_version",
     ],
 )
@@ -235,3 +241,19 @@ def test_component_counts_and_previous_run(tmp_path):
     assert s.previous_run(other) is None
     assert s.previous_run(c) == b  # the run with no components is skipped
     assert s.previous_run(empty) == b
+
+
+def test_pairs_are_numbered_per_run(tmp_path):
+    s = Store.open(tmp_path / "a.duckdb")
+    a = _fill(s)
+    b = _fill(s)
+    assert s.add_pair(a, "variables/evar1", "metrics/orders") == 2
+    assert s.add_pair(b, "variables/evar2", "metrics/orders") == 2
+    assert [p["pair"] for p in s.list_pairs(a)] == [1, 2]
+    s.add_top_items(a, "current", [(1, "x", 1.0)], pair=2)
+    rows = s.con.execute(
+        "select pair, count(*) from top_items where run_id = ? group by pair order by pair", [a]
+    ).fetchall()
+    assert rows == [(1, 2), (2, 1)]
+    s.set_status(a, "ok")
+    assert s.get_run(a)["status"] == "ok"

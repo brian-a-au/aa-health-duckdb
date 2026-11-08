@@ -300,6 +300,14 @@ def fake_for(
     return FakeClient(
         gets={
             f"/reportsuites/collections/suites/{rsid}": suite(rsid, tz=tz),
+            "/reportsuites/collections/suites": {
+                "content": [{"rsid": rsid, "name": "Test Suite"}],
+                "lastPage": True,
+            },
+            "/segments": {
+                "content": [{"id": "s300_abc", "name": "Mobile visits"}],
+                "lastPage": True,
+            },
             "/metrics": metrics,
             "/dimensions": dimensions,
         },

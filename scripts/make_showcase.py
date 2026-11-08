@@ -191,9 +191,8 @@ def build_store(path: Path) -> tuple[Store, int]:
         TODAY,
         "US/Pacific",
         "0.1.0",
-        dimension="variables/page",
-        metric="metrics/occurrences",
     )
+    store.add_pair(rid, "variables/page", "metrics/occurrences", "Page", "Occurrences", "int")
     comps = components()
     store.add_components(rid, comps)
     values: list[DailyValue] = []
@@ -201,7 +200,7 @@ def build_store(path: Path) -> tuple[Store, int]:
         base = rng.choice([800, 1500, 3200, 6400, 12000, 24000, 52000])
         values += series(rng, c.id, base)
     values += [
-        DailyValue("individual", v.day, v.value, v.expected, v.upper, v.lower, v.anomaly)
+        DailyValue("individual/1", v.day, v.value, v.expected, v.upper, v.lower, v.anomaly)
         for v in series(rng, "variables/page", 310000)
     ]
     store.add_daily_values(rid, values)
@@ -283,7 +282,7 @@ SCENES = [
         "document.getElementById('tab-individual').click();",
         [
             "#panel-individual h2:nth-of-type(3)",
-            "#panel-individual .hint:nth-of-type(2)",
+            "#panel-individual .hint:nth-of-type(3)",
             "#browser",
         ],
         "light",

@@ -90,7 +90,7 @@ def sample_store(path: Path, bands: bool = True) -> tuple[Store, int]:
     vals += _series("metrics/pageviews", 9000, bands)
     vals += _series("metrics/orders", 25, bands, spike=YESTERDAY - timedelta(days=10))
     vals += _series("variables/page", 9000, bands)
-    vals += _series("individual", 1200, bands, spike=YESTERDAY - timedelta(days=1))
+    vals += _series("individual/1", 1200, bands, spike=YESTERDAY - timedelta(days=1))
 
     store = Store.open(path)
     rid = store.create_run(
@@ -100,9 +100,8 @@ def sample_store(path: Path, bands: bool = True) -> tuple[Store, int]:
         TODAY,
         "US/Pacific",
         "0.1.0",
-        dimension="variables/page",
-        metric="metrics/orders",
     )
+    store.add_pair(rid, "variables/page", "metrics/orders")
     store.add_components(rid, comps)
     store.add_daily_values(rid, vals)
     store.add_top_items(
@@ -175,13 +174,13 @@ def test_single_file_no_external_urls():
 
 def test_hostile_item_is_inert():  # Review Focus 2
     v = sample_view()
-    v["top100"][0]["item"] = HOSTILE
+    v["pairs"][0]["top100"][0]["item"] = HOSTILE
     html = render_html(v)
     assert "</script><img" not in html and "innerHTML" not in html
     assert "<img" not in html
     # the value survives the round trip as text data
     data = _data_json(html)
-    assert data["top100"][0]["item"] == HOSTILE
+    assert data["pairs"][0]["top100"][0]["item"] == HOSTILE
     assert any(r["name"] == HOSTILE for r in data["views"]["week"])
 
 
@@ -302,22 +301,30 @@ def test_write_report_sanitizes_rsid(tmp_path):
     assert "/" not in path.name and ".." not in path.name
 
 
-def test_individual_names_in_heading_trend_and_header():
-    html = render_html(sample_view())
-    assert "Trend for the chosen dimension and metric" not in html
-    assert '<h2 id="individual-title">Page by Orders</h2>' in html
-    assert "<figcaption>Trend for Page by Orders</figcaption>" in html
-    assert re.search(r"<dt>Individual component</dt><dd>Page by Orders", html)
-    data = _data_json(html)
-    assert data["run"]["dimension_name"] == "Page" and data["run"]["metric_name"] == "Orders"
-
-
-def test_individual_names_fall_back_for_old_runs():
+def test_individual_pairs_in_header_and_data():
     v = sample_view()
-    for k in ("dimension", "metric", "dimension_name", "metric_name"):
-        v["run"][k] = None
     html = render_html(v)
-    assert "<figcaption>Trend for the chosen dimension and metric</figcaption>" in html
+    assert re.search(r"<dt>Individual component</dt><dd>Page by Orders</dd>", html)
+    assert '<select id="pair-dimension"></select>' in html
+    assert '<select id="pair-metric"></select>' in html
+    assert f"ahd individual --run {v['run']['id']} --dimension" in html
+    [pair] = _data_json(html)["pairs"]
+    assert pair["dimension_name"] == "Page" and pair["metric_name"] == "Orders"
+    v["pairs"].append({**pair, "pair": 2, "dimension_name": "Search", "metric_name": "Carts"})
+    v["pairs"].append({**pair, "pair": 3})
+    assert "<dd>Page by Orders, and 2 more pairs</dd>" in render_html(v)
+    v["pairs"].pop()
+    assert "<dd>Page by Orders, and 1 more pair</dd>" in render_html(v)
+
+
+def test_individual_label_without_pairs_or_names():
+    from ahd.render.html import individual_label, pair_label
+
+    assert individual_label([]) == "the chosen dimension and metric"
+    assert pair_label({"dimension": None, "metric": "m"}) == "the chosen dimension and metric"
+    assert pair_label({"dimension": "variables/x", "metric": "metrics/y"}) == (
+        "variables/x by metrics/y"
+    )
 
 
 def test_issue_headings_for_known_codes():
