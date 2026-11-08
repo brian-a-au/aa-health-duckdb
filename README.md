@@ -7,6 +7,7 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![DuckDB](https://img.shields.io/badge/DuckDB-local%20file-fff000.svg)](https://duckdb.org/)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/brian-a-au/aa-health-duckdb/blob/main/LICENSE)
 
 [![Slideshow of the report: summary tiles, trend charts with expected ranges, component tables, alerts, browser breakdowns, and light and dark mode](docs/showcase.gif)](docs/showcase.png)
 
@@ -175,3 +176,9 @@ uv run python scripts/make_showcase.py --out docs
 ```
 
 This writes `docs/showcase.gif` and `docs/showcase.png`.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
+
+This is an unofficial tool. Adobe does not make, support or endorse it. Adobe, Adobe Analytics and Analytics Health Dashboard are names that belong to Adobe.
