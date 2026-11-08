@@ -81,21 +81,6 @@ Defaults: the database is `./data/ahd.duckdb`, the report folder is `./reports/`
 - An arrow shows when the change is more than 20 percent. When the baseline is zero, there is no percent change and no arrow.
 - A column the credential cannot read is listed as a problem. It is never shown as zero.
 
-## Checked against live data
-
-On 2026-11-07 the tool was run against the Demo Data report suite with a credential that has full access. The run took about 2 minutes, with status "ok", 410 components and no problems listed. These checks passed:
-
-- **Batch size.** Anomaly detection gave the same results in a request with 20 columns as in requests with 1 column. The values, expected values, bounds and anomaly flags matched on all 552 rows compared. The default stays at 20 columns per request. The Excel version asked for 3.
-- **Browser and device item IDs.** Adobe returned the names Google, Microsoft, Apple, Mozilla and Other for the browser IDs, and Other, Mobile Phone, Tablet, Media Player and Television for the device IDs. These names match the workbook.
-- **Yesterday's values.** For 10 components (3 props and 7 events and eVars), yesterday's stored value matched the total from a separately built report exactly.
-- **Props.** For all 15 props, the list variable and Page, the stored value matched the number of hits where that variable is set.
-- **Activity Map and Target.** These component IDs exist. Activity Map is counted with its instances metrics.
-
-Two things were not checked:
-
-- The AMO component IDs. No report suite in the test org has AMO metrics, so the tool leaves that group empty there.
-- A comparison with Analysis Workspace by a person. Before you rely on the numbers for a new report suite, compare a few of them with Workspace.
-
 ## Known limits
 
 - It covers one report suite per run.
