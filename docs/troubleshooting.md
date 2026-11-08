@@ -58,7 +58,12 @@ A run that finished with status "partial" lists what it could not read. `ahd run
 - **"Some requests failed because of network problems."** Running again may fix it.
 - **"Anomaly detection could not be tested"** or **"Anomaly bands are not available."** See [Limited access](#limited-access).
 
-The tool already waits and tries again after a rate limit, a server error, a network error or Adobe's temporary error 403025. It tries up to 6 more times and waits 30 to 60 seconds in all, or longer when Adobe asks for a longer wait. It records a problem only when the last try also fails.
+When a request fails in a way that may pass, the tool waits and tries again. How long it waits depends on the kind of error:
+
+- **A rate limit (HTTP 429) or Adobe's temporary error 403025.** Adobe is busy. The tool tries up to 6 more times and waits 30 to 60 seconds in all.
+- **A server error (HTTP 500 to 599) or a network error.** The tool tries up to 3 more times and waits 3 to 7 seconds in all. An Adobe outage or a computer with no network shows within seconds, e.g., in `ahd check`.
+
+When Adobe asks for a longer wait with a Retry-After header, the tool waits that long, up to 2 minutes. The tool also waits at most 10 seconds for a connection to Adobe. It records a problem only when the last try also fails.
 
 **Copy problems** in the status section copies the list for an email or a ticket.
 

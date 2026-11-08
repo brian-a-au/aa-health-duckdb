@@ -7,6 +7,7 @@ import random
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 import requests
@@ -17,12 +18,39 @@ from ahd.config import Credentials
 log = logging.getLogger(__name__)
 
 BASE = "https://analytics.adobe.io/api"
-# Waits between tries: about 1, 2, 4, 8, 16 and 30 seconds. Six tries wait 30.5 to 61 seconds
-# in all, long enough to outlast a short rate limit.
-BACKOFF_BASE = 1.0
-BACKOFF_CAP = 30.0
-MAX_RETRIES = 6
-TIMEOUT = 120
+
+
+@dataclass(frozen=True)
+class Waits:
+    """How many more tries to make after one kind of error, and the longest single wait."""
+
+    retries: int
+    cap: float
+
+    def delay(self, retry: int) -> float:
+        """The wait before retry number `retry`, counted from 0. The step doubles from 1 second
+        up to the cap. The wait is half the step plus a random part up to the other half. The
+        random part spreads the workers out, and the fixed half sets the shortest total wait."""
+        step = min(self.cap, 2.0**retry)
+        return step / 2 + random.uniform(0, step / 2)
+
+    def total(self) -> tuple[float, float]:
+        """The shortest and the longest wait in all, before the last try."""
+        steps = [min(self.cap, 2.0**n) for n in range(self.retries)]
+        return sum(steps) / 2, float(sum(steps))
+
+
+# A rate limit (HTTP 429) or Adobe's temporary error 403025 means that Adobe is busy. Waits of
+# about 1, 2, 4, 8, 16 and 30 seconds, 30.5 to 61 seconds in all, outlast a short rate limit.
+BUSY = Waits(retries=6, cap=30.0)
+# A server error (HTTP 5xx) or a network error. Waits of about 1, 2 and 4 seconds, 3.5 to 7
+# seconds in all, so that an Adobe outage or a missing network shows within seconds.
+FAILED = Waits(retries=3, cap=4.0)
+# The longest wait that a Retry-After header can ask for. A longer one waits this long.
+RETRY_AFTER_CAP = 120.0
+# Seconds to wait for a connection, and then for the answer. The slowest report in the live
+# timing runs took 34 seconds. A computer with no network fails the connection within seconds.
+TIMEOUT = (10, 120)
 # Adobe's "temporarily unavailable" code. It comes with HTTP 403 but clears on a retry.
 TEMPORARY_403 = "403025"
 NOT_JSON = "Adobe sent an answer that could not be read as JSON."
@@ -74,7 +102,6 @@ class AdobeClient:
         company_id: str,
         relogin: Callable[[], dict],
         sleep: Callable[[float], None] = time.sleep,
-        max_retries: int = MAX_RETRIES,
         company_name: str = "",
         companies: int = 1,
     ):
@@ -89,7 +116,6 @@ class AdobeClient:
         self.companies = companies
         self._relogin = relogin
         self._sleep = sleep
-        self.max_retries = max_retries
 
     def __repr__(self) -> str:
         return f"AdobeClient(company_id={self.company_id!r})"
@@ -124,7 +150,8 @@ class AdobeClient:
     def _request(self, method: str, path: str, params=None, json=None) -> Any:
         url = f"{BASE}/{self.company_id}{path}"
         relogged = False
-        attempt = 0
+        # Retries so far for each kind of error. Each kind has its own limit.
+        tries = {BUSY: 0, FAILED: 0}
         while True:
             with self._header_lock:
                 header, gen = self._header, self._header_gen
@@ -133,39 +160,34 @@ class AdobeClient:
                     method, url, headers=header, params=params, json=json, timeout=TIMEOUT
                 )
             except RETRIED_ERRORS as e:
-                if attempt >= self.max_retries:
+                if tries[FAILED] >= FAILED.retries:
                     raise
-                attempt += 1
-                delay = self._backoff(attempt - 1)
-                log.debug(
-                    "%s from %s %s, retry %d in %.1fs",
-                    type(e).__name__,
-                    method,
-                    path,
-                    attempt,
-                    delay,
-                )
-                self._sleep(delay)
+                delay = FAILED.delay(tries[FAILED])
+                tries[FAILED] += 1
+                self._wait(type(e).__name__, method, path, tries[FAILED], delay)
                 continue
             status = resp.status_code
             if status == 401 and not relogged:
                 relogged = True
                 self._renew(gen)
                 continue
-            if self._temporary(resp) and attempt < self.max_retries:
-                delay = self._backoff(attempt)
+            kind = self._temporary(resp)
+            if kind is not None and tries[kind] < kind.retries:
+                delay = kind.delay(tries[kind])
                 retry_after = resp.headers.get("Retry-After")
                 try:
-                    delay = max(delay, float(retry_after)) if retry_after else delay
+                    if retry_after:
+                        delay = min(RETRY_AFTER_CAP, max(delay, float(retry_after)))
                 except ValueError:
                     pass
-                attempt += 1
-                log.debug(
-                    "HTTP %s from %s %s, retry %d in %.1fs", status, method, path, attempt, delay
-                )
-                self._sleep(delay)
+                tries[kind] += 1
+                self._wait(f"HTTP {status}", method, path, tries[kind], delay)
                 continue
             return self._finish(resp)
+
+    def _wait(self, what: str, method: str, path: str, retry: int, delay: float) -> None:
+        log.debug("%s from %s %s, retry %d in %.1fs", what, method, path, retry, delay)
+        self._sleep(delay)
 
     def _renew(self, seen_gen: int) -> None:
         """Sign in again, unless another thread already did since `seen_gen`."""
@@ -175,21 +197,17 @@ class AdobeClient:
                 self._header_gen += 1
 
     @staticmethod
-    def _temporary(resp: Any) -> bool:
+    def _temporary(resp: Any) -> Waits | None:
+        """The kind of temporary error in this answer, or None when another try will not help."""
         status = resp.status_code
-        if status == 429 or status >= 500:
-            return True
+        if status == 429:
+            return BUSY
+        if status >= 500:
+            return FAILED
         if status != 403:
-            return False
+            return None
         err = _error_fields(_json_or_none(resp))
-        return err is not None and err[0] == TEMPORARY_403
-
-    @staticmethod
-    def _backoff(attempt: int) -> float:
-        """Half the step plus a random part up to the other half. The random part spreads the
-        workers out, and the fixed half keeps the total wait long enough."""
-        step = min(BACKOFF_CAP, BACKOFF_BASE * 2**attempt)
-        return step / 2 + random.uniform(0, step / 2)
+        return BUSY if err is not None and err[0] == TEMPORARY_403 else None
 
     @staticmethod
     def _finish(resp: Any) -> Any:
