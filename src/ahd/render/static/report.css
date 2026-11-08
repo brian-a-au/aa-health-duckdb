@@ -326,4 +326,7 @@ td.shade { background: rgba(var(--shade), var(--a, 0)); }
 .picker-row { display: flex; gap: 8px; align-items: flex-end; }
 .picker-main { flex: 1 1 auto; }
 .picker-main select { width: 100%; }
-.picker-type { flex: none; }
+/* The type list is as wide as its longest group name. Cap it, so the component list keeps
+   most of the row on a phone. */
+.picker-type { flex: 0 1 auto; min-width: 0; max-width: 40%; }
+.picker-type select { width: 100%; }
