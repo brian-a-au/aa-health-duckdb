@@ -79,7 +79,7 @@ The rules for unusual values, large drops, zero values and components that never
 2. `src/ahd/summary.py`, which selects the candidate rows for the page
 3. `src/ahd/sql/views.sql`, which holds the `alerts` macro for your own SQL
 
-Change all three together. `test_alert_lists_match_the_alerts_macro` and `test_tiles_match_the_alerts_macro` in `tests/test_report_js.py` fail when the page and the macro disagree. `test_alerts_macro_matches_the_report` in `tests/test_summary.py` does the same check with a Python copy of the page's rule.
+Change all three together. `test_alert_lists_match_the_alerts_macro` and `test_tiles_match_the_alerts_macro` in `tests/test_report_js.py` fail when the page and the macro disagree. `test_alerts_macro` in `tests/test_summary.py` checks the macro on its own.
 
 ### The HTML report
 
