@@ -26,7 +26,7 @@ from ahd.lookup import (
     resolve_suite,
 )
 from ahd.render.html import write_report
-from ahd.store import SchemaVersionError, Store
+from ahd.store import SchemaVersionError, Store, StoreError
 from ahd.summary import (
     DEFAULT_CHANGE_ALERT,
     DROP_CAUSE,
@@ -308,13 +308,13 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
 
 
 def _run(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
-    db = _db_path(args)
+    # Open the file first, so a locked file stops the run before any call to Adobe.
+    store = Store.open(_db_path(args))
     client = _connect(args, factory)
     rsid = resolve_suite(client, args.rsid)
     segment = resolve_segment(client, rsid, args.segment) if args.segment else None
     dim = resolve_component(client, rsid, "dimension", args.dimension)
     met = resolve_component(client, rsid, "metric", args.metric)
-    store = Store.open(db)
     opts = RunOptions(
         rsid=rsid,
         segment_id=segment,
@@ -378,7 +378,7 @@ def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
 
 
 def _render(args: argparse.Namespace) -> int:
-    store = Store.open(_db_path(args))
+    store = Store.open(_db_path(args), read_only=True)
     try:
         store.get_run(args.run)
     except KeyError:
@@ -436,7 +436,7 @@ def _prune(args: argparse.Namespace) -> int:
 
 
 def _runs(args: argparse.Namespace) -> int:
-    _print_runs(Store.open(_db_path(args)).list_runs())
+    _print_runs(Store.open(_db_path(args), read_only=True).list_runs())
     return 0
 
 
@@ -464,7 +464,7 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
         if args.command == "segments":
             return _segments(args, client_factory)
         return _runs(args)
-    except (ConfigError, ApiError, SignInError, SchemaVersionError) as e:
+    except (ConfigError, ApiError, SignInError, SchemaVersionError, StoreError) as e:
         print(f"Error: {e}", file=sys.stderr)
     except requests.RequestException as e:
         print(

@@ -65,7 +65,7 @@ duckdb -readonly data/ahd.duckdb
 
 `-readonly` means your queries can never change or delete data. Use it for everything in this guide.
 
-While `ahd run` or `ahd individual` writes to a file, no other program can open it. DuckDB stops with "Could not set lock on file". Wait for the run to finish, then try again.
+While `ahd run`, `ahd individual` or `ahd prune` writes to a file, no other program can open it. DuckDB stops with "Could not set lock on file". Wait for the command to finish, then try again. In the same way, an open `duckdb` session blocks `ahd run` until you close it.
 
 ### Pick an output format
 
@@ -84,7 +84,7 @@ The `duckdb` command can print a result in the format you need:
 ### Or use the notebook in your browser
 
 ```
-duckdb -ui data/ahd.duckdb
+duckdb -readonly -ui data/ahd.duckdb
 ```
 
 This opens DuckDB's notebook interface in your browser, with a list of tables and a cell for each query. It installs DuckDB's `ui` extension the first time, and it loads the interface from DuckDB's website. The data stays on your computer.

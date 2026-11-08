@@ -39,7 +39,7 @@ uv run ahd runs                           # list what is stored
 | `--db PATH` | Uses this database file. For the commands that read or write a database. |
 | `--verbose` | Writes debug detail to stderr. Put it before the command, e.g., `ahd --verbose run ...`. |
 
-The commands that sign in are `check`, `suites`, `segments`, `run` and `individual`. The others only read the database and never call Adobe.
+The commands that sign in are `check`, `suites`, `segments`, `run` and `individual`. The others never call Adobe. `runs` and `render` only read the database, and they never create one. `prune` deletes runs from it.
 
 Where a command takes a report suite, segment, dimension or metric, it accepts an ID or a name, in any case. If two items have the same name, the tool lists their IDs and asks you to use one.
 

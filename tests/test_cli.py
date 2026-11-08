@@ -253,6 +253,83 @@ def test_newer_database_is_one_line_error(tmp_path, cfg, capsys):
     )
 
 
+def test_locked_database_is_one_line_error(tmp_path, cfg, capsys):
+    import subprocess
+    import sys
+
+    from ahd.store import Store
+
+    db = tmp_path / "t.duckdb"
+    Store.open(db).con.close()
+    # Another process holds the file open for writing, as ahd run does.
+    holder = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                f"import duckdb, time; c = duckdb.connect({str(db)!r}); "
+                "print('ready', flush=True); time.sleep(30)"
+            ),
+        ],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert holder.stdout.readline().strip() == "ready"
+        called = []
+
+        def sign_in(creds, company_id=None):
+            called.append(1)
+
+        for argv in (["runs", "--db", str(db)], args(tmp_path, cfg, "run", "--rsid", "rs1")):
+            code = main(argv, client_factory=sign_in)
+            err = capsys.readouterr().err
+            assert code == 1 and err.count("\n") == 1 and "Traceback" not in err
+            assert "is in use by another program" in err
+            assert not called  # ahd run stops before it signs in
+    finally:
+        holder.kill()
+        holder.wait()
+
+
+def test_file_that_is_not_a_database_is_one_line_error(tmp_path, capsys):
+    db = tmp_path / "notes.duckdb"
+    db.write_text("not a database")
+    assert main(["runs", "--db", str(db)]) == 1
+    assert "is not a DuckDB database" in capsys.readouterr().err
+
+
+def test_runs_and_render_do_not_create_a_database(tmp_path, capsys):
+    db = tmp_path / "new" / "t.duckdb"
+    assert main(["runs", "--db", str(db)]) == 1
+    assert main(["render", "--run", "1", "--db", str(db)]) == 1
+    assert "There is no database at" in capsys.readouterr().err
+    assert not db.parent.exists()
+
+
+def test_runs_reads_a_database_that_a_reader_has_open(tmp_path, cfg, capsys):
+    import duckdb
+
+    from ahd.store import Store
+
+    db = tmp_path / "t.duckdb"
+    Store.open(db).con.close()
+    reader = duckdb.connect(str(db), read_only=True)
+    try:
+        assert main(["runs", "--db", str(db)]) == 0
+    finally:
+        reader.close()
+
+
+def test_empty_duckdb_file_is_not_an_ahd_database(tmp_path, capsys):
+    import duckdb
+
+    db = tmp_path / "other.duckdb"
+    duckdb.connect(str(db)).close()
+    assert main(["runs", "--db", str(db)]) == 1
+    assert "holds no ahd runs" in capsys.readouterr().err
+
+
 # ---- profiles ----------------------------------------------------------------
 
 

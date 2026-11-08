@@ -69,15 +69,44 @@ class SchemaVersionError(ValueError):
     """The database file was written by a different version of ahd."""
 
 
+class StoreError(Exception):
+    """The database file could not be opened. The message says why in plain words."""
+
+
+def _connect(path: Path, read_only: bool) -> duckdb.DuckDBPyConnection:
+    if read_only and not path.exists():
+        raise StoreError(
+            f"There is no database at {path}. Make a run first, or choose the file with --db."
+        )
+    try:
+        return duckdb.connect(str(path), read_only=read_only)
+    except duckdb.Error as e:
+        text = str(e)
+        if "lock" in text.lower():
+            raise StoreError(
+                f"The database {path} is in use by another program, e.g., a DuckDB session or "
+                "another ahd command that writes to it. Close that program or wait for it to "
+                "finish, then try again."
+            ) from None
+        if "not a valid DuckDB database" in text:
+            raise StoreError(
+                f"The file {path} is not a DuckDB database. Choose another file with --db."
+            ) from None
+        raise StoreError(f"Could not open the database {path} ({type(e).__name__}).") from None
+
+
 class Store:
     def __init__(self, con: duckdb.DuckDBPyConnection) -> None:
         self.con = con
 
     @classmethod
-    def open(cls, path: Path) -> Store:
+    def open(cls, path: Path, read_only: bool = False) -> Store:
+        """Open or create the database. read_only opens an existing file without a write lock,
+        so it can be read while a DuckDB session also has it open read-only."""
         path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        con = duckdb.connect(str(path))
+        if not read_only:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        con = _connect(path, read_only)
         try:
             tables = {
                 r[0]
@@ -85,6 +114,8 @@ class Store:
                     "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
                 ).fetchall()
             }
+            if not tables and read_only:
+                raise StoreError(f"The database {path} holds no ahd runs.")
             if not tables:
                 con.execute(_SCHEMA)
                 con.execute(_views())
