@@ -67,6 +67,23 @@ ACCESS_FIX = (
 )
 
 
+def _whole_number(low: int, high: int) -> Callable[[str], int]:
+    """An argparse type for a whole number from low to high."""
+
+    def parse(text: str) -> int:
+        try:
+            value = int(text)
+        except ValueError:
+            value = low - 1
+        if not low <= value <= high:
+            raise argparse.ArgumentTypeError(
+                f"{text!r} is not a whole number from {low} to {high}."
+            )
+        return value
+
+    return parse
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="ahd", description="Analytics Health Dashboard as one HTML file."
@@ -133,10 +150,16 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--dimension", default="page", help=DIMENSION_HELP + " Default: Page.")
     run.add_argument("--metric", default="occurrences", help=METRIC_HELP + " Default: Occurrences.")
     run.add_argument(
-        "--batch-size", type=int, default=20, help="Columns per trend request (default 20)."
+        "--batch-size",
+        type=_whole_number(1, 100),
+        default=20,
+        help="Columns per trend request, 1 to 100 (default 20).",
     )
     run.add_argument(
-        "--workers", type=int, default=4, help="Requests that run at the same time (default 4)."
+        "--workers",
+        type=_whole_number(1, 16),
+        default=4,
+        help="Requests that run at the same time, 1 to 16 (default 4).",
     )
     run.add_argument("--out", type=Path, default=Path(DEFAULT_OUT), help=OUT_HELP)
     change_alert(run)

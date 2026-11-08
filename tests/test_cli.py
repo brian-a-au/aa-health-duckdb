@@ -218,6 +218,24 @@ def test_says_which_login_company_it_used(tmp_path, cfg, capsys, company):
     assert (note in out) == (company is None)
 
 
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--batch-size", "0"),
+        ("--batch-size", "-5"),
+        ("--batch-size", "101"),
+        ("--batch-size", "ten"),
+        ("--workers", "0"),
+        ("--workers", "17"),
+    ],
+)
+def test_batch_size_and_workers_must_be_in_range(tmp_path, cfg, capsys, option, value):
+    with pytest.raises(SystemExit) as e:
+        main(args(tmp_path, cfg, "run", "--rsid", "rs1", option, value))
+    assert e.value.code == 2
+    assert "is not a whole number from 1 to" in capsys.readouterr().err
+
+
 def test_api_error_is_one_line(tmp_path, cfg, capsys):
     def factory(creds, company_id=None):
         raise ApiError(401, "bad sign in", "unauthorized")
