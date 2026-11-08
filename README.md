@@ -63,11 +63,13 @@ You need:
    uv run ahd check --rsid "My Suite"
    ```
 
-4. Fetch the data and write the report. It takes about 2 minutes for a suite with 400 components, and it prints the report's path at the end:
+4. Fetch the data and write the report. It takes about 1 minute for a suite with 400 components, and it prints the report's path at the end:
 
    ```
    uv run ahd run --rsid "My Suite"
    ```
+
+   To check several suites, give `--rsid` more than once, or use `--all-suites` for every suite.
 
 5. Open the HTML file in your browser.
 

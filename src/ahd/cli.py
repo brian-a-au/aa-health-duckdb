@@ -6,7 +6,7 @@ import argparse
 import logging
 import sys
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -154,7 +154,17 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help=f"DuckDB file (default {DEFAULT_DB}, or ahd.duckdb in the profile folder).",
     )
-    run.add_argument("--rsid", required=True, help=RSID_HELP)
+    which = run.add_mutually_exclusive_group(required=True)
+    which.add_argument(
+        "--rsid",
+        action="append",
+        help=RSID_HELP + " Give it more than once to check several suites.",
+    )
+    which.add_argument(
+        "--all-suites",
+        action="store_true",
+        help="Check every report suite this credential can see.",
+    )
     run.add_argument("--segment", help="A segment ID or name, to filter every request.")
     run.add_argument("--date", type=date.fromisoformat, help="Use this date as today (YYYY-MM-DD).")
     run.add_argument("--dimension", default="page", help=DIMENSION_HELP + " Default: Page.")
@@ -354,11 +364,55 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     return 0
 
 
-def _run(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
-    # Open the file first, so a locked file stops the run before any call to Adobe.
-    store = Store.open(_db_path(args))
-    client = _connect(args, factory)
-    rsid = resolve_suite(client, args.rsid)
+# The order of the statuses from best to worst, for the exit code of a run of several suites.
+WORST_LAST = ("ok", "partial", "failed")
+ALERT_NAMES = (
+    ("unusual", "unusual value", "unusual values"),
+    ("large drop", "large drop", "large drops"),
+    ("dropped to zero", "drop to zero", "drops to zero"),
+)
+
+
+def _suites_to_run(args: argparse.Namespace, client: Any) -> list[str]:
+    """The suite IDs to check, in the order given, each once."""
+    suites = list_suites(client)
+    if args.all_suites:
+        if not suites:
+            raise ConfigError(NO_REPORT_SUITES)
+        return [r["id"] for r in suites]
+    out: list[str] = []
+    for value in args.rsid:
+        rsid = resolve_suite(client, value, suites)
+        if rsid not in out:
+            out.append(rsid)
+    return out
+
+
+def _error_text(e: BaseException) -> str:
+    """The one line that ahd prints for an error. A network error shows only its type."""
+    if isinstance(e, requests.RequestException):
+        return f"the request failed with a network error ({type(e).__name__})."
+    return str(e)
+
+
+def _alert_line(store: Store, run_id: int, threshold: float) -> str:
+    """For example "Alerts for 2026-11-07: 2 unusual values, 1 large drop, 0 drops to zero"."""
+    counts = dict(
+        store.con.execute(
+            "SELECT alert, count(*) FROM alerts(?, threshold := ?) GROUP BY alert",
+            [run_id, threshold],
+        ).fetchall()
+    )
+    day = date.fromisoformat(str(store.get_run(run_id)["today"])) - timedelta(days=1)
+    parts = []
+    for key, one, many in ALERT_NAMES:
+        n = counts.get(key, 0)
+        parts.append(f"{n} {one if n == 1 else many}")
+    return f"Alerts for {day.isoformat()}: {', '.join(parts)}"
+
+
+def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -> str:
+    """Check one suite, write its report and print its result. Returns the run's status."""
     segment = resolve_segment(client, rsid, args.segment) if args.segment else None
     dim = resolve_component(client, rsid, "dimension", args.dimension)
     met = resolve_component(client, rsid, "metric", args.metric)
@@ -380,16 +434,52 @@ def _run(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     finally:
         progress.done()
     status = store.get_run(run_id)["status"]
-    path = write_report(build_view(store, run_id, args.change_alert / 100), args.out)
+    threshold = args.change_alert / 100
+    path = write_report(build_view(store, run_id, threshold), args.out)
     print(path)
-    print(f"Run {run_id} finished with status: {status}")
+    print(f"Run {run_id} for {rsid} finished with status: {status}")
+    if status != "failed":
+        print(_alert_line(store, run_id, threshold))
     drops = component_drops(store, run_id)
     if drops:
         print("Warning: this run sees fewer components than the run before it.")
         for d in drops:
             print(f"  {d['message']}")
         print(DROP_CAUSE)
-    return EXIT_CODES.get(status, 1)
+    return status
+
+
+def _run(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
+    # Open the file first, so a locked file stops the run before any call to Adobe.
+    store = Store.open(_db_path(args))
+    try:
+        return _run_suites(args, factory, store)
+    finally:
+        store.con.close()
+
+
+def _run_suites(args: argparse.Namespace, factory: Callable[..., Any], store: Store) -> int:
+    client = _connect(args, factory)
+    rsids = _suites_to_run(args, client)
+    if len(rsids) == 1:
+        return EXIT_CODES.get(_run_suite(args, client, store, rsids[0]), 1)
+    # Several suites: a suite that fails does not stop the others.
+    statuses: dict[str, str] = {}
+    for i, rsid in enumerate(rsids, start=1):
+        print(f"Report suite {i} of {len(rsids)}: {rsid}")
+        try:
+            status = _run_suite(args, client, store, rsid)
+            statuses[rsid] = status if status in WORST_LAST else "failed"
+        except (ConfigError, ApiError, requests.RequestException) as e:
+            print(f"Error for {rsid}: {_error_text(e)}", file=sys.stderr)
+            statuses[rsid] = "failed"
+    counts = {s: sum(1 for v in statuses.values() if v == s) for s in WORST_LAST}
+    print(
+        f"Checked {len(rsids)} report suites: {counts['ok']} ok, {counts['partial']} partial, "
+        f"{counts['failed']} failed."
+    )
+    worst = max(statuses.values(), key=WORST_LAST.index)
+    return EXIT_CODES[worst]
 
 
 def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
@@ -514,9 +604,7 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
     except (ConfigError, ApiError, SignInError, SchemaVersionError, StoreError) as e:
         print(f"Error: {e}", file=sys.stderr)
     except requests.RequestException as e:
-        print(
-            f"Error: the request failed with a network error ({type(e).__name__}).", file=sys.stderr
-        )
+        print(f"Error: {_error_text(e)}", file=sys.stderr)
     except KeyboardInterrupt:
         print(STOPPED, file=sys.stderr)
         return EXIT_STOPPED
