@@ -146,8 +146,14 @@ def run_fetch(
     today = opts.today or today_in_zone(zone, now())
     window = RunWindow.for_today(today)
     run_id = store.create_run(
-        opts.rsid, suite.get("name") or opts.rsid, opts.segment_id, today, zone, _tool_version(),
-        dimension=opts.dimension, metric=opts.metric,
+        opts.rsid,
+        suite.get("name") or opts.rsid,
+        opts.segment_id,
+        today,
+        zone,
+        _tool_version(),
+        dimension=opts.dimension,
+        metric=opts.metric,
     )
     try:
         status = _run(client, store, opts, run_id, catalog, window)
@@ -196,19 +202,39 @@ def _run(
 
     with ThreadPoolExecutor(max_workers=max(1, opts.workers)) as pool:
         batch_futures: list[tuple[list[Column], Future]] = [
-            (batch, pool.submit(client.post_report,
-                                trend_body(rsid, window.trend_range(), batch, seg, anomaly)))
+            (
+                batch,
+                pool.submit(
+                    client.post_report, trend_body(rsid, window.trend_range(), batch, seg, anomaly)
+                ),
+            )
             for batch in _batches(columns, opts.batch_size)
         ]
         ind_bodies = {
-            "current": top_items_body(rsid, window.yesterday_range(), opts.dimension,
-                                      opts.metric, seg),
-            "historical": top_items_body(rsid, window.historical_range(), opts.dimension,
-                                         opts.metric, seg),
-            "browser": breakdown_body(rsid, window.yesterday_range(), opts.dimension,
-                                      opts.metric, BROWSER_DIMENSION, BROWSER_IDS, seg),
-            "device": breakdown_body(rsid, window.yesterday_range(), opts.dimension,
-                                     opts.metric, DEVICE_DIMENSION, DEVICE_IDS, seg),
+            "current": top_items_body(
+                rsid, window.yesterday_range(), opts.dimension, opts.metric, seg
+            ),
+            "historical": top_items_body(
+                rsid, window.historical_range(), opts.dimension, opts.metric, seg
+            ),
+            "browser": breakdown_body(
+                rsid,
+                window.yesterday_range(),
+                opts.dimension,
+                opts.metric,
+                BROWSER_DIMENSION,
+                BROWSER_IDS,
+                seg,
+            ),
+            "device": breakdown_body(
+                rsid,
+                window.yesterday_range(),
+                opts.dimension,
+                opts.metric,
+                DEVICE_DIMENSION,
+                DEVICE_IDS,
+                seg,
+            ),
             "trend": trend_body(rsid, window.trend_range(), [individual], seg, anomaly),
         }
         ind_futures = {k: pool.submit(client.post_report, b) for k, b in ind_bodies.items()}
@@ -236,12 +262,20 @@ def _run(
             try:
                 resp = fut.result()
             except ApiError as e:
-                issue("individual", INDIVIDUAL_ID, e.error_code or f"http_{e.status}",
-                      f"{INDIVIDUAL_LABELS[kind]}: {e.message}")
+                issue(
+                    "individual",
+                    INDIVIDUAL_ID,
+                    e.error_code or f"http_{e.status}",
+                    f"{INDIVIDUAL_LABELS[kind]}: {e.message}",
+                )
                 continue
             except requests.RequestException as e:
-                issue("individual", INDIVIDUAL_ID, NETWORK_ERROR,
-                      f"{INDIVIDUAL_LABELS[kind]}: {_network_message(e)}")
+                issue(
+                    "individual",
+                    INDIVIDUAL_ID,
+                    NETWORK_ERROR,
+                    f"{INDIVIDUAL_LABELS[kind]}: {_network_message(e)}",
+                )
                 continue
             if kind in ("current", "historical"):
                 rows, _total = parse_ranked(resp)
@@ -257,7 +291,12 @@ def _run(
                 store.add_daily_values(run_id, values)
                 value_count += len(values)
                 for err in errors:
-                    issue("individual", INDIVIDUAL_ID, err.error_code, f"{INDIVIDUAL_LABELS[kind]}: {err.message}")
+                    issue(
+                        "individual",
+                        INDIVIDUAL_ID,
+                        err.error_code,
+                        f"{INDIVIDUAL_LABELS[kind]}: {err.message}",
+                    )
                 empty = not values and not errors
             if empty:
                 # Spec section 7: zero rows may be a permission gap, not "no data".

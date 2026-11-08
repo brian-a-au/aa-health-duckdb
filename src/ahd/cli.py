@@ -28,7 +28,7 @@ EXIT_CODES = {"ok": 0, "failed": 1, "partial": 3}
 ACCESS_FIX = (
     "Fix: in the Adobe Admin Console, add the OAuth Server-to-Server credential's technical "
     "account to a product profile that includes this report suite's metrics and dimensions "
-    "and the Report Suite Tools item \"Anomaly Detection\". Changes in the Admin Console can "
+    'and the Report Suite Tools item "Anomaly Detection". Changes in the Admin Console can '
     "take a while to reach Analytics, so wait a little and run this check again."
 )
 
@@ -42,7 +42,9 @@ def _parser() -> argparse.ArgumentParser:
 
     def common(sp: argparse.ArgumentParser, config: bool = True, db: bool = True) -> None:
         if config:
-            sp.add_argument("--config", type=Path, help="Path to config.json (default ./config.json).")
+            sp.add_argument(
+                "--config", type=Path, help="Path to config.json (default ./config.json)."
+            )
         if db:
             sp.add_argument("--db", type=Path, default=Path(DEFAULT_DB), help="DuckDB file.")
 
@@ -126,8 +128,13 @@ def _run(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     client = _connect(args, factory)
     store = Store.open(args.db)
     opts = RunOptions(
-        rsid=args.rsid, segment_id=args.segment, today=args.date, dimension=args.dimension,
-        metric=args.metric, batch_size=args.batch_size, workers=args.workers,
+        rsid=args.rsid,
+        segment_id=args.segment,
+        today=args.date,
+        dimension=args.dimension,
+        metric=args.metric,
+        batch_size=args.batch_size,
+        workers=args.workers,
     )
     run_id = run_fetch(client, store, opts)
     status = store.get_run(run_id)["status"]
@@ -174,8 +181,9 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
     except (ConfigError, ApiError, SchemaVersionError) as e:
         print(f"Error: {e}", file=sys.stderr)
     except requests.RequestException as e:
-        print(f"Error: the request failed with a network error ({type(e).__name__}).",
-              file=sys.stderr)
+        print(
+            f"Error: the request failed with a network error ({type(e).__name__}).", file=sys.stderr
+        )
     return 1
 
 

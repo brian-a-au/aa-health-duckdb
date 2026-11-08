@@ -35,37 +35,89 @@ CHROME_PATHS = [
 ]
 
 EVENTS = [
-    "Product Views", "Cart Adds", "Cart Removals", "Checkouts", "Orders", "Revenue",
-    "Sign-ups", "Logins", "Searches", "Store Locator Uses", "Video Starts", "Video Completes",
-    "Newsletter Sign-ups", "Wishlist Adds", "Coupon Uses", "Reviews Written",
-    "Chat Starts", "App Crash Reports", "Form Starts", "Form Completes",
-    "Downloads", "Legacy Promo Clicks", "Share Clicks", "Return Requests",
+    "Product Views",
+    "Cart Adds",
+    "Cart Removals",
+    "Checkouts",
+    "Orders",
+    "Revenue",
+    "Sign-ups",
+    "Logins",
+    "Searches",
+    "Store Locator Uses",
+    "Video Starts",
+    "Video Completes",
+    "Newsletter Sign-ups",
+    "Wishlist Adds",
+    "Coupon Uses",
+    "Reviews Written",
+    "Chat Starts",
+    "App Crash Reports",
+    "Form Starts",
+    "Form Completes",
+    "Downloads",
+    "Legacy Promo Clicks",
+    "Share Clicks",
+    "Return Requests",
 ]
 EVARS = [
-    "Campaign Code", "Internal Search Term", "Product Finding Method", "Login Status",
-    "Customer Type", "Page Type", "Form Name", "Video Name", "Store ID",
-    "Promo Code", "Language", "Experiment Variant", "Content Category", "App Version",
-    "Membership Tier", "Referral Partner",
+    "Campaign Code",
+    "Internal Search Term",
+    "Product Finding Method",
+    "Login Status",
+    "Customer Type",
+    "Page Type",
+    "Form Name",
+    "Video Name",
+    "Store ID",
+    "Promo Code",
+    "Language",
+    "Experiment Variant",
+    "Content Category",
+    "App Version",
+    "Membership Tier",
+    "Referral Partner",
 ]
 PROPS = [
-    "Site Section", "Page Template", "Search Term", "Error Message", "Content Author",
-    "Breadcrumb", "Device Orientation", "Previous Page",
+    "Site Section",
+    "Page Template",
+    "Search Term",
+    "Error Message",
+    "Content Author",
+    "Breadcrumb",
+    "Device Orientation",
+    "Previous Page",
 ]
 PAGES = [
-    "home", "search results", "category: women", "category: men", "product details",
-    "cart", "checkout: shipping", "checkout: payment", "order confirmation", "sign in",
-    "account: orders", "store locator", "help: returns", "blog: style guide",
-    "category: kids", "category: sale", "wishlist", "account: profile", "help: shipping",
+    "home",
+    "search results",
+    "category: women",
+    "category: men",
+    "product details",
+    "cart",
+    "checkout: shipping",
+    "checkout: payment",
+    "order confirmation",
+    "sign in",
+    "account: orders",
+    "store locator",
+    "help: returns",
+    "blog: style guide",
+    "category: kids",
+    "category: sale",
+    "wishlist",
+    "account: profile",
+    "help: shipping",
     "careers",
 ]
 
 # What happens yesterday, to give the report something to show.
 YESTERDAY_FACTOR = {
-    "metrics/event2": 1.95,        # Cart Adds spike
-    "metrics/event5": 0.42,        # Orders drop
+    "metrics/event2": 1.95,  # Cart Adds spike
+    "metrics/event5": 0.42,  # Orders drop
     "metrics/evar1instances": 0.35,  # Campaign Code drop
-    "variables/prop3": 1.8,        # Search Term spike
-    "metrics/event18": 0.0,        # App Crash Reports stopped
+    "variables/prop3": 1.8,  # Search Term spike
+    "metrics/event18": 0.0,  # App Crash Reports stopped
 }
 ALWAYS_ZERO = {"metrics/event22", "metrics/evar16instances"}
 
@@ -80,10 +132,28 @@ def components() -> list[Component]:
         out.append(Component(cid, name, "metric", "custom_evars", i, Column(cid, cid), True))
     for i, name in enumerate(PROPS, 1):
         cid = f"variables/prop{i}"
-        out.append(Component(cid, name, "dimension", "custom_props", i,
-                             Column(cid, "metrics/occurrences", cid), True))
-    out.append(Component("variables/page", "Page", "dimension", "Reserved Props", None,
-                         Column("variables/page", "metrics/occurrences", "variables/page"), True))
+        out.append(
+            Component(
+                cid,
+                name,
+                "dimension",
+                "custom_props",
+                i,
+                Column(cid, "metrics/occurrences", cid),
+                True,
+            )
+        )
+    out.append(
+        Component(
+            "variables/page",
+            "Page",
+            "dimension",
+            "Reserved Props",
+            None,
+            Column("variables/page", "metrics/occurrences", "variables/page"),
+            True,
+        )
+    )
     return out
 
 
@@ -103,38 +173,60 @@ def series(rng: random.Random, cid: str, base: float) -> list[DailyValue]:
             value = expected * 0.3  # an old tracking outage, flagged in the chart
         upper, lower = expected * 1.28, expected * 0.74
         value = round(value)
-        out.append(DailyValue(cid, day, float(value), expected, upper, lower,
-                              value > upper or value < lower))
+        out.append(
+            DailyValue(
+                cid, day, float(value), expected, upper, lower, value > upper or value < lower
+            )
+        )
     return out
 
 
 def build_store(path: Path) -> tuple[Store, int]:
     rng = random.Random(7)
     store = Store.open(path)
-    rid = store.create_run("example.prod", "Example Retail", None, TODAY, "US/Pacific", "0.1.0",
-                           dimension="variables/page", metric="metrics/occurrences")
+    rid = store.create_run(
+        "example.prod",
+        "Example Retail",
+        None,
+        TODAY,
+        "US/Pacific",
+        "0.1.0",
+        dimension="variables/page",
+        metric="metrics/occurrences",
+    )
     comps = components()
     store.add_components(rid, comps)
     values: list[DailyValue] = []
     for c in comps:
         base = rng.choice([800, 1500, 3200, 6400, 12000, 24000, 52000])
         values += series(rng, c.id, base)
-    values += [DailyValue("individual", v.day, v.value, v.expected, v.upper, v.lower, v.anomaly)
-               for v in series(rng, "variables/page", 310000)]
+    values += [
+        DailyValue("individual", v.day, v.value, v.expected, v.upper, v.lower, v.anomaly)
+        for v in series(rng, "variables/page", 310000)
+    ]
     store.add_daily_values(rid, values)
-    current = [(i + 1, p, float(round(32000 * 0.82 ** i))) for i, p in enumerate(PAGES)]
-    hist_order = PAGES[:3] + [PAGES[4], PAGES[3]] + PAGES[5:12] + [PAGES[13], PAGES[12]] + PAGES[14:19]
-    historical = [(i + 1, p, float(round(2_900_000 * 0.82 ** i))) for i, p in enumerate(hist_order)]
+    current = [(i + 1, p, float(round(32000 * 0.82**i))) for i, p in enumerate(PAGES)]
+    hist_order = (
+        PAGES[:3] + [PAGES[4], PAGES[3]] + PAGES[5:12] + [PAGES[13], PAGES[12]] + PAGES[14:19]
+    )
+    historical = [(i + 1, p, float(round(2_900_000 * 0.82**i))) for i, p in enumerate(hist_order)]
     store.add_top_items(rid, "current", current)
     store.add_top_items(rid, "historical", historical)
     for kind, labels, shares in (
-        ("browser", ["Google", "Microsoft", "Apple", "Mozilla", "Other"], [0.5, 0.15, 0.22, 0.04, 0.09]),
-        ("device", ["Other", "Mobile Phone", "Tablet", "Media Player", "Television"],
-         [0.62, 0.27, 0.07, 0.0, 0.04]),
+        (
+            "browser",
+            ["Google", "Microsoft", "Apple", "Mozilla", "Other"],
+            [0.5, 0.15, 0.22, 0.04, 0.09],
+        ),
+        (
+            "device",
+            ["Other", "Mobile Phone", "Tablet", "Media Player", "Television"],
+            [0.62, 0.27, 0.07, 0.0, 0.04],
+        ),
     ):
         rows = []
         for i, page in enumerate(PAGES[:10]):
-            total = 32000 * 0.82 ** i
+            total = 32000 * 0.82**i
             rows.append((page, [float(round(total * s * rng.uniform(0.7, 1.3))) for s in shares]))
         totals = [float(round(sum(r[1][j] for r in rows) * 1.6)) for j in range(len(labels))]
         store.add_breakdown(rid, kind, labels, rows, totals)
@@ -144,36 +236,67 @@ def build_store(path: Path) -> tuple[Store, int]:
 
 # Each slide: step label, headline, description, proof lines, setup script, parts to keep.
 SCENES = [
-    ("Glance", "Yesterday,<br>at a glance.",
-     "See how many components were checked, how many Adobe flagged, and which ones had no data.",
-     "Summary tiles<br>Status with an icon and a label",
-     "", [".page-head", "#tiles"], "light"),
-    ("Trend", "Spot the<br>outliers.",
-     "Each chart shows 90 days of values against the range Adobe expected. Flagged days stand out.",
-     "Adobe anomaly detection<br>Expected range and flags",
-     ("var s=document.getElementById('metric-pick');s.value='metrics/event5';"
-      "s.dispatchEvent(new Event('change'));"),
-     ["#panel-components .charts"], "light"),
-    ("Components", "Every event,<br>eVar and prop.",
-     "Compare each component with its usual value for that weekday. Show only the flagged ones.",
-     "Daily or weekly view<br>Sortable tables",
-     "document.getElementById('flagged-only').click();",
-     ["#panel-components .controls", "#tables"], "light"),
-    ("Alerts", "Know what<br>to check.",
-     "Unusual values come first, with how far each one is from the expected value. Zero data comes next.",
-     "Copy the alert summary<br>Paste it into an email or chat",
-     "document.getElementById('tab-alerts').click();",
-     ["#panel-alerts"], "light"),
-    ("Detail", "A closer<br>look.",
-     "See the top values of one dimension for each browser group and device type.",
-     "Page by Occurrences<br>Browser and device breakdowns",
-     "document.getElementById('tab-individual').click();",
-     ["#panel-individual h2:nth-of-type(3)", "#panel-individual .hint:nth-of-type(2)", "#browser"],
-     "light"),
-    ("Offline", "One file.<br>Light or dark.",
-     "Open the report in any browser. It loads nothing from the internet, and the data stays on your computer.",
-     "Local DuckDB file + one HTML file<br>No server · No network requests",
-     "", [".page-head", "#tiles", "#status"], "dark"),
+    (
+        "Glance",
+        "Yesterday,<br>at a glance.",
+        "See how many components were checked, how many Adobe flagged, and which ones had no data.",
+        "Summary tiles<br>Status with an icon and a label",
+        "",
+        [".page-head", "#tiles"],
+        "light",
+    ),
+    (
+        "Trend",
+        "Spot the<br>outliers.",
+        "Each chart shows 90 days of values against the range Adobe expected. Flagged days stand out.",
+        "Adobe anomaly detection<br>Expected range and flags",
+        (
+            "var s=document.getElementById('metric-pick');s.value='metrics/event5';"
+            "s.dispatchEvent(new Event('change'));"
+        ),
+        ["#panel-components .charts"],
+        "light",
+    ),
+    (
+        "Components",
+        "Every event,<br>eVar and prop.",
+        "Compare each component with its usual value for that weekday. Show only the flagged ones.",
+        "Daily or weekly view<br>Sortable tables",
+        "document.getElementById('flagged-only').click();",
+        ["#panel-components .controls", "#tables"],
+        "light",
+    ),
+    (
+        "Alerts",
+        "Know what<br>to check.",
+        "Unusual values come first, with how far each one is from the expected value. Zero data comes next.",
+        "Copy the alert summary<br>Paste it into an email or chat",
+        "document.getElementById('tab-alerts').click();",
+        ["#panel-alerts"],
+        "light",
+    ),
+    (
+        "Detail",
+        "A closer<br>look.",
+        "See the top values of one dimension for each browser group and device type.",
+        "Page by Occurrences<br>Browser and device breakdowns",
+        "document.getElementById('tab-individual').click();",
+        [
+            "#panel-individual h2:nth-of-type(3)",
+            "#panel-individual .hint:nth-of-type(2)",
+            "#browser",
+        ],
+        "light",
+    ),
+    (
+        "Offline",
+        "One file.<br>Light or dark.",
+        "Open the report in any browser. It loads nothing from the internet, and the data stays on your computer.",
+        "Local DuckDB file + one HTML file<br>No server · No network requests",
+        "",
+        [".page-head", "#tiles", "#status"],
+        "dark",
+    ),
 ]
 SECONDS = 4.5
 
@@ -257,13 +380,24 @@ def chrome() -> str:
     raise RuntimeError("Google Chrome or Chromium is required")
 
 
-def screenshot(browser: str, page: Path, out: Path, width: int, height: int, scale: int,
-               dark: bool = False) -> None:
-    cmd = [browser, "--headless=new", "--disable-gpu", "--hide-scrollbars",
-           "--allow-file-access-from-files", f"--force-device-scale-factor={scale}",
-           f"--window-size={width},{height}", f"--screenshot={out}"]
-    cmd += ["--force-dark-mode", "--blink-settings=preferredColorScheme=0"] if dark else \
-        ["--blink-settings=preferredColorScheme=1"]
+def screenshot(
+    browser: str, page: Path, out: Path, width: int, height: int, scale: int, dark: bool = False
+) -> None:
+    cmd = [
+        browser,
+        "--headless=new",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--allow-file-access-from-files",
+        f"--force-device-scale-factor={scale}",
+        f"--window-size={width},{height}",
+        f"--screenshot={out}",
+    ]
+    cmd += (
+        ["--force-dark-mode", "--blink-settings=preferredColorScheme=0"]
+        if dark
+        else ["--blink-settings=preferredColorScheme=1"]
+    )
     subprocess.run(cmd + [page.as_uri()], check=True, capture_output=True)
 
 
@@ -282,17 +416,26 @@ def make(out_dir: Path) -> None:
             theme_js = f"document.querySelector('[data-theme-choice={theme}]').click();"
             script = setup + theme_js + KEEP_JS % repr(keep)
             page = work / f"excerpt{i}.html"
-            page.write_text(html.replace("</body>", f"<script>{script}</script></body>"),
-                            encoding="utf-8")
+            page.write_text(
+                html.replace("</body>", f"<script>{script}</script></body>"), encoding="utf-8"
+            )
             # Excerpts render at 920 CSS pixels wide and are scaled to the 732 pixel window.
             shot = work / f"excerpt{i}.png"
             screenshot(browser, page, shot, 920, 650, 2, dark=theme == "dark")
             steps = "".join(
                 f'<span class="{"on" if j == i else ""}"><b>{j + 1:02d}</b> {s[0]}</span>'
-                for j, s in enumerate(SCENES))
+                for j, s in enumerate(SCENES)
+            )
             frame = work / f"frame{i}.html"
-            fields = {"kicker": f"{i + 1:02d} / {step}", "title": title, "description": desc,
-                      "proof": proof, "theme": theme, "shot": shot.name, "steps": steps}
+            fields = {
+                "kicker": f"{i + 1:02d} / {step}",
+                "title": title,
+                "description": desc,
+                "proof": proof,
+                "theme": theme,
+                "shot": shot.name,
+                "steps": steps,
+            }
             text = FRAME
             for key, value in fields.items():
                 text = text.replace("{{" + key + "}}", value)
@@ -302,19 +445,42 @@ def make(out_dir: Path) -> None:
             stills.append(still)
         shutil.copyfile(stills[0], out_dir / "showcase.png")
         listing = work / "scenes.txt"
-        listing.write_text("".join(f"file '{s}'\nduration {SECONDS}\n" for s in stills)
-                           + f"file '{stills[-1]}'\n", encoding="utf-8")
+        listing.write_text(
+            "".join(f"file '{s}'\nduration {SECONDS}\n" for s in stills) + f"file '{stills[-1]}'\n",
+            encoding="utf-8",
+        )
         total = SECONDS * len(stills)
         # A thin progress line along the bottom edge, moving left to right over the loop.
-        graph = (f"[0:v]fps={FPS},format=rgb24[v];"
-                 f"color=c=0x6da7ec:s=1120x2:r={FPS}[bar];"
-                 f"[v][bar]overlay=x='-1120+1120*t/{total}':y=718:shortest=1[o];"
-                 "[o]split[a][b];[a]palettegen=stats_mode=full[p];"
-                 "[b][p]paletteuse=dither=none:diff_mode=rectangle")
-        subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "concat",
-                        "-safe", "0", "-i", str(listing), "-filter_complex", graph,
-                        "-t", str(total), "-loop", "0", str(out_dir / "showcase.gif")],
-                       check=True)
+        graph = (
+            f"[0:v]fps={FPS},format=rgb24[v];"
+            f"color=c=0x6da7ec:s=1120x2:r={FPS}[bar];"
+            f"[v][bar]overlay=x='-1120+1120*t/{total}':y=718:shortest=1[o];"
+            "[o]split[a][b];[a]palettegen=stats_mode=full[p];"
+            "[b][p]paletteuse=dither=none:diff_mode=rectangle"
+        )
+        subprocess.run(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(listing),
+                "-filter_complex",
+                graph,
+                "-t",
+                str(total),
+                "-loop",
+                "0",
+                str(out_dir / "showcase.gif"),
+            ],
+            check=True,
+        )
         store.con.close()
     print(f"Wrote {out_dir / 'showcase.gif'} ({total:g}s) and {out_dir / 'showcase.png'}")
 

@@ -17,5 +17,7 @@ def test_window_matches_workbook():
 
 
 def test_today_uses_suite_zone():
-    assert today_in_zone("US/Pacific", datetime(2026, 11, 7, 23, 30, tzinfo=UTC)) == date(2026, 11, 7)
+    assert today_in_zone("US/Pacific", datetime(2026, 11, 7, 23, 30, tzinfo=UTC)) == date(
+        2026, 11, 7
+    )
     assert today_in_zone("US/Pacific", datetime(2026, 11, 8, 2, 0, tzinfo=UTC)) == date(2026, 11, 7)

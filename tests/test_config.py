@@ -4,7 +4,12 @@ import pytest
 
 from ahd.config import ConfigError, Credentials, load_credentials
 
-KEYS = {"org_id": "ORG@AdobeOrg", "client_id": "abcd1234efgh", "secret": "s3cr3t", "scopes": "openid"}
+KEYS = {
+    "org_id": "ORG@AdobeOrg",
+    "client_id": "abcd1234efgh",
+    "secret": "s3cr3t",
+    "scopes": "openid",
+}
 
 
 @pytest.fixture(autouse=True)

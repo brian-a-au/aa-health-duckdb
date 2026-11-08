@@ -31,8 +31,16 @@ def _dv(cid, day, value, expected=None, upper=None, lower=None, anomaly=None):
 
 def _build(tmp_path, components, values, top=None, breakdowns=None, issues=None):
     store = Store.open(tmp_path / "t.duckdb")
-    rid = store.create_run("rs1", "Suite One", "seg1", TODAY, "US/Pacific", "0.1.0",
-                           dimension="variables/page", metric="metrics/event1")
+    rid = store.create_run(
+        "rs1",
+        "Suite One",
+        "seg1",
+        TODAY,
+        "US/Pacific",
+        "0.1.0",
+        dimension="variables/page",
+        metric="metrics/event1",
+    )
     store.add_components(rid, components)
     store.add_daily_values(rid, values)
     for period, rows in (top or {}).items():
@@ -64,8 +72,9 @@ def _row(rows, cid):
 
 @pytest.fixture
 def friday(tmp_path):
-    store, rid = _build(tmp_path, [_comp("metrics/event1", "Event 1", number=1)],
-                        _friday_series("metrics/event1"))
+    store, rid = _build(
+        tmp_path, [_comp("metrics/event1", "Event 1", number=1)], _friday_series("metrics/event1")
+    )
     return build_view(store, rid)
 
 
@@ -98,10 +107,14 @@ def test_week_sum_and_baseline(friday):
 
 def test_week_excludes_overlap(tmp_path):
     cid = "metrics/event2"
-    store, rid = _build(tmp_path, [_comp(cid, "Event 2", number=2)], [
-        _dv(cid, date(2026, 10, 30), 5.0),  # last baseline day
-        _dv(cid, date(2026, 10, 31), 7.0),  # first week day
-    ])
+    store, rid = _build(
+        tmp_path,
+        [_comp(cid, "Event 2", number=2)],
+        [
+            _dv(cid, date(2026, 10, 30), 5.0),  # last baseline day
+            _dv(cid, date(2026, 10, 31), 7.0),  # first week day
+        ],
+    )
     row = build_view(store, rid)["views"]["week"][0]
     assert row["value"] == 7
     assert row["baseline"] == pytest.approx(5 / 12)
@@ -109,8 +122,7 @@ def test_week_excludes_overlap(tmp_path):
 
 def test_zero_baseline_no_pct(tmp_path):  # Review Focus 4
     cid = "metrics/event3"
-    store, rid = _build(tmp_path, [_comp(cid, "New Event", number=3)],
-                        [_dv(cid, YESTERDAY, 4.0)])
+    store, rid = _build(tmp_path, [_comp(cid, "New Event", number=3)], [_dv(cid, YESTERDAY, 4.0)])
     view = build_view(store, rid)
     for key in ("day:2026-11-06", "week"):
         row = view["views"][key][0]
@@ -135,11 +147,15 @@ def test_down_arrow_and_zero(tmp_path):
 
 def test_anomaly_high_low(tmp_path):
     cid = "metrics/event5"
-    store, rid = _build(tmp_path, [_comp(cid, "Event 5", number=5)], [
-        _dv(cid, YESTERDAY, 20.0, 10.0, 15.0, 5.0, True),
-        _dv(cid, date(2026, 11, 5), 1.0, 10.0, 15.0, 5.0, True),
-        _dv(cid, date(2026, 11, 4), 30.0, 10.0, 15.0, 5.0, False),
-    ])
+    store, rid = _build(
+        tmp_path,
+        [_comp(cid, "Event 5", number=5)],
+        [
+            _dv(cid, YESTERDAY, 20.0, 10.0, 15.0, 5.0, True),
+            _dv(cid, date(2026, 11, 5), 1.0, 10.0, 15.0, 5.0, True),
+            _dv(cid, date(2026, 11, 4), 30.0, 10.0, 15.0, 5.0, False),
+        ],
+    )
     view = build_view(store, rid)
     assert view["views"]["day:2026-11-06"][0]["anomaly"] == "high"
     assert view["views"]["day:2026-11-05"][0]["anomaly"] == "low"
@@ -165,9 +181,14 @@ def test_alerts_zero_and_anomaly_only(tmp_path):
     assert [a["component_id"] for a in alerts] == ["metrics/event2", "metrics/event3"]
     spike, zero = alerts
     assert spike == {
-        "name": "Spike", "component_id": "metrics/event2", "expected": 20,
-        "actual": 30, "pct_vs_expected": pytest.approx(0.5), "arrow": "up",
-        "anomaly": "high", "zero": False,
+        "name": "Spike",
+        "component_id": "metrics/event2",
+        "expected": 20,
+        "actual": 30,
+        "pct_vs_expected": pytest.approx(0.5),
+        "arrow": "up",
+        "anomaly": "high",
+        "zero": False,
     }
     assert zero["actual"] == 0 and zero["expected"] is None
     assert zero["anomaly"] is None and zero["zero"] is True
@@ -176,17 +197,23 @@ def test_alerts_zero_and_anomaly_only(tmp_path):
 
 def test_alert_zero_expected_has_no_pct(tmp_path):
     cid = "metrics/event1"
-    store, rid = _build(tmp_path, [_comp(cid, "E", number=1)],
-                        [_dv(cid, YESTERDAY, 0.0, 0.0, 0.0, 0.0, False)])
+    store, rid = _build(
+        tmp_path, [_comp(cid, "E", number=1)], [_dv(cid, YESTERDAY, 0.0, 0.0, 0.0, 0.0, False)]
+    )
     alert = build_view(store, rid)["alerts"][0]
     assert alert["pct_vs_expected"] is None and alert["arrow"] is None
 
 
 def test_movement_index(tmp_path):
-    store, rid = _build(tmp_path, [], [], top={
-        "current": [(1, "home", 100.0), (2, "about", 50.0), (3, "brand new", 10.0)],
-        "historical": [(2, "about", 900.0), (3, "home", 800.0), (1, "gone", 999.0)],
-    })
+    store, rid = _build(
+        tmp_path,
+        [],
+        [],
+        top={
+            "current": [(1, "home", 100.0), (2, "about", 50.0), (3, "brand new", 10.0)],
+            "historical": [(2, "about", 900.0), (3, "home", 800.0), (1, "gone", 999.0)],
+        },
+    )
     top = build_view(store, rid)["top100"]
     assert top == [
         {"movement": 2, "rank": 1, "item": "home", "value": 100},
@@ -197,8 +224,11 @@ def test_movement_index(tmp_path):
 
 def test_today_row_excluded_from_series(tmp_path):
     vals = [v for v in _friday_series("metrics/event1") if v.day != YESTERDAY]
-    vals += [_dv("metrics/event1", YESTERDAY, 13.0, 8.0, 12.0, 4.0, True),
-             _dv("individual", YESTERDAY, 2.0), _dv("individual", TODAY, 9.0)]
+    vals += [
+        _dv("metrics/event1", YESTERDAY, 13.0, 8.0, 12.0, 4.0, True),
+        _dv("individual", YESTERDAY, 2.0),
+        _dv("individual", TODAY, 9.0),
+    ]
     store, rid = _build(tmp_path, [_comp("metrics/event1", "Event 1", number=1)], vals)
     view = build_view(store, rid)
     s = view["series"]["metrics/event1"]
@@ -210,8 +240,11 @@ def test_today_row_excluded_from_series(tmp_path):
 
 
 def test_individual_in_series_not_views_or_alerts(tmp_path):
-    store, rid = _build(tmp_path, [_comp("metrics/event1", "E", number=1)], [
-        _dv("metrics/event1", YESTERDAY, 1.0), _dv("individual", YESTERDAY, 0.0)])
+    store, rid = _build(
+        tmp_path,
+        [_comp("metrics/event1", "E", number=1)],
+        [_dv("metrics/event1", YESTERDAY, 1.0), _dv("individual", YESTERDAY, 0.0)],
+    )
     view = build_view(store, rid)
     assert "individual" in view["series"]
     for rows in view["views"].values():
@@ -220,19 +253,35 @@ def test_individual_in_series_not_views_or_alerts(tmp_path):
 
 
 def test_components_without_values_left_out_and_issue_listed(tmp_path):
-    comps = [_comp("metrics/event1", "Has data", number=1),
-             _comp("metrics/event2", "No access", number=2)]
-    store, rid = _build(tmp_path, comps, [_dv("metrics/event1", YESTERDAY, 1.0)],
-                        issues=[("column", "metrics/event2", "unauthorized_metric", "no access"),
-                                ("run", None, "anomaly_not_allowed", "no anomaly data")])
+    comps = [
+        _comp("metrics/event1", "Has data", number=1),
+        _comp("metrics/event2", "No access", number=2),
+    ]
+    store, rid = _build(
+        tmp_path,
+        comps,
+        [_dv("metrics/event1", YESTERDAY, 1.0)],
+        issues=[
+            ("column", "metrics/event2", "unauthorized_metric", "no access"),
+            ("run", None, "anomaly_not_allowed", "no anomaly data"),
+        ],
+    )
     view = build_view(store, rid)
     for rows in view["views"].values():
         assert [r["component_id"] for r in rows] == ["metrics/event1"]
     assert view["issues"] == [
-        {"scope": "column", "component_id": "metrics/event2",
-         "code": "unauthorized_metric", "message": "no access"},
-        {"scope": "run", "component_id": None,
-         "code": "anomaly_not_allowed", "message": "no anomaly data"},
+        {
+            "scope": "column",
+            "component_id": "metrics/event2",
+            "code": "unauthorized_metric",
+            "message": "no access",
+        },
+        {
+            "scope": "run",
+            "component_id": None,
+            "code": "anomaly_not_allowed",
+            "message": "no anomaly data",
+        },
     ]
 
 
@@ -249,8 +298,15 @@ def test_row_order_group_then_number_nulls_last_then_id(tmp_path):
     vals = [_dv(c.id, YESTERDAY, 0.0) for c in comps]
     store, rid = _build(tmp_path, comps, vals)
     view = build_view(store, rid)
-    order = ["metrics/event2", "metrics/event10", "metrics/aaa", "metrics/zzz",
-             "variables/evar1", "variables/prop2", "metrics/pageviews"]
+    order = [
+        "metrics/event2",
+        "metrics/event10",
+        "metrics/aaa",
+        "metrics/zzz",
+        "variables/evar1",
+        "variables/prop2",
+        "metrics/pageviews",
+    ]
     assert [r["component_id"] for r in view["views"]["week"]] == order
     assert [r["component_id"] for r in view["views"]["day:2026-11-06"]] == order
     assert [a["component_id"] for a in view["alerts"]] == order
@@ -260,9 +316,22 @@ def test_row_order_group_then_number_nulls_last_then_id(tmp_path):
 
 def test_run_block(friday):
     run = friday["run"]
-    assert set(run) == {"id", "rsid", "rsid_name", "segment_id", "today", "timezone",
-                        "status", "started_at", "finished_at", "tool_version",
-                        "dimension", "metric", "dimension_name", "metric_name"}
+    assert set(run) == {
+        "id",
+        "rsid",
+        "rsid_name",
+        "segment_id",
+        "today",
+        "timezone",
+        "status",
+        "started_at",
+        "finished_at",
+        "tool_version",
+        "dimension",
+        "metric",
+        "dimension_name",
+        "metric_name",
+    }
     assert run["dimension"] == "variables/page" and run["metric"] == "metrics/event1"
     # Page is not in this run's components, so its standard name is used; Event 1 is.
     assert run["dimension_name"] == "Page" and run["metric_name"] == "Event 1"
@@ -274,15 +343,25 @@ def test_run_block(friday):
 
 
 def test_breakdowns(tmp_path):
-    store, rid = _build(tmp_path, [], [], breakdowns={
-        "browser": (["Visits", "Page Views"], [("Chrome", [5.0, 9.0]), ("Safari", [2.0, 3.0])],
-                    [7.0, 12.0]),
-    })
+    store, rid = _build(
+        tmp_path,
+        [],
+        [],
+        breakdowns={
+            "browser": (
+                ["Visits", "Page Views"],
+                [("Chrome", [5.0, 9.0]), ("Safari", [2.0, 3.0])],
+                [7.0, 12.0],
+            ),
+        },
+    )
     view = build_view(store, rid)
     assert view["browser"] == {
         "labels": ["Visits", "Page Views"],
-        "rows": [{"rank": 1, "item": "Chrome", "values": [5, 9]},
-                 {"rank": 2, "item": "Safari", "values": [2, 3]}],
+        "rows": [
+            {"rank": 1, "item": "Chrome", "values": [5, 9]},
+            {"rank": 2, "item": "Safari", "values": [2, 3]},
+        ],
         "totals": [7, 12],
     }
     assert view["device"] == {"labels": [], "rows": [], "totals": []}
@@ -299,8 +378,12 @@ def test_empty_run_and_json_safe(tmp_path):
 def test_full_view_json_safe_and_non_finite_cleaned(tmp_path):
     cid = "metrics/event1"
     vals = _friday_series(cid) + [_dv("metrics/event2", YESTERDAY, math.nan, math.inf)]
-    store, rid = _build(tmp_path, [_comp(cid, "E", number=1), _comp("metrics/event2", "N", number=2)],
-                        vals, top={"current": [(1, "x", 1.0)]})
+    store, rid = _build(
+        tmp_path,
+        [_comp(cid, "E", number=1), _comp("metrics/event2", "N", number=2)],
+        vals,
+        top={"current": [(1, "x", 1.0)]},
+    )
     view = build_view(store, rid)
     text = json.dumps(view, allow_nan=False)
     assert "NaN" not in text and "Infinity" not in text
@@ -313,9 +396,18 @@ def test_unknown_run_raises(tmp_path):
 
 
 def test_rows_carry_component_kind(tmp_path):
-    comps = [_comp("metrics/event1", "E", number=1),
-             Component("variables/prop1", "P", "dimension", "custom_props", 1,
-                       Column("variables/prop1", "metrics/occurrences", "variables/prop1"), True)]
+    comps = [
+        _comp("metrics/event1", "E", number=1),
+        Component(
+            "variables/prop1",
+            "P",
+            "dimension",
+            "custom_props",
+            1,
+            Column("variables/prop1", "metrics/occurrences", "variables/prop1"),
+            True,
+        ),
+    ]
     store, rid = _build(tmp_path, comps, [_dv(c.id, YESTERDAY, 1.0) for c in comps])
     view = build_view(store, rid)
     for key in ("day:2026-11-06", "week"):
@@ -324,11 +416,26 @@ def test_rows_carry_component_kind(tmp_path):
 
 
 def test_run_block_names_from_exists_dimension(tmp_path):
-    prop = Component("variables/prop7", "Search term", "dimension", "custom_props", 7,
-                     Column("variables/prop7", "metrics/occurrences", "variables/prop7"), True)
+    prop = Component(
+        "variables/prop7",
+        "Search term",
+        "dimension",
+        "custom_props",
+        7,
+        Column("variables/prop7", "metrics/occurrences", "variables/prop7"),
+        True,
+    )
     store = Store.open(tmp_path / "t.duckdb")
-    rid = store.create_run("rs1", "S", None, TODAY, "UTC", "0.1", dimension="variables/prop7",
-                           metric="metrics/occurrences")
+    rid = store.create_run(
+        "rs1",
+        "S",
+        None,
+        TODAY,
+        "UTC",
+        "0.1",
+        dimension="variables/prop7",
+        metric="metrics/occurrences",
+    )
     store.add_components(rid, [prop])
     store.finish_run(rid, "ok")
     run = build_view(store, rid)["run"]
@@ -348,14 +455,16 @@ def test_run_block_without_dimension(tmp_path):
 
 def test_alert_below_range_is_low(tmp_path):
     cid = "metrics/event1"
-    store, rid = _build(tmp_path, [_comp(cid, "Dip", number=1)],
-                        [_dv(cid, YESTERDAY, 5.0, 20.0, 25.0, 15.0, True)])
+    store, rid = _build(
+        tmp_path, [_comp(cid, "Dip", number=1)], [_dv(cid, YESTERDAY, 5.0, 20.0, 25.0, 15.0, True)]
+    )
     alert = build_view(store, rid)["alerts"][0]
     assert alert["anomaly"] == "low" and alert["zero"] is False
 
 
 def test_standard_metric_gets_plain_name(tmp_path):
     from ahd.summary import _display_name
+
     store, rid = _build(tmp_path, [], [])
     assert _display_name(store, rid, "metrics/occurrences", False) == "Occurrences"
     assert _display_name(store, rid, "metrics/pageviews", False) == "Page Views"

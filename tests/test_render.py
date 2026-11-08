@@ -26,7 +26,7 @@ from ahd.summary import build_view
 TODAY = date(2026, 11, 7)
 YESTERDAY = date(2026, 11, 6)
 START = TODAY - timedelta(days=91)
-HOSTILE = '</script><img src=x onerror=alert(1)>'
+HOSTILE = "</script><img src=x onerror=alert(1)>"
 DATA_RE = re.compile(r'<script type="application/json" id="data">(.*?)</script>', re.DOTALL)
 
 
@@ -42,8 +42,9 @@ def _metric(cid, name, group, number=None):
 
 
 def _dim(cid, name, group, number=None):
-    return Component(cid, name, "dimension", group, number,
-                     Column(cid, "metrics/occurrences", cid), True)
+    return Component(
+        cid, name, "dimension", group, number, Column(cid, "metrics/occurrences", cid), True
+    )
 
 
 def _series(cid, base, bands=True, spike=None, dip=None, zero_yesterday=False):
@@ -92,28 +93,60 @@ def sample_store(path: Path, bands: bool = True) -> tuple[Store, int]:
     vals += _series("individual", 1200, bands, spike=YESTERDAY - timedelta(days=1))
 
     store = Store.open(path)
-    rid = store.create_run("luma.prod", "Luma Production", None, TODAY, "US/Pacific", "0.1.0",
-                           dimension="variables/page", metric="metrics/orders")
+    rid = store.create_run(
+        "luma.prod",
+        "Luma Production",
+        None,
+        TODAY,
+        "US/Pacific",
+        "0.1.0",
+        dimension="variables/page",
+        metric="metrics/orders",
+    )
     store.add_components(rid, comps)
     store.add_daily_values(rid, vals)
-    store.add_top_items(rid, "current", [
-        (1, "Home", 1200.0), (2, HOSTILE, 800.0), (3, "Men > Shirts & Tops", 400.0),
-        (4, "Brand new page", 100.0)])
-    store.add_top_items(rid, "historical", [
-        (1, "Men > Shirts & Tops", 9.0), (2, "Home", 8.0), (3, HOSTILE, 7.0)])
-    store.add_breakdown(rid, "browser", ["Google", "Microsoft", "Apple", "Mozilla", "Other"],
-                        [("Home", [500.0, 100.0, 400.0, 50.0, 10.0]),
-                         ("Search", [90.0, 10.0, 60.0, 5.0, 1.0])],
-                        [590.0, 110.0, 460.0, 55.0, 11.0])
-    store.add_breakdown(rid, "device", ["Other", "Mobile Phone", "Tablet", "Media Player",
-                                        "Television"],
-                        [("Home", [700.0, 400.0, 90.0, 0.0, 10.0])],
-                        [700.0, 400.0, 90.0, 0.0, 10.0])
-    store.add_issue(rid, "column", "metrics/event9", "unauthorized_metric",
-                    "You do not have access to this metric.")
+    store.add_top_items(
+        rid,
+        "current",
+        [
+            (1, "Home", 1200.0),
+            (2, HOSTILE, 800.0),
+            (3, "Men > Shirts & Tops", 400.0),
+            (4, "Brand new page", 100.0),
+        ],
+    )
+    store.add_top_items(
+        rid, "historical", [(1, "Men > Shirts & Tops", 9.0), (2, "Home", 8.0), (3, HOSTILE, 7.0)]
+    )
+    store.add_breakdown(
+        rid,
+        "browser",
+        ["Google", "Microsoft", "Apple", "Mozilla", "Other"],
+        [("Home", [500.0, 100.0, 400.0, 50.0, 10.0]), ("Search", [90.0, 10.0, 60.0, 5.0, 1.0])],
+        [590.0, 110.0, 460.0, 55.0, 11.0],
+    )
+    store.add_breakdown(
+        rid,
+        "device",
+        ["Other", "Mobile Phone", "Tablet", "Media Player", "Television"],
+        [("Home", [700.0, 400.0, 90.0, 0.0, 10.0])],
+        [700.0, 400.0, 90.0, 0.0, 10.0],
+    )
+    store.add_issue(
+        rid,
+        "column",
+        "metrics/event9",
+        "unauthorized_metric",
+        "You do not have access to this metric.",
+    )
     if not bands:
-        store.add_issue(rid, "permissions", None, "anomaly_not_allowed",
-                        "Anomaly detection is not allowed for this credential.")
+        store.add_issue(
+            rid,
+            "permissions",
+            None,
+            "anomaly_not_allowed",
+            "Anomaly detection is not allowed for this credential.",
+        )
     store.finish_run(rid, "partial")
     return store, rid
 
@@ -154,8 +187,9 @@ def test_hostile_item_is_inert():  # Review Focus 2
 
 def test_hostile_issue_message_is_escaped():
     v = sample_view()
-    v["issues"].append({"scope": "column", "component_id": HOSTILE, "code": "weird_code",
-                        "message": HOSTILE})
+    v["issues"].append(
+        {"scope": "column", "component_id": HOSTILE, "code": "weird_code", "message": HOSTILE}
+    )
     html = render_html(v)
     assert "<img" not in html
     assert "&lt;img src=x onerror=alert(1)&gt;" in html
@@ -171,8 +205,9 @@ def test_json_escapes_angle_brackets_and_ampersand():
 
 def test_no_secrets_in_html(tmp_path):
     secret = "SUPER-SECRET-VALUE-8731"
-    creds = Credentials(org_id="org@AdobeOrg", client_id="client-" + secret,
-                        secret=secret, scopes="openid")
+    creds = Credentials(
+        org_id="org@AdobeOrg", client_id="client-" + secret, secret=secret, scopes="openid"
+    )
     client = fake_for("rs1", restricted_metrics(), restricted_dimensions())
     client.credentials = creds  # what a real client would hold
     store = Store.open(tmp_path / "run.duckdb")
@@ -189,8 +224,10 @@ def test_three_tabs_and_status():
     assert "Luma Production" in html and "luma.prod" in html
     assert "2026-11-07" in html
     assert "Complete, with some gaps" in html
-    assert ("Anomaly bands are not available. The API credential&#39;s product profile does "
-            "not include the Anomaly Detection permission (Report Suite Tools).") in html
+    assert (
+        "Anomaly bands are not available. The API credential&#39;s product profile does "
+        "not include the Anomaly Detection permission (Report Suite Tools)."
+    ) in html
     # a code with a heading still lists its items with the message
     assert "unauthorized_metric" in html and "You do not have access to this metric." in html
     assert "metrics/event9" in html
@@ -199,11 +236,19 @@ def test_three_tabs_and_status():
 
 def test_no_custom_components_heading():
     v = sample_view()
-    v["issues"] = [{"scope": "permissions", "component_id": None,
-                    "code": "no_custom_components", "message": "x"}]
+    v["issues"] = [
+        {
+            "scope": "permissions",
+            "component_id": None,
+            "code": "no_custom_components",
+            "message": "x",
+        }
+    ]
     html = render_html(v)
-    assert ("No custom eVars, props, or events were returned. The API credential&#39;s "
-            "product profile probably hides them.") in html
+    assert (
+        "No custom eVars, props, or events were returned. The API credential&#39;s "
+        "product profile probably hides them."
+    ) in html
 
 
 def test_no_issues_says_so():
@@ -225,11 +270,11 @@ def test_missing_bands_note():
 
 def test_week_note_and_controls():
     html = render_html(sample_view())
-    assert WEEK_NOTE == ("This week is the 7 days ending yesterday. "
-                         "The Excel version used 8 to 2 days ago.")
+    assert WEEK_NOTE == (
+        "This week is the 7 days ending yesterday. The Excel version used 8 to 2 days ago."
+    )
     assert WEEK_NOTE in html
-    for label in ("Daily", "Weekly", "1 to 100", "901 to 1000", "Metric chart",
-                  "Dimension chart"):
+    for label in ("Daily", "Weekly", "1 to 100", "901 to 1000", "Metric chart", "Dimension chart"):
         assert label in html
     assert re.search(r"<label>Show\s*<select id=\"granularity\">", html)
     assert "Granularity" not in html
@@ -276,13 +321,21 @@ def test_individual_names_fall_back_for_old_runs():
 
 
 def test_issue_headings_for_known_codes():
-    for code in ("unauthorized_metric", "network_error", "anomaly_probe_failed", "no_rows",
-                 "anomaly_not_allowed", "no_custom_components"):
+    for code in (
+        "unauthorized_metric",
+        "network_error",
+        "anomaly_probe_failed",
+        "no_rows",
+        "anomaly_not_allowed",
+        "no_custom_components",
+    ):
         assert ISSUE_HEADINGS[code] == issue_heading(code)
     assert issue_heading("unauthorized_metric") == (
-        "Some metrics or dimensions are not visible to this credential.")
+        "Some metrics or dimensions are not visible to this credential."
+    )
     assert issue_heading("network_error") == (
-        "Some requests failed because of network problems. Running again may fix this.")
+        "Some requests failed because of network problems. Running again may fix this."
+    )
     for code in ("http_400", "http_404", "http_500", "http_503"):
         assert issue_heading(code) == "Adobe returned an error for some requests."
     assert issue_heading("http_") is None and issue_heading("weird_code") is None
@@ -293,8 +346,9 @@ def test_issue_headings_for_known_codes():
 
 def test_csp_meta_is_first_in_head():
     html = render_html(sample_view())
-    assert CSP == ("default-src 'none'; style-src 'unsafe-inline'; "
-                   "script-src 'unsafe-inline'; img-src data:")
+    assert CSP == (
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:"
+    )
     meta = f'<meta http-equiv="Content-Security-Policy" content="{CSP}">'
     assert meta.replace("'", "&#39;") in html or meta in html
     assert html.index("Content-Security-Policy") < html.index("<style>")
@@ -303,9 +357,11 @@ def test_csp_meta_is_first_in_head():
 def test_breakdown_notes_under_tables():
     html = render_html(sample_view())
     assert BREAKDOWN_NOTES["browser"] == (
-        "Rows are the top 10 values in the first column (Google), as in the Excel version.")
+        "Rows are the top 10 values in the first column (Google), as in the Excel version."
+    )
     assert BREAKDOWN_NOTES["device"] == (
-        "Rows are the top 10 values in the first column (Other), as in the Excel version.")
+        "Rows are the top 10 values in the first column (Other), as in the Excel version."
+    )
     for kind in ("browser", "device"):
         note = BREAKDOWN_NOTES[kind]
         assert html.index(f'<div id="{kind}"></div>') < html.index(note)
@@ -313,12 +369,18 @@ def test_breakdown_notes_under_tables():
 
 def test_status_badge_has_icon_and_label():
     html = render_html(sample_view())  # sample run is partial
-    assert re.search(r'<span class="badge badge-flag"><span class="icon" aria-hidden="true">!</span>'
-                     r'Complete, with some gaps', html)
+    assert re.search(
+        r'<span class="badge badge-flag"><span class="icon" aria-hidden="true">!</span>'
+        r"Complete, with some gaps",
+        html,
+    )
     v = sample_view()
     v["run"]["status"] = "ok"
     html = render_html(v)
-    assert '<span class="badge badge-good"><span class="icon" aria-hidden="true">✓</span>Complete' in html
+    assert (
+        '<span class="badge badge-good"><span class="icon" aria-hidden="true">✓</span>Complete'
+        in html
+    )
 
 
 def test_page_has_tiles_flag_filter_and_sortable_tables():
@@ -347,5 +409,5 @@ def test_theme_toggle_has_three_choices_and_css_scopes():
     for choice in ("auto", "light", "dark"):
         assert f'data-theme-choice="{choice}"' in html
     assert ':root:not([data-theme="light"])' in html  # a light choice beats a dark computer
-    assert ':root[data-theme="dark"]' in html          # a dark choice beats a light computer
+    assert ':root[data-theme="dark"]' in html  # a dark choice beats a light computer
     assert "localStorage" in html and "try {" in html

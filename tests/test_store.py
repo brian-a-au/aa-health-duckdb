@@ -13,8 +13,16 @@ def _comp(cid="metrics/pageviews"):
 
 
 def _fill(store, rsid="rs1"):
-    rid = store.create_run(rsid, "Name", "seg", date(2026, 11, 7), "US/Pacific", "0.1",
-                           dimension="variables/page", metric="metrics/occurrences")
+    rid = store.create_run(
+        rsid,
+        "Name",
+        "seg",
+        date(2026, 11, 7),
+        "US/Pacific",
+        "0.1",
+        dimension="variables/page",
+        metric="metrics/occurrences",
+    )
     store.add_components(rid, [_comp()])
     store.add_daily_values(
         rid,
@@ -24,7 +32,9 @@ def _fill(store, rsid="rs1"):
         ],
     )
     store.add_top_items(rid, "current", [(1, "home", 10.0), (2, "about", 4.0)])
-    store.add_breakdown(rid, "browser", ["Chrome", "Safari"], [("a", [1.0, 2.0]), ("b", [3.0, 4.0])], [4.0, 6.0])
+    store.add_breakdown(
+        rid, "browser", ["Chrome", "Safari"], [("a", [1.0, 2.0]), ("b", [3.0, 4.0])], [4.0, 6.0]
+    )
     store.add_issue(rid, "column", "metrics/x", "unauthorized_metric", "no access")
     store.finish_run(rid, "partial")
     return rid
@@ -42,8 +52,13 @@ def test_roundtrip_run(tmp_path):
     assert c.execute("select metric_id, exists_dimension from components").fetchall() == [
         ("metrics/pageviews", None)
     ]
-    assert c.execute("select count(*) from daily_values where component_id='individual'").fetchone()[0] == 1
-    assert c.execute("select anomaly from daily_values where expected is not null").fetchone() == (False,)
+    assert (
+        c.execute("select count(*) from daily_values where component_id='individual'").fetchone()[0]
+        == 1
+    )
+    assert c.execute("select anomaly from daily_values where expected is not null").fetchone() == (
+        False,
+    )
     assert c.execute("select rank, item, value from top_items order by rank").fetchall() == [
         (1, "home", 10.0),
         (2, "about", 4.0),
@@ -56,7 +71,9 @@ def test_roundtrip_run(tmp_path):
         (1, "Safari", 1, "a", 2.0),
         (1, "Safari", 2, "b", 4.0),
     ]
-    assert c.execute("select col_index, label, total from breakdown_totals order by col_index").fetchall() == [
+    assert c.execute(
+        "select col_index, label, total from breakdown_totals order by col_index"
+    ).fetchall() == [
         (0, "Chrome", 4.0),
         (1, "Safari", 6.0),
     ]
@@ -85,7 +102,10 @@ def test_reopen_existing_file(tmp_path):
 
 def test_no_credentials_column(tmp_path):
     s = Store.open(tmp_path / "a.duckdb")
-    cols = [r[0].lower() for r in s.con.execute("select column_name from information_schema.columns").fetchall()]
+    cols = [
+        r[0].lower()
+        for r in s.con.execute("select column_name from information_schema.columns").fetchall()
+    ]
     assert cols and not [c for c in cols if "secret" in c or "token" in c]
 
 

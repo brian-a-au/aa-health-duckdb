@@ -15,7 +15,11 @@ dependencies = [
 ahd = "ahd.cli:main"
 
 [dependency-groups]
-dev = ["pytest", "ruff"]
+dev = [
+    "pytest",
+    "pytest-cov>=7.1.0",
+    "ruff",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -30,3 +34,12 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["ahd"]
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+fail_under = 95.00
