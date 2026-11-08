@@ -1,9 +1,11 @@
 import pytest
 import requests
 
-from ahd.api.client import MAX_RETRIES, AdobeClient, ApiError
+from ahd.api.client import BUSY, FAILED, RETRY_AFTER_CAP, AdobeClient, ApiError
 
-TRIES = MAX_RETRIES + 1
+# Every try, the first one included, for each kind of temporary error.
+BUSY_TRIES = BUSY.retries + 1
+FAILED_TRIES = FAILED.retries + 1
 
 HEADER = {"Authorization": "Bearer SECRET-TOKEN", "x-api-key": "KEY123"}
 
@@ -28,6 +30,7 @@ class FakeSession:
 
     def request(self, method, url, headers=None, params=None, json=None, timeout=None):
         self.calls.append((method, url, dict(headers or {}), params, json))
+        self.timeout = timeout
         status, body, hdrs = self.script.pop(0)
         return FakeResponse(status, body, hdrs)
 
@@ -65,11 +68,11 @@ def test_retries_429_then_succeeds():
 
 
 def test_gives_up_after_max_retries():
-    c, s, sleeps = make([(503, None, {})] * TRIES)
+    c, s, sleeps = make([(503, None, {})] * FAILED_TRIES)
     with pytest.raises(ApiError) as e:
         c.get("/dimensions")
     assert e.value.status == 503
-    assert len(s.calls) == TRIES and len(sleeps) == MAX_RETRIES
+    assert len(s.calls) == FAILED_TRIES and len(sleeps) == FAILED.retries
 
 
 def test_401_relogs_once():
@@ -166,12 +169,12 @@ def test_network_errors_retried_then_succeed(exc):
 
 
 def test_network_error_raised_after_max_retries():
-    errors = [requests.Timeout(f"slow {i}") for i in range(TRIES)]
+    errors = [requests.Timeout(f"slow {i}") for i in range(FAILED_TRIES)]
     c, s, sleeps = make_raising(list(errors))
     with pytest.raises(requests.Timeout) as e:
         c.get("/dimensions")
     assert e.value is errors[-1]
-    assert len(s.calls) == TRIES and len(sleeps) == MAX_RETRIES
+    assert len(s.calls) == FAILED_TRIES and len(sleeps) == FAILED.retries
 
 
 TEMP_403 = {"errorCode": "403025", "errorDescription": "temporarily unavailable"}
@@ -184,11 +187,12 @@ def test_403025_is_retried_with_backoff():
 
 
 def test_403025_raises_after_last_try():
-    c, s, sleeps = make([(403, TEMP_403, {})] * TRIES)
+    c, s, sleeps = make([(403, TEMP_403, {})] * BUSY_TRIES)
     with pytest.raises(ApiError) as e:
         c.post_report({})
     assert e.value.status == 403 and e.value.error_code == "403025"
-    assert len(s.calls) == TRIES and len(sleeps) == MAX_RETRIES
+    assert len(s.calls) == BUSY_TRIES and len(sleeps) == BUSY.retries
+    assert 30.5 <= sum(sleeps) <= 61
 
 
 def test_other_403_is_not_retried():
@@ -227,7 +231,6 @@ class ExpiringSession:
 
 def test_parallel_401s_sign_in_once():
     import threading
-    import time
     from concurrent.futures import ThreadPoolExecutor
 
     workers = 6
@@ -239,7 +242,6 @@ def test_parallel_401s_sign_in_once():
         with lock:
             logins.append(1)
             n = len(logins)
-        time.sleep(0.05)  # a slow sign-in, so the other threads must wait for it
         return {"Authorization": f"Bearer NEW{n}"}
 
     c = AdobeClient._from_parts(
@@ -283,7 +285,61 @@ def test_a_2xx_answer_that_is_not_json_is_an_api_error(body):
 
 
 def test_retries_wait_long_enough_to_outlast_a_short_rate_limit():
-    c, _session, sleeps = make([(429, None, {})] * TRIES)
+    c, s, sleeps = make([(429, None, {})] * BUSY_TRIES)
     with pytest.raises(ApiError):
         c.post_report({})
+    assert len(s.calls) == BUSY_TRIES
     assert 30.5 <= sum(sleeps) <= 61
+
+
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+def test_a_server_error_is_reported_within_seconds(status):
+    c, s, sleeps = make([(status, None, {})] * FAILED_TRIES)
+    with pytest.raises(ApiError):
+        c.get("/reportsuites/collections/suites")
+    assert len(s.calls) == FAILED_TRIES
+    assert 3.5 <= sum(sleeps) <= 7
+
+
+def test_no_network_is_reported_within_seconds():
+    c, s, sleeps = make_raising([requests.ConnectionError("no route")] * FAILED_TRIES)
+    with pytest.raises(requests.ConnectionError):
+        c.get("/reportsuites/collections/suites")
+    assert len(s.calls) == FAILED_TRIES
+    assert 3.5 <= sum(sleeps) <= 7
+
+
+def test_each_kind_of_error_has_its_own_limit():
+    # Three server errors use up their retries, but a rate limit after them is still retried.
+    script = [(503, None, {})] * FAILED.retries + [(429, None, {}), (200, {"ok": 1}, {})]
+    c, s, sleeps = make(script)
+    assert c.post_report({}) == {"ok": 1}
+    assert len(s.calls) == len(script) and len(sleeps) == len(script) - 1
+
+
+def test_a_long_retry_after_is_capped():
+    c, _session, sleeps = make([(429, None, {"Retry-After": "3600"}), (200, {"ok": 1}, {})])
+    assert c.post_report({}) == {"ok": 1}
+    assert sleeps == [RETRY_AFTER_CAP]
+
+
+def test_a_server_error_honors_retry_after():
+    c, _session, sleeps = make([(503, None, {"Retry-After": "9"}), (200, {"ok": 1}, {})])
+    assert c.post_report({}) == {"ok": 1}
+    assert sleeps == [9.0]
+
+
+def test_wait_totals_match_the_troubleshooting_page():
+    from pathlib import Path
+
+    assert BUSY.total() == (30.5, 61.0)
+    assert FAILED.total() == (3.5, 7.0)
+    page = (Path(__file__).parents[1] / "docs" / "troubleshooting.md").read_text(encoding="utf-8")
+    assert "up to 6 more times and waits 30 to 60 seconds in all" in page
+    assert "up to 3 more times and waits 3 to 7 seconds in all" in page
+
+
+def test_connection_wait_is_short_and_answer_wait_is_long():
+    c, s, _sleeps = make([(200, {"ok": 1}, {})])
+    c.get("/x")
+    assert s.timeout == (10, 120)

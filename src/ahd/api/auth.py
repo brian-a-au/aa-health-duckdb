@@ -15,7 +15,8 @@ from ahd.config import Credentials
 
 IMS_TOKEN_URL = "https://ims-na1.adobelogin.com/ims/token/v3"
 DISCOVERY_URL = "https://analytics.adobe.io/discovery/me"
-TIMEOUT = 60
+# Seconds to wait for a connection, and then for the answer.
+TIMEOUT = (10, 60)
 
 # Without these, the token works but discovery returns no Analytics company.
 REQUIRED_SCOPES = ("openid", "AdobeID", "additional_info.projectedProductContext")
