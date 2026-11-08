@@ -108,6 +108,14 @@
   <div class="charts">
     <figure class="chart-card">
       <div class="picker-row">
+        <label class="picker-type">Type
+          <select id="metric-type">
+            <option value="">All</option>
+            <option value="int">Whole numbers</option>
+            <option value="decimal">Decimals</option>
+            <option value="currency">Currency</option>
+          </select>
+        </label>
         <label class="picker-main">Metric chart <select id="metric-pick"></select></label>
       </div>
       <div class="chart" id="metric-chart"></div>

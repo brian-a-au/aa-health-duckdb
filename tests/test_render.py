@@ -432,3 +432,19 @@ def test_component_drop_warning_is_shown_and_escaped():
     assert "fewer components than the run before it" in html
     assert "&lt;b&gt;Run 1&lt;/b&gt;" in html
     assert "product profile of the credential" in html
+
+
+def test_metric_type_filter_and_currency_data():
+    v = sample_view()
+    html = render_html(v)
+    assert '<select id="metric-type">' in html
+    for value, label in [
+        ("int", "Whole numbers"),
+        ("decimal", "Decimals"),
+        ("currency", "Currency"),
+    ]:
+        assert f'<option value="{value}">{label}</option>' in html
+    data = _data_json(html)
+    assert "currency" in data["run"]
+    assert all("metric_type" in r for r in data["views"]["week"])
+    assert all("metric_type" in a for a in data["alerts"])

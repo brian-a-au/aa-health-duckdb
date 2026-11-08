@@ -131,3 +131,21 @@ def test_list_variable_stays_exists_column():
     assert c.column == Column(
         "variables/listvariable1", "metrics/occurrences", "variables/listvariable1"
     )
+
+
+def test_metric_type_is_kept():
+    from ahd.catalog import build_catalog
+
+    metrics = [
+        {"id": "metrics/event1", "name": "Revenue X", "type": "currency"},
+        {"id": "metrics/event2", "name": "Units", "type": "decimal"},
+        {"id": "metrics/evar1instances", "name": "Campaign Instances", "type": "int"},
+        {"id": "metrics/event3", "name": "Odd", "type": 5},
+    ]
+    dims = [{"id": "variables/prop1", "name": "P1"}]
+    types = {c.id: c.metric_type for c in build_catalog(metrics, dims, {})}
+    assert types["metrics/event1"] == "currency"
+    assert types["metrics/event2"] == "decimal"
+    assert types["metrics/evar1instances"] == "int"
+    assert types["metrics/event3"] is None
+    assert types["variables/prop1"] is None

@@ -49,17 +49,38 @@
 
   // ---- formatting ----------------------------------------------------------
   var numFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
-  function fmtNum(v) {
-    return v === null || v === undefined ? "No data" : numFmt.format(v);
+  // Currency metrics use the report suite's currency, e.g. "$1,234.56" for USD.
+  // Without a valid currency code they show as plain numbers with two decimals.
+  function currencyFmt(opts) {
+    var code = (data.run || {}).currency;
+    function options(withCode) {
+      var o = opts.compact ? { notation: "compact", maximumFractionDigits: 1 } :
+        { minimumFractionDigits: opts.digits, maximumFractionDigits: opts.digits };
+      if (withCode) { o.style = "currency"; o.currency = code; }
+      return o;
+    }
+    try {
+      if (code) return new Intl.NumberFormat(undefined, options(true));
+    } catch (e) { /* not a currency code the browser knows */ }
+    return opts.compact ? null : new Intl.NumberFormat(undefined, options(false));
+  }
+  var money = currencyFmt({ digits: 2 });
+  var moneyRound = currencyFmt({ digits: 0 });
+  var moneyShort = currencyFmt({ compact: true });
+  function fmtNum(v, type) {
+    if (v === null || v === undefined) return "No data";
+    return (type === "currency" ? money : numFmt).format(v);
   }
   // Averages and model values: whole numbers from 100 up, one decimal below that.
   var roundBig = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
   var roundSmall = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
-  function fmtRound(v) {
+  function fmtRound(v, type) {
     if (v === null || v === undefined) return "No data";
+    if (type === "currency") return (Math.abs(v) >= 100 ? moneyRound : money).format(v);
     return Math.abs(v) >= 100 ? roundBig.format(v) : roundSmall.format(v);
   }
-  function fmtShort(v) {
+  function fmtShort(v, type) {
+    if (type === "currency" && moneyShort) return moneyShort.format(v);
     var a = Math.abs(v);
     if (a >= 1e9) return trim(v / 1e9) + "B";
     if (a >= 1e6) return trim(v / 1e6) + "M";
@@ -358,8 +379,8 @@
       var cells = [];
       if (custom) cells.push({ c: numberLabel(r), k: r.number });
       cells.push(nameCell(r));
-      cells.push({ c: fmtNum(r.value), k: r.value });
-      cells.push({ c: fmtRound(r.baseline), k: r.baseline });
+      cells.push({ c: fmtNum(r.value, r.metric_type), k: r.value });
+      cells.push({ c: fmtRound(r.baseline, r.metric_type), k: r.baseline });
       cells.push(changeCell(r.arrow, r.pct));
       if (daily) cells.push(anomalyCell(r.anomaly));
       return cells;
@@ -452,11 +473,11 @@
     return li;
   }
 
-  function describe(p) {
-    var parts = [fmtDay(p[0], true) + ": " + fmtNum(p[1])];
-    if (p[2] !== null) parts.push("expected " + fmtRound(p[2]));
+  function describe(p, type) {
+    var parts = [fmtDay(p[0], true) + ": " + fmtNum(p[1], type)];
+    if (p[2] !== null) parts.push("expected " + fmtRound(p[2], type));
     if (p[3] !== null && p[4] !== null) {
-      parts.push("expected range " + fmtRound(p[4]) + " to " + fmtRound(p[3]));
+      parts.push("expected range " + fmtRound(p[4], type) + " to " + fmtRound(p[3], type));
     }
     var text = parts.join(", ");
     if (p[5] === "high") text += ". Above the expected range.";
@@ -464,7 +485,7 @@
     return text;
   }
 
-  function drawChart(host, points, title) {
+  function drawChart(host, points, title, type) {
     clear(host);
     points = (points || []).filter(function (p) { return p && p[0]; });
     if (!points.length) {
@@ -504,7 +525,7 @@
       svg.appendChild(sv("line", { x1: L, x2: W - R, y1: y(v), y2: y(v),
         "class": Math.abs(v) < step / 2 ? "base" : "grid" }));
       var lab = sv("text", { x: L - 6, y: y(v) + 3, "text-anchor": "end", "class": "axis" });
-      lab.textContent = fmtShort(v);
+      lab.textContent = fmtShort(v, type);
       svg.appendChild(lab);
     }
     var ticks = W < 480 ? 3 : 5;
@@ -570,7 +591,7 @@
     function show(k, visible) {
       active = Math.max(0, Math.min(last, k));
       var p = points[active];
-      readout.textContent = describe(p);
+      readout.textContent = describe(p, type);
       var cx = x(p);
       cross.setAttribute("x1", cx);
       cross.setAttribute("x2", cx);
@@ -617,16 +638,26 @@
   }
 
   // The type filter in the Dimension card sorts dimensions by their group.
+  // The type filter in the Metric card uses Adobe's type for each metric.
   var EVAR_GROUPS = ["custom_evars", "Reserved eVars"];
   var PROP_GROUPS = ["custom_props", "Reserved Props"];
   function typeOf(r) {
+    if (r.kind === "metric") {
+      return ["int", "decimal", "currency"].indexOf(r.metric_type) >= 0 ? r.metric_type : "other";
+    }
     if (EVAR_GROUPS.indexOf(r.group) >= 0) return "evars";
     if (PROP_GROUPS.indexOf(r.group) >= 0) return "props";
     return "other";
   }
   var TYPE_EMPTY = {
-    evars: "No eVar data was read.", props: "No prop data was read.",
-    other: "No other dimension data was read."
+    dimension: {
+      evars: "No eVar data was read.", props: "No prop data was read.",
+      other: "No other dimension data was read."
+    },
+    metric: {
+      int: "No whole number metric data was read.", decimal: "No decimal metric data was read.",
+      currency: "No currency metric data was read."
+    }
   };
 
   function fillPicker(select, kind, chartId, typeSelect) {
@@ -659,11 +690,11 @@
       if (!r) {
         clear(host);
         var type = typeSelect ? typeSelect.value : "";
-        host.appendChild(el("p", { "class": "chart-empty" }, TYPE_EMPTY[type] ||
+        host.appendChild(el("p", { "class": "chart-empty" }, TYPE_EMPTY[kind][type] ||
           (kind === "metric" ? "No metric data was read." : "No dimension data was read.")));
         return;
       }
-      drawChart(host, data.series[r.component_id], componentLabel(r));
+      drawChart(host, data.series[r.component_id], componentLabel(r), r.metric_type);
     }
     fill();
     select.addEventListener("change", draw);
@@ -757,8 +788,8 @@
 
   function alertLine(a) {
     var s = "- " + a.name + " (" + a.component_id + "): " + alertReason(a) +
-      ". Actual " + fmtNum(a.actual);
-    if (a.expected !== null) s += ", expected " + fmtRound(a.expected);
+      ". Actual " + fmtNum(a.actual, a.metric_type);
+    if (a.expected !== null) s += ", expected " + fmtRound(a.expected, a.metric_type);
     if (a.pct_vs_expected !== null) s += ", change " + fmtPct(a.pct_vs_expected);
     return s + ".";
   }
@@ -809,8 +840,9 @@
         parts.unusual.map(function (a) {
           return [{ c: a.name, k: a.name }, { c: el("code", null, a.component_id), k: a.component_id },
             anomalyCell(a.anomaly),
-            { c: a.expected === null ? "Not available" : fmtRound(a.expected), k: a.expected },
-            { c: fmtNum(a.actual), k: a.actual }, devCell(a.arrow, a.pct_vs_expected)];
+            { c: a.expected === null ? "Not available" : fmtRound(a.expected, a.metric_type),
+              k: a.expected },
+            { c: fmtNum(a.actual, a.metric_type), k: a.actual }, devCell(a.arrow, a.pct_vs_expected)];
         }), null, "alerts-unusual"));
     } else {
       g1.appendChild(el("p", { "class": "empty" }, anomalyBlocked ?
@@ -839,8 +871,9 @@
           name.appendChild(document.createTextNode(a.name));
           name.appendChild(zeroBadge());
           return [{ c: name, k: a.name }, { c: el("code", null, a.component_id), k: a.component_id },
-            { c: a.expected === null ? "Not available" : fmtRound(a.expected), k: a.expected },
-            { c: fmtNum(a.actual), k: a.actual }];
+            { c: a.expected === null ? "Not available" : fmtRound(a.expected, a.metric_type),
+              k: a.expected },
+            { c: fmtNum(a.actual, a.metric_type), k: a.actual }];
         }), null, "alerts-zero"));
     } else {
       g2.appendChild(el("p", { "class": "empty" }, "No component had a value of 0 yesterday."));
@@ -927,7 +960,7 @@
 
   renderTiles();
   renderTables();
-  fillPicker(byId("metric-pick"), "metric", "metric-chart");
+  fillPicker(byId("metric-pick"), "metric", "metric-chart", byId("metric-type"));
   fillPicker(byId("dimension-pick"), "dimension", "dimension-chart", byId("dimension-type"));
   renderIndividual();
   renderAlerts();

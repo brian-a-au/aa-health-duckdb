@@ -48,7 +48,7 @@ dv AS (
 # Catalog components that have at least one daily value, with their sort position.
 _COMPS = """
 comps AS (
-    SELECT c.component_id, c.name, c.kind, c."group", c.number,
+    SELECT c.component_id, c.name, c.kind, c."group", c.number, c.metric_type,
         coalesce(list_position($groups::VARCHAR[], c."group"), 1000000) AS gpos
     FROM components c
     WHERE c.run_id = $run_id AND c.component_id <> $individual
@@ -76,8 +76,8 @@ base AS (
     GROUP BY s.sel_day, c.component_id
 ),
 r AS (
-    SELECT s.sel_day, c.component_id, c.name, c.kind, c."group", c.number, c.gpos,
-        d.value, b.baseline,
+    SELECT s.sel_day, c.component_id, c.name, c.kind, c."group", c.number, c.metric_type,
+        c.gpos, d.value, b.baseline,
         CASE WHEN b.baseline <> 0 THEN d.value / b.baseline - 1 END AS pct,
         {_ANOMALY.format(a="d")} AS anomaly
     FROM sel s CROSS JOIN comps c
@@ -85,7 +85,7 @@ r AS (
     LEFT JOIN dv d ON d.component_id = c.component_id AND d.day = s.sel_day
 )
 SELECT CAST(sel_day AS VARCHAR) AS sel_day, component_id, name, kind, "group", number,
-    value, baseline, pct, {_ARROW} AS arrow, coalesce(value = 0, false) AS zero, anomaly
+    metric_type, value, baseline, pct, {_ARROW} AS arrow, coalesce(value = 0, false) AS zero, anomaly
 FROM r
 ORDER BY sel_day DESC, {_ORDER}
 """
@@ -93,7 +93,7 @@ ORDER BY sel_day DESC, {_ORDER}
 _WEEK_SQL = f"""
 WITH {_DV}, {_COMPS},
 r AS (
-    SELECT c.component_id, c.name, c.kind, c."group", c.number, c.gpos,
+    SELECT c.component_id, c.name, c.kind, c."group", c.number, c.metric_type, c.gpos,
         sum(d.value) FILTER (WHERE d.day BETWEEN $week_start AND $week_end) AS value,
         coalesce(sum(d.value) FILTER (WHERE d.day BETWEEN $baseline_start AND $baseline_end), 0)
             / 12 AS baseline
@@ -101,8 +101,8 @@ r AS (
     GROUP BY ALL
 ),
 p AS (SELECT *, CASE WHEN baseline <> 0 THEN value / baseline - 1 END AS pct FROM r)
-SELECT component_id, name, kind, "group", number, value, baseline, pct, {_ARROW} AS arrow,
-    coalesce(value = 0, false) AS zero, NULL AS anomaly
+SELECT component_id, name, kind, "group", number, metric_type, value, baseline, pct,
+    {_ARROW} AS arrow, coalesce(value = 0, false) AS zero, NULL AS anomaly
 FROM p
 ORDER BY {_ORDER}
 """
@@ -119,13 +119,13 @@ ORDER BY component_id, day
 _ALERTS_SQL = f"""
 WITH {_DV}, {_COMPS},
 r AS (
-    SELECT c.name, c.component_id, c.gpos, c.number, d.expected, d.value AS actual,
+    SELECT c.name, c.component_id, c.metric_type, c.gpos, c.number, d.expected, d.value AS actual,
         CASE WHEN d.expected <> 0 THEN d.value / d.expected - 1 END AS pct,
         {_ANOMALY.format(a="d")} AS anomaly, coalesce(d.value = 0, false) AS zero
     FROM comps c JOIN dv d ON d.component_id = c.component_id AND d.day = $yesterday
     WHERE d.anomaly OR d.value = 0
 )
-SELECT name, component_id, expected, actual, pct AS pct_vs_expected, {_ARROW} AS arrow,
+SELECT name, component_id, metric_type, expected, actual, pct AS pct_vs_expected, {_ARROW} AS arrow,
     anomaly, zero
 FROM r
 ORDER BY {_ORDER}
@@ -234,6 +234,7 @@ def _run_block(store: Store, run_id: int) -> dict[str, Any]:
         "tool_version",
         "dimension",
         "metric",
+        "currency",
     ]
     block = {"id": run["run_id"], **{k: _iso(run[k]) for k in keys}}
     block["dimension_name"] = _display_name(store, run_id, run["dimension"], True)

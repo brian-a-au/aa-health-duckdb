@@ -101,7 +101,7 @@ def _tool_version() -> str:
 def fetch_catalog(client: Any, rsid: str) -> tuple[list[Component], dict]:
     """Return the run catalog and the report suite dict (name, timezoneZoneinfo)."""
     suite = client.get(
-        f"/reportsuites/collections/suites/{rsid}", {"expansion": "name,timezoneZoneinfo"}
+        f"/reportsuites/collections/suites/{rsid}", {"expansion": "name,timezoneZoneinfo,currency"}
     )
     params = {"rsid": rsid, "expansion": "allowedForReporting"}
     metrics = client.get("/metrics", params) or []
@@ -154,6 +154,7 @@ def run_fetch(
         _tool_version(),
         dimension=opts.dimension,
         metric=opts.metric,
+        currency=suite.get("currency") if isinstance(suite.get("currency"), str) else None,
     )
     try:
         status = _run(client, store, opts, run_id, catalog, window)

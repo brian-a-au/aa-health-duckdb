@@ -12,20 +12,25 @@ from ahd.api.reports import DailyValue
 from ahd.catalog import Component
 
 # Bump when the tables change, and add the upgrade steps to Store.open.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE SEQUENCE IF NOT EXISTS run_seq START 1;
 CREATE TABLE IF NOT EXISTS runs (
     run_id INTEGER PRIMARY KEY, rsid VARCHAR, rsid_name VARCHAR, segment_id VARCHAR,
     today DATE, timezone VARCHAR, tool_version VARCHAR, status VARCHAR,
-    started_at TIMESTAMP, finished_at TIMESTAMP, dimension VARCHAR, metric VARCHAR);
+    started_at TIMESTAMP, finished_at TIMESTAMP, dimension VARCHAR, metric VARCHAR,
+    currency VARCHAR);
 -- Files written before version 1 have no dimension and metric columns.
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS dimension VARCHAR;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS metric VARCHAR;
+-- Files written before version 2 have no currency and metric_type columns.
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS currency VARCHAR;
 CREATE TABLE IF NOT EXISTS components (
     run_id INTEGER, component_id VARCHAR, name VARCHAR, kind VARCHAR, "group" VARCHAR,
-    number INTEGER, metric_id VARCHAR, exists_dimension VARCHAR, allowed_for_reporting BOOLEAN);
+    number INTEGER, metric_id VARCHAR, exists_dimension VARCHAR, allowed_for_reporting BOOLEAN,
+    metric_type VARCHAR);
+ALTER TABLE components ADD COLUMN IF NOT EXISTS metric_type VARCHAR;
 CREATE TABLE IF NOT EXISTS daily_values (
     run_id INTEGER, component_id VARCHAR, day DATE, value DOUBLE,
     expected DOUBLE, upper DOUBLE, lower DOUBLE, anomaly BOOLEAN);
@@ -99,11 +104,12 @@ class Store:
         tool_version: str,
         dimension: str | None = None,
         metric: str | None = None,
+        currency: str | None = None,
     ) -> int:
         row = self.con.execute(
             "INSERT INTO runs (run_id, rsid, rsid_name, segment_id, today, timezone,"
-            " tool_version, status, started_at, finished_at, dimension, metric)"
-            " VALUES (nextval('run_seq'), ?, ?, ?, ?, ?, ?, 'running', ?, NULL, ?, ?)"
+            " tool_version, status, started_at, finished_at, dimension, metric, currency)"
+            " VALUES (nextval('run_seq'), ?, ?, ?, ?, ?, ?, 'running', ?, NULL, ?, ?, ?)"
             " RETURNING run_id",
             [
                 rsid,
@@ -115,6 +121,7 @@ class Store:
                 datetime.now(),
                 dimension,
                 metric,
+                currency,
             ],
         ).fetchone()
         return row[0]
@@ -128,8 +135,8 @@ class Store:
     def add_components(self, run_id: int, components: list[Component]) -> None:
         self._many(
             'INSERT INTO components (run_id, component_id, name, kind, "group", number,'
-            " metric_id, exists_dimension, allowed_for_reporting)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " metric_id, exists_dimension, allowed_for_reporting, metric_type)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     run_id,
@@ -141,6 +148,7 @@ class Store:
                     c.column.metric_id,
                     c.column.exists_dimension,
                     c.allowed_for_reporting,
+                    c.metric_type,
                 )
                 for c in components
             ],

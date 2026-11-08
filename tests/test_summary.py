@@ -183,6 +183,7 @@ def test_alerts_zero_and_anomaly_only(tmp_path):
     assert spike == {
         "name": "Spike",
         "component_id": "metrics/event2",
+        "metric_type": None,
         "expected": 20,
         "actual": 30,
         "pct_vs_expected": pytest.approx(0.5),
@@ -329,6 +330,7 @@ def test_run_block(friday):
         "tool_version",
         "dimension",
         "metric",
+        "currency",
         "dimension_name",
         "metric_name",
     }

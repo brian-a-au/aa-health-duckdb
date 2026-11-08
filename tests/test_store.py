@@ -111,11 +111,11 @@ def test_no_credentials_column(tmp_path):
 
 def test_new_file_gets_schema_version(tmp_path):
     s = Store.open(tmp_path / "a.duckdb")
-    assert SCHEMA_VERSION == 1
-    assert s.con.execute("select version from schema_version").fetchall() == [(1,)]
+    assert SCHEMA_VERSION == 2
+    assert s.con.execute("select version from schema_version").fetchall() == [(2,)]
     s.con.close()
     s2 = Store.open(tmp_path / "a.duckdb")  # reopening does not add a second row
-    assert s2.con.execute("select version from schema_version").fetchall() == [(1,)]
+    assert s2.con.execute("select version from schema_version").fetchall() == [(2,)]
 
 
 def test_newer_schema_version_is_refused(tmp_path):
@@ -142,10 +142,56 @@ def test_old_file_without_version_is_upgraded(tmp_path):
             'UTC', '0.0', 'ok', NULL, NULL);""")
     con.close()
     s = Store.open(p)
-    assert s.con.execute("select version from schema_version").fetchall() == [(1,)]
+    assert s.con.execute("select version from schema_version").fetchall() == [(2,)]
     old = s.get_run(1)
     assert old["rsid"] == "rs0" and old["dimension"] is None and old["metric"] is None
+    assert old["currency"] is None
     assert _fill(s) == 2
+
+
+def test_version_1_file_gets_currency_and_metric_type(tmp_path):
+    p = tmp_path / "v1.duckdb"
+    con = duckdb.connect(str(p))
+    con.execute("""CREATE SEQUENCE run_seq START 1;
+        CREATE TABLE schema_version (version INTEGER);
+        INSERT INTO schema_version VALUES (1);
+        CREATE TABLE runs (run_id INTEGER PRIMARY KEY, rsid VARCHAR, rsid_name VARCHAR,
+            segment_id VARCHAR, today DATE, timezone VARCHAR, tool_version VARCHAR,
+            status VARCHAR, started_at TIMESTAMP, finished_at TIMESTAMP, dimension VARCHAR,
+            metric VARCHAR);
+        CREATE TABLE components (run_id INTEGER, component_id VARCHAR, name VARCHAR,
+            kind VARCHAR, "group" VARCHAR, number INTEGER, metric_id VARCHAR,
+            exists_dimension VARCHAR, allowed_for_reporting BOOLEAN);
+        INSERT INTO runs VALUES (nextval('run_seq'), 'rs0', 'Old', NULL, DATE '2026-11-01',
+            'UTC', '0.0', 'ok', NULL, NULL, NULL, NULL);
+        INSERT INTO components VALUES (1, 'metrics/event1', 'E1', 'metric', 'custom_events',
+            1, 'metrics/event1', NULL, NULL);""")
+    con.close()
+    s = Store.open(p)
+    assert s.con.execute("select version from schema_version").fetchall() == [(2,)]
+    assert s.get_run(1)["currency"] is None
+    assert s.con.execute("select metric_type from components").fetchall() == [(None,)]
+
+
+def test_currency_and_metric_type_are_stored(tmp_path):
+    s = Store.open(tmp_path / "a.duckdb")
+    rid = s.create_run("rs1", "N", None, date(2026, 11, 7), "UTC", "0.1", currency="EUR")
+    c = Component(
+        "metrics/event2",
+        "Rev",
+        "metric",
+        "custom_events",
+        2,
+        Column("metrics/event2", "metrics/event2", None),
+        None,
+        "currency",
+    )
+    s.add_components(rid, [c, _comp()])
+    assert s.get_run(rid)["currency"] == "EUR"
+    rows = s.con.execute(
+        "select component_id, metric_type from components order by component_id"
+    ).fetchall()
+    assert rows == [("metrics/event2", "currency"), ("metrics/pageviews", None)]
 
 
 def _custom(group, n, kind="metric"):
