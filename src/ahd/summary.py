@@ -282,6 +282,7 @@ def _run_block(store: Store, run_id: int) -> dict[str, Any]:
         "currency",
     ]
     block = {"id": run["run_id"], **{k: _iso(run[k]) for k in keys}}
+    block["date_given"] = bool(run["date_given"])
     block["duration"] = duration_text(run["started_at"], run["finished_at"])
     return block
 

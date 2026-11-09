@@ -690,3 +690,11 @@ def test_a_batch_that_is_not_json_becomes_issues(store):
     )
     rid = run_fetch(fake, store, opts())
     assert "invalid_response" in issue_codes(store, rid)
+
+
+def test_a_run_records_whether_date_was_given(store):
+    fake = fake_for("rs1", events(1), custom_dims())
+    plain = run_fetch(fake, store, RunOptions(rsid="rs1"))
+    given = run_fetch(fake, store, RunOptions(rsid="rs1", today=date(2026, 9, 16)))
+    assert store.get_run(plain)["date_given"] is False
+    assert store.get_run(given)["date_given"] is True

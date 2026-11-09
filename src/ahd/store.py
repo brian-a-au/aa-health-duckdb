@@ -14,7 +14,7 @@ from ahd.catalog import Component
 
 # Bump when the tables change. ahd does not upgrade files: a file with another version is
 # refused, and you start a new file.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _SCHEMA = """
 CREATE TABLE schema_version (version INTEGER);
@@ -22,7 +22,7 @@ CREATE SEQUENCE run_seq START 1;
 CREATE TABLE runs (
     run_id INTEGER PRIMARY KEY, rsid VARCHAR, rsid_name VARCHAR, segment_id VARCHAR,
     today DATE, timezone VARCHAR, tool_version VARCHAR, status VARCHAR,
-    started_at TIMESTAMP, finished_at TIMESTAMP, currency VARCHAR);
+    started_at TIMESTAMP, finished_at TIMESTAMP, currency VARCHAR, date_given BOOLEAN);
 -- The Individual Component Summary pairs of a run: one dimension by one metric each.
 -- Pair 1 is fetched by ahd run; ahd individual adds more.
 CREATE TABLE pairs (
@@ -173,11 +173,13 @@ class Store:
         timezone: str,
         tool_version: str,
         currency: str | None = None,
+        date_given: bool = False,
     ) -> int:
+        """date_given is true when ahd run --date set the run date, not today's date."""
         row = self.con.execute(
             "INSERT INTO runs (run_id, rsid, rsid_name, segment_id, today, timezone,"
-            " tool_version, status, started_at, finished_at, currency)"
-            " VALUES (nextval('run_seq'), ?, ?, ?, ?, ?, ?, 'running', ?, NULL, ?)"
+            " tool_version, status, started_at, finished_at, currency, date_given)"
+            " VALUES (nextval('run_seq'), ?, ?, ?, ?, ?, ?, 'running', ?, NULL, ?, ?)"
             " RETURNING run_id",
             [
                 rsid,
@@ -188,6 +190,7 @@ class Store:
                 tool_version,
                 datetime.now(),
                 currency,
+                date_given,
             ],
         ).fetchone()
         return row[0]

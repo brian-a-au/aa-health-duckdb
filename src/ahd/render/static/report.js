@@ -186,6 +186,9 @@
   var dayKeys = Object.keys(data.views).filter(function (k) { return k.indexOf("day:") === 0; })
     .map(function (k) { return k.slice(4); }).sort().reverse();
   var yesterday = dayKeys[0] || "";
+  // A run made with ahd run --date is about the days before that date, not before the run time.
+  var yesterdayNote = (data.run || {}).date_given ? " (day before the run date)" : " (yesterday)";
+  function dayNote(d) { return d === yesterday ? yesterdayNote : ""; }
   // t: the slider's share. A drop below usual by more than t is flagged, and a change by more
   // than t either way gets an arrow.
   var state = { gran: "day", day: yesterday, alertDay: yesterday, range: "", flagged: false,
@@ -487,7 +490,7 @@
 
   function renderSliderResult() {
     var when = state.gran === "week" ? "The week ending " + fmtDay(yesterday, false) :
-      fmtDay(state.day, false) + (state.day === yesterday ? " (yesterday)" : "");
+      fmtDay(state.day, false) + dayNote(state.day);
     byId("change-alert-result").textContent = dropSummary(currentRows(), when);
   }
 
@@ -997,7 +1000,7 @@
   }
 
   function alertDayText() {
-    return fmtDay(state.alertDay, false) + (state.alertDay === yesterday ? " (yesterday)" : "");
+    return fmtDay(state.alertDay, false) + dayNote(state.alertDay);
   }
 
   // One plain sentence about large drops in these rows, naming the largest drop even when it is
@@ -1324,9 +1327,9 @@
 
   // ---- controls --------------------------------------------------------------
   var daySel = byId("day");
-  dayKeys.forEach(function (d, i) {
+  dayKeys.forEach(function (d) {
     daySel.appendChild(el("option", { value: d },
-      fmtDay(d, true) + (i === 0 ? " (yesterday)" : "")));
+      fmtDay(d, true) + dayNote(d)));
   });
   daySel.addEventListener("change", function () { state.day = daySel.value; renderTables(); });
   byId("granularity").addEventListener("change", function (e) {
@@ -1345,9 +1348,9 @@
   });
 
   var alertDaySel = byId("alert-day");
-  dayKeys.forEach(function (d, i) {
+  dayKeys.forEach(function (d) {
     alertDaySel.appendChild(el("option", { value: d },
-      fmtDay(d, true) + (i === 0 ? " (yesterday)" : "")));
+      fmtDay(d, true) + dayNote(d)));
   });
   alertDaySel.addEventListener("change", function () {
     state.alertDay = alertDaySel.value;

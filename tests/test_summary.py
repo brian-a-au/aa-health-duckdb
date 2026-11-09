@@ -336,7 +336,9 @@ def test_run_block(friday):
         "tool_version",
         "currency",
         "duration",
+        "date_given",
     }
+    assert run["date_given"] is False
     assert isinstance(run["duration"], str) and run["duration"].endswith(" s")
     [pair] = friday["pairs"]
     assert pair["dimension"] == "variables/page" and pair["metric"] == "metrics/event1"

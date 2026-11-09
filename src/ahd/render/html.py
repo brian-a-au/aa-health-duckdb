@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date
+from datetime import date, timedelta
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -226,9 +226,18 @@ def _issue_groups(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(groups.values())
 
 
+def _last_day(run: dict[str, Any]) -> str | None:
+    """The day before the run date, e.g. "2026-11-07", or None without a run date."""
+    today = run.get("today")
+    return (date.fromisoformat(today) - timedelta(days=1)).isoformat() if today else None
+
+
 def render_html(view: dict[str, Any]) -> str:
     run = view.get("run", {})
     status = run.get("status") or "unknown"
+    # A run made with --date is about the days before that date, not before the run time.
+    last_day = _last_day(run) if run.get("date_given") else None
+    day_words = f"on {last_day}" if last_day else "yesterday"
     template = _env.get_template("report.html.j2")
     return template.render(
         run=run,
@@ -246,7 +255,9 @@ def render_html(view: dict[str, Any]) -> str:
         component_drop_cause=view.get("component_drop_cause", ""),
         ranges=RANGES,
         no_bands_note=NO_BANDS_NOTE,
-        week_note=WEEK_NOTE,
+        week_note=WEEK_NOTE.replace("ending yesterday", f"ending {day_words}"),
+        last_day=last_day,
+        day_words=day_words,
         css=_inline(_static("report.css"), "style"),
         js=_inline(_static("report.js"), "script"),
         data=_json_for_script(view),
