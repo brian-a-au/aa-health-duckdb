@@ -32,17 +32,17 @@
 </header>
 
 <div class="change-alert">
-  <label for="change-alert">Large drop alert: flag values more than</label>
-  <input type="range" id="change-alert" min="10" max="100" step="5" value="{{ change_alert_pct }}" aria-describedby="change-alert-hint">
-  <output for="change-alert" id="change-alert-value">{{ change_alert_pct }}%</output>
-  <span>below their weekday average</span>
+  <label for="change-alert">Large drop alert: flag changes below</label>
+  <input type="range" id="change-alert" min="-100" max="-10" step="5" value="-{{ change_alert_pct }}" aria-valuetext="-{{ change_alert_pct }}%" aria-describedby="change-alert-hint">
+  <output for="change-alert" id="change-alert-value">-{{ change_alert_pct }}%</output>
+  <span>from the weekday average</span>
   <p class="change-alert-result" id="change-alert-result" role="status" aria-live="polite"></p>
   <p class="hint" id="change-alert-hint">The weekday average is the average of the same weekday in the 12 weeks before the day.</p>
   <details class="rule" id="change-alert-rule">
     <summary>How a large drop is found</summary>
     <ul>
       <li>The weekday average for a day is the average of the same weekday in the 12 weeks before it, e.g., the 12 Mondays before a Monday.</li>
-      <li>A value is a large drop when it is more than the slider's percent below its weekday average.</li>
+      <li>A value is a large drop when its change from the weekday average is below the slider's setting, e.g., below -30%. Move the slider left to flag only deeper drops.</li>
       <li>Components with a weekday average under {{ min_usual }} are skipped, because small numbers change a lot from day to day.</li>
       <li>A value of 0 is not a large drop. It is listed as "Dropped to zero".</li>
       <li>A value that Adobe flagged is listed as an unusual value, not as a large drop.</li>

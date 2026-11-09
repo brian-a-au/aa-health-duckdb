@@ -124,7 +124,7 @@ uv run ahd run --all-suites
 | `--segment` | A segment, by ID or name. Every request is filtered by it. With several suites, the tool looks up the segment again for each suite. |
 | `--dimension`, `--metric` | The first Individual Component Summary pair. Each takes a full ID (`variables/evar17`), a short ID (`evar17`) or a name (`"Internal Search Term"`). Any dimension or metric of the suite works. The default is Page by Occurrences. |
 | `--date` | Treats this date as today, e.g., `2026-11-07` to repeat an earlier day. Write it as YYYY-MM-DD. By default, today is today in the report suite's time zone. With `--date`, the report says so under the run date, and it names the day before that date instead of saying "yesterday". |
-| `--change-alert` | Where the report's large drop slider starts: 10 to 100, in steps of 5. The default is 30. See [The report](report.md#the-large-drop-slider). |
+| `--change-alert` | Where the report's large drop slider starts: 10 to 100, in steps of 5. The default is 30. The slider shows it as a negative change, e.g., 30 is -30%. See [The report](report.md#the-large-drop-slider). |
 | `--out` | The folder for the HTML report. The default is `./reports/`. |
 | `--batch-size` | How many columns go into one trend request, from 1 to 100. The default is 20. |
 | `--workers` | How many requests run at the same time, from 1 to 16. The default is 8. The tool starts no more than 12 requests in any 6 seconds, which is Adobe's limit. |
