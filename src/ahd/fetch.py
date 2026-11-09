@@ -17,6 +17,7 @@ from typing import Any
 
 import requests
 
+from ahd.api.auth import SignInUnavailable
 from ahd.api.client import ApiError
 from ahd.api.reports import (
     Column,
@@ -54,6 +55,7 @@ INDIVIDUAL_PREFIX = "individual/"
 # Adobe flags anomalies only when the credential is allowed to; these issue codes say it was not.
 NO_ANOMALY_CODES = ("anomaly_not_allowed", "anomaly_probe_failed")
 NETWORK_ERROR = "network_error"
+SIGN_IN_UNAVAILABLE = "sign_in_unavailable"
 
 # Plain names for the Individual requests, used in issue messages.
 INDIVIDUAL_LABELS = {
@@ -191,7 +193,15 @@ def run_fetch(
     catalog, suite = fetch_catalog(client, opts.rsid)
     progress(f"Found {len(catalog)} components to check.")
     zone = suite.get("timezoneZoneinfo") or "UTC"
-    today = opts.today or today_in_zone(zone, now())
+    suite_today = today_in_zone(zone, now())
+    if opts.today is not None and opts.today > suite_today:
+        # The last full day would be today or later, which has no full data yet.
+        raise ConfigError(
+            f"The date {opts.today.isoformat()} is after today in the report suite's time zone "
+            f"({zone}), which is {suite_today.isoformat()}. Give a date up to "
+            f"{suite_today.isoformat()}."
+        )
+    today = opts.today or suite_today
     window = RunWindow.for_today(today)
     run_id = store.create_run(
         opts.rsid,
@@ -238,7 +248,7 @@ def _run(
     if columns:
         try:
             allowed = probe_anomaly(client, opts.rsid, window, columns[0], opts.segment_id)
-        except (ApiError, requests.RequestException) as e:
+        except (ApiError, SignInUnavailable, requests.RequestException) as e:
             anomaly = False
             issue("permissions", None, "anomaly_probe_failed", _probe_failed_message(e))
         else:
@@ -282,6 +292,11 @@ def _run(
                 code = e.error_code or f"http_{e.status}"
                 for col in batch:
                     issue("column", col.component_id, code, e.message)
+                continue
+            except SignInUnavailable as e:
+                # Signing in again failed for a while. Later requests may still work.
+                for col in batch:
+                    issue("column", col.component_id, SIGN_IN_UNAVAILABLE, str(e))
                 continue
             except requests.RequestException as e:
                 for col in batch:
@@ -373,6 +388,9 @@ def _store_pair(
         except ApiError as e:
             issue("individual", cid, e.error_code or f"http_{e.status}", f"{what}: {e.message}")
             continue
+        except SignInUnavailable as e:
+            issue("individual", cid, SIGN_IN_UNAVAILABLE, f"{what}: {e}")
+            continue
         except requests.RequestException as e:
             issue("individual", cid, NETWORK_ERROR, f"{what}: {_network_message(e)}")
             continue
@@ -422,8 +440,14 @@ def add_pair(
     run = store.get_run(run_id)
     if run["status"] == "running":
         raise ConfigError(f'Run {run_id} is still marked "running". Choose a finished run.')
+    # A pair with the same dimension and metric that stored nothing, e.g., the first pair of a
+    # failed run, is tried again. It is removed once the new pair is stored.
+    empty: int | None = None
     for p in store.list_pairs(run_id):
         if p["dimension"] == dimension and p["metric"] == metric:
+            if not store.pair_has_data(run_id, p["pair"], pair_series_id(p["pair"])):
+                empty = p["pair"]
+                continue
             raise ConfigError(
                 f"Run {run_id} already holds {_pair_label(p['dimension_name'] or dimension, p['metric_name'] or metric)}."
             )
@@ -463,6 +487,8 @@ def add_pair(
         # of the same dimension and metric. Remove it, so the run looks as it did before.
         store.delete_pair(run_id, pair, pair_series_id(pair))
         raise
+    if empty is not None:
+        store.delete_pair(run_id, empty, pair_series_id(empty))
     if problems and run["status"] == "ok":
         store.set_status(run_id, "partial")
     elif stored and run["status"] == "failed":

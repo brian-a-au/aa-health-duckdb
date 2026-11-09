@@ -736,6 +736,41 @@ def test_component_days_matches_the_report_view(tmp_path):
     assert days == (START, YESTERDAY, 91)
 
 
+def test_alerts_macro_has_no_drops_or_spikes_before_the_last_7_days(tmp_path):
+    # Only the 7 days the report can pick have a weekday average from the 12 weeks before them.
+    # An older day would be compared with weeks that include the day itself, so the macro and
+    # component_days give it no average, as the report's calendar does.
+    cid = "metrics/event1"
+    old = TODAY - timedelta(days=30)
+    week_ago = TODAY - timedelta(days=7)
+    values = [
+        _dv(
+            cid,
+            d,
+            3.0 if d in (old, week_ago) else (0.0 if d == TODAY - timedelta(days=20) else 100.0),
+        )
+        for d in _days(START, TODAY)
+    ]
+    store, rid = _build(tmp_path, [_comp(cid, "Event 1", number=1)], values)
+    assert store.con.execute("FROM alerts(?, for_day := ?)", [rid, old]).fetchall() == []
+    row = store.con.execute(
+        "SELECT usual, pct_vs_usual FROM component_days WHERE run_id = ? AND day = ?", [rid, old]
+    ).fetchone()
+    assert row == (None, None)
+    # A drop to zero needs no average, so it stays an alert on any day.
+    zero = store.con.execute(
+        "SELECT alert FROM alerts(?, for_day := ?)", [rid, TODAY - timedelta(days=20)]
+    ).fetchall()
+    assert zero == [("dropped to zero",)]
+    # The first of the 7 days still has its average and its large drop.
+    first = store.con.execute(
+        "SELECT alert, usual FROM alerts(?, for_day := ?)", [rid, week_ago]
+    ).fetchall()
+    assert first == [("large drop", 100.0)]
+    view = build_view(store, rid)
+    assert _row(view["views"][f"day:{week_ago.isoformat()}"], cid)["baseline"] == 100.0
+
+
 def _streak_values(cid, last_days):
     """100 on every day, then the values in last_days, oldest first, ending yesterday."""
     out = [_dv(cid, d, 100.0) for d in _days(START, YESTERDAY - timedelta(days=len(last_days)))]

@@ -123,7 +123,7 @@ ahd run --all-suites
 | `--all-suites` | Checks every report suite the credential can see, in the order of their names. |
 | `--segment` | A segment, by ID or name. Every request is filtered by it. With several suites, the tool looks up the segment again for each suite. |
 | `--dimension`, `--metric` | The first Individual Component Summary pair. Each takes a full ID (`variables/evar17`), a short ID (`evar17`) or a name (`"Internal Search Term"`). Any dimension or metric of the suite works. The default is Page by Occurrences. |
-| `--date` | Treats this date as today, e.g., `2026-11-07` to repeat an earlier day. Write it as YYYY-MM-DD. By default, today is today in the report suite's time zone. With `--date`, the report says so under the run date, and it names the day before that date instead of saying "yesterday". |
+| `--date` | Treats this date as today, e.g., `2026-11-07` to repeat an earlier day. Write it as YYYY-MM-DD. It cannot be after today in the report suite's time zone, because that day's data is not complete. By default, today is today in the report suite's time zone. With `--date`, the report says so under the run date, and it names the day before that date instead of saying "yesterday". |
 | `--change-alert` | Where the report's large drop slider starts: 10 to 100, in steps of 5. The default is 30. The slider shows it as a negative change, e.g., 30 is -30%. See [The report](report.md#the-large-drop-and-spike-sliders). |
 | `--spike-alert` | Where the report's large spike slider starts: 10 to 200, in steps of 10. The default is 50. See [The report](report.md#the-large-drop-and-spike-sliders). |
 | `--out` | The folder for the HTML report. The default is `./reports/`. |
@@ -150,7 +150,8 @@ With several suites, the command signs in once and checks the suites one after a
 - At the end, the command prints one line with the number of suites that ended "ok", "partial" and "failed", e.g., "Checked 3 report suites: 2 ok, 0 partial, 1 failed."
 - The exit code is the one of the worst suite, e.g., 1 when one suite failed.
 - A wrong suite name stops the command before it checks any suite.
-- If the tool has to sign in again during the run, and that sign-in fails, the command stops. The suite it was checking is marked "failed". It does not check the rest, because each of them would fail the same way. The command then prints no count line.
+- If the tool has to sign in again during the run, and Adobe rejects the credential, the command stops. The suite it was checking is marked "failed". It does not check the rest, because each of them would fail the same way. The command then prints no count line.
+- If Adobe's sign-in service only has a temporary problem, e.g., HTTP 503, the tool tries the sign-in 3 times. If it still fails, only the requests that needed it fail, and the run ends "partial". A suite that could not start fails, and the command goes on with the next suite.
 
 With one suite, including `--all-suites` when the credential sees only one, the command prints neither the "Report suite 1 of 1" line nor the last line. To run it every day, see [Run it every day](scheduling.md).
 
@@ -169,7 +170,7 @@ ahd individual --run 3 --dimension "Internal Search Term" --metric "Cart Additio
 
 It stops with an error in these cases:
 
-- The run already holds the same pair.
+- The run already holds the same pair, and the pair stored some data. A pair that stored nothing, e.g., the first pair of a failed run, is tried again.
 - The run is still marked "running".
 - There is no stored run with that number, or no database at the path.
 

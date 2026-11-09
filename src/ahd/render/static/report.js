@@ -249,11 +249,19 @@
       redrawAll();
     }
   }, true);
-  // Opens every folded section that holds the node, e.g., before the page shows a chart.
+  // Opens every folded section that holds the node, e.g., before the page shows a chart. The
+  // page draws everything again at once, so the caller can then draw and focus its chart. The
+  // toggle event comes later and must not draw again, or it would replace the focused chart.
   function openFolds(node) {
+    var opened = false;
     for (var n = node; n; n = n.parentNode) {
-      if (n.tagName === "DETAILS" && n.classList.contains("fold")) n.open = true;
+      if (n.tagName === "DETAILS" && n.classList.contains("fold") && !n.open) {
+        n.removeAttribute("data-folded");
+        n.open = true;
+        opened = true;
+      }
     }
+    if (opened) redrawAll();
   }
   // A folded section does not print, so the page opens them all to print and folds them again
   // after.
@@ -842,6 +850,12 @@
     var out = [], cur = [];
     points.forEach(function (p) {
       var v = pick(p);
+      // A day with no stored value is not in the points, so a gap of more than a day also ends
+      // the line, as in the 13-week line in the tables.
+      if (cur.length && parseDay(p[0]) - parseDay(cur[cur.length - 1][0]) > 864e5) {
+        out.push(cur);
+        cur = [];
+      }
       if (v === null || v === undefined) { if (cur.length) out.push(cur); cur = []; }
       else cur.push(p);
     });
@@ -958,13 +972,16 @@
       lab.textContent = fmtShort(v, type);
       svg.appendChild(lab);
     }
-    var ticks = W < 480 ? 3 : 5;
+    // A short series has fewer days than labels, so each day gets one label at most.
+    var ticks = W < 480 ? 3 : 5, lastIdx = -1;
     for (var i = 0; i < ticks; i++) {
       var idx = Math.round(i * (points.length - 1) / (ticks - 1));
+      if (idx === lastIdx) continue;
+      lastIdx = idx;
       var p = points[idx];
       var tx = sv("text", {
         x: x(p), y: H - 8, "class": "axis",
-        "text-anchor": i === 0 ? "start" : i === ticks - 1 ? "end" : "middle"
+        "text-anchor": idx === 0 ? "start" : idx === points.length - 1 ? "end" : "middle"
       });
       tx.textContent = fmtShortDay(p[0]);
       svg.appendChild(tx);
@@ -2198,7 +2215,18 @@
       if (onClick) t.addEventListener("click", onClick);
       host.appendChild(t);
     }
-    function toAlerts() { var t = byId("tab-alerts"); selectTab(t); t.focus(); }
+    // The tiles count the day before the run date, so the Alerts tab shows that day, even
+    // when another day was chosen there before.
+    function toAlerts() {
+      if (state.alertDay !== yesterday) {
+        state.alertDay = yesterday;
+        byId("alert-day").value = yesterday;
+        renderAlerts();
+      }
+      var t = byId("tab-alerts");
+      selectTab(t);
+      t.focus();
+    }
     function toStatus() { byId("status").scrollIntoView(); }
 
     tile("plain", "●", "Components checked", numFmt.format(rows.length), dayText);

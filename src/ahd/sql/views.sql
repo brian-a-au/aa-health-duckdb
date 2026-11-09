@@ -30,9 +30,12 @@ SELECT dv.run_id, dv.day, dv.day = dv.today - 1 AS is_yesterday,
     dv.value, dv.expected, dv.lower, dv.upper,
     CASE WHEN dv.anomaly THEN CASE WHEN dv.value > dv.upper THEN 'high' ELSE 'low' END END
         AS anomaly,
-    coalesce(u.usual, 0) AS usual,
+    -- Only the last 7 days have a weekday average, from the 12 weeks before them. An older day
+    -- falls inside those weeks, so it has none, as in the report.
+    CASE WHEN dv.day >= dv.today - 7 THEN coalesce(u.usual, 0) END AS usual,
     -- Rounded so that a drop of exactly the threshold is not "more than" it, as in the report.
-    CASE WHEN u.usual <> 0 THEN round(dv.value / u.usual - 1, 9) END AS pct_vs_usual,
+    CASE WHEN dv.day >= dv.today - 7 AND u.usual <> 0 THEN round(dv.value / u.usual - 1, 9) END
+        AS pct_vs_usual,
     coalesce(dv.value = 0, false) AS zero,
     NOT coalesce(used.had_data, false) AS unused
 FROM dv

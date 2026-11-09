@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import sys
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -12,7 +13,7 @@ from typing import Any
 
 import requests
 
-from ahd.api.auth import NO_REPORT_SUITES, SignInError
+from ahd.api.auth import NO_REPORT_SUITES, SignInError, SignInUnavailable
 from ahd.api.client import AdobeClient, ApiError
 from ahd.catalog import CUSTOM_GROUPS
 from ahd.config import ConfigError, chosen_profile, load_credentials, profile_dir
@@ -76,6 +77,25 @@ ACCESS_FIX = (
     'and the Report Suite Tools item "Anomaly Detection". Changes in the Admin Console can '
     "take a while to reach Analytics, so wait a little and run this check again."
 )
+
+
+def _run_date(text: str) -> date:
+    """An argparse type for --date: a date as YYYY-MM-DD whose 92 trend days are real dates."""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        raise argparse.ArgumentTypeError(f"{text!r} is not a date in the form YYYY-MM-DD.")
+    try:
+        day = date.fromisoformat(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not a date in the form YYYY-MM-DD."
+        ) from None
+    try:
+        RunWindow.for_today(day)
+    except OverflowError:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is too early or too late. A run reads the 91 days before the date."
+        ) from None
+    return day
 
 
 def _whole_number(low: int, high: int) -> Callable[[str], int]:
@@ -177,7 +197,11 @@ def _parser() -> argparse.ArgumentParser:
         help="Check every report suite this credential can see.",
     )
     run.add_argument("--segment", help="A segment ID or name, to filter every request.")
-    run.add_argument("--date", type=date.fromisoformat, help="Use this date as today (YYYY-MM-DD).")
+    run.add_argument(
+        "--date",
+        type=_run_date,
+        help="Use this date as today (YYYY-MM-DD). It cannot be after today in the suite's time zone.",
+    )
     run.add_argument("--dimension", default="page", help=DIMENSION_HELP + " Default: Page.")
     run.add_argument("--metric", default="occurrences", help=METRIC_HELP + " Default: Occurrences.")
     run.add_argument(
@@ -355,7 +379,7 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     if catalog:
         try:
             allowed = probe_anomaly(client, args.rsid, window, catalog[0].column)
-        except (ApiError, requests.RequestException) as e:
+        except (ApiError, SignInUnavailable, requests.RequestException) as e:
             # Only the exception type: messages can carry URLs.
             print(f"Anomaly detection: could not be tested ({type(e).__name__})")
             untested = True
@@ -425,6 +449,19 @@ def _alert_line(store: Store, run_id: int, threshold: float, spike: float) -> st
     return f"Alerts for {day.isoformat()}: {', '.join(parts)}"
 
 
+def _write(view: dict[str, Any], out: Path) -> Path:
+    """Write the report. A file system error becomes a plain ConfigError that names the fix."""
+    try:
+        return write_report(view, out)
+    except OSError as e:
+        run_id = view["run"]["id"]
+        raise ConfigError(
+            f"The report could not be written to {out} ({e.strerror or type(e).__name__}). "
+            "Choose another folder with --out, or fix this one. "
+            f"Run {run_id} is stored. Then run ahd render --run {run_id} to write the report."
+        ) from None
+
+
 def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -> str:
     """Check one suite, write its report and print its result. Returns the run's status."""
     segment = resolve_segment(client, rsid, args.segment) if args.segment else None
@@ -450,7 +487,7 @@ def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -
     status = store.get_run(run_id)["status"]
     threshold = args.change_alert / 100
     spike = args.spike_alert / 100
-    path = write_report(build_view(store, run_id, threshold, spike), args.out)
+    path = _write(build_view(store, run_id, threshold, spike), args.out)
     print(path)
     print(f"Run {run_id} for {rsid} finished with status: {status}")
     if status != "failed":
@@ -485,7 +522,8 @@ def _run_suites(args: argparse.Namespace, factory: Callable[..., Any], store: St
         try:
             status = _run_suite(args, client, store, rsid)
             statuses[rsid] = status if status in WORST_LAST else "failed"
-        except (ConfigError, ApiError, requests.RequestException) as e:
+        except (ConfigError, ApiError, SignInUnavailable, requests.RequestException) as e:
+            # A wrong credential (any other SignInError) stops every suite, as each would fail.
             print(f"Error for {rsid}: {_error_text(e)}", file=sys.stderr)
             statuses[rsid] = "failed"
     counts = {s: sum(1 for v in statuses.values() if v == s) for s in WORST_LAST}
@@ -522,7 +560,7 @@ def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     finally:
         progress.done()
     print(
-        write_report(
+        _write(
             build_view(store, args.run, args.change_alert / 100, args.spike_alert / 100),
             args.out,
         )
@@ -541,7 +579,7 @@ def _render(args: argparse.Namespace) -> int:
     except KeyError:
         raise ConfigError(f"There is no stored run {args.run}.") from None
     print(
-        write_report(
+        _write(
             build_view(store, args.run, args.change_alert / 100, args.spike_alert / 100),
             args.out,
         )
@@ -602,7 +640,20 @@ def _runs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _replace_unknown_characters() -> None:
+    """Print a character that the output cannot show as "?" instead of stopping with an error.
+
+    On Windows, output sent to a file or a pipe uses an older code page, e.g., cp1252, which
+    cannot show names such as "日本サイト".
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="replace")
+
+
 def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> int:
+    _replace_unknown_characters()
     args = _parser().parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

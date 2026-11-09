@@ -8,8 +8,11 @@ token or header ever goes into a message.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
+
+import requests
 
 from ahd.config import Credentials
 
@@ -17,6 +20,12 @@ IMS_TOKEN_URL = "https://ims-na1.adobelogin.com/ims/token/v3"
 DISCOVERY_URL = "https://analytics.adobe.io/discovery/me"
 # Seconds to wait for a connection, and then for the answer.
 TIMEOUT = (10, 60)
+# Tries of the token request when Adobe's sign-in service is busy (HTTP 429 or 5xx) or the
+# network fails, and the waits in seconds between them. A wrong credential is never tried again.
+SIGN_IN_TRIES = 3
+SIGN_IN_WAITS = (1.0, 3.0)
+TEMPORARY_ERRORS = (requests.ConnectionError, requests.Timeout)
+_sleep = time.sleep
 
 # Without these, the token works but discovery returns no Analytics company.
 REQUIRED_SCOPES = ("openid", "AdobeID", "additional_info.projectedProductContext")
@@ -64,6 +73,10 @@ class SignInError(Exception):
     """Sign-in failed. The message says what to fix and never holds a credential value."""
 
 
+class SignInUnavailable(SignInError):
+    """Adobe's sign-in service kept answering with a temporary error. The credential may be fine."""
+
+
 @dataclass(frozen=True)
 class SignIn:
     company_id: str
@@ -86,17 +99,37 @@ def _missing_scopes(scopes: str) -> list[str]:
     return [s for s in REQUIRED_SCOPES if s not in have]
 
 
+def _is_temporary(status: int) -> bool:
+    return status == 429 or status >= 500
+
+
+def _post_token(session: Any, creds: Credentials) -> Any:
+    """The token answer. Tries again while the answer or the network error is temporary."""
+    attempt = 1
+    while True:
+        try:
+            resp = session.post(
+                IMS_TOKEN_URL,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": creds.client_id,
+                    "client_secret": creds.secret,
+                    "scope": creds.scopes,
+                },
+                timeout=TIMEOUT,
+            )
+        except TEMPORARY_ERRORS:
+            if attempt >= SIGN_IN_TRIES:
+                raise
+        else:
+            if attempt >= SIGN_IN_TRIES or not _is_temporary(resp.status_code):
+                return resp
+        _sleep(SIGN_IN_WAITS[min(attempt, len(SIGN_IN_WAITS)) - 1])
+        attempt += 1
+
+
 def get_token(session: Any, creds: Credentials) -> str:
-    resp = session.post(
-        IMS_TOKEN_URL,
-        data={
-            "grant_type": "client_credentials",
-            "client_id": creds.client_id,
-            "client_secret": creds.secret,
-            "scope": creds.scopes,
-        },
-        timeout=TIMEOUT,
-    )
+    resp = _post_token(session, creds)
     body = _json(resp)
     body = body if isinstance(body, dict) else {}
     token = body.get("access_token")
@@ -111,6 +144,12 @@ def get_token(session: Any, creds: Credentials) -> str:
     if error == "invalid_scope":
         raise SignInError(SCOPE_REJECTED)
     code = f", error {error}" if error else ""
+    if _is_temporary(resp.status_code):
+        raise SignInUnavailable(
+            f"Sign-in failed: Adobe's sign-in service answered HTTP {resp.status_code}{code} "
+            f"{SIGN_IN_TRIES} times. This is a problem at Adobe, not with the credential. Wait a "
+            "little and try again."
+        )
     raise SignInError(
         f"Sign-in failed: Adobe answered HTTP {resp.status_code}{code}. Check the credential in "
         "the Adobe Developer Console, then try again."

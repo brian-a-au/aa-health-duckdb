@@ -31,6 +31,8 @@ When sign-in fails, the tool says what is wrong and what to fix. The fixes happe
 
 Changes in the Admin Console can take a while to reach Analytics. Wait a little and run `ahd check` again.
 
+A message that says "This is a problem at Adobe, not with the credential" means that Adobe's sign-in service answered with a temporary error, e.g., HTTP 503, 3 times in a row. Wait a little and try again.
+
 ## Limited access
 
 `ahd check --rsid <suite>` exits with 2 when access is limited:
@@ -57,6 +59,7 @@ A run that finished with status "partial" lists what it could not read. `ahd run
 - **"Some metrics or dimensions are not visible to this credential."** The product profile hides those components. The list under the heading names them.
 - **"Some parts of the Individual Component Summary came back empty."** The product profile may hide the chosen dimension, or it had no data.
 - **"Some requests failed because of network problems."** Running again may fix it.
+- **"Some requests failed because Adobe's sign-in service had a temporary problem."** The tool signs in again when its token runs out. Adobe's sign-in service answered with a temporary error 3 times. Running again may fix it.
 - **"Anomaly detection could not be tested"** or **"Anomaly bands are not available."** See [Limited access](#limited-access).
 
 When a request fails in a way that may pass, the tool waits and tries again. How long it waits depends on the kind of error:

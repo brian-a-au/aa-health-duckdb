@@ -227,6 +227,41 @@ def test_alert_lists_match_the_alerts_macro(alert_pages, edges, pct):
         )
 
 
+TILE_PROBE = """
+function drops() {
+  return [].map.call(document.querySelectorAll(
+    "#alerts section[aria-labelledby=drops-title] tbody code"), function (c) {
+    return c.textContent;
+  }).sort();
+}
+var sel = document.getElementById("alert-day");
+sel.value = sel.options[sel.options.length - 1].value;
+sel.dispatchEvent(new Event("change"));
+var before = { day: sel.value, drops: drops() };
+document.getElementById("tab-components").click();
+var tile = [].filter.call(document.querySelectorAll("#tiles .tile"), function (t) {
+  return t.querySelector(".tile-label").lastChild.textContent === "Large drops";
+})[0];
+tile.click();
+return { before: before, value: tile.querySelector(".tile-value").textContent,
+  day: sel.value, drops: drops(),
+  tab: document.getElementById("tab-alerts").getAttribute("aria-selected") };
+"""
+
+
+def test_a_tile_opens_the_alerts_of_its_own_day(chrome, edges, tmp_path):
+    # The tiles count the day before the run date. The Alerts tab may show another day, chosen
+    # earlier, so a tile shows that day again, and its count matches the list.
+    store, rid = edges
+    got = run_probe(chrome, render_html(build_view(store, rid)), TILE_PROBE, tmp_path)
+    assert got["before"]["day"] == "2026-10-31" and got["before"]["drops"] == []
+    assert got["tab"] == "true" and got["day"] == YESTERDAY.isoformat()
+    expected = sorted(
+        c for c, (alert, _) in _macro(store, rid, 0.3).items() if alert == "large drop"
+    )
+    assert got["drops"] == expected and got["value"] == str(len(expected)) and expected
+
+
 def test_alert_edge_cases(alert_pages):
     p30, p20, p10 = alert_pages["30"], alert_pages["20"], alert_pages["10"]
     # A drop of exactly the slider percent is not flagged. A weekday average of exactly 10 counts.
@@ -1690,6 +1725,40 @@ return toggled(charts).then(function () {
 """
 
 
+FOCUS_PROBE = """
+var charts = document.querySelector(".charts-fold");
+function toggled(d) {
+  return new Promise(function (done) { d.addEventListener("toggle", done, { once: true }); });
+}
+function where() {
+  var a = document.activeElement;
+  var host = a && a.closest ? a.closest(".chart-host, [id$=-chart]") : null;
+  return { tag: a ? a.tagName.toLowerCase() : null, chart: host ? host.id : null };
+}
+var out = {};
+charts.open = false;
+return toggled(charts).then(function () {
+  var wait = toggled(charts);
+  document.querySelector("#tables button.spark").click();
+  out.clicked = where();
+  return wait;
+}).then(function () {
+  // The toggle event comes after the click. The chart must keep the focus after it.
+  out.after = where();
+  out.width = Number(document.querySelector("#metric-chart svg").getAttribute("viewBox")
+    .split(" ")[2]);
+  return out;
+});
+"""
+
+
+def test_a_chart_opened_from_a_folded_section_keeps_the_focus(chrome, showcase, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*showcase)), FOCUS_PROBE, tmp_path)
+    assert got["clicked"]["tag"] == "svg" and got["clicked"]["chart"]
+    assert got["after"] == got["clicked"]
+    assert got["width"] > 300
+
+
 def test_sections_fold_and_open_again(chrome, showcase, tmp_path):
     got = run_probe(chrome, render_html(build_view(*showcase)), FOLD_PROBE, tmp_path)
     assert got["titles"] == [
@@ -1742,3 +1811,66 @@ def test_only_a_table_that_does_not_fit_gets_its_own_box(chrome, edges, tmp_path
     assert got["alerts"][0] is True and not any(got["alerts"][1:])
     assert not any(got["components"])
     assert got["scroll"] <= got["width"]
+
+
+# ---- chart lines and labels ---------------------------------------------------------------
+
+
+def _one_metric_page(tmp_path, values):
+    """The report of a run with one metric, metrics/event1, and these daily values."""
+    store = Store.open(tmp_path / "one.duckdb")
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
+    cid = "metrics/event1"
+    store.add_components(
+        rid, [Component(cid, "Event 1", "metric", "custom_events", 1, Column(cid, cid), True)]
+    )
+    store.add_daily_values(rid, values)
+    store.finish_run(rid, "ok")
+    html = render_html(build_view(store, rid))
+    store.con.close()
+    return html
+
+
+LINES_PROBE = """
+var svg = document.querySelector("#metric-chart svg");
+function moves(cls) {
+  return [].map.call(svg.querySelectorAll("path." + cls), function (p) {
+    return (p.getAttribute("d").match(/M/g) || []).length;
+  });
+}
+return {
+  actual: moves("actual"), expected: moves("expected"), band: moves("band"),
+  spark: [].map.call(document.querySelectorAll("#tables path.spark-line"), function (p) {
+    return (p.getAttribute("d").match(/M/g) || []).length;
+  }),
+  axis: [].map.call(svg.querySelectorAll("text.axis"), function (t) { return t.textContent; })
+    .filter(function (t) { return /^[A-Z][a-z]{2} \\d/.test(t); })
+};
+"""
+
+
+def test_the_chart_breaks_its_lines_at_missing_days(chrome, tmp_path):
+    # Days with no stored value at all are left out of the chart data. The lines must not join
+    # across them, as the 13-week line in the table does not.
+    cid = "metrics/event1"
+    missing = {YESTERDAY - timedelta(days=d) for d in (30, 31, 32)}
+    values = [
+        _dv(cid, d, 100.0, 100.0, 120.0, 80.0, False)
+        for d in _days()
+        if d not in missing and d != TODAY
+    ]
+    got = run_probe(chrome, _one_metric_page(tmp_path, values), LINES_PROBE, tmp_path)
+    assert got["spark"] == [2]
+    assert sum(got["actual"]) == 2 and sum(got["expected"]) == 2 and sum(got["band"]) == 2
+
+
+@pytest.mark.parametrize(
+    ("days", "labels"),
+    [((1,), ["Nov 6"]), ((2, 1), ["Nov 5", "Nov 6"]), ((3, 2, 1), ["Nov 4", "Nov 5", "Nov 6"])],
+)
+def test_the_chart_names_each_day_on_its_bottom_edge_once(chrome, tmp_path, days, labels):
+    # A short series has fewer days than the chart has date labels.
+    cid = "metrics/event1"
+    values = [_dv(cid, YESTERDAY - timedelta(days=d - 1), 5.0) for d in days]
+    got = run_probe(chrome, _one_metric_page(tmp_path, values), LINES_PROBE, tmp_path)
+    assert got["axis"] == labels

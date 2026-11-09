@@ -11,6 +11,7 @@ from fakes import (
 )
 
 from ahd.cli import main
+from ahd.store import Store
 
 CONFIG = {
     "org_id": "o@AdobeOrg",
@@ -93,6 +94,28 @@ def test_run_partial_exit_code(tmp_path, cfg):
     )
     assert code == 3
     assert len(list(out.glob("*.html"))) == 1
+
+
+def test_a_report_that_cannot_be_written_is_a_plain_error(tmp_path, cfg, capsys):
+    # --out names a file, so the folder for the report cannot be made.
+    taken = tmp_path / "taken"
+    taken.write_text("not a folder", encoding="utf-8")
+    fake = fake_for("rs1", events(3), custom_dims())
+    code = main(
+        args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", "2026-11-07", "--out", str(taken)),
+        client_factory=lambda creds, company_id=None: fake,
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert f"\nError: The report could not be written to {taken} (" in err
+    assert "Run 1 is stored. Then run ahd render --run 1 to write the report." in err
+    assert "Traceback" not in err
+    store = Store.open(tmp_path / "t.duckdb", read_only=True)
+    assert [r["status"] for r in store.list_runs()] == ["ok"]
+    store.con.close()
+    code = main(["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--out", str(taken)])
+    assert code == 1
+    assert "Error: The report could not be written to" in capsys.readouterr().err
 
 
 def test_render_needs_no_client(tmp_path, cfg, capsys):
@@ -234,6 +257,21 @@ def test_batch_size_and_workers_must_be_in_range(tmp_path, cfg, capsys, option, 
         main(args(tmp_path, cfg, "run", "--rsid", "rs1", option, value))
     assert e.value.code == 2
     assert "is not a whole number from 1 to" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["0001-01-01", "0001-03-31", "9999-12-31", "20261107", "2026-W45-1", "2026-11-7", "2026-02-30"],
+)
+def test_date_must_be_a_plain_date_that_has_its_trend_days(tmp_path, cfg, capsys, value):
+    with pytest.raises(SystemExit) as e:
+        main(args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", value))
+    assert e.value.code == 2
+    err = capsys.readouterr().err
+    assert (
+        f"{value!r} is not a date in the form YYYY-MM-DD" in err or "too early or too late" in err
+    )
+    assert "Traceback" not in err
 
 
 def test_run_defaults_to_8_workers_and_batches_of_20():
@@ -687,6 +725,41 @@ def test_suites_and_segments_commands(cfg, capsys):
     )
     out = capsys.readouterr().out
     assert code == 0 and "s300_abc  Mobile visits" in out
+
+
+def test_names_that_the_output_encoding_cannot_show_do_not_crash(cfg, monkeypatch):
+    # On Windows, output sent to a file or a pipe uses an older code page, e.g., cp1252.
+    import io
+
+    from fakes import FakeClient
+
+    fake = FakeClient(
+        gets={
+            "/reportsuites/collections/suites": {
+                "content": [{"rsid": "jp1", "name": "日本サイト"}],
+                "lastPage": True,
+            }
+        }
+    )
+    out = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    err = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    monkeypatch.setattr("sys.stdout", out)
+    monkeypatch.setattr("sys.stderr", err)
+    assert main(["suites", "--config", str(cfg)], client_factory=lambda c: fake) == 0
+    out.flush()
+    assert "jp1  ?????" in out.buffer.getvalue().decode("cp1252")
+
+
+def test_output_without_reconfigure_is_left_as_it_is(monkeypatch):
+    import io
+
+    from ahd.cli import _replace_unknown_characters
+
+    out = io.StringIO()
+    monkeypatch.setattr("sys.stdout", out)
+    _replace_unknown_characters()
+    print("日本サイト")
+    assert out.getvalue() == "日本サイト\n"
 
 
 def test_suites_none_visible(cfg, capsys):

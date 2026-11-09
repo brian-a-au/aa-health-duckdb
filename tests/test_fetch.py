@@ -17,6 +17,7 @@ from fakes import (
 
 from ahd.api.client import ApiError
 from ahd.api.reports import Column
+from ahd.config import ConfigError
 from ahd.dates import RunWindow
 from ahd.fetch import RunOptions, fetch_catalog, probe_anomaly, run_fetch
 from ahd.store import Store
@@ -328,6 +329,22 @@ def test_today_uses_suite_zone_via_now(store):
     assert all(date_range(b) == W.trend_range() for b in fake.trend_bodies())
 
 
+def test_a_date_after_the_suites_today_is_refused(store):
+    # 19:00 on Nov 7 in Pacific. Nov 7 has not ended, and Nov 8 has not begun.
+    now = datetime(2026, 11, 8, 3, 0, tzinfo=UTC)
+    fake = fake_for("rs1", events(1), custom_dims(), tz="US/Pacific")
+    with pytest.raises(ConfigError) as e:
+        run_fetch(fake, store, opts(today=date(2026, 11, 8)), now=lambda: now)
+    assert str(e.value) == (
+        "The date 2026-11-08 is after today in the report suite's time zone (US/Pacific), "
+        "which is 2026-11-07. Give a date up to 2026-11-07."
+    )
+    assert store.list_runs() == [] and fake.posted() == []
+    # Today in the suite's time zone is allowed. Its last full day is yesterday.
+    rid = run_fetch(fake, store, opts(today=date(2026, 11, 7)), now=lambda: now)
+    assert store.get_run(rid)["today"] == date(2026, 11, 7)
+
+
 def test_fetch_catalog_calls():
     fake = fake_for("rs1", events(1), custom_dims())
     catalog, suite = fetch_catalog(fake, "rs1")
@@ -477,6 +494,55 @@ def test_network_error_in_one_batch_continues(store):
     assert store.get_run(rid)["status"] == "partial"
 
 
+def test_a_temporary_sign_in_problem_in_one_batch_continues(store):
+    from ahd.api.auth import SignInUnavailable
+
+    @after_probe
+    def renewal_fails(body):
+        return is_trend(body) and "metrics/event2" in metric_ids(body)
+
+    def raise_unavailable(body):
+        raise SignInUnavailable("Adobe's sign-in service is busy.")
+
+    fake = fake_for("rs1", events(3), custom_dims(), posts=[(renewal_fails, raise_unavailable)])
+    rid = run_fetch(fake, store, opts(batch_size=2))
+    col_issues = [(r[1], r[2]) for r in issues(store, rid) if r[0] == "column"]
+    assert col_issues == [
+        ("metrics/event1", "sign_in_unavailable"),
+        ("metrics/event2", "sign_in_unavailable"),
+    ]
+    for cid in ["metrics/event3", "variables/prop1", "variables/page", "individual/1"]:
+        assert values_for(store, rid, cid) == 92
+    assert store.get_run(rid)["status"] == "partial"
+
+
+def test_a_temporary_sign_in_problem_in_an_individual_request_is_one_issue(store):
+    from ahd.api.auth import SignInUnavailable
+
+    def is_browser(body):
+        return breakdown_dimension(body) == "variables/browsertype"
+
+    def raise_unavailable(body):
+        raise SignInUnavailable("Adobe's sign-in service is busy.")
+
+    fake = fake_for("rs1", events(1), custom_dims(), posts=[(is_browser, raise_unavailable)])
+    rid = run_fetch(fake, store, opts())
+    ind = [r for r in issues(store, rid) if r[0] == "individual"]
+    assert [(r[1], r[2]) for r in ind] == [("individual/1", "sign_in_unavailable")]
+    assert "Browser table" in ind[0][3]
+    assert store.get_run(rid)["status"] == "partial"
+
+
+def test_a_temporary_sign_in_problem_in_the_probe_is_an_issue(store):
+    from ahd.api.auth import SignInUnavailable
+
+    def raise_unavailable(body):
+        raise SignInUnavailable("busy")
+
+    fake, rid = _probe_failure_run(store, raise_unavailable)
+    _assert_probe_failed_and_continued(store, fake, rid)
+
+
 def test_network_error_in_individual_request_is_one_issue(store):
     import requests
 
@@ -607,6 +673,51 @@ def test_add_pair_without_data_keeps_a_failed_run_failed(store):
     rid = run_fetch(down, store, opts())
     _pair, problems = add_pair(down, store, rid, "variables/evar1", "metrics/orders")
     assert problems == 5 and store.get_run(rid)["status"] == "failed"
+
+
+def test_add_pair_can_try_again_a_pair_that_stored_nothing(store):
+    # A run stores its first pair before any data comes back. When the run fails, the same
+    # dimension and metric can be tried again, and the empty pair makes way for the new one.
+    from ahd.fetch import add_pair
+
+    down = fake_for("rs1", events(1), custom_dims(), default_post=ApiError(500, "down"))
+    rid = run_fetch(down, store, opts())
+    assert store.get_run(rid)["status"] == "failed"
+    assert any(r[1] == "individual/1" for r in issues(store, rid))
+    fake = fake_for("rs1", events(1), custom_dims())
+    assert add_pair(
+        fake, store, rid, "variables/page", "metrics/occurrences", "Page", "Occurrences"
+    ) == (2, 0)
+    pairs = [(p["pair"], p["dimension"], p["metric"]) for p in store.list_pairs(rid)]
+    assert pairs == [(2, "variables/page", "metrics/occurrences")]
+    assert not any(r[1] == "individual/1" for r in issues(store, rid))
+    assert values_for(store, rid, "individual/2") == 92
+    assert store.get_run(rid)["status"] == "partial"
+    # Now the pair holds data, so it is refused like any other pair that is there.
+    with pytest.raises(ConfigError, match="already holds Page by Occurrences"):
+        add_pair(fake, store, rid, "variables/page", "metrics/occurrences")
+
+
+def test_add_pair_keeps_the_empty_pair_when_the_new_try_stops(store):
+    from ahd.api.auth import SignInError
+    from ahd.fetch import add_pair
+
+    down = fake_for("rs1", events(1), custom_dims(), default_post=ApiError(500, "down"))
+    rid = run_fetch(down, store, opts())
+
+    def stop(body):
+        raise SignInError("Sign-in failed: the client secret is wrong.")
+
+    with pytest.raises(SignInError):
+        add_pair(
+            fake_for("rs1", events(1), custom_dims(), default_post=stop),
+            store,
+            rid,
+            "variables/page",
+            "metrics/occurrences",
+        )
+    assert [p["pair"] for p in store.list_pairs(rid)] == [1]
+    assert any(r[1] == "individual/1" for r in issues(store, rid))
 
 
 def test_add_pair_refuses_duplicates_and_running_runs(store):

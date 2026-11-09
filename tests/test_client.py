@@ -254,6 +254,58 @@ def test_parallel_401s_sign_in_once():
     assert session.tokens.count("Bearer OLD") == workers
 
 
+def test_parallel_401s_with_a_failed_sign_in_sign_in_once():
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from ahd.api.auth import SignInError
+
+    workers = 6
+    session = ExpiringSession(workers)
+    logins = []
+    lock = threading.Lock()
+
+    def relogin():
+        with lock:
+            logins.append(1)
+        raise SignInError("Sign-in failed: the client secret is wrong.")
+
+    c = AdobeClient._from_parts(
+        session, {"Authorization": "Bearer OLD"}, "co1", relogin, sleep=lambda d: None
+    )
+
+    def call(_):
+        try:
+            c.post_report({})
+        except SignInError as e:
+            return str(e)
+        return "no error"
+
+    with ThreadPoolExecutor(workers) as pool:
+        results = list(pool.map(call, range(workers)))
+    # The threads that waited for the failed sign-in get its error and do not try again.
+    assert len(logins) == 1
+    assert results == ["Sign-in failed: the client secret is wrong."] * workers
+
+
+def test_a_request_after_a_failed_sign_in_tries_again():
+    from ahd.api.auth import SignInError
+
+    answers = iter([SignInError("busy"), {"Authorization": "Bearer NEW"}])
+
+    def relogin():
+        a = next(answers)
+        if isinstance(a, Exception):
+            raise a
+        return a
+
+    c, s, _ = make([(401, None, {}), (401, None, {}), (200, {"ok": 1}, {})], relogin)
+    with pytest.raises(SignInError):
+        c.get("/x")
+    assert c.get("/x") == {"ok": 1}
+    assert s.calls[-1][2]["Authorization"] == "Bearer NEW"
+
+
 def test_connect_signs_in_and_relogin_gets_a_new_token(monkeypatch):
     from ahd.api import client as client_mod
     from ahd.api.auth import SignIn

@@ -5,6 +5,7 @@ from ahd.api.auth import (
     IMS_TOKEN_URL,
     NO_COMPANY,
     SCOPE_REJECTED,
+    SIGN_IN_TRIES,
     WRONG_CLIENT_ID,
     WRONG_ORG,
     WRONG_SECRET,
@@ -115,13 +116,84 @@ def test_token_errors(token, expected):
 
 
 def test_token_other_error_names_status_and_code():
-    text = _fails(Session((503, {"error": "server_error"})))
-    assert "HTTP 503" in text and "server_error" in text
+    text = _fails(Session((418, {"error": "teapot"})))
+    assert "HTTP 418" in text and "teapot" in text
+
+
+class ScriptedSession(Session):
+    """Answers the token requests in turn. An exception in the script is raised."""
+
+    def __init__(self, *answers):
+        super().__init__(GOOD_TOKEN, orgs(org()))
+        self.answers = list(answers)
+
+    def post(self, url, data=None, timeout=None):
+        self.calls.append(("POST", url, data))
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return Resp(*answer)
+
+
+@pytest.fixture
+def waits(monkeypatch):
+    from ahd.api import auth
+
+    seen = []
+    monkeypatch.setattr(auth, "_sleep", seen.append)
+    return seen
+
+
+def _posts(session):
+    return [c for c in session.calls if c[0] == "POST"]
+
+
+@pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
+def test_a_temporary_sign_in_error_is_tried_again(waits, status):
+    s = ScriptedSession((status, None), (status, {"error": "server_error"}), GOOD_TOKEN)
+    assert sign_in(s, CREDS).header["Authorization"] == "Bearer TOKEN-1"
+    assert len(_posts(s)) == 3 and len(waits) == 2
+
+
+def test_a_network_error_in_sign_in_is_tried_again(waits):
+    import requests
+
+    s = ScriptedSession(requests.ConnectionError("https://ims/x"), GOOD_TOKEN)
+    assert sign_in(s, CREDS).company_id == "co1"
+    assert len(_posts(s)) == 2 and len(waits) == 1
+
+
+def test_a_lasting_network_error_in_sign_in_is_raised(waits):
+    import requests
+
+    s = ScriptedSession(*[requests.Timeout("t")] * SIGN_IN_TRIES)
+    with pytest.raises(requests.Timeout):
+        sign_in(s, CREDS)
+    assert len(_posts(s)) == SIGN_IN_TRIES
+
+
+def test_a_lasting_server_error_says_it_is_temporary(waits):
+    from ahd.api.auth import SignInUnavailable
+
+    s = ScriptedSession(*[(503, {"error": "server_error"})] * SIGN_IN_TRIES)
+    with pytest.raises(SignInUnavailable) as e:
+        sign_in(s, CREDS)
+    text = str(e.value)
+    assert "HTTP 503" in text and "Wait a little and try again." in text
+    assert "Check the credential" not in text and "secret-xyz" not in text
+    assert len(_posts(s)) == SIGN_IN_TRIES and len(waits) == SIGN_IN_TRIES - 1
+
+
+def test_a_wrong_credential_is_not_tried_again(waits):
+    bad = (400, {"error": "invalid_client", "error_description": "invalid client_secret"})
+    s = ScriptedSession(bad)
+    assert _fails(s) == WRONG_SECRET
+    assert len(_posts(s)) == 1 and waits == []
 
 
 def test_token_not_json():
-    text = _fails(Session((502, None)))
-    assert "HTTP 502" in text and "error" not in text.split("HTTP 502")[1].split(".")[0]
+    text = _fails(Session((404, None)))
+    assert "HTTP 404" in text and "error" not in text.split("HTTP 404")[1].split(".")[0]
 
 
 def test_token_200_without_token():
