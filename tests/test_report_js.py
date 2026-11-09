@@ -1098,6 +1098,16 @@ var d = document.getElementById("day");
 d.selectedIndex = 2;
 d.dispatchEvent(new Event("change"));
 out.daypicker = cal();
+// The new day ends the calendar's day on the chart.
+out.chartAfter = document.querySelector("#dimension-chart .chart-readout").textContent;
+click("2026-10-15");
+document.querySelector("#calendar .calendar-list button").click();
+out.chartLook = document.querySelector("#dimension-chart .chart-readout").textContent;
+var pick = document.getElementById("dimension-pick");
+pick.dispatchEvent(new Event("change"));
+out.chartPicked = document.querySelector("#dimension-chart .chart-readout").textContent;
+d.selectedIndex = 0;
+d.dispatchEvent(new Event("change"));
 document.querySelector("#calendar .calendar-top tbody tr button").click();
 out.topclick = cal().picked;
 return out;
@@ -1133,6 +1143,10 @@ def test_the_calendar_shows_alerts_by_day(chrome, showcase, tmp_path):
     # The Day picker moves the calendar too.
     assert got["daypicker"]["picked"] == "2026-11-04"
     assert got["daypicker"]["readout"] == "Wed, Nov 4, 2026: 1 component with an alert."
+    assert got["chartAfter"].startswith("Wed, Nov 4, 2026: ")
+    # Picking a component again also ends it.
+    assert got["chartLook"].startswith("Thu, Oct 15, 2026: ")
+    assert got["chartPicked"].startswith("Wed, Nov 4, 2026: ")
     # The days with the most alerts: most first, then the newest.
     assert [row[0] for row in first["top"]] == [
         "Fri, Oct 16",

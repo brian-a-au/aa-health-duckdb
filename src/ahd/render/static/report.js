@@ -904,17 +904,19 @@
       if (look && look.cid === r.component_id) mark.look = look.day;
       drawChart(host, data.series[r.component_id], componentLabel(r), r.metric_type, mark);
     }
-    // A component and day picked elsewhere on the page, e.g., in the calendar.
+    // A component and day picked elsewhere on the page, e.g., in the calendar. It holds until
+    // the reader picks another component or day.
     var look = null;
     fill();
-    select.addEventListener("change", draw);
+    select.addEventListener("change", function () { look = null; draw(); });
     if (typeSelect) {
       typeSelect.disabled = !all.length;
-      typeSelect.addEventListener("change", function () { fill(); draw(); });
+      typeSelect.addEventListener("change", function () { look = null; fill(); draw(); });
     }
     redrawers.push(draw);
     draw();
     return {
+      forget: function () { look = null; },
       has: function (cid) {
         return all.some(function (r) { return r.component_id === cid; });
       },
@@ -1687,8 +1689,13 @@
       fmtDay(d, true) + dayNote(d)));
   });
   // The Day picker also moves the mark on the charts, so they are drawn again.
+  // A new day or view ends a day picked in the calendar, so the charts read the chosen day.
+  function forgetLook() {
+    Object.keys(pickers).forEach(function (k) { pickers[k].forget(); });
+  }
   daySel.addEventListener("change", function () {
     state.day = daySel.value;
+    forgetLook();
     renderTables();
     redrawAll();
     calendar.select(state.day);
@@ -1697,6 +1704,7 @@
     state.gran = e.target.value;
     byId("week-note").hidden = state.gran !== "week";
     byId("day-label").hidden = state.gran === "week";
+    forgetLook();
     renderTables();
     redrawAll();
   });
