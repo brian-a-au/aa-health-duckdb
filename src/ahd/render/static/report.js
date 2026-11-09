@@ -597,10 +597,67 @@
     return { c: b, k: null };
   }
 
+  // ---- the Custom components filter -------------------------------------------------
+  // Its value is "" for all, a custom group, e.g., "custom_evars", or a group and a range of
+  // numbers, e.g., "custom_evars:101-200". The options list each custom group that has
+  // components, then its ranges of 100. The last range ends at the highest number in use.
+  var RANGE_SIZE = 100;
+  var CUSTOM_LOWER = {
+    custom_events: "custom events", custom_evars: "custom eVars", custom_props: "custom props"
+  };
+  function rangePick() {
+    if (!state.range) return null;
+    var p = state.range.split(":");
+    var out = { group: p[0], lo: null, hi: null };
+    if (p[1]) {
+      var n = p[1].split("-");
+      out.lo = +n[0];
+      out.hi = +n[1];
+    }
+    return out;
+  }
+  function rangeLabel(pick) {
+    var prefix = NUMBER_PREFIX[pick.group];
+    if (pick.lo === null) return "all " + CUSTOM_LOWER[pick.group];
+    return prefix + pick.lo + " to " + prefix + pick.hi;
+  }
+  function fillRangePicker(select) {
+    var byGroup = {};
+    (data.views.week || []).forEach(function (r) {
+      if (CUSTOM.indexOf(r.group) < 0 || r.number === null || r.number === undefined) return;
+      (byGroup[r.group] = byGroup[r.group] || []).push(r.number);
+    });
+    CUSTOM.forEach(function (g) {
+      var nums = byGroup[g];
+      if (!nums || !nums.length) return;
+      var group = el("optgroup", { label: CUSTOM_TITLES[g] });
+      group.appendChild(el("option", { value: g },
+        "All " + CUSTOM_LOWER[g] + " (" + nums.length + ")"));
+      var buckets = {};
+      nums.forEach(function (n) {
+        var b = Math.floor((n - 1) / RANGE_SIZE);
+        (buckets[b] = buckets[b] || []).push(n);
+      });
+      var keys = Object.keys(buckets).map(Number).sort(function (a, b) { return a - b; });
+      // One range would only repeat the "All" option.
+      if (keys.length > 1) {
+        keys.forEach(function (b, i) {
+          var lo = b * RANGE_SIZE + 1;
+          var hi = i === keys.length - 1 ? Math.max.apply(null, buckets[b]) : lo + RANGE_SIZE - 1;
+          var pick = { group: g, lo: lo, hi: hi };
+          group.appendChild(el("option", { value: g + ":" + lo + "-" + hi },
+            rangeLabel(pick) + " (" + buckets[b].length + ")"));
+        });
+      }
+      select.appendChild(group);
+    });
+  }
   function inRange(row) {
-    if (!state.range || CUSTOM.indexOf(row.group) < 0) return true;
-    var p = state.range.split("-");
-    return row.number !== null && row.number >= +p[0] && row.number <= +p[1];
+    var pick = rangePick();
+    if (!pick) return true;
+    if (row.group !== pick.group) return false;
+    if (pick.lo === null) return true;
+    return row.number !== null && row.number >= pick.lo && row.number <= pick.hi;
   }
 
   function componentTable(rows, custom, id, title) {
@@ -692,8 +749,14 @@
     }
     host.appendChild(jump);
 
+    var pick = rangePick();
+    if (pick) {
+      host.appendChild(el("p", { "class": "note filter-note" }, "Showing " + rangeLabel(pick) +
+        " only. Choose All under Custom components to see every component."));
+    }
     host.appendChild(el("h2", null, "Custom components"));
     CUSTOM.forEach(function (g) {
+      if (pick && g !== pick.group) return;
       var all = byGroup[g] || [];
       var shown = all.filter(inRange);
       var empty;
@@ -707,6 +770,11 @@
       host.appendChild(block(CUSTOM_TITLES[g], shown, true, empty));
     });
 
+    // A chosen custom group or range shows only those components.
+    if (pick) {
+      fitTables();
+      return;
+    }
     host.appendChild(el("h2", null, "Solution components"));
     var known = SOLUTION_ORDER.slice();
     Object.keys(byGroup).forEach(function (g) {
@@ -2035,6 +2103,7 @@
     renderTables();
     redrawAll();
   });
+  fillRangePicker(byId("range"));
   byId("range").addEventListener("change", function (e) {
     state.range = e.target.value;
     renderTables();

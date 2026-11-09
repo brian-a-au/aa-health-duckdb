@@ -335,8 +335,10 @@ def test_week_note_and_controls():
         "This week is the 7 days ending yesterday. The Excel version used 8 to 2 days ago."
     )
     assert WEEK_NOTE in html
-    for label in ("Daily", "Weekly", "1 to 100", "901 to 1000", "Metric chart", "Dimension chart"):
+    for label in ("Daily", "Weekly", "Custom components", "Metric chart", "Dimension chart"):
         assert label in html
+    # The page builds the Custom components options from the run's components.
+    assert "901 to 1000" not in html and "Component numbers" not in html
     assert re.search(r"<label>Show\s*<select id=\"granularity\">", html)
     assert "Granularity" not in html
 

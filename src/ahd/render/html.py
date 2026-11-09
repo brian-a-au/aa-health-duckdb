@@ -74,7 +74,6 @@ STATUS_BADGES = {
     "failed": ("zero", "✕"),
 }
 
-RANGES = [(n * 100 + 1, n * 100 + 100) for n in range(10)]
 
 _env = Environment(
     loader=PackageLoader("ahd.render", "templates"),
@@ -278,7 +277,6 @@ def render_html(view: dict[str, Any]) -> str:
         decline_pct=round(-DECLINE_PER_WEEK * 100),
         decline_fit=DECLINE_MIN_FIT,
         component_drop_cause=view.get("component_drop_cause", ""),
-        ranges=RANGES,
         no_bands_note=NO_BANDS_NOTE,
         week_note=WEEK_NOTE.replace("ending yesterday", f"ending {day_words}"),
         last_day=last_day,

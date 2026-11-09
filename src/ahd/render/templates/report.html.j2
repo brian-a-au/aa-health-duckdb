@@ -132,18 +132,14 @@
     <label id="day-label">Day
       <select id="day"></select>
     </label>
-    <label>Component numbers
+    <label>Custom components
       <select id="range">
-        <option value="">All numbers</option>
-        {% for lo, hi in ranges %}
-        <option value="{{ lo }}-{{ hi }}">{{ lo }} to {{ hi }}</option>
-        {% endfor %}
+        <option value="">All</option>
       </select>
     </label>
     <label class="check" id="flagged-label"><input type="checkbox" id="flagged-only"> Show only flagged</label>
   </div>
   <p class="note" id="week-note" hidden>{{ week_note }}</p>
-  <p class="hint" id="range-hint">The number filter applies to custom events, eVars, and props.</p>
 
   <details class="fold calendar-card" open>
     <summary><h2 id="calendar-title">Alerts by day, last 13 weeks</h2></summary>
