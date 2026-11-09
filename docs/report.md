@@ -172,6 +172,21 @@ The copy follows the chosen day and the slider. It includes the days in a row fo
 
 To send alerts on a schedule, or only when something is new, see the [DuckDB guide](duckdb.md#email-recipes).
 
+### Earlier runs
+
+At the end of the tab, a table lists the runs of the same report suite and segment in the database, newest run date first, up to 30 runs. Each row counts the alerts on the last day of that run:
+
+- the components checked
+- values above and below Adobe's expected range
+- large drops, at the slider's percent
+- drops to zero
+- all alerts, with a bar to compare the runs
+- problems in the run
+
+DuckDB counts every run in one query over the stored data, by the same rules as the tiles. Every run is counted by this version's rules, even a run that an older version of ahd made. Runs for later dates are not listed, and a run for the same date is listed only if it was made before this one. A failed or unfinished run is left out.
+
+If you run ahd every day, the table shows when a problem started and whether it is getting better.
+
 ## How values are shown
 
 - **Currency metrics** show in the report suite's currency, in the tables, the alerts and the charts. They keep the currency's own number of decimals, e.g., $1,234.56 for US dollars and ¥1,235 for yen. Without a currency code they show as plain numbers with two decimals.

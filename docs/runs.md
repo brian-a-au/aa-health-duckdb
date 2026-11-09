@@ -30,6 +30,7 @@ With profiles, data from different organizations never shares a file. Runs for d
 - **Status.** A run starts as "running" and ends as "ok", "partial" or "failed". A run that you stop with Ctrl-C is "failed". A run that stopped in another way, e.g., because you closed the window, stays "running". `ahd individual` changes an "ok" run to "partial" when the new pair had problems, and a "failed" run to "partial" when the new pair stored data.
 - **Listing and rebuilding.** `ahd runs` lists every stored run, newest first. `ahd render --run 3` rebuilds the report for run 3 from the file, with no calls to Adobe. A rebuilt report uses the current version of the page design.
 - **Size.** One run of a suite with about 400 components takes about 3 MB. The file grows until you delete runs.
+- **Earlier runs in the report.** Each report lists the earlier runs of the same suite and segment in the file, with their alerts. A report you rebuild with `ahd render` lists the runs in the file at that time, so a deleted run is not listed. See [The report](report.md#earlier-runs).
 
 ## Deleting runs
 
