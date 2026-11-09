@@ -35,15 +35,29 @@
   <label for="change-alert">Large drop alert: flag values more than</label>
   <input type="range" id="change-alert" min="10" max="100" step="5" value="{{ change_alert_pct }}" aria-describedby="change-alert-hint">
   <output for="change-alert" id="change-alert-value">{{ change_alert_pct }}%</output>
-  <span>below usual</span>
+  <span>below their weekday average</span>
   <p class="change-alert-result" id="change-alert-result" role="status" aria-live="polite"></p>
-  <p class="hint" id="change-alert-hint">"Usual" is the 12-week average for the same weekday. Components with a usual value under {{ min_usual }} are skipped. A flagged value gets a "Large drop" badge in the Flag column and is listed on the Alerts tab. The same percent sets when the tables show an arrow.</p>
+  <p class="hint" id="change-alert-hint">The weekday average is the average of the same weekday in the 12 weeks before the day.</p>
+  <details class="rule" id="change-alert-rule">
+    <summary>How a large drop is found</summary>
+    <ul>
+      <li>The weekday average for a day is the average of the same weekday in the 12 weeks before it, e.g., the 12 Mondays before a Monday.</li>
+      <li>A value is a large drop when it is more than the slider's percent below its weekday average.</li>
+      <li>Components with a weekday average under {{ min_usual }} are skipped, because small numbers change a lot from day to day.</li>
+      <li>A value of 0 is not a large drop. It is listed as "Dropped to zero".</li>
+      <li>A value that Adobe flagged is listed as an unusual value, not as a large drop.</li>
+      <li>A large drop gets a "Large drop" badge in the Flag column, and it is listed on the Alerts tab.</li>
+      <li>The same percent sets when the tables show an arrow, for a change up or down.</li>
+    </ul>
+  </details>
 </div>
 
 <section class="tiles" id="tiles" aria-label="{{ last_day ~ ' at a glance' if last_day else 'Yesterday at a glance' }}"></section>
 
-<section class="status-section" id="status" aria-labelledby="status-title">
+<section class="status-section{% if not component_drops and not issue_groups %} status-ok{% endif %}" id="status" aria-labelledby="status-title">
+  {% if component_drops or issue_groups %}
   <h2 id="status-title">Status</h2>
+  {% endif %}
   {% if component_drops %}
   <div class="warning" id="component-drops">
     <p class="issue-heading"><span class="badge badge-flag"><span class="icon" aria-hidden="true">!</span>Warning</span> This run sees fewer components than the run before it.</p>
@@ -84,7 +98,11 @@
     {% endfor %}
   </ul>
   {% else %}
+  {% if component_drops %}
   <p class="status-line"><span class="badge badge-good"><span class="icon" aria-hidden="true">✓</span>No problems</span>No problems were found in this run.</p>
+  {% else %}
+  <div class="status-line"><h2 id="status-title">Status</h2><span class="badge badge-good"><span class="icon" aria-hidden="true">✓</span>No problems</span><span class="hide-narrow">No problems were found in this run.</span></div>
+  {% endif %}
   {% endif %}
 </section>
 
@@ -185,7 +203,7 @@
       <select id="alert-day"></select>
     </label>
   </div>
-  <p class="hint">Components that Adobe flagged as unusual, that fell further below their usual value than the slider allows, or that dropped to 0.</p>
+  <p class="hint">Components that Adobe flagged as unusual, that fell further below their weekday average than the slider allows, or that dropped to 0.</p>
   <div class="copy-row">
     <button type="button" id="copy-alerts">Copy alerts</button>
     <span id="copy-result" role="status" aria-live="polite"></span>

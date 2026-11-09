@@ -13,7 +13,7 @@
 
 27-second loop of real report excerpts, made from synthetic data. Click the animation for a still image.
 
-aa-health-duckdb checks the health of an Adobe Analytics report suite. For every custom event, eVar and prop, it shows yesterday's value, the usual value, and whether Adobe's anomaly detection flagged it. It also finds large drops, values that dropped to zero, and components that never collected data.
+aa-health-duckdb checks the health of an Adobe Analytics report suite. For every custom event, eVar and prop, it shows yesterday's value, its weekday average, and whether Adobe's anomaly detection flagged it. The weekday average is the average of the same weekday in the 12 weeks before, e.g., the 12 Mondays before a Monday. It also finds large drops, values that dropped to zero, and components that never collected data.
 
 It is an unofficial alternative to Adobe's Excel workbook ["Analytics Health Dashboard"](https://new.express.adobe.com/webpage/y6DGOeWmpo7Uh), built on the [Adobe Analytics 2.0 API](https://developer.adobe.com/analytics-apis/docs/2.0/). The command is `ahd`.
 

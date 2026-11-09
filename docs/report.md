@@ -39,10 +39,13 @@ A run made with `ahd run --date` is about an earlier day. A line under the heade
 
 ## The large drop slider
 
-The slider above the tiles sets how far a value must fall below its usual value to count as a large drop. It goes from 10 to 100 percent, and it starts at 30 percent, or at the value you chose with `--change-alert`.
+The slider above the tiles sets how far a value must fall below its weekday average to count as a large drop. It goes from 10 to 100 percent, and it starts at 30 percent, or at the value you chose with `--change-alert`.
 
-- **"Usual"** is the 12-week average for the same weekday, e.g., the average of the last 12 Mondays for a Monday.
-- **Small numbers are skipped.** Components with a usual value under 10 are never large drops, because small numbers change a lot from day to day.
+Under the slider, one line says what the weekday average is. Open "How a large drop is found" to read the full rule:
+
+- **The weekday average** is the average of the same weekday in the 12 weeks before the day, e.g., the 12 Mondays before a Monday. It is not Adobe's expected value. Adobe's anomaly detection computes the expected value with its own model.
+- **Small numbers are skipped.** Components with a weekday average under 10 are never large drops, because small numbers change a lot from day to day.
+- **Zero and Adobe flags come first.** A value of 0 is listed as "Dropped to zero", and a value that Adobe flagged is listed as an unusual value. Neither one is also a large drop.
 - **Arrows follow the slider.** The tables show an up or down arrow when a value changes by more than the same percent.
 - **Everything updates at once.** When you move the slider, the tiles, the tables, the "Show only flagged" filter and the alerts change right away.
 
@@ -62,7 +65,7 @@ Click a flag, drop or zero tile to open the Alerts Summary. Click the problems t
 
 ## Status
 
-The status section lists anything that could not be read, grouped by cause, with a plain explanation of each. **Copy problems** copies the list for an email or a ticket. See [Copying](#copying).
+When everything was read, the status section is one line that says "No problems". Otherwise it lists anything that could not be read, grouped by cause, with a plain explanation of each. **Copy problems** copies the list for an email or a ticket. See [Copying](#copying).
 
 It also shows a warning when the run sees far fewer custom events, eVars or props than the run before it. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 
@@ -72,7 +75,7 @@ This tab shows every custom event, eVar and prop, then the solution components, 
 
 ### Controls
 
-- **Show:** daily or weekly. Weekly shows the 7 days ending yesterday, against the usual week.
+- **Show:** daily or weekly. Weekly shows the 7 days ending yesterday, against the average week of the 12 weeks before.
 - **Day:** any of the last 7 days. Yesterday comes first.
 - **Component numbers:** a range, e.g., 101 to 200, for custom events, eVars and props.
 - **Show only flagged:** hides everything that is not an Adobe flag, a large drop or a drop to zero.
@@ -90,8 +93,8 @@ Each row shows:
 
 - the component number and name
 - the total for the day or the week
-- the usual value
-- the change from usual, with an arrow when it passes the slider's percent
+- the weekday average, or the average week in the weekly view
+- the change from that average, with an arrow when it passes the slider's percent
 - a flag
 
 The flag is Adobe's "Above range" or "Below range", or "Large drop" when the slider flags it. A red "Zero data" badge marks a value of 0 on a component that has data on other days. A gray "never collected data" note marks a component that was 0 on every day.
@@ -116,7 +119,7 @@ The page cannot fetch a new pair by itself, because it works offline. The hint o
 This tab lists the alerts for one day. It starts on yesterday, and the Day picker chooses any of the last 7 days. The alerts come in these groups:
 
 - **Unusual values.** Adobe's anomaly detection flagged the value as outside the expected range.
-- **Drops of more than 30% below usual.** The heading shows the slider's percent. The value was further below the usual value than the slider allows, and Adobe did not flag it.
+- **Drops of more than 30% below the weekday average.** The heading shows the slider's percent. The value was further below its weekday average than the slider allows, and Adobe did not flag it.
 - **Dropped to zero.** The value was 0, but the component had data on other days in the run.
 - **Never collected data.** The value was 0 on every day in the run. These are often unused slots, so they are not alerts, even when Adobe flags the 0. They are in a closed list at the end.
 
@@ -135,7 +138,7 @@ To send alerts on a schedule, or only when something is new, see the [DuckDB gui
 
 - **Currency metrics** show in the report suite's currency, in the tables, the alerts and the charts. They keep the currency's own number of decimals, e.g., $1,234.56 for US dollars and ¥1,235 for yen. Without a currency code they show as plain numbers with two decimals.
 - **Other metrics** show as plain numbers, with up to two decimals.
-- **Usual and expected values** are rounded: whole numbers from 100 up, one decimal below that. A currency value below 100 keeps the currency's own decimals.
+- **Weekday averages and expected values** are rounded: whole numbers from 100 up, one decimal below that. A currency value below 100 keeps the currency's own decimals.
 - **A value that could not be read** says "No data". It is never shown as 0.
 
 For how these numbers compare with the Excel workbook, see [Compared with the Excel workbook](excel-comparison.md).

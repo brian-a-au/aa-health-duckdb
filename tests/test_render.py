@@ -285,6 +285,31 @@ def test_no_issues_says_so():
     assert "No problems were found in this run." in html
 
 
+def test_status_is_one_line_without_problems():
+    v = sample_view()
+    v["issues"] = []
+    html = render_html(v)
+    assert '<section class="status-section status-ok" id="status"' in html
+    # The heading, the badge and the sentence share one line.
+    assert re.search(
+        r'<div class="status-line"><h2 id="status-title">Status</h2>'
+        r'<span class="badge badge-good">.*?No problems</span>'
+        r'<span class="hide-narrow">No problems were found in this run.</span></div>',
+        html,
+    )
+    assert html.count('id="status-title"') == 1
+    # With problems, the box keeps its heading on its own line.
+    html = render_html(sample_view())
+    assert "status-section status-ok" not in html
+    assert '<h2 id="status-title">Status</h2>' in html
+    assert html.count('id="status-title"') == 1
+    # A warning about fewer components is a problem too.
+    v["component_drops"] = [{"message": "This run sees 7 eVars."}]
+    html = render_html(v)
+    assert "status-section status-ok" not in html and html.count('id="status-title"') == 1
+    assert "No problems were found in this run." in html
+
+
 def test_missing_bands_note():
     html = render_html(sample_view(bands=False))
     assert NO_BANDS_NOTE == "Anomaly bands are not available. See the status section."
@@ -423,7 +448,7 @@ def test_page_has_tiles_flag_filter_and_sortable_tables():
     assert '<section class="tiles" id="tiles"' in html
     assert html.index('id="tiles"') < html.index('id="status"')
     assert '<input type="checkbox" id="flagged-only">' in html
-    assert "aria-sort" in html and "Usual order" in html
+    assert "aria-sort" in html and "Original order" in html
 
 
 def test_alerts_carry_direction_for_the_page():
@@ -487,7 +512,15 @@ def test_change_alert_slider():
     html = render_html(v)
     assert '<input type="range" id="change-alert" min="10" max="100" step="5" value="30"' in html
     assert '<output for="change-alert" id="change-alert-value">30%</output>' in html
-    assert "usual value under 10 are skipped" in html
+    assert "flag values more than" in html and "below their weekday average</span>" in html
+    # One line under the slider, and the full rule in a section that opens.
+    assert (
+        '<p class="hint" id="change-alert-hint">The weekday average is the average of the same '
+        "weekday in the 12 weeks before the day.</p>"
+    ) in html
+    rule = html[html.index('<details class="rule"') : html.index("</details>")]
+    assert "<summary>How a large drop is found</summary>" in rule
+    assert "weekday average under 10 are skipped" in rule
     v["change_alert"] = 0.45
     html = render_html(v)
     assert 'value="45"' in html and ">45%</output>" in html

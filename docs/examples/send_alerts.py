@@ -55,7 +55,7 @@ SELECT alert, name, component_id, round(usual) AS usual, value,
 ORDER BY alert DESC, pct
 """
 
-HEADERS = ["Alert", "Component", "ID", "Usual", "Actual", "Change"]
+HEADERS = ["Alert", "Component", "ID", "Weekday average", "Actual", "Change"]
 
 
 def _number(v: float | None) -> str:
@@ -104,7 +104,9 @@ def _table(rows: list[tuple]) -> tuple[list[str], str]:
     for alert, name, cid, usual, value, pct, _day in rows:
         change = "" if pct is None else f"{pct:+.1f}%"
         shown = [_number(usual), _number(value)]
-        text.append(f"- {alert}: {name} ({cid}), usual {shown[0]}, actual {shown[1]} {change}")
+        text.append(
+            f"- {alert}: {name} ({cid}), weekday average {shown[0]}, actual {shown[1]} {change}"
+        )
         cells.append([alert, name, cid, *shown, change])
     th = "".join(f"<th style='text-align:left;padding:4px 8px'>{h}</th>" for h in HEADERS)
     trs = "".join(
@@ -127,8 +129,8 @@ def build(sections: list[tuple[str, str, list[tuple]]], threshold: float) -> Ema
     text = [subject, ""]
     parts = [
         (
-            f"<p>{html.escape(subject)}. A large drop is more than {threshold:.0%} below the usual "
-            "value for the weekday.</p>"
+            f"<p>{html.escape(subject)}. A large drop is more than {threshold:.0%} below the "
+            "weekday average, the average of the same weekday in the 12 weeks before.</p>"
         )
     ]
     for rsid, name, rows in sections:

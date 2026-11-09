@@ -58,9 +58,9 @@ def _flagged(cid, usual, yesterday, expected, upper, lower):
 
 # Each case is (name, daily values). The cases are the edge cases of the alert rules.
 CASES = {
-    "event1": ("Usual exactly 10, yesterday 7", lambda c: _series(c, 10.0, 7.0)),
-    "event2": ("Usual exactly 10, yesterday 8", lambda c: _series(c, 10.0, 8.0)),
-    "event3": ("Usual 8, yesterday 1", lambda c: _series(c, 8.0, 1.0)),
+    "event1": ("Weekday average exactly 10, yesterday 7", lambda c: _series(c, 10.0, 7.0)),
+    "event2": ("Weekday average exactly 10, yesterday 8", lambda c: _series(c, 10.0, 8.0)),
+    "event3": ("Weekday average 8, yesterday 1", lambda c: _series(c, 8.0, 1.0)),
     "event4": ("Drop of 15 percent", lambda c: _series(c, 100.0, 85.0)),
     "event5": ("Drop of 50 percent", lambda c: _series(c, 100.0, 50.0)),
     "event6": ("Dropped to zero", lambda c: _series(c, 100.0, 0.0)),
@@ -196,16 +196,17 @@ def test_alert_lists_match_the_alerts_macro(alert_pages, edges, pct):
     assert sorted(listed) == sorted(macro)
     if where("large drop"):
         assert (
-            f"Drops of more than {pct}% below usual ({len(where('large drop'))}):" in page["text"]
+            f"Drops of more than {pct}% below the weekday average ({len(where('large drop'))}):"
+            in page["text"]
         )
 
 
 def test_alert_edge_cases(alert_pages):
     p30, p20, p10 = alert_pages["30"], alert_pages["20"], alert_pages["10"]
-    # A drop of exactly the slider percent is not flagged. A usual value of exactly 10 counts.
+    # A drop of exactly the slider percent is not flagged. A weekday average of exactly 10 counts.
     assert "metrics/event1" not in p30["drops"] and "metrics/event1" in p20["drops"]
     assert "metrics/event2" not in p20["drops"] and "metrics/event2" in p10["drops"]
-    # A usual value under 10 is never a drop.
+    # A weekday average under 10 is never a drop.
     assert all("metrics/event3" not in alert_pages[str(p)]["drops"] for p in (30, *SLIDER))
     # NaN and zero on every day: never collected data, and not an alert.
     assert {"metrics/event7", "metrics/event8"} <= set(p30["unused"])
@@ -230,7 +231,7 @@ def test_tiles_match_the_alerts_macro(alert_pages, edges, pct):
     assert tiles["Below expected range"]["value"] == count("unusual", "low")
     assert tiles["Large drops"] == {
         "value": count("large drop"),
-        "note": f"More than {pct}% below usual",
+        "note": f"More than {pct}% below the weekday average",
     }
     unused = len(_never_collected(edges[0], edges[1]))
     assert tiles["Dropped to zero"] == {
@@ -366,7 +367,7 @@ def _natural(text):
     return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", text.casefold())]
 
 
-# Clicks a heading of the first components table three times, then clicks "Usual order".
+# Clicks a heading of the first components table three times, then clicks "Original order".
 SORT_PROBE = """
 var table = document.querySelector("#panel-components table");
 function snap() {
@@ -376,7 +377,8 @@ function snap() {
       return [].map.call(r.cells, function (c) { return c.textContent; });
     }),
     sort: [].map.call(table.tHead.rows[0].cells, function (th) { return th.getAttribute("aria-sort"); }),
-    note: note.hidden ? null : note.firstChild.textContent
+    note: note.hidden ? null : note.firstChild.textContent,
+    button: (note.querySelector("button") || {}).textContent || null
   };
 }
 var heads = [].map.call(table.tHead.rows[0].cells, function (th) { return th.textContent.slice(0, -1); });
@@ -403,20 +405,22 @@ def _sort_run(chrome, store_rid, folder, columns):
 def test_a_number_column_sorts_largest_first_then_smallest_then_back(chrome, showcase, tmp_path):
     got = _sort_run(chrome, showcase, tmp_path, [2])
     assert got["heads"][2] == "Total for the day" and got["label"]
-    usual, first, second, third, reset = got["runs"]["2"]
+    original, first, second, third, reset = got["runs"]["2"]
     values = [[_number(r[2]) for r in step["cells"]] for step in (first, second)]
     assert values[0] == sorted(values[0], reverse=True)
     assert values[1] == sorted(values[1])
     assert first["sort"][2] == "descending" and second["sort"][2] == "ascending"
     assert first["note"] == "Sorted by Total for the day, largest first."
     assert second["note"] == "Sorted by Total for the day, smallest first."
-    assert third["cells"] == usual["cells"] and third["sort"][2] == "none" and third["note"] is None
-    assert reset["cells"] == usual["cells"] and reset["note"] is None
+    assert third["cells"] == original["cells"] and third["sort"][2] == "none"
+    assert third["note"] is None
+    assert reset["cells"] == original["cells"] and reset["note"] is None
+    assert first["button"] == "Original order"
 
 
 def test_a_text_column_sorts_a_to_z_then_z_to_a(chrome, showcase, tmp_path):
     got = _sort_run(chrome, showcase, tmp_path, [1])
-    _usual, first, second, _third, _reset = got["runs"]["1"]
+    _original, first, second, _third, _reset = got["runs"]["1"]
     names = [[r[1] for r in step["cells"]] for step in (first, second)]
     assert names[0] == sorted(names[0], key=_natural)
     assert names[1] == list(reversed(names[0]))
@@ -425,7 +429,8 @@ def test_a_text_column_sorts_a_to_z_then_z_to_a(chrome, showcase, tmp_path):
 
 def test_empty_cells_stay_last_in_both_directions(chrome, edges, tmp_path):
     got = _sort_run(chrome, edges, tmp_path, [4])
-    assert got["heads"][4] == "Change from usual"
+    assert got["heads"][3] == "Weekday average (12 weeks)"
+    assert got["heads"][4] == "Change from weekday average"
     for step in got["runs"]["4"][1:3]:
         values = [_number(r[4]) for r in step["cells"]]
         filled = [v for v in values if v is not None]
@@ -687,3 +692,39 @@ def test_day_labels_follow_the_date_option(chrome, edges, tmp_path, given, label
     assert got["slider"].startswith("Fri, Nov 6 " + label + ":")
     other = "(day before the run date)" if not given else "(yesterday)"
     assert other not in got["day"] + got["alertDay"] + got["slider"]
+
+
+# Opens every tab, the closed sections and the weekly view, and returns all the text a reader
+# can see or hear: page text, the alert text, and the titles and labels of elements.
+WORDS_PROBE = """
+var parts = [];
+function read() {
+  parts.push(document.body.innerText);
+  [].forEach.call(document.querySelectorAll("[title], [aria-label]"), function (n) {
+    parts.push(n.getAttribute("title") || "", n.getAttribute("aria-label") || "");
+  });
+}
+[].forEach.call(document.querySelectorAll("details"), function (d) { d.open = true; });
+["tab-components", "tab-individual", "tab-alerts"].forEach(function (id) {
+  document.getElementById(id).click();
+  read();
+});
+document.getElementById("tab-components").click();
+document.querySelector("#panel-components th button").click();
+read();
+var g = document.getElementById("granularity");
+g.value = "week";
+g.dispatchEvent(new Event("change"));
+read();
+parts.push(document.getElementById("alert-text").value);
+return parts.join("\\n");
+"""
+
+
+@pytest.mark.parametrize("which", ["showcase", "edges"])
+def test_the_page_says_weekday_average_not_usual(chrome, request, tmp_path, which):
+    page = render_html(build_view(*request.getfixturevalue(which)))
+    text = run_probe(chrome, page, WORDS_PROBE, tmp_path)
+    assert "Weekday average (12 weeks)" in text and "Average week (12 weeks)" in text
+    assert "Original order" in text and "How a large drop is found" in text
+    assert re.findall(r"\busual\b", text, re.IGNORECASE) == []
