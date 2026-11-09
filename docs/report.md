@@ -120,7 +120,7 @@ The charts follow the Day picker:
 
 In the weekly view, a light band covers the week's 7 days, and the line under the chart gives the week's total and the average week, e.g., "Nov 2 to Nov 8, 2026: 9,853 in total, average week 10,465." The key then shows "Chosen week".
 
-The key under each chart has up to three rows: the lines and the band, then Adobe's flags, then the chosen day and its weekday average.
+The key under each chart has two rows. The top row holds the lines, the band and the chosen day with its weekday average, or the chosen week. The second row holds Adobe's flags.
 
 - **The Metric chart** starts on Occurrences. Its Type filter lists the metric groups that have data, e.g., custom events or reserved purchase events.
 - **The Dimension chart** starts on Page. Its Type filter chooses eVars, props or other dimensions.

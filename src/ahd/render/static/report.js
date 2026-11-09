@@ -1084,8 +1084,8 @@
 
     host.appendChild(svg);
     host.appendChild(readout);
-    // The key has up to three rows: the lines and the band, then Adobe's flags, then the chosen
-    // day and its weekday average. A row with nothing in it is left out.
+    // The key has two rows: the lines, the band and the chosen day with its weekday average, then
+    // Adobe's flags. A row with nothing in it is left out.
     var legend = el("div", { "class": "legend" });
     function row(items) {
       var ul = el("ul", { "class": "legend-row" });
@@ -1093,10 +1093,9 @@
       if (ul.firstChild) legend.appendChild(ul);
     }
     row([[true, "actual", "Actual"], [hasExpected, "expected", "Expected"],
-      [hasBands, "band", "Expected range"]]);
-    row([[anyHigh, "high", "Flagged above range"], [anyLow, "low", "Flagged below range"]]);
-    row([[chosen >= 0, "chosen", "Chosen day"],
+      [hasBands, "band", "Expected range"], [chosen >= 0, "chosen", "Chosen day"],
       [average !== null, "average", "Weekday average (12 weeks)"], [!!week, "week", "Chosen week"]]);
+    row([[anyHigh, "high", "Flagged above range"], [anyLow, "low", "Flagged below range"]]);
     host.appendChild(legend);
     if (!hasBands) {
       host.appendChild(byId("no-bands-template").content.cloneNode(true));
