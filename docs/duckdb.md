@@ -133,8 +133,8 @@ One row per run, component and full day, with everything the report computes. Th
 
 - `value`, `expected`, `lower` and `upper` from Adobe
 - `anomaly`: "high" or "low" when Adobe flagged the value, else empty
-- `usual`: the weekday average, which is the average of the same weekday in the 12 weeks before the day
-- `pct_vs_usual`: the change from the weekday average, e.g., -0.25 for 25 percent below
+- `usual`: the weekday average, which is the average of the same weekday in the 12 weeks before the day. Only the last 7 days of the run have one, as in the report. An older day falls inside those 12 weeks, so its `usual` is empty.
+- `pct_vs_usual`: the change from the weekday average, e.g., -0.25 for 25 percent below. It is empty when `usual` is empty or 0.
 - `zero`: the value was 0
 - `unused`: the value was 0 on every day of the run, so the component never collected data
 - `is_yesterday`: the row is for the last full day of the run
@@ -147,7 +147,7 @@ The alerts of one run, by the report's rules. Give the run number first. Give th
 - `threshold`: the percent for a large drop, as a share. The default is `0.30`, the same as the report's drop slider.
 - `spike_threshold`: the percent for a large spike, as a share. The default is `0.50`, the same as the report's spike slider. A value that doubled is a spike of about `1.0`.
 - `min_usual`: a large drop or spike needs a weekday average (`usual`) of at least this much. The default is `10`.
-- `for_day`: the day to check, e.g., `'2026-11-03'`. The default is the day before the run date.
+- `for_day`: the day to check, e.g., `'2026-11-03'`. The default is the day before the run date. A large drop or spike needs one of the last 7 days before the run date. An older day can only have the alerts "unusual" and "dropped to zero", as in the report's calendar.
 
 ```sql
 FROM alerts(2) SELECT alert, name, round(usual) AS usual, value;
