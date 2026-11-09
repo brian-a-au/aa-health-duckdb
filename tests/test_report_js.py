@@ -1725,6 +1725,40 @@ return toggled(charts).then(function () {
 """
 
 
+FOCUS_PROBE = """
+var charts = document.querySelector(".charts-fold");
+function toggled(d) {
+  return new Promise(function (done) { d.addEventListener("toggle", done, { once: true }); });
+}
+function where() {
+  var a = document.activeElement;
+  var host = a && a.closest ? a.closest(".chart-host, [id$=-chart]") : null;
+  return { tag: a ? a.tagName.toLowerCase() : null, chart: host ? host.id : null };
+}
+var out = {};
+charts.open = false;
+return toggled(charts).then(function () {
+  var wait = toggled(charts);
+  document.querySelector("#tables button.spark").click();
+  out.clicked = where();
+  return wait;
+}).then(function () {
+  // The toggle event comes after the click. The chart must keep the focus after it.
+  out.after = where();
+  out.width = Number(document.querySelector("#metric-chart svg").getAttribute("viewBox")
+    .split(" ")[2]);
+  return out;
+});
+"""
+
+
+def test_a_chart_opened_from_a_folded_section_keeps_the_focus(chrome, showcase, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*showcase)), FOCUS_PROBE, tmp_path)
+    assert got["clicked"]["tag"] == "svg" and got["clicked"]["chart"]
+    assert got["after"] == got["clicked"]
+    assert got["width"] > 300
+
+
 def test_sections_fold_and_open_again(chrome, showcase, tmp_path):
     got = run_probe(chrome, render_html(build_view(*showcase)), FOLD_PROBE, tmp_path)
     assert got["titles"] == [

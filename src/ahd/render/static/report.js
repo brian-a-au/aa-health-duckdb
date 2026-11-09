@@ -249,11 +249,19 @@
       redrawAll();
     }
   }, true);
-  // Opens every folded section that holds the node, e.g., before the page shows a chart.
+  // Opens every folded section that holds the node, e.g., before the page shows a chart. The
+  // page draws everything again at once, so the caller can then draw and focus its chart. The
+  // toggle event comes later and must not draw again, or it would replace the focused chart.
   function openFolds(node) {
+    var opened = false;
     for (var n = node; n; n = n.parentNode) {
-      if (n.tagName === "DETAILS" && n.classList.contains("fold")) n.open = true;
+      if (n.tagName === "DETAILS" && n.classList.contains("fold") && !n.open) {
+        n.removeAttribute("data-folded");
+        n.open = true;
+        opened = true;
+      }
     }
+    if (opened) redrawAll();
   }
   // A folded section does not print, so the page opens them all to print and folds them again
   // after.
