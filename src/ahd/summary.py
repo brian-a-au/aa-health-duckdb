@@ -235,6 +235,32 @@ GROUP BY s.sel_day
 ORDER BY s.sel_day
 """
 
+# Every day of the trend, with the components that had an alert by the rules that hold for
+# any day: Adobe flagged the value, or it dropped to 0 and the component had data on other
+# days. Large drops need a weekday average, which only the last 7 days have, so they are not
+# here. A day with no stored value at all is left out, so the page can show it as missing.
+_CALENDAR_SQL = f"""
+WITH {_DV}, {_COMPS},
+v AS (
+    SELECT d.day, c.component_id, c.gpos, c.number,
+        {_ALERT_ANOMALY} AS anomaly,
+        coalesce(d.value = 0, false) AND NOT c.unused AS zero
+    FROM dv d JOIN comps c ON c.component_id = d.component_id
+    WHERE d.day BETWEEN $start AND $yesterday
+)
+SELECT CAST(day AS VARCHAR) AS day,
+    coalesce(list(component_id ORDER BY {_ORDER}) FILTER (WHERE anomaly = 'high'), [])
+        AS high,
+    coalesce(list(component_id ORDER BY {_ORDER}) FILTER (WHERE anomaly = 'low'), [])
+        AS low,
+    coalesce(list(component_id ORDER BY {_ORDER}) FILTER (WHERE zero AND anomaly IS NULL), [])
+        AS zero,
+    count(*) FILTER (WHERE anomaly IS NOT NULL OR zero) AS alerts
+FROM v
+GROUP BY day
+ORDER BY day
+"""
+
 _TOP_SQL = """
 WITH hist AS (
     SELECT item, min(rank) AS rank FROM top_items
@@ -468,6 +494,7 @@ def build_view(
         "views": views,
         "series": series,
         "alerts": _rows(store, _ALERTS_SQL, p),
+        "calendar": _rows(store, _CALENDAR_SQL, p),
         "pairs": _pairs(store, run_id, p),
         "issues": _rows(store, _ISSUES_SQL, p),
         "component_drops": component_drops(store, run_id),

@@ -80,6 +80,21 @@ This tab shows every custom event, eVar and prop, then the solution components, 
 - **Component numbers:** a range, e.g., 101 to 200, for custom events, eVars and props.
 - **Show only flagged:** hides everything that is not an Adobe flag, a large drop or a drop to zero.
 
+### Alerts by day
+
+A calendar shows the last 13 weeks. Each square is one day, and a darker square had more components with an alert:
+
+- Adobe flagged the value above or below its expected range.
+- The value dropped to 0, and the component had data on other days.
+
+Large drops are not counted, because only the last 7 days have a weekday average. A day with no data at all is an outline.
+
+A release that breaks tracking usually breaks many components on the same day, so it shows as one dark square. Choose a square, or move with the arrow keys, to list that day's components. The left and right keys move a week, and the up and down keys move a day. Choose a component in the list to see it on the metric or dimension chart, with the chart's line under it describing that day.
+
+"Days with the most alerts" lists the 5 days with the most alerts, with the count of each kind.
+
+The calendar follows the Day picker. DuckDB finds the alerts for every day and component in one query. For a suite with 410 components, the query takes about 10 milliseconds.
+
 ### Charts
 
 Two charts show 91 days of one metric and one dimension. Each shows the actual values, Adobe's expected value and expected range, and markers where Adobe flagged a value. Use the arrow keys on a chart to read each day.

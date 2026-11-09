@@ -183,6 +183,16 @@ def _unpack(d: dict) -> dict:
             if i not in s.get("gaps", [])
         ]
     d["series"] = series
+    ids = list(d["components"])
+    d["calendar"] = [
+        {
+            k: [ids[x] if isinstance(x, int) else x for x in v]
+            if k in ("high", "low", "zero")
+            else v
+            for k, v in zip(f["calendar"], c, strict=True)
+        }
+        for c in d.get("calendar", [])
+    ]
     return d
 
 
@@ -565,6 +575,21 @@ def _plain(v):
     return float(v) if isinstance(v, int) and not isinstance(v, bool) else v
 
 
+ROW_KEYS = (
+    "name",
+    "kind",
+    "group",
+    "number",
+    "metric_type",
+    "unused",
+    "value",
+    "baseline",
+    "pct",
+    "zero",
+    "anomaly",
+)
+
+
 def test_packed_page_data_unpacks_to_the_view():
     view = sample_view()
     data = _data_json(render_html(view))
@@ -574,6 +599,21 @@ def test_packed_page_data_unpacks_to_the_view():
         assert _plain(packed) == _plain(original)
     for cid, points in view["series"].items():
         assert _plain(data["series"][cid]) == _plain(points), cid
+    assert data["calendar"] == view["calendar"]
+
+
+def test_packed_calendar_names_components_by_place():
+    from ahd.render.html import pack_view
+
+    view = {
+        "views": {"week": [{"component_id": c, **dict.fromkeys(ROW_KEYS)} for c in ("a", "b")]},
+        "calendar": [
+            {"day": "2026-11-06", "high": ["b"], "low": [], "zero": ["a", "x"], "alerts": 3}
+        ],
+    }
+    packed = pack_view(view)
+    assert packed["calendar"] == [["2026-11-06", [1], [], [0, "x"], 3]]
+    assert packed["packed"]["calendar"] == ("day", "high", "low", "zero", "alerts")
 
 
 def test_packed_page_data_is_smaller():

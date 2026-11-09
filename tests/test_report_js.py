@@ -369,7 +369,7 @@ def _natural(text):
 
 # Clicks a heading of the first components table three times, then clicks "Original order".
 SORT_PROBE = """
-var table = document.querySelector("#panel-components table");
+var table = document.querySelector("#tables table");
 function snap() {
   var note = table.closest(".table-wrap").nextElementSibling;
   return {
@@ -578,7 +578,8 @@ def test_copy_problems_lists_each_problem(chrome, with_problem, tmp_path):
 THEME_PROBE = """
 var KINDS = ["body", ".muted", ".hint", "th", "td", ".tile-label", ".tile-note", ".tile-value",
   "button", ".group-count", ".chart-readout", ".empty", "summary", "code", "select", "label",
-  ".badge-good", ".badge-flag", ".badge-zero", ".jump a", ".jump-count", ".jump-label"];
+  ".badge-good", ".badge-flag", ".badge-zero", ".jump a", ".jump-count", ".jump-label",
+  ".calendar-readout", ".calendar-list-title", "button.link", ".calendar-legend"];
 function background(n) {
   while (n) {
     var c = getComputedStyle(n).backgroundColor;
@@ -710,7 +711,7 @@ function read() {
   read();
 });
 document.getElementById("tab-components").click();
-document.querySelector("#panel-components th button").click();
+document.querySelector("#tables th button").click();
 read();
 var g = document.getElementById("granularity");
 g.value = "week";
@@ -1036,3 +1037,132 @@ def test_jump_links_go_to_each_group(chrome, showcase, tmp_path):
     assert got["hash"] == got["links"][1]["href"] and 0 <= got["top"] < 20
     # The counts follow the "Show only flagged" filter.
     assert got["flagged"][0] == "Custom events 3"
+
+
+# ---- alerts by day -----------------------------------------------------------------------
+
+CALENDAR_JS = """
+function cal() {
+  var host = document.getElementById("calendar");
+  var cells = {};
+  [].forEach.call(host.querySelectorAll("rect.cal-cell"), function (r) {
+    cells[r.getAttribute("data-day")] = r.getAttribute("class").replace("cal-cell ", "");
+  });
+  var ring = host.querySelector("rect.cal-ring");
+  var picked = null;
+  [].forEach.call(host.querySelectorAll("rect.cal-cell"), function (r) {
+    if (r.getAttribute("x") - 2 == ring.getAttribute("x") &&
+        r.getAttribute("y") - 2 == ring.getAttribute("y")) picked = r.getAttribute("data-day");
+  });
+  return {
+    cells: cells, picked: picked,
+    readout: host.querySelector(".calendar-readout").textContent,
+    lists: [].map.call(host.querySelectorAll(".calendar-list"), function (b) {
+      return [b.querySelector(".calendar-list-title").textContent].concat(
+        [].map.call(b.querySelectorAll("button"), function (x) { return x.textContent; }));
+    }),
+    more: [].map.call(host.querySelectorAll(".calendar-list summary"), function (s) {
+      return s.textContent;
+    }),
+    top: [].map.call(host.querySelectorAll(".calendar-top tbody tr"), function (tr) {
+      return [].map.call(tr.cells, function (c) { return c.textContent; });
+    })
+  };
+}
+function key(name) {
+  document.querySelector("#calendar svg").dispatchEvent(
+    new KeyboardEvent("keydown", { key: name, bubbles: true }));
+}
+function click(day) {
+  document.querySelector('#calendar rect[data-day="' + day + '"]')
+    .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+}
+"""
+
+CALENDAR_PROBE = (
+    CALENDAR_JS
+    + """
+var out = { first: cal(), label: document.querySelector("#calendar svg").getAttribute("aria-label") };
+key("ArrowLeft");
+out.left = cal().picked;
+key("ArrowUp");
+out.up = cal().picked;
+click("2026-10-15");
+out.release = cal();
+document.querySelector("#calendar .calendar-list button").click();
+out.pick = document.getElementById("dimension-pick").value;
+out.chart = document.querySelector("#dimension-chart .chart-readout").textContent;
+out.focused = document.activeElement === document.querySelector("#dimension-chart svg");
+out.cross = document.querySelector("#dimension-chart .cross").getAttribute("visibility");
+var d = document.getElementById("day");
+d.selectedIndex = 2;
+d.dispatchEvent(new Event("change"));
+out.daypicker = cal();
+document.querySelector("#calendar .calendar-top tbody tr button").click();
+out.topclick = cal().picked;
+return out;
+"""
+)
+
+
+def test_the_calendar_shows_alerts_by_day(chrome, showcase, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*showcase)), CALENDAR_PROBE, tmp_path)
+    first = got["first"]
+    assert len(first["cells"]) == 91
+    # The most alerts in a day is 6, so 6 and 5 are the darkest, 2 is the second, 1 the first.
+    assert first["cells"]["2026-10-15"] == "l4" and first["cells"]["2026-11-06"] == "l4"
+    assert first["cells"]["2026-09-21"] == "l2" and first["cells"]["2026-11-04"] == "l1"
+    assert first["cells"]["2026-10-01"] == "l0"
+    assert first["picked"] == "2026-11-06"
+    assert first["readout"] == "Fri, Nov 6, 2026: 5 components with an alert."
+    assert [lst[0] for lst in first["lists"]] == [
+        "Below the expected range (3)",
+        "Above the expected range (2)",
+    ]
+    assert got["label"].startswith("Alerts by day for the 13 weeks ending Fri, Nov 6.")
+    # Left and right move a week. Up and down move a day.
+    assert got["left"] == "2026-10-30" and got["up"] == "2026-10-29"
+    release = got["release"]
+    assert release["picked"] == "2026-10-15"
+    assert len(release["lists"]) == 1 and release["lists"][0][0] == "Below the expected range (6)"
+    assert [b.split(":")[0] for b in release["lists"][0][1:]] == [f"eVar{n}" for n in range(5, 11)]
+    # A component in the list opens on its chart at that day.
+    assert got["pick"] == "metrics/evar5instances" and got["focused"] and got["cross"] == "visible"
+    assert got["chart"].startswith("Thu, Oct 15, 2026: ")
+    assert got["chart"].endswith("Below the expected range.")
+    # The Day picker moves the calendar too.
+    assert got["daypicker"]["picked"] == "2026-11-04"
+    assert got["daypicker"]["readout"] == "Wed, Nov 4, 2026: 1 component with an alert."
+    # The days with the most alerts: most first, then the newest.
+    assert [row[0] for row in first["top"]] == [
+        "Fri, Oct 16",
+        "Thu, Oct 15",
+        "Fri, Nov 6",
+        "Tue, Sep 22",
+        "Mon, Sep 21",
+    ]
+    assert first["top"][2] == ["Fri, Nov 6", "3", "2", "0", "5"]
+    assert got["topclick"] == "2026-10-16"
+
+
+def test_the_calendar_marks_missing_days_and_folds_long_lists(chrome, showcase, tmp_path):
+    view = build_view(*showcase)
+    view["calendar"] = [c for c in view["calendar"] if c["day"] != "2026-10-01"]
+    last = view["calendar"][-1]
+    ids = [r["component_id"] for r in view["views"]["week"]][:15]
+    last["zero"], last["alerts"] = ids, last["alerts"] + len(ids)
+    got = run_probe(chrome, render_html(view), CALENDAR_JS + "return cal();", tmp_path)
+    assert got["cells"]["2026-10-01"] == "missing"
+    zero = next(lst for lst in got["lists"] if lst[0].startswith("Dropped to zero"))
+    assert zero[0] == "Dropped to zero (15)" and len(zero) == 16
+    assert got["more"] == ["Show 3 more"]
+
+
+def test_a_calendar_without_alerts_says_so(chrome, showcase, tmp_path):
+    view = build_view(*showcase)
+    for c in view["calendar"]:
+        c["high"], c["low"], c["zero"], c["alerts"] = [], [], [], 0
+    got = run_probe(chrome, render_html(view), CALENDAR_JS + "return cal();", tmp_path)
+    assert set(got["cells"].values()) == {"l0"} and got["top"] == []
+    assert got["lists"] == []
+    assert got["readout"] == "Fri, Nov 6, 2026: 0 components with an alert."

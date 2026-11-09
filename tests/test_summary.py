@@ -781,3 +781,45 @@ def test_pair_weekday_average(tmp_path):
     averages = pair["weekday_average"]
     assert len(averages) == 7 and averages[YESTERDAY.isoformat()] == pytest.approx(24.0)
     assert averages["2026-11-05"] == pytest.approx(6.0)
+
+
+def test_calendar_lists_alerts_for_every_day(tmp_path):
+    cid1, cid2, cid3, cid4 = (f"metrics/event{i}" for i in range(1, 5))
+    day = date(2026, 10, 15)
+    vals = (
+        # Adobe flagged a value above its range, and on another day below it.
+        [v for v in _streak_values(cid1, []) if v.day not in (day, YESTERDAY)]
+        + [_dv(cid1, day, 500.0, 100.0, 130.0, 70.0, True)]
+        + [_dv(cid1, YESTERDAY, 5.0, 100.0, 130.0, 70.0, True)]
+        # 0 on one day, with data on the others.
+        + [_dv(cid2, d, 0.0 if d == day else 100.0) for d in _days(START, YESTERDAY)]
+        # 0 on every day: never collected data, so never an alert, even with an Adobe flag.
+        + [_dv(cid3, d, 0.0) for d in _days(START, YESTERDAY) if d != day]
+        + [_dv(cid3, day, 0.0, 50.0, 80.0, 20.0, True)]
+        # A 0 that Adobe flagged counts once, as below its range.
+        + [_dv(cid4, d, 100.0) for d in _days(START, YESTERDAY) if d != day]
+        + [_dv(cid4, day, 0.0, 100.0, 130.0, 70.0, True)]
+    )
+    comps = [_comp(c, c, number=i) for i, c in enumerate((cid1, cid2, cid3, cid4), start=1)]
+    store, rid = _build(tmp_path, comps, vals)
+    calendar = {c["day"]: c for c in build_view(store, rid)["calendar"]}
+    assert len(calendar) == 91 and min(calendar) == START.isoformat()
+    assert max(calendar) == YESTERDAY.isoformat()
+    assert calendar[day.isoformat()] == {
+        "day": day.isoformat(),
+        "high": [cid1],
+        "low": [cid4],
+        "zero": [cid2],
+        "alerts": 3,
+    }
+    assert calendar[YESTERDAY.isoformat()]["low"] == [cid1]
+    assert calendar["2026-10-14"]["alerts"] == 0 and calendar["2026-10-14"]["zero"] == []
+
+
+def test_calendar_leaves_out_a_day_without_data(tmp_path):
+    cid = "metrics/event1"
+    gap = date(2026, 10, 1)
+    vals = [_dv(cid, d, 100.0) for d in _days(START, YESTERDAY) if d != gap]
+    store, rid = _build(tmp_path, [_comp(cid, "E", number=1)], vals)
+    days = [c["day"] for c in build_view(store, rid)["calendar"]]
+    assert len(days) == 90 and gap.isoformat() not in days

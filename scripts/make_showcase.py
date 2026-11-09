@@ -121,6 +121,9 @@ YESTERDAY_FACTOR = {
 # Components that stopped this many days before the run date, so the alerts show days in a row.
 STOPPED = {"metrics/event18": 3}  # App Crash Reports
 ALWAYS_ZERO = {"metrics/event22", "metrics/evar16instances"}
+# A site release on Oct 15 broke 6 eVars for 2 days. The calendar shows it as one dark week.
+RELEASE_DAYS = (68, 69)
+RELEASE_BROKE = {f"metrics/evar{n}instances" for n in range(5, 11)}
 
 
 def components() -> list[Component]:
@@ -174,6 +177,8 @@ def series(rng: random.Random, cid: str, base: float) -> list[DailyValue]:
             value = 0.0
         if i in (44, 45) and cid in ("metrics/event1", "variables/page"):
             value = expected * 0.3  # an old tracking outage, flagged in the chart
+        if i in RELEASE_DAYS and cid in RELEASE_BROKE:
+            value = expected * 0.15
         upper, lower = expected * 1.28, expected * 0.74
         value = round(value)
         out.append(
@@ -245,6 +250,18 @@ SCENES = [
         "Summary tiles<br>Status with an icon and a label",
         "",
         [".page-head", "#tiles"],
+        "light",
+    ),
+    (
+        "Calendar",
+        "Find the<br>bad day.",
+        "A calendar of 13 weeks shows the days when many components broke at once. Choose a day to see which ones.",
+        "Alerts by day, for the whole suite<br>One DuckDB query over every day",
+        (
+            "document.querySelector('#calendar rect[data-day=\"2026-10-15\"]')"
+            ".dispatchEvent(new MouseEvent('click', {bubbles: true}));"
+        ),
+        [".calendar-card"],
         "light",
     ),
     (

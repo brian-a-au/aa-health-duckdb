@@ -9,6 +9,7 @@
   --muted: #6d6c67;
   --axis: #898781;
   --accent: #2a78d6;
+  --accent-text: #1f63b8;
   --band: rgba(42, 120, 214, 0.10);
   --expected: #898781;
   --grid: #e1e0d9;
@@ -36,6 +37,7 @@
     --muted: #a3a29a;
     --axis: #898781;
     --accent: #3987e5;
+    --accent-text: #79acef;
     --band: rgba(57, 135, 229, 0.16);
     --expected: #898781;
     --grid: #2c2c2a;
@@ -61,6 +63,7 @@
   --muted: #a3a29a;
   --axis: #898781;
   --accent: #3987e5;
+  --accent-text: #79acef;
   --band: rgba(57, 135, 229, 0.16);
   --expected: #898781;
   --grid: #2c2c2a;
@@ -347,6 +350,41 @@ td.shade { background: rgba(var(--shade), var(--a, 0)); }
   .tile { padding: 10px 12px; }
   .tile-value { font-size: 1.5rem; }
 }
+
+/* ---- alerts by day: a calendar of the last 13 weeks ---- */
+/* One hue from light to dark for the number of alerts. An empty day is a quiet square, and a
+   day without data is only an outline. */
+.calendar-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px 16px 12px; margin: 16px 0; }
+.calendar-card h2 { margin-top: 12px; }
+.calendar-main { display: flex; flex-wrap: wrap; gap: 8px 32px; align-items: flex-start; }
+.calendar-left { flex: 0 1 420px; min-width: 0; }
+.calendar-right { flex: 1 1 260px; min-width: 0; }
+.calendar-grid { max-width: 100%; overflow: hidden; }
+.calendar-top .table-wrap { max-width: 640px; }
+.calendar-svg { display: block; max-width: 100%; height: auto; }
+.cal-cell { cursor: pointer; }
+.cal-cell.l0, .calendar-legend .l0 { fill: var(--surface-2); background: var(--surface-2); }
+.cal-cell.l1, .calendar-legend .l1 { fill: rgba(var(--shade), 0.28); background: rgba(var(--shade), 0.28); }
+.cal-cell.l2, .calendar-legend .l2 { fill: rgba(var(--shade), 0.50); background: rgba(var(--shade), 0.50); }
+.cal-cell.l3, .calendar-legend .l3 { fill: rgba(var(--shade), 0.74); background: rgba(var(--shade), 0.74); }
+.cal-cell.l4, .calendar-legend .l4 { fill: rgba(var(--shade), 1); background: rgba(var(--shade), 1); }
+.cal-cell.missing { fill: none; stroke: var(--grid); stroke-width: 1; }
+.cal-ring { fill: none; stroke: var(--text); stroke-width: 2; pointer-events: none; }
+.calendar-svg:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: 4px; }
+.calendar-legend { display: flex; align-items: center; gap: 3px; font-size: 0.8rem; color: var(--text-2); margin: 8px 0 0; }
+.calendar-legend span:first-child { margin-right: 4px; }
+.calendar-legend span:last-child { margin-left: 4px; }
+.calendar-legend .swatch { width: 12px; height: 12px; border-radius: 3px; }
+.calendar-readout { font-weight: 600; color: var(--text); margin-top: 0; }
+.calendar-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 20px; }
+.calendar-list-title { margin: 4px 0; font-size: 0.85rem; color: var(--text-2); }
+.calendar-list ul { list-style: none; margin: 0 0 8px; padding: 0; }
+.calendar-list li { margin: 2px 0; }
+button.link { all: unset; box-sizing: border-box; cursor: pointer; color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; font-size: 0.9rem; }
+button.link:hover { color: var(--text); }
+button.link.nowrap, .nowrap { white-space: nowrap; }
+button.link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+.calendar-top h3 { margin-top: 16px; }
 
 /* ---- light / dark toggle ---- */
 .head-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 8px; }
