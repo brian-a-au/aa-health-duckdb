@@ -403,16 +403,16 @@ def _sort_run(chrome, store_rid, folder, columns):
 
 
 def test_a_number_column_sorts_largest_first_then_smallest_then_back(chrome, showcase, tmp_path):
-    got = _sort_run(chrome, showcase, tmp_path, [2])
-    assert got["heads"][2] == "Total for the day" and got["label"]
-    original, first, second, third, reset = got["runs"]["2"]
-    values = [[_number(r[2]) for r in step["cells"]] for step in (first, second)]
+    got = _sort_run(chrome, showcase, tmp_path, [3])
+    assert got["heads"][3] == "Total for the day" and got["label"]
+    original, first, second, third, reset = got["runs"]["3"]
+    values = [[_number(r[3]) for r in step["cells"]] for step in (first, second)]
     assert values[0] == sorted(values[0], reverse=True)
     assert values[1] == sorted(values[1])
-    assert first["sort"][2] == "descending" and second["sort"][2] == "ascending"
+    assert first["sort"][3] == "descending" and second["sort"][3] == "ascending"
     assert first["note"] == "Sorted by Total for the day, largest first."
     assert second["note"] == "Sorted by Total for the day, smallest first."
-    assert third["cells"] == original["cells"] and third["sort"][2] == "none"
+    assert third["cells"] == original["cells"] and third["sort"][3] == "none"
     assert third["note"] is None
     assert reset["cells"] == original["cells"] and reset["note"] is None
     assert first["button"] == "Original order"
@@ -428,11 +428,12 @@ def test_a_text_column_sorts_a_to_z_then_z_to_a(chrome, showcase, tmp_path):
 
 
 def test_empty_cells_stay_last_in_both_directions(chrome, edges, tmp_path):
-    got = _sort_run(chrome, edges, tmp_path, [4])
-    assert got["heads"][3] == "Weekday average (12 weeks)"
-    assert got["heads"][4] == "Change from weekday average"
-    for step in got["runs"]["4"][1:3]:
-        values = [_number(r[4]) for r in step["cells"]]
+    got = _sort_run(chrome, edges, tmp_path, [5])
+    assert got["heads"][2] == "Last 13 week"
+    assert got["heads"][4] == "Weekday average (12 weeks)"
+    assert got["heads"][5] == "Change from weekday average"
+    for step in got["runs"]["5"][1:3]:
+        values = [_number(r[5]) for r in step["cells"]]
         filled = [v for v in values if v is not None]
         assert None in values and filled
         assert values == filled + [None] * (len(values) - len(filled))
@@ -579,7 +580,7 @@ THEME_PROBE = """
 var KINDS = ["body", ".muted", ".hint", "th", "td", ".tile-label", ".tile-note", ".tile-value",
   "button", ".group-count", ".chart-readout", ".empty", "summary", "code", "select", "label",
   ".badge-good", ".badge-flag", ".badge-zero", ".jump a", ".jump-count", ".jump-label",
-  ".calendar-readout", ".calendar-list-title", "button.link", ".calendar-legend"];
+  ".calendar-readout", ".calendar-list-title", "button.link", ".calendar-legend", "#find"];
 var SVG_KINDS = ["#metric-chart text.axis", "#calendar text.axis"];
 function background(n) {
   while (n) {
@@ -1191,6 +1192,111 @@ def test_a_calendar_without_alerts_says_so(chrome, showcase, tmp_path):
     assert set(got["cells"].values()) == {"l0"} and got["top"] == []
     assert got["lists"] == []
     assert got["readout"] == "Fri, Nov 6, 2026: 0 components with an alert."
+
+
+# ---- 13-week trend lines and the find box ------------------------------------------------
+
+SPARK_PROBE = """
+function sparks() {
+  var out = {};
+  [].forEach.call(document.querySelectorAll("#tables tbody tr"), function (tr) {
+    var b = tr.querySelector("button.spark");
+    if (!b) return;
+    var path = b.querySelector("path").getAttribute("d");
+    var dot = b.querySelector("circle");
+    var points = path.match(/[ML][^ML]+/g);
+    out[b.getAttribute("aria-label")] = {
+      moves: (path.match(/M/g) || []).length,
+      first: points[0], last: points[points.length - 1],
+      dot: dot ? [Number(dot.getAttribute("cx")), Number(dot.getAttribute("cy"))] : null
+    };
+  });
+  return out;
+}
+var out = { day: sparks() };
+var d = document.getElementById("day");
+d.selectedIndex = 2;
+d.dispatchEvent(new Event("change"));
+out.picked = sparks();
+[].filter.call(document.querySelectorAll("#tables button.spark"), function (b) {
+  return b.getAttribute("aria-label") === "Show eVar6: Page Type on the chart";
+})[0].click();
+out.pick = document.getElementById("dimension-pick").value;
+out.readout = document.querySelector("#dimension-chart .chart-readout").textContent;
+out.focused = document.activeElement === document.querySelector("#dimension-chart svg");
+var g = document.getElementById("granularity");
+g.value = "week";
+g.dispatchEvent(new Event("change"));
+out.week = sparks();
+return out;
+"""
+
+
+def test_each_row_has_a_trend_line_that_opens_the_chart(chrome, showcase, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*showcase)), SPARK_PROBE, tmp_path)
+    day = got["day"]
+    assert len(day) == 49
+    orders = day["Show event5: Orders on the chart"]
+    # 91 days from left to right, with no gaps, and a dot on the chosen day, the last one.
+    assert orders["moves"] == 1 and orders["first"].startswith("M2 ")
+    assert orders["last"].startswith("L86 ") and orders["dot"][0] == 86
+    # A value of 0 sits on the bottom of the line's box.
+    crash = day["Show event18: App Crash Reports on the chart"]
+    assert crash["last"] == "L86 19" and crash["dot"] == [86, 19]
+    # The dot follows the Day picker: Nov 4 is 2 of 90 steps left of Nov 6.
+    assert got["picked"]["Show event5: Orders on the chart"]["dot"][0] == pytest.approx(
+        86 - 2 * 84 / 90, abs=0.1
+    )
+    assert got["pick"] == "metrics/evar6instances" and got["focused"]
+    assert got["readout"].startswith("Wed, Nov 4, 2026: ")
+    # The weekly view marks no day.
+    assert all(s["dot"] is None for s in got["week"].values())
+
+
+FIND_PROBE = """
+function find(text, flagged) {
+  var f = document.getElementById("find");
+  f.value = text;
+  f.dispatchEvent(new Event("input"));
+  var check = document.getElementById("flagged-only");
+  if (check.checked !== flagged) check.click();
+  return {
+    rows: [].map.call(document.querySelectorAll("#tables tbody tr"), function (tr) {
+      return tr.querySelector("td.name").firstChild.textContent;
+    }),
+    empty: [].map.call(document.querySelectorAll("#tables .empty"), function (p) {
+      return p.textContent;
+    }),
+    jump: [].map.call(document.querySelectorAll("#tables nav.jump a"), function (a) {
+      return a.textContent;
+    })
+  };
+}
+return {
+  code: find("code", false), number: find("EVAR5", false), id: find("variables/page", false),
+  flagged: find("code", true), none: find("zzz", false), cleared: find("", false)
+};
+"""
+
+
+def test_the_find_box_filters_every_table(chrome, showcase, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*showcase)), FIND_PROBE, tmp_path)
+    assert got["code"]["rows"] == ["Campaign Code", "Promo Code"]
+    assert got["code"]["jump"] == ["Custom events 0", "Custom eVars 2", "Custom props 0"]
+    assert got["code"]["empty"] == [
+        "No component in this group matches “code”.",
+        "No component in this group matches “code”.",
+        "No solution component matches “code”.",
+    ]
+    # The number and the id match too, in any case.
+    assert got["number"]["rows"] == ["Customer Type"]
+    assert got["id"]["rows"] == ["Page"]
+    assert got["flagged"]["rows"] == ["Campaign Code"]
+    assert got["flagged"]["empty"][0] == (
+        "No component in this group matches “code” among the flagged ones."
+    )
+    assert got["none"]["rows"] == []
+    assert len(got["cleared"]["rows"]) == 49
 
 
 # Reads which tables scroll in their own box, and whether the page scrolls sideways.
