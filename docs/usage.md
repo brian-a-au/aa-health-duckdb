@@ -149,6 +149,7 @@ With several suites, the command signs in once and checks the suites one after a
 - At the end, the command prints one line with the number of suites that ended "ok", "partial" and "failed", e.g., "Checked 3 report suites: 2 ok, 0 partial, 1 failed."
 - The exit code is the one of the worst suite, e.g., 1 when one suite failed.
 - A wrong suite name stops the command before it checks any suite.
+- If the tool has to sign in again during the run, and that sign-in fails, the command stops. The suite it was checking is marked "failed". It does not check the rest, because each of them would fail the same way. The command then prints no count line.
 
 With one suite, including `--all-suites` when the credential sees only one, the command prints neither the "Report suite 1 of 1" line nor the last line. To run it every day, see [Run it every day](scheduling.md).
 

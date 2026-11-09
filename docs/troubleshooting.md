@@ -61,8 +61,8 @@ A run that finished with status "partial" lists what it could not read. `ahd run
 
 When a request fails in a way that may pass, the tool waits and tries again. How long it waits depends on the kind of error:
 
-- **A rate limit (HTTP 429) or Adobe's temporary error 403025.** Adobe is busy. The tool tries up to 6 more times and waits 30 to 60 seconds in all.
-- **A server error (HTTP 500 to 599) or a network error.** The tool tries up to 3 more times and waits 3 to 7 seconds in all. An Adobe outage or a computer with no network shows within seconds, e.g., in `ahd check`.
+- **A rate limit (HTTP 429) or Adobe's temporary error 403025.** Adobe is busy. The tool tries up to 6 more times and waits about 30 seconds to 1 minute in all.
+- **A server error (HTTP 500 to 599) or a network error.** The tool tries up to 3 more times and waits about 3 to 7 seconds in all. An Adobe outage or a computer with no network shows within seconds, e.g., in `ahd check`.
 
 Adobe allows 12 requests in any 6 seconds for each user. The tool starts no more than that, even with many workers, so a run by itself should not get a rate limit. Two `ahd` commands at the same time with the same credential each keep their own count, so together they can go over the limit.
 
