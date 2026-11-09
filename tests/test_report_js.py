@@ -798,6 +798,12 @@ function marks(id) {
       (attr("line.average", "x1") + attr("line.average", "x2")) / 2,
     readout: host.querySelector(".chart-readout").textContent,
     legend: [].map.call(host.querySelectorAll(".legend li"), function (li) { return li.textContent; }),
+    rows: [].map.call(host.querySelectorAll(".legend-row"), function (row) {
+      return [].map.call(row.children, function (li) { return li.textContent; });
+    }),
+    markBoxes: [].map.call(host.querySelectorAll(".legend-row:nth-child(2) svg"), function (s) {
+      return s.getAttribute("viewBox");
+    }),
     label: svg.getAttribute("aria-label")
   };
 }
@@ -838,6 +844,15 @@ def test_the_charts_mark_the_chosen_day_and_its_weekday_average(chrome, showcase
     for m in (y, p, got["dimension"], got["individual"]):
         assert m["line"] is not None and m["line"] == m["dot"] == pytest.approx(m["average"])
         assert m["legend"][-2:] == ["Chosen day", "Weekday average (12 weeks)"]
+        # The key's last row is the chosen day and its weekday average. Marks get a 12 by 12 box.
+        assert m["rows"][0][0] == "Actual"
+        assert m["rows"][-1] == ["Chosen day", "Weekday average (12 weeks)"]
+        assert set(m["markBoxes"]) == {"0 0 12 12"}
+    # Lines and band, then Adobe's flags, then the chosen day.
+    assert got["yesterday"]["rows"][0] == ["Actual", "Expected", "Expected range"]
+    assert len(got["yesterday"]["rows"]) in (2, 3)
+    if len(got["yesterday"]["rows"]) == 3:
+        assert set(got["yesterday"]["rows"][1]) <= {"Flagged above range", "Flagged below range"}
     # The Day picker moves the marks: Nov 4 is 2 days left of Nov 6.
     assert p["line"] < y["line"]
     assert y["label"].endswith(

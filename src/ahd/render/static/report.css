@@ -251,9 +251,13 @@ textarea { width: 100%; font-family: var(--mono); font-size: 0.85rem; }
 .average { stroke: var(--text-2); stroke-width: 2; stroke-linecap: round; }
 .average-ring { stroke: var(--surface); stroke-width: 6; stroke-linecap: round; }
 .chart-readout { min-height: 1.5em; font-size: 0.85rem; color: var(--text-2); margin-top: 4px; }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.8rem; color: var(--text-2); margin-top: 6px; padding: 0; list-style: none; }
-.legend li { display: flex; align-items: center; gap: 5px; }
-.legend svg { width: 18px; height: 10px; flex: none; }
+.legend { font-size: 0.8rem; color: var(--text-2); margin-top: 6px; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 4px; padding: 0; list-style: none; }
+.legend li { display: flex; align-items: center; gap: 6px; }
+.legend svg { flex: none; overflow: visible; width: 18px; height: 12px; }
+.legend svg.key-mark { width: 12px; }
+/* On the chart a mark has a ring in the surface color. The key needs no ring. */
+.legend .mark-high, .legend .mark-low { stroke: none; }
 .chart-empty { color: var(--muted); font-size: 0.9rem; padding: 24px 0; text-align: center; }
 
 /* Table headings stay in view while you scroll. A table that fits is part of the page, and its
