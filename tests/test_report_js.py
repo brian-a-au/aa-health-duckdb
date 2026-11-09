@@ -1473,6 +1473,74 @@ def test_no_slow_declines_says_so(chrome, edges, tmp_path):
     assert got["empty"] == "No component fell steadily in the last 12 weeks."
 
 
+# ---- the Custom components filter ----------------------------------------------------------
+
+RANGE_PROBE = """
+var sel = document.getElementById("range");
+function read() {
+  var host = document.getElementById("tables");
+  return {
+    note: (host.querySelector(".filter-note") || {}).textContent || null,
+    groups: [].map.call(host.querySelectorAll("h3.group-title"), function (h) {
+      return h.firstChild.textContent;
+    }),
+    headings: [].map.call(host.querySelectorAll("h2"), function (h) { return h.textContent; }),
+    numbers: [].map.call(host.querySelectorAll("tbody tr"), function (tr) {
+      return tr.cells[0].textContent;
+    }),
+    jump: [].map.call(host.querySelectorAll(".jump a"), function (a) { return a.firstChild.textContent; })
+  };
+}
+function choose(v) {
+  sel.value = v;
+  sel.dispatchEvent(new Event("change"));
+  return read();
+}
+var out = {
+  label: sel.parentNode.firstChild.textContent.trim(),
+  options: [].map.call(sel.options, function (o) {
+    return [o.parentNode.tagName === "OPTGROUP" ? o.parentNode.label : "", o.value, o.textContent];
+  }),
+  all: read()
+};
+out.evars = choose("custom_evars");
+out.middle = choose("custom_evars:101-200");
+out.back = choose("");
+return out;
+"""
+
+
+def test_the_custom_components_filter_lists_types_and_ranges(chrome, showcase, tmp_path):
+    view = build_view(*showcase)
+    # Spread the 16 eVars over 15 to 240, so they fall in three ranges of 100.
+    for rows in view["views"].values():
+        for r in rows:
+            if r["group"] == "custom_evars":
+                r["number"] = r["number"] * 15
+    got = run_probe(chrome, render_html(view), RANGE_PROBE, tmp_path)
+    assert got["label"] == "Custom components"
+    assert got["options"] == [
+        ["", "", "All"],
+        ["Custom events", "custom_events", "All custom events (24)"],
+        ["Custom eVars", "custom_evars", "All custom eVars (16)"],
+        ["Custom eVars", "custom_evars:1-100", "eVar1 to eVar100 (6)"],
+        ["Custom eVars", "custom_evars:101-200", "eVar101 to eVar200 (7)"],
+        ["Custom eVars", "custom_evars:201-240", "eVar201 to eVar240 (3)"],
+        ["Custom props", "custom_props", "All custom props (8)"],
+    ]
+    assert got["all"]["note"] is None and "Solution components" in got["all"]["headings"]
+    evars = got["evars"]
+    assert evars["groups"] == ["Custom eVars"] and evars["jump"] == ["Custom eVars"]
+    assert "Solution components" not in evars["headings"]
+    assert evars["note"] == (
+        "Showing all custom eVars only. Choose All under Custom components to see every component."
+    )
+    middle = got["middle"]
+    assert middle["numbers"] == [f"eVar{n * 15}" for n in range(7, 14)]
+    assert middle["note"].startswith("Showing eVar101 to eVar200 only.")
+    assert got["back"] == got["all"]
+
+
 # ---- sections the reader can fold ---------------------------------------------------------
 
 FOLD_PROBE = """

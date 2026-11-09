@@ -90,7 +90,7 @@ This tab shows every custom event, eVar and prop, then the solution components, 
 
 - **Show:** daily or weekly. Weekly shows the 7 days ending yesterday, against the average week of the 12 weeks before.
 - **Day:** any of the last 7 days. Yesterday comes first.
-- **Component numbers:** a range, e.g., 101 to 200, for custom events, eVars and props.
+- **Custom components:** shows one custom type or one range of its numbers, e.g., "All custom eVars" or "eVar101 to eVar200". The list holds only the types and ranges that have components, with how many each has. A type that fits in one range of 100 has no range options. While a type or range is chosen, the solution components are hidden, and a note above the tables says what is shown.
 - **Show only flagged:** hides everything that is not an Adobe flag, a large drop, a large spike or a drop to zero.
 
 ### Alerts by day
