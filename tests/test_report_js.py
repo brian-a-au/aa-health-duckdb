@@ -1063,6 +1063,9 @@ function cal() {
   });
   return {
     cells: cells, picked: picked,
+    weekdays: [].map.call(host.querySelectorAll('text.axis[text-anchor="end"]'), function (t) {
+      return t.textContent;
+    }),
     readout: host.querySelector(".calendar-readout").textContent,
     lists: [].map.call(host.querySelectorAll(".calendar-list"), function (b) {
       return [b.querySelector(".calendar-list-title").textContent].concat(
@@ -1131,6 +1134,7 @@ def test_the_calendar_shows_alerts_by_day(chrome, showcase, tmp_path):
     assert first["cells"]["2026-09-21"] == "l2" and first["cells"]["2026-11-04"] == "l1"
     assert first["cells"]["2026-10-01"] == "l0"
     assert first["picked"] == "2026-11-06"
+    assert first["weekdays"] == ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     assert first["readout"] == "Fri, Nov 6, 2026: 5 components with an alert."
     assert [lst[0] for lst in first["lists"]] == [
         "Below the expected range (3)",

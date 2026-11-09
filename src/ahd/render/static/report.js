@@ -1012,8 +1012,7 @@
         tabindex: 0, "class": "calendar-svg",
         "aria-label": "Alerts by day for the 13 weeks ending " + fmtDay(yesterday, false) +
           ". Use the arrow keys to move between days." });
-      ["Mon", "", "Wed", "", "Fri", "", ""].forEach(function (name, row) {
-        if (!name) return;
+      ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].forEach(function (name, row) {
         var t = sv("text", { x: L - 6, y: T + row * (size + gap) + size * 0.75,
           "text-anchor": "end", "class": "axis" });
         t.textContent = name;
