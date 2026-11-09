@@ -6,7 +6,7 @@ Each time you use `ahd run`, the tool saves a new run in a DuckDB file on your c
 
 ## DuckDB runs inside ahd
 
-DuckDB is a database that runs inside the `ahd` program itself. There is no database server to install, start or connect to. `uv sync` installs it with the other Python packages.
+DuckDB is a database that runs inside the `ahd` program itself. There is no database server to install, start or connect to. It is installed with `ahd`, so there is nothing more to install.
 
 - **One local file.** The whole database is one file on your disk. Each run adds to it, and older runs stay in it.
 - **Nothing is uploaded.** The tool never sends the file anywhere.

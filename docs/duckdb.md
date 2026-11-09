@@ -197,6 +197,8 @@ SELECT alert, name, round(usual) AS usual, value, round(pct_vs_usual * 100) AS p
 
 [`examples/send_alerts.py`](examples/send_alerts.py) emails the latest alerts for one or more report suites, with an HTML table and a plain text part. The email has one section for each suite that has alerts. It sends nothing when no suite has alerts. That way an empty inbox means healthy suites.
 
+The script is in this repository. Run it from a clone, as below. Without a clone, download the file and run it with DuckDB added, e.g., `uv run --with 'duckdb>=2.0' python send_alerts.py ...`.
+
 ```
 uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
 uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite other_suite
@@ -431,7 +433,7 @@ With one run, it covers 91 full days. With a run each month for a year, it cover
 
 ### Values that dropped out of the top 100
 
-For each Individual Component Summary pair: values in the top 20 of the previous 90 days that are not in yesterday's top 100. A value that vanishes like this often points to a broken page or a changed tracking value.
+This query finds, for each Individual Component Summary pair, the values in the top 20 of the previous 90 days that are not in yesterday's top 100. A value that vanishes like this often points to a broken page or a changed tracking value.
 
 ```sql
 SELECT p.dimension_name || ' by ' || p.metric_name AS pair,
@@ -481,7 +483,7 @@ The report, the database and every export hold your component names and values. 
 
 ## Use it from Python
 
-The `duckdb` Python package is already installed with `ahd`, so `uv run python` can query the file:
+In a clone of this repository, `uv run python` already has the `duckdb` package. Elsewhere, run Python with DuckDB added, e.g., `uv run --with 'duckdb>=2.0' python`. Then query the file:
 
 ```python
 import duckdb

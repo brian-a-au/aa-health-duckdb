@@ -49,7 +49,7 @@ A run made with `ahd run --date` is about an earlier day. A line under the heade
 
 Two sliders above the tiles set when a change from the weekday average is an alert.
 
-The drop slider sets how far a value must fall below its weekday average to count as a large drop. It shows the drop as a negative change, from -100% on the left to -10% on the right. Move it left to flag only deeper drops. It starts at -30%, or at the value you chose with `--change-alert`, e.g., `--change-alert 45` starts it at -45%. The part of the line left of the handle is the range that gets flagged. Its orange is stronger further from zero, and the handle takes the color of the line under it.
+The drop slider sets how far a value must fall below its weekday average to count as a large drop. It shows the drop as a negative change, from -100% on the left to -10% on the right, in steps of 5. Move it left to flag only deeper drops. It starts at -30%, or at the value you chose with `--change-alert`, e.g., `--change-alert 45` starts it at -45%. The part of the line left of the handle is the range that gets flagged. Its orange is stronger further from zero, and the handle takes the color of the line under it.
 
 The spike slider sets how far a value must rise above its weekday average to count as a large spike. It runs from +10% on the left to +200% on the right, in steps of 10. Move it right to flag only bigger spikes. It starts at +50%, or at the value you chose with `--spike-alert`. The part of the line right of the handle gets flagged, and its orange is strongest at the right end. A value that doubled, e.g., because a tag fires twice, is a change of about +100%.
 
@@ -74,7 +74,7 @@ The tiles count yesterday's results:
 - components that dropped to zero, and how many others never collected data
 - problems in the run
 
-Click a flag, drop or zero tile to open the Alerts Summary. Click the problems tile to jump to the status section.
+Click any alert tile to open the Alerts Summary. Click the problems tile to jump to the status section.
 
 ## Status
 
@@ -139,7 +139,7 @@ The bar goes left of a gray center line for a drop and right of it for a rise. H
 
 A small line in each row shows the component's last 13 weeks, on a scale from 0 to its largest value, with a dot on the chosen day. In the weekly view the week's 7 days are drawn in blue instead. A drop to zero or a break in tracking shows as a dip at the right end. Choose the line to see the component on the metric or dimension chart above.
 
-The "Find a component" box above the tables keeps only the components whose name, number or ID contains the text, e.g., "evar5". It works with the number range and with "Show only flagged".
+The "Find a component" box above the tables keeps only the components whose name, number or ID contains the text, e.g., "evar5". It works with the Custom components filter and with "Show only flagged".
 
 The table headings stay in view while you scroll. A table that is too wide for the window, e.g., on a phone, scrolls in its own box, and its headings stay at the top of that box. The links under "Jump to" above the tables go to each group, and show how many components each group has. After each table, the link "Back to the top of the tables" goes back to these links.
 

@@ -26,7 +26,7 @@ The examples come from a run on Adobe's Demo Data report suite on 2026-11-09, wi
 
 - **Large drops and spikes.** Adobe's anomaly detection flags a value only when it leaves Adobe's expected range, and that range can be wide. The tool also compares each value with its weekday average, the average of the same weekday in the 12 weeks before. In the Demo Data run, Adobe flagged no value for the day, but 27 components were more than 30 percent below their weekday average.
 - **Sliders for the percents.** You choose how large a drop or a spike must be, e.g., -30% and +50%. Every count and list on the page changes as you move a slider, so you can see at once how many components are close to the limit.
-- **Spikes as well as drops.** A tag that fires twice doubles a value, i.e., a change of about +100%. In the Demo Data run, one eVar was 69.5 percent above its weekday average for 5 days in a row, and Adobe flagged none of those days.
+- **Spikes as well as drops.** A tag that fires twice doubles a value. That is a change of about +100%. In the Demo Data run, one eVar was 69.5 percent above its weekday average for 5 days in a row, and Adobe flagged none of those days.
 - **Zero values that mean something.** The workbook alerts on every component with a value of 0, so unused slots fill the list every day. The tool alerts only on a component that had data and then dropped to 0. It lists the components that never collected data apart. In the Demo Data run, 42 components never collected data, and none of them is an alert.
 - **Slow declines.** A component that falls a little each week never has a day that is unusual enough for an alert. The tool fits a line through 12 weekly totals and lists the components that fell by 3 percent or more a week.
 - **Any of the last 7 days.** The Day picker shows the alerts of each of the last 7 days, e.g., the weekend's on a Monday morning.
@@ -71,7 +71,7 @@ The examples come from a run on Adobe's Demo Data report suite on 2026-11-09, wi
 ### Use it anywhere
 
 - **Any system.** The tool runs on macOS and Linux as well as Windows, with Python 3.12 or newer. The workbook needs Excel on Windows.
-- **Easy to install and update.** `uv tool install aa-health-duckdb` installs it from PyPI, and `uv tool upgrade aa-health-duckdb` updates it.
+- **Easy to install and update.** `uv tool install aa-health-duckdb` installs it from PyPI, and `uv tool upgrade aa-health-duckdb` updates it. With pipx, run `pipx upgrade aa-health-duckdb`.
 - **Keyboard and screen reader.** The charts and the calendar work with the arrow keys. Every table and control has a name that a screen reader reads out, and the text meets contrast checks in both themes.
 
 ## Performance
@@ -97,7 +97,7 @@ The tool was timed on 2026-11-08, on a demo report suite with 410 components. Ea
 
 ## What it leaves out, on purpose
 
-- **The version check on open.** The tool comes from PyPI, so `uv tool upgrade aa-health-duckdb` gets the latest version.
+- **The version check on open.** The tool comes from PyPI, so `uv tool upgrade aa-health-duckdb` or `pipx upgrade aa-health-duckdb` gets the latest version.
 - **Languages.** The workbook offers 9 languages. The tool is in English only.
 - **Outlook email.** The workbook builds an Outlook email on Windows. The tool copies the alerts as a formatted table for any email program, and the DuckDB guide shows how to send them on a schedule.
 - **The manual token form.** The tool signs in with an OAuth Server-to-Server credential, with no browser step.

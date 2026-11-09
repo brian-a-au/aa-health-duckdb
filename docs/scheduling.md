@@ -7,6 +7,8 @@ This page shows how to check every report suite each morning and get one email w
 1. `ahd run --all-suites` checks every suite the credential can see. It stores one run and writes one report for each suite.
 2. [`docs/examples/send_alerts.py`](examples/send_alerts.py) emails the alerts of the latest runs. It sends nothing when no suite has alerts.
 
+These steps run from a clone of this repository, because the email script is in it. [Development](development.md#work-from-a-clone) shows how to make one. The commands start with `uv run` for that reason.
+
 ## Before you start
 
 - **Use a profile.** With `--profile prod`, the tool reads the credential from `~/.aa/orgs/prod/config.json` and keeps the database in `~/.aa/orgs/prod/ahd.duckdb`. Both paths stay the same, whatever folder the schedule starts in. See [Configuration](configuration.md#profiles).

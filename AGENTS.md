@@ -48,6 +48,8 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 | `scripts/make_showcase.py` | Builds the README slideshow from synthetic data |
 | `docs/` | The user documentation. The README is a short landing page that links to it. Update the matching page when behavior changes |
 | `docs/duckdb.md` | SQL recipes for the database, including alert emails |
+| `docs/examples/send_alerts.py` | The example alert email script, with its own tests |
+| `.github/workflows/` | Tests, lint, actionlint, the lockfile check, CodeQL, and the release from a `v*.*.*` tag |
 
 ## Rules
 
@@ -75,9 +77,9 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 
 ### Alert rules live in three places
 
-The rules for unusual values, large drops, zero values and components that never collected data appear in:
+The rules for unusual values, large drops, large spikes, zero values and components that never collected data appear in:
 
-1. `src/ahd/render/static/report.js`, which applies them in the page with the slider
+1. `src/ahd/render/static/report.js`, which applies them in the page with the two sliders
 2. `src/ahd/summary.py`, which selects the candidate rows for the page
 3. `src/ahd/sql/views.sql`, which holds the `alerts` macro for your own SQL
 

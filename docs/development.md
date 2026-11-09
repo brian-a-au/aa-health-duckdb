@@ -4,6 +4,18 @@
 
 This page is for anyone who changes the code. [AGENTS.md](../AGENTS.md) explains the layout of the code and the rules for changing it. It is written for people and for AI coding agents.
 
+## Work from a clone
+
+Clone the repository, and install the tool with its test tools:
+
+```
+git clone https://github.com/brian-a-au/aa-health-duckdb.git
+cd aa-health-duckdb
+uv sync
+```
+
+Then put `uv run` in front of each command, e.g., `uv run ahd check`.
+
 ## Tests and lint
 
 Run the same checks as GitHub Actions:
@@ -15,7 +27,7 @@ uv run ruff format --check
 uv lock --check
 ```
 
-`uv lock --check` tests that `uv.lock` matches `pyproject.toml`. Run `uv lock` after you change `pyproject.toml`.
+`uv lock --check` tests that `uv.lock` matches `pyproject.toml`. Run `uv lock` after you change `pyproject.toml`. GitHub Actions also checks the workflow files with actionlint. Run `actionlint` too if you change a file in `.github/workflows/`.
 
 - The tests use saved Adobe responses and never call Adobe.
 - Every test runs with the network blocked, so a test fails if it tries to open a connection.
@@ -31,20 +43,34 @@ GitHub Actions runs the tests for every push to `main` and every pull request:
 
 A run fails if branch coverage drops below 95 percent.
 
+`main` accepts changes only through a pull request. Nobody can push to it directly. Every pull request runs all the test jobs, even one that changes only docs. These checks must pass before a merge:
+
+- the tests on Linux with Python 3.12, 3.13 and 3.14, and on Windows and macOS with Python 3.14
+- lint, actionlint and the lockfile check
+- the 3 CodeQL jobs
+
+Merge with a merge commit, e.g., `gh pr merge --merge`.
+
 CodeQL scans the code for every push to `main`, every pull request and once a week, with GitHub's security and quality queries. It checks the Python code, the report's page script `report.js` and the workflow files. Its results are under Security, Code scanning on GitHub.
 
 ## Release a new version
 
 The tool is on PyPI as [aa-health-duckdb](https://pypi.org/project/aa-health-duckdb/). Pushing a tag `vX.Y.Z` starts `.github/workflows/release.yml`. It works like the release workflow of sdr-visualizer, and has three jobs:
 
-1. **build** runs lint and the tests, checks that the tag matches the version in `pyproject.toml` and that `CHANGELOG.md` has its section, builds the wheel and the source package, checks that the README links work outside GitHub, installs the wheel in a new environment and runs `ahd --help`, and writes SHA-256 sums.
+1. **build** checks and builds the package:
+   - runs lint and the tests
+   - checks that the tag matches the version in `pyproject.toml`, and that `CHANGELOG.md` has a section for it
+   - builds the wheel and the source package
+   - checks that every link in the README is a full web address, so the links work on PyPI
+   - installs the wheel in a new environment and runs `ahd --help`
+   - writes SHA-256 sums
 2. **publish** uploads the same files to PyPI with trusted publishing, so no PyPI token is stored anywhere. It runs in the `pypi` environment, which waits for the maintainer's approval and accepts only tags `v*.*.*`. PyPI trusts this publisher: owner `brian-a-au`, repository `aa-health-duckdb`, workflow `release.yml` and environment `pypi`.
 3. **github-release** creates the GitHub release with the files, the sums and the changelog section as its notes.
 
 To release:
 
 1. In a pull request, set the new `version` in `pyproject.toml`, run `uv lock`, and add a section to `CHANGELOG.md`, e.g., `## 0.2.0 (2026-12-01)`. Follow [Semantic Versioning](https://semver.org/). Until 1.0.0, raise the minor version, e.g., 0.2.0, for a change to the database layout or the options, and the patch version, e.g., 0.1.1, for fixes.
-2. Merge the pull request, and wait for the checks on `main` to pass.
+2. Merge the pull request with `gh pr merge --merge`, and wait for the checks on `main` to pass.
 3. Optionally, open the release workflow on GitHub and choose "Run workflow". It runs the build job only, as a dry run, and uploads nothing.
 4. Tag the merge commit on `main` and push the tag:
 

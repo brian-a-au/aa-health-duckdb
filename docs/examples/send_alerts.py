@@ -1,17 +1,20 @@
 """Email the latest alerts for one or more report suites, but only when there are any.
 
 Usage:
-    uv run python docs/examples/send_alerts.py DATABASE RSID [RSID ...] [--threshold 0.30]
-        [--spike-threshold 0.50]
+    uv run python docs/examples/send_alerts.py DATABASE RSID [RSID ...] [--segment ID]
+        [--threshold 0.30] [--spike-threshold 0.50]
     uv run python docs/examples/send_alerts.py DATABASE --all [--segment ID]
+
+Run it from a clone of the aa-health-duckdb repository. Without a clone, download this file and
+run it with DuckDB added, e.g., uv run --with 'duckdb>=2.0' python send_alerts.py ...
 
 It reads the latest run of each suite that ended "ok" or "partial", with the alerts() macro
 that every ahd database holds. It takes report suite IDs and a segment ID, not names. It
 builds one HTML email with a plain text part, with one section for each suite that has
 alerts. --all uses every suite that has a finished run in the database.
 Without --segment it uses the latest runs without a segment. --threshold is the large drop
-percent as a share, e.g. 0.30 for 30 percent, the default. --spike-threshold is the large spike
-percent as a share, e.g. 0.50 for 50 percent, the default.
+percent as a share, e.g., 0.30 for 30 percent, the default. --spike-threshold is the large spike
+percent as a share, e.g., 0.50 for 50 percent, the default.
 
 To send, set SMTP_HOST, SMTP_PORT (default 587), MAIL_FROM and MAIL_TO, and SMTP_USER and
 SMTP_PASSWORD when the server needs a login. Without SMTP_HOST, it writes the message to
@@ -19,7 +22,7 @@ alerts.eml in the current folder instead, so you can open it and check it first.
 
 Exit codes, so a scheduler can tell the cases apart:
     0  it sent or wrote a message
-    1  something is wrong, e.g. a suite has no finished run. The other suites are still sent.
+    1  something is wrong, e.g., a suite has no finished run. The other suites are still sent.
        A wrong option also exits with 1 and prints the usage.
     2  there were no alerts
 """

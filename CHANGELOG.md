@@ -2,6 +2,17 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. The tool then asks you to start a new database file, and this file says so.
 
+## 0.1.1 (2026-11-09)
+
+A docs-only release. The tool works the same as in 0.1.0.
+
+- "Compared with the Excel workbook" now explains what the tool adds, grouped by what each addition does for you. It gives examples from a run on Adobe's Demo Data report suite.
+- The docs now cover large spikes wherever they cover large drops, e.g., in the README and the alert rules in AGENTS.md.
+- The docs no longer assume a clone of the repository. "Development" shows how to make one, and the scheduling guide and the email recipe say when they need one.
+- "Development" says how `main` is protected, which checks must pass and how to merge, and lists the release steps.
+- CONTRIBUTING.md and SECURITY.md are shorter and plainer.
+- Smaller fixes, e.g., the name of the Custom components filter in "The report".
+
 ## 0.1.0 (2026-11-09)
 
 The first release on PyPI, as `aa-health-duckdb`. It installs the `ahd` command.
