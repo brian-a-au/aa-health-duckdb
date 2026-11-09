@@ -2198,7 +2198,18 @@
       if (onClick) t.addEventListener("click", onClick);
       host.appendChild(t);
     }
-    function toAlerts() { var t = byId("tab-alerts"); selectTab(t); t.focus(); }
+    // The tiles count the day before the run date, so the Alerts tab shows that day, even
+    // when another day was chosen there before.
+    function toAlerts() {
+      if (state.alertDay !== yesterday) {
+        state.alertDay = yesterday;
+        byId("alert-day").value = yesterday;
+        renderAlerts();
+      }
+      var t = byId("tab-alerts");
+      selectTab(t);
+      t.focus();
+    }
     function toStatus() { byId("status").scrollIntoView(); }
 
     tile("plain", "●", "Components checked", numFmt.format(rows.length), dayText);

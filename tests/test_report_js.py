@@ -227,6 +227,41 @@ def test_alert_lists_match_the_alerts_macro(alert_pages, edges, pct):
         )
 
 
+TILE_PROBE = """
+function drops() {
+  return [].map.call(document.querySelectorAll(
+    "#alerts section[aria-labelledby=drops-title] tbody code"), function (c) {
+    return c.textContent;
+  }).sort();
+}
+var sel = document.getElementById("alert-day");
+sel.value = sel.options[sel.options.length - 1].value;
+sel.dispatchEvent(new Event("change"));
+var before = { day: sel.value, drops: drops() };
+document.getElementById("tab-components").click();
+var tile = [].filter.call(document.querySelectorAll("#tiles .tile"), function (t) {
+  return t.querySelector(".tile-label").lastChild.textContent === "Large drops";
+})[0];
+tile.click();
+return { before: before, value: tile.querySelector(".tile-value").textContent,
+  day: sel.value, drops: drops(),
+  tab: document.getElementById("tab-alerts").getAttribute("aria-selected") };
+"""
+
+
+def test_a_tile_opens_the_alerts_of_its_own_day(chrome, edges, tmp_path):
+    # The tiles count the day before the run date. The Alerts tab may show another day, chosen
+    # earlier, so a tile shows that day again, and its count matches the list.
+    store, rid = edges
+    got = run_probe(chrome, render_html(build_view(store, rid)), TILE_PROBE, tmp_path)
+    assert got["before"]["day"] == "2026-10-31" and got["before"]["drops"] == []
+    assert got["tab"] == "true" and got["day"] == YESTERDAY.isoformat()
+    expected = sorted(
+        c for c, (alert, _) in _macro(store, rid, 0.3).items() if alert == "large drop"
+    )
+    assert got["drops"] == expected and got["value"] == str(len(expected)) and expected
+
+
 def test_alert_edge_cases(alert_pages):
     p30, p20, p10 = alert_pages["30"], alert_pages["20"], alert_pages["10"]
     # A drop of exactly the slider percent is not flagged. A weekday average of exactly 10 counts.
