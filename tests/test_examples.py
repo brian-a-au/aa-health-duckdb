@@ -139,11 +139,20 @@ def test_send_alerts_unknown_suite_is_an_error_not_a_quiet_day(tmp_path, capsys)
     ],
 )
 def test_send_alerts_bad_arguments_print_usage(argv, capsys):
+    # 1, not 2: a scheduler must not take a typo in an option for a day with no alerts.
     mod = _load("send_alerts")
     with pytest.raises(SystemExit) as e:
         mod.main(argv)
-    assert e.value.code == 2
+    assert e.value.code == 1
     assert "usage:" in capsys.readouterr().err
+
+
+def test_send_alerts_help_still_exits_with_0(capsys):
+    mod = _load("send_alerts")
+    with pytest.raises(SystemExit) as e:
+        mod.main(["--help"])
+    assert e.value.code == 0
+    assert "usage:" in capsys.readouterr().out
 
 
 def _suites_db(tmp_path, values):

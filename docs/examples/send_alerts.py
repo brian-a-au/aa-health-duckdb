@@ -5,8 +5,9 @@ Usage:
     uv run python docs/examples/send_alerts.py DATABASE --all [--segment ID]
 
 It reads the latest run of each suite that ended "ok" or "partial", with the alerts() macro
-that every ahd database holds. It takes report suite IDs and a segment ID, not names. It builds one HTML email with a plain text part, with one section for each
-suite that has alerts. --all uses every suite that has a finished run in the database.
+that every ahd database holds. It takes report suite IDs and a segment ID, not names. It
+builds one HTML email with a plain text part, with one section for each suite that has
+alerts. --all uses every suite that has a finished run in the database.
 Without --segment it uses the latest runs without a segment. --threshold is the large drop
 percent as a share, e.g. 0.30 for 30 percent, the default.
 
@@ -17,7 +18,8 @@ alerts.eml in the current folder instead, so you can open it and check it first.
 Exit codes, so a scheduler can tell the cases apart:
     0  it sent or wrote a message
     1  something is wrong, e.g. a suite has no finished run. The other suites are still sent.
-    2  there were no alerts, or an option is wrong
+       A wrong option also exits with 1 and prints the usage.
+    2  there were no alerts
 """
 
 from __future__ import annotations
@@ -72,8 +74,16 @@ def _share(text: str) -> float:
     return value
 
 
+class _Parser(argparse.ArgumentParser):
+    """Exits with 1 on a wrong option, not argparse's 2, which here means "no alerts"."""
+
+    def error(self, message: str) -> None:
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def _parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Email the latest ahd alerts for report suites.")
+    p = _Parser(description="Email the latest ahd alerts for report suites.")
     p.add_argument("database", help="The ahd DuckDB file.")
     p.add_argument("rsids", nargs="*", metavar="RSID", help="A report suite ID.")
     p.add_argument("--all", action="store_true", help="Every suite with a finished run.")
