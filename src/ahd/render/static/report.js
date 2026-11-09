@@ -850,6 +850,12 @@
     var out = [], cur = [];
     points.forEach(function (p) {
       var v = pick(p);
+      // A day with no stored value is not in the points, so a gap of more than a day also ends
+      // the line, as in the 13-week line in the tables.
+      if (cur.length && parseDay(p[0]) - parseDay(cur[cur.length - 1][0]) > 864e5) {
+        out.push(cur);
+        cur = [];
+      }
       if (v === null || v === undefined) { if (cur.length) out.push(cur); cur = []; }
       else cur.push(p);
     });
