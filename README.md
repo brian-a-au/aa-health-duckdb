@@ -93,10 +93,14 @@ If something fails, see [Troubleshooting](docs/troubleshooting.md).
 
 ## Related tools
 
-These read-only tools use the same kind of credential. One credential can serve all three. See [Share one credential across tools](docs/configuration.md#share-one-credential-across-tools).
+These read-only tools also work with Adobe Analytics implementations. aa_auto_sdr and cja_auto_sdr use the same kind of credential as `ahd`, and one credential can serve all three. See [Share one credential across tools](docs/configuration.md#share-one-credential-across-tools).
 
 - [aa_auto_sdr](https://github.com/brian-a-au/aa_auto_sdr) builds a Solution Design Reference for Adobe Analytics report suites. It shares its profiles with `ahd`.
 - [cja_auto_sdr](https://github.com/brian-a-au/cja_auto_sdr) does the same for Customer Journey Analytics data views.
+- [sdr-grader](https://github.com/brian-a-au/sdr-grader) checks an Adobe Analytics or Customer Journey Analytics implementation against a set of rules, and writes an HTML report card with a grade.
+- [sdr-visualizer](https://github.com/brian-a-au/sdr-visualizer) writes one HTML file with a searchable catalog of the components, and a graph of which components refer to which.
+
+sdr-grader and sdr-visualizer read the JSON files that aa_auto_sdr and cja_auto_sdr write. They do not call Adobe themselves. With `--rsid`, each one runs aa_auto_sdr for you, and aa_auto_sdr signs in with its profile as usual.
 
 ## Known limits
 

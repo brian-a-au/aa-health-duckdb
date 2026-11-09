@@ -67,6 +67,8 @@ One OAuth Server-to-Server credential can serve this tool and its two companion 
 
 All three read the same four values: `org_id`, `client_id`, `secret` and `scopes`.
 
+[sdr-grader](https://github.com/brian-a-au/sdr-grader) and [sdr-visualizer](https://github.com/brian-a-au/sdr-visualizer) need no credential of their own. They read the JSON files that aa_auto_sdr and cja_auto_sdr write. With `--rsid`, each one runs aa_auto_sdr, which uses its profile as usual.
+
 ### ahd and aa_auto_sdr
 
 These two share the profile folder. Create a profile once with `aa_auto_sdr --profile-add prod`, and both tools use it with `--profile prod` or `AA_PROFILE=prod`. Each tool only needs the Adobe Analytics API on the credential.
