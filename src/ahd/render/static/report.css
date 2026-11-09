@@ -224,15 +224,15 @@ textarea { width: 100%; font-family: var(--mono); font-size: 0.85rem; }
 .legend svg { width: 18px; height: 10px; flex: none; }
 .chart-empty { color: var(--muted); font-size: 0.9rem; padding: 24px 0; text-align: center; }
 
-.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
-/* Table headings stay in view while you scroll. On a wide screen the table is part of the page,
-   and its headings stick to the top of the window. On a narrow screen a table may need to scroll
-   sideways in its own box, so a long table also scrolls up and down in that box. */
+/* Table headings stay in view while you scroll. A table that fits is part of the page, and its
+   headings stick to the top of the window. The page script gives a table that does not fit the
+   class "scrolls": it scrolls sideways in its own box, so a long one also scrolls up and down
+   in that box, with its headings at the top of the box. The page never scrolls sideways. */
+.table-wrap { overflow: visible; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.table-wrap.scrolls { overflow: auto; max-height: 75vh; }
 thead th { position: sticky; top: 0; z-index: 1; box-shadow: inset 0 -1px 0 var(--grid); }
 .table-wrap thead th:first-child { border-top-left-radius: 7px; }
 .table-wrap thead th:last-child { border-top-right-radius: 7px; }
-@media (min-width: 960px) { .table-wrap { overflow: visible; } }
-@media (max-width: 959px) { .table-wrap { overflow: auto; max-height: 75vh; } }
 table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--grid); vertical-align: top; }
 th { font-weight: 600; color: var(--text-2); background: var(--surface-2); font-size: 0.8rem; vertical-align: bottom; }

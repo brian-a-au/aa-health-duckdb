@@ -213,6 +213,19 @@
   // ---- tabs ----------------------------------------------------------------
   var redrawers = [];
   function redrawAll() { redrawers.forEach(function (f) { f(); }); }
+
+  // A table that is wider than its place gets its own scroll box (the class "scrolls"). Every
+  // other table stays part of the page, so its headings stick to the top of the window. The page
+  // checks after it draws tables, and when a tab opens or the window changes size. A table on a
+  // hidden tab has no width yet, so it is checked when its tab opens.
+  function fitTables() {
+    Array.prototype.forEach.call(document.querySelectorAll(".table-wrap"), function (w) {
+      w.classList.remove("scrolls");
+      var t = w.firstChild;
+      if (t && w.clientWidth && t.offsetWidth > w.clientWidth + 1) w.classList.add("scrolls");
+    });
+  }
+  redrawers.push(fitTables);
   var resizeTimer = null;
   window.addEventListener("resize", function () {
     clearTimeout(resizeTimer);
@@ -579,6 +592,7 @@
     });
     if (!any) host.appendChild(el("p", { "class": "empty" },
       state.flagged ? "Nothing flagged in the solution components." : "None were found."));
+    fitTables();
   }
 
   // ---- charts --------------------------------------------------------------
@@ -1121,6 +1135,7 @@
     append(main, [append(el("div", { "class": "calendar-left" }), [svgHost, legend]),
       append(el("div", { "class": "calendar-right" }), [readout, lists])]);
     append(host, [main, topBox]);
+    fitTables();
     drawGrid();
     redrawers.push(drawGrid);
     select(days.indexOf(state.day) >= 0 ? days.indexOf(state.day) : days.length - 1);
@@ -1237,6 +1252,7 @@
         ["Total"].concat(b.totals.map(function (v) { return fmtNum(v, type); })) : null;
       host.appendChild(table(headers, body, foot, kind, { labelledby: kind + "-title" }));
     });
+    fitTables();
   }
 
   function renderIndividual() {
@@ -1468,6 +1484,7 @@
     }
 
     byId("alert-text").value = alertText();
+    fitTables();
   }
 
   // ---- copying ------------------------------------------------------------------

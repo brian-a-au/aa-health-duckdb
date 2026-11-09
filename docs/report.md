@@ -121,7 +121,7 @@ Each row shows:
 
 The bar goes left of a gray center line for a drop and right of it for a rise. Half the bar is a change of 100 percent. Two ticks with a light band between them mark the slider's percent. A bar that passes a tick is orange.
 
-The table headings stay in view while you scroll. On a narrow screen, such as a phone, a long table scrolls in its own box. The links under "Jump to" above the tables go to each group, and show how many components each group has.
+The table headings stay in view while you scroll. A table that is too wide for the window, e.g., on a phone, scrolls in its own box, and its headings stay at the top of that box. The links under "Jump to" above the tables go to each group, and show how many components each group has.
 
 The flag is Adobe's "Above range" or "Below range", or "Large drop" when the slider flags it. A red "Zero data" badge marks a value of 0 on a component that has data on other days. A gray "never collected data" note marks a component that was 0 on every day.
 

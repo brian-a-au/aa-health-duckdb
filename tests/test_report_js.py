@@ -1180,3 +1180,31 @@ def test_a_calendar_without_alerts_says_so(chrome, showcase, tmp_path):
     assert set(got["cells"].values()) == {"l0"} and got["top"] == []
     assert got["lists"] == []
     assert got["readout"] == "Fri, Nov 6, 2026: 0 components with an alert."
+
+
+# Reads which tables scroll in their own box, and whether the page scrolls sideways.
+FIT_PROBE = """
+document.getElementById("tab-alerts").click();
+function boxes(sel) {
+  return [].map.call(document.querySelectorAll(sel + " .table-wrap"), function (w) {
+    return w.classList.contains("scrolls");
+  });
+}
+var root = document.documentElement;
+var out = { alerts: boxes("#alerts"), scroll: root.scrollWidth, width: root.clientWidth };
+document.getElementById("tab-components").click();
+out.components = boxes("#tables");
+return out;
+"""
+
+
+def test_only_a_table_that_does_not_fit_gets_its_own_box(chrome, edges, tmp_path):
+    view = build_view(*edges)
+    # An id far wider than the window, in the first alert list. An id never wraps.
+    long_id = "metrics/" + "x" * 300
+    first = next(a for a in view["alerts"] if a["anomaly"])
+    first["component_id"] = long_id
+    got = run_probe(chrome, render_html(view), FIT_PROBE, tmp_path, width=1280)
+    assert got["alerts"][0] is True and not any(got["alerts"][1:])
+    assert not any(got["components"])
+    assert got["scroll"] <= got["width"]
