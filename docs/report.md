@@ -84,6 +84,13 @@ This tab shows every custom event, eVar and prop, then the solution components, 
 
 Two charts show 91 days of one metric and one dimension. Each shows the actual values, Adobe's expected value and expected range, and markers where Adobe flagged a value. Use the arrow keys on a chart to read each day.
 
+The charts follow the Day picker:
+
+- A thin vertical line and a dot mark the chosen day.
+- A short bar marks the weekday average for that day. The weekday average is the average of the same weekday in the 12 weeks before the day.
+- The line under the chart describes the chosen day until you move over the chart.
+- The weekly view marks no day.
+
 - **The Metric chart** starts on Occurrences. Its Type filter lists the metric groups that have data, e.g., custom events or reserved purchase events.
 - **The Dimension chart** starts on Page. Its Type filter chooses eVars, props or other dimensions.
 
@@ -94,8 +101,12 @@ Each row shows:
 - the component number and name
 - the total for the day or the week
 - the weekday average, or the average week in the weekly view
-- the change from that average, with an arrow when it passes the slider's percent
+- the change from that average, with an arrow when it passes the slider's percent, and a small bar
 - a flag
+
+The bar goes left of a gray center line for a drop and right of it for a rise. Half the bar is a change of 100 percent. Two ticks with a light band between them mark the slider's percent. A bar that passes a tick is orange.
+
+The table headings stay in view while you scroll. On a narrow screen, such as a phone, a long table scrolls in its own box. The links under "Jump to" above the tables go to each group, and show how many components each group has.
 
 The flag is Adobe's "Above range" or "Below range", or "Large drop" when the slider flags it. A red "Zero data" badge marks a value of 0 on a component that has data on other days. A gray "never collected data" note marks a component that was 0 on every day.
 
@@ -103,7 +114,7 @@ The flag is Adobe's "Above range" or "Below range", or "Large drop" when the sli
 
 This tab looks at one dimension by one metric in more depth, e.g., Page by Occurrences:
 
-- a trend chart, like the ones above
+- a trend chart, like the ones above. It marks the day chosen with the Day picker on the Components Summary tab.
 - the top 100 values yesterday, with how each one moved compared with the previous 90 days ("up 3", "down 2", a dash for no change, or "* new")
 - the top 10 values for each major browser group: Google, Microsoft, Apple, Mozilla and Other
 - the top 10 values for each device type: Other, Mobile Phone, Tablet, Media Player and Television. Desktop traffic falls under Other.
@@ -123,6 +134,14 @@ This tab lists the alerts for one day. It starts on yesterday, and the Day picke
 - **Dropped to zero.** The value was 0, but the component had data on other days in the run.
 - **Never collected data.** The value was 0 on every day in the run. These are often unused slots, so they are not alerts, even when Adobe flags the 0. They are in a closed list at the end.
 
+Each alert list has a "Days in a row" column. It counts the days, up to the chosen day, that had the same alert:
+
+- For an unusual value, Adobe flagged the value in the same direction on each day, e.g., above the expected range.
+- For a drop, the value was further below its weekday average than the slider allows on each day. The count changes when you move the slider.
+- For a drop to zero, the value was 0 on each day.
+
+The report covers 7 days. When the count reaches the first of them, the column says "or more", e.g., "7 or more", because the alert may have started earlier.
+
 ### Copying
 
 **Copy alerts** puts two versions on the clipboard at once:
@@ -130,7 +149,7 @@ This tab lists the alerts for one day. It starts on yesterday, and the Day picke
 - a formatted table, which Outlook, Gmail and Apple Mail paste
 - plain text, which a chat or a text editor pastes
 
-The copy follows the chosen day and the slider. If the browser cannot copy, open "Show the alert summary as text" and copy the text from there.
+The copy follows the chosen day and the slider. It includes the days in a row for each alert. If the browser cannot copy, open "Show the alert summary as text" and copy the text from there.
 
 To send alerts on a schedule, or only when something is new, see the [DuckDB guide](duckdb.md#email-recipes).
 

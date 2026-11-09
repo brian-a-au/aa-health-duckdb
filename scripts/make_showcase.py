@@ -117,8 +117,9 @@ YESTERDAY_FACTOR = {
     "metrics/event5": 0.42,  # Orders drop
     "metrics/evar1instances": 0.35,  # Campaign Code drop
     "variables/prop3": 1.8,  # Search Term spike
-    "metrics/event18": 0.0,  # App Crash Reports stopped
 }
+# Components that stopped this many days before the run date, so the alerts show days in a row.
+STOPPED = {"metrics/event18": 3}  # App Crash Reports
 ALWAYS_ZERO = {"metrics/event22", "metrics/evar16instances"}
 
 
@@ -169,6 +170,8 @@ def series(rng: random.Random, cid: str, base: float) -> list[DailyValue]:
         value = expected * rng.uniform(0.86, 1.14)
         if day == YESTERDAY and cid in YESTERDAY_FACTOR:
             value = expected * YESTERDAY_FACTOR[cid]
+        if (TODAY - day).days <= STOPPED.get(cid, 0):
+            value = 0.0
         if i in (44, 45) and cid in ("metrics/event1", "variables/page"):
             value = expected * 0.3  # an old tracking outage, flagged in the chart
         upper, lower = expected * 1.28, expected * 0.74
@@ -248,7 +251,7 @@ SCENES = [
         "Trend",
         "Spot the<br>outliers.",
         "Each chart shows 90 days of values against the range Adobe expected. Flagged days stand out.",
-        "Adobe anomaly detection<br>Expected range and flags",
+        "Adobe anomaly detection<br>Chosen day and weekday average",
         (
             "var s=document.getElementById('metric-pick');s.value='metrics/event5';"
             "s.dispatchEvent(new Event('change'));"
@@ -268,7 +271,7 @@ SCENES = [
     (
         "Alerts",
         "Know what<br>to check.",
-        "Unusual values come first, with how far each one is from the expected value. Zero data comes next.",
+        "Unusual values come first, with how far each one is from the expected value and how many days in a row it held.",
         "Copy the alert summary<br>Paste it into an email or chat",
         "document.getElementById('tab-alerts').click();",
         ["#panel-alerts"],

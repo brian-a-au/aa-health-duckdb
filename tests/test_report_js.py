@@ -296,7 +296,7 @@ return out;
 """
 
 
-@pytest.mark.parametrize("width", [390, 1280])
+@pytest.mark.parametrize("width", [375, 960, 1280])
 def test_no_horizontal_scroll(chrome, showcase, edges, tmp_path, width):
     for name, (store, rid) in (("showcase", showcase), ("edges", edges)):
         page = render_html(build_view(store, rid))
@@ -578,7 +578,7 @@ def test_copy_problems_lists_each_problem(chrome, with_problem, tmp_path):
 THEME_PROBE = """
 var KINDS = ["body", ".muted", ".hint", "th", "td", ".tile-label", ".tile-note", ".tile-value",
   "button", ".group-count", ".chart-readout", ".empty", "summary", "code", "select", "label",
-  ".badge-good", ".badge-flag", ".badge-zero"];
+  ".badge-good", ".badge-flag", ".badge-zero", ".jump a", ".jump-count", ".jump-label"];
 function background(n) {
   while (n) {
     var c = getComputedStyle(n).backgroundColor;
@@ -728,3 +728,311 @@ def test_the_page_says_weekday_average_not_usual(chrome, request, tmp_path, whic
     assert "Weekday average (12 weeks)" in text and "Average week (12 weeks)" in text
     assert "Original order" in text and "How a large drop is found" in text
     assert re.findall(r"\busual\b", text, re.IGNORECASE) == []
+
+
+# ---- chart marks, days in a row, change bars, sticky headings and jump links ----------------
+
+# Reads the chosen day's marks on a chart.
+MARKS_JS = """
+function marks(id) {
+  var host = document.getElementById(id);
+  var svg = host.querySelector("svg");
+  function attr(sel, name) {
+    var n = svg.querySelector(sel);
+    return n ? Number(n.getAttribute(name)) : null;
+  }
+  return {
+    line: attr("line.chosen", "x1"),
+    dot: attr("circle.chosen-dot", "cx"),
+    average: attr("line.average", "x1") === null ? null :
+      (attr("line.average", "x1") + attr("line.average", "x2")) / 2,
+    readout: host.querySelector(".chart-readout").textContent,
+    legend: [].map.call(host.querySelectorAll(".legend li"), function (li) { return li.textContent; }),
+    label: svg.getAttribute("aria-label")
+  };
+}
+function pickDay(i) {
+  var d = document.getElementById("day");
+  d.selectedIndex = i;
+  d.dispatchEvent(new Event("change"));
+}
+"""
+
+CHART_MARKS_PROBE = (
+    MARKS_JS
+    + """
+var pick = document.getElementById("metric-pick");
+pick.value = "metrics/event5";
+pick.dispatchEvent(new Event("change"));
+var out = { yesterday: marks("metric-chart") };
+pickDay(2);
+out.picked = marks("metric-chart");
+out.dimension = marks("dimension-chart");
+document.getElementById("tab-individual").click();
+out.individual = marks("individual-chart");
+document.getElementById("tab-components").click();
+var g = document.getElementById("granularity");
+g.value = "week";
+g.dispatchEvent(new Event("change"));
+out.week = marks("metric-chart");
+return out;
+"""
+)
+
+
+def test_the_charts_mark_the_chosen_day_and_its_weekday_average(chrome, showcase, tmp_path):
+    view = build_view(*showcase)
+    got = run_probe(chrome, render_html(view), CHART_MARKS_PROBE, tmp_path)
+    y, p = got["yesterday"], got["picked"]
+    # The line, the dot and the average bar share the chosen day's x.
+    for m in (y, p, got["dimension"], got["individual"]):
+        assert m["line"] is not None and m["line"] == m["dot"] == pytest.approx(m["average"])
+        assert m["legend"][-2:] == ["Chosen day", "Weekday average (12 weeks)"]
+    # The Day picker moves the marks: Nov 4 is 2 days left of Nov 6.
+    assert p["line"] < y["line"]
+    assert y["label"].endswith(
+        "A line marks the chosen day, Fri, Nov 6. Use the left and right "
+        "arrow keys to read each day."
+    )
+
+    def average(cid, day):
+        row = next(r for r in view["views"][f"day:{day}"] if r["component_id"] == cid)
+        return f"{row['baseline']:,.0f}"
+
+    assert p["readout"].startswith("Wed, Nov 4, 2026: ")
+    assert f"weekday average {average('metrics/event5', '2026-11-04')}, expected " in p["readout"]
+    assert f"weekday average {average('metrics/event5', '2026-11-06')}," in y["readout"]
+    page = f"{view['pairs'][0]['weekday_average']['2026-11-04']:,.0f}"
+    assert got["individual"]["readout"].startswith("Wed, Nov 4, 2026: ")
+    assert f"weekday average {page}," in got["individual"]["readout"]
+    # The weekly view marks no day, and the readout goes back to the last day.
+    week = got["week"]
+    assert week["line"] is None and week["dot"] is None and week["average"] is None
+    assert "Chosen day" not in week["legend"] and "weekday average" not in week["readout"]
+    assert week["readout"].startswith("Fri, Nov 6, 2026: ")
+
+
+@pytest.fixture(scope="module")
+def streaks(tmp_path_factory):
+    """Alerts that held for several days, each one ending yesterday."""
+    store = Store.open(tmp_path_factory.mktemp("streaks") / "s.duckdb")
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
+    store.add_pair(rid, "variables/page", "metrics/occurrences")
+    last = {
+        # Drops of 50, 20 and 40 percent, oldest first.
+        "metrics/event1": [50.0, 80.0, 60.0],
+        # 0 on all 7 days that the page covers.
+        "metrics/event2": [0.0] * 7,
+    }
+    comps, values = [], []
+    for i, (cid, tail) in enumerate(last.items(), start=1):
+        comps.append(Component(cid, f"E{i}", "metric", "custom_events", i, Column(cid, cid), True))
+        first_low = YESTERDAY - timedelta(days=len(tail) - 1)
+        values += [_dv(cid, d, 100.0) for d in _days() if d < first_low]
+        values += [_dv(cid, first_low + timedelta(days=n), v) for n, v in enumerate(tail)]
+    # Above Adobe's range on the last 2 days, after a normal day.
+    cid = "metrics/event3"
+    comps.append(Component(cid, "E3", "metric", "custom_events", 3, Column(cid, cid), True))
+    values += [_dv(cid, d, 100.0) for d in _days() if d < YESTERDAY - timedelta(days=1)]
+    values += [
+        _dv(cid, YESTERDAY - timedelta(days=n), 300.0, 100.0, 130.0, 70.0, True) for n in (0, 1)
+    ]
+    store.add_components(rid, comps)
+    store.add_daily_values(rid, values)
+    store.finish_run(rid, "ok")
+    yield store, rid
+    store.con.close()
+
+
+# Reads the Days in a row column of each alert list and the alert text, for each slider percent.
+STREAK_PROBE = """
+function days(section) {
+  var out = {};
+  var table = document.querySelector("#alerts section[aria-labelledby=" + section + "] table");
+  if (!table) return out;
+  var heads = [].map.call(table.tHead.rows[0].cells, function (th) {
+    return th.textContent.replace("↕", "");
+  });
+  var col = heads.indexOf("Days in a row");
+  [].forEach.call(table.tBodies[0].rows, function (r) {
+    out[r.querySelector("code").textContent] = r.cells[col].textContent;
+  });
+  return out;
+}
+var slider = document.getElementById("change-alert");
+var out = {};
+[30, 15, 10].forEach(function (p) {
+  slider.value = String(p);
+  slider.dispatchEvent(new Event("input"));
+  out[p] = { unusual: days("unusual-title"), drops: days("drops-title"),
+    zero: days("zero-title"), text: document.getElementById("alert-text").value };
+});
+var day = document.getElementById("alert-day");
+day.selectedIndex = 1;
+day.dispatchEvent(new Event("change"));
+out.before = { unusual: days("unusual-title"), drops: days("drops-title"),
+  zero: days("zero-title") };
+return out;
+"""
+
+
+def test_alert_lists_show_days_in_a_row(chrome, streaks, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*streaks)), STREAK_PROBE, tmp_path)
+    # The drop of 40 percent passes 30 percent alone. At 15 percent all 3 days pass.
+    assert got["30"]["drops"] == {"metrics/event1": "1"}
+    assert got["15"]["drops"] == {"metrics/event1": "3"}
+    assert got["10"]["drops"] == {"metrics/event1": "3"}
+    # The zero reaches the first day of the report, so it may be longer.
+    assert got["30"]["zero"] == {"metrics/event2": "7 or more"}
+    assert got["30"]["unusual"] == {"metrics/event3": "2"}
+    text = got["30"]["text"]
+    assert re.search(
+        r"^- E1 \(metrics/event1\): .*\. First day with this alert\.$", text, re.MULTILINE
+    )
+    assert re.search(
+        r"^- E2 \(metrics/event2\): .*\. 7 or more days in a row\.$", text, re.MULTILINE
+    )
+    assert re.search(r"^- E3 \(metrics/event3\): .*\. 2 days in a row\.$", text, re.MULTILINE)
+    assert "- E1 (metrics/event1): " in got["15"]["text"]
+    assert re.search(r"^- E1 .*\. 3 days in a row\.$", got["15"]["text"], re.MULTILINE)
+    # The day before counts back from its own day. The slider is still at 10 percent, so its
+    # drop of 20 percent and the drop of 50 percent the day before it both pass.
+    assert got["before"] == {
+        "unusual": {"metrics/event3": "1"},
+        "drops": {"metrics/event1": "2"},
+        "zero": {"metrics/event2": "6 or more"},
+    }
+
+
+def test_copied_alerts_have_days_in_a_row(chrome, streaks, tmp_path):
+    got = _copy_run(chrome, streaks, tmp_path, "copy-alerts", "copy-result")
+    html = got["rich"]["copied"]["html"]
+    assert html.count(">Days in a row</th>") == 3
+    assert ">7 or more</td>" in html and ">2</td>" in html
+
+
+# Reads the change bar of each row in the first components table, then moves the slider.
+BAR_PROBE = """
+function bars() {
+  var out = {};
+  [].forEach.call(document.querySelectorAll("#tables table"), function (table) {
+    var heads = [].map.call(table.tHead.rows[0].cells, function (th) { return th.textContent; });
+    var col = heads.indexOf("Change from weekday average↕");
+    [].forEach.call(table.tBodies[0].rows, function (r) {
+      var cell = r.cells[col], fill = cell.querySelector(".fill");
+      if (!fill) return;
+      out[r.cells[1].firstChild.textContent] = {
+        text: cell.textContent,
+        side: fill.classList.contains("neg") ? "left" : "right",
+        over: fill.classList.contains("over"),
+        width: fill.style.width,
+        ticks: [].map.call(cell.querySelectorAll(".tick"), function (t) { return t.style.left; }),
+        hidden: cell.querySelector(".devbar").getAttribute("aria-hidden")
+      };
+    });
+  });
+  return out;
+}
+var out = { "30": bars() };
+var slider = document.getElementById("change-alert");
+slider.value = "60";
+slider.dispatchEvent(new Event("input"));
+out["60"] = bars();
+return out;
+"""
+
+
+def test_the_change_column_has_a_bar_with_ticks_at_the_slider(chrome, edges, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*edges)), BAR_PROBE, tmp_path)
+    p30, p60 = got["30"], got["60"]
+    drop = p30["Drop of 50 percent"]
+    assert drop == {
+        "text": "▼ -50%",
+        "side": "left",
+        "over": True,
+        "width": "25%",
+        "ticks": ["35%", "65%"],
+        "hidden": "true",
+    }
+    assert p60["Drop of 50 percent"]["over"] is False
+    assert p60["Drop of 50 percent"]["ticks"] == ["20%", "80%"]
+    assert p30["Drop of 15 percent"]["over"] is False
+    # A rise of 40 percent: right of the center, past the tick at 30 and short of the one at 60.
+    up = p30["Above the expected range"]
+    assert up["side"] == "right" and up["width"] == "20%" and up["over"]
+    assert p60["Above the expected range"]["over"] is False
+
+
+# Scrolls the page, or the table's own box on a narrow screen, to the middle of the longest
+# table, and reads where its headings are.
+STICKY_PROBE = """
+var tables = [].slice.call(document.querySelectorAll("#tables table"));
+var table = tables.sort(function (a, b) { return b.rows.length - a.rows.length; })[0];
+var wrap = table.closest(".table-wrap");
+var th = table.tHead.rows[0].cells[0];
+var first = table.tBodies[0].rows[0];
+var row = table.tBodies[0].rows[Math.floor(table.tBodies[0].rows.length / 2)];
+var box = getComputedStyle(wrap).overflowY !== "visible";
+if (box) {
+  wrap.scrollIntoView();
+  wrap.scrollTop = row.offsetTop;
+} else {
+  window.scrollTo(0, row.getBoundingClientRect().top + window.scrollY);
+}
+return {
+  box: box,
+  heading: th.getBoundingClientRect().top,
+  top: box ? wrap.getBoundingClientRect().top : 0,
+  firstTop: first.getBoundingClientRect().top,
+  scrolled: box ? wrap.scrollTop : window.scrollY
+};
+"""
+
+
+@pytest.mark.parametrize("width", [375, 1280])
+def test_table_headings_stay_in_view(chrome, showcase, tmp_path, width):
+    page = render_html(build_view(*showcase))
+    got = run_probe(chrome, page, STICKY_PROBE, tmp_path, width=width)
+    assert got["box"] is (width < 960)
+    assert got["scrolled"] > 0
+    # The heading sits at the top of the window or of the box, over the rows that scrolled.
+    assert got["heading"] == pytest.approx(got["top"] + (1 if got["box"] else 0), abs=1.5)
+    # The first row scrolled up under the heading.
+    assert got["firstTop"] < got["heading"]
+
+
+JUMP_PROBE = """
+var links = [].map.call(document.querySelectorAll("#tables nav.jump a"), function (a) {
+  var target = document.querySelector(a.getAttribute("href"));
+  return { text: a.textContent, href: a.getAttribute("href"),
+    target: target ? target.tagName + ":" + target.firstChild.textContent : null };
+});
+var nav = document.querySelector("#tables nav.jump");
+// The second group has enough page below it to scroll to the top of the window.
+var second = document.querySelectorAll("#tables nav.jump a")[1];
+second.click();
+var target = document.querySelector(second.getAttribute("href"));
+var out = { label: nav.getAttribute("aria-label"), links: links, hash: location.hash,
+  top: target.getBoundingClientRect().top };
+document.getElementById("flagged-only").click();
+out.flagged = [].map.call(document.querySelectorAll("#tables nav.jump a"), function (a) {
+  return a.textContent;
+});
+return out;
+"""
+
+
+def test_jump_links_go_to_each_group(chrome, showcase, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*showcase)), JUMP_PROBE, tmp_path)
+    assert got["label"] == "Jump to a group"
+    assert [link["text"] for link in got["links"]] == [
+        "Custom events 24",
+        "Custom eVars 16",
+        "Custom props 8",
+        "Reserved Props 1",
+    ]
+    for link in got["links"]:
+        assert link["target"] == "H3:" + link["text"].rsplit(" ", 1)[0]
+    assert got["hash"] == got["links"][1]["href"] and 0 <= got["top"] < 20
+    # The counts follow the "Show only flagged" filter.
+    assert got["flagged"][0] == "Custom events 3"

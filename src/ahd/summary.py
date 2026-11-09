@@ -150,6 +150,11 @@ ORDER BY component_id, day
 # Rows that may be an alert, for each day the reader can pick: Adobe flagged them, the value
 # is 0, or the value is more than MIN_CHANGE_ALERT below the usual value for that weekday.
 # The page picks from these with its day picker and slider.
+#
+# days_in_row counts the days, up to the row's day, that had the same alert: the same Adobe
+# flag direction, a 0, or a drop. Only the days the reader can pick count, so streak_open says
+# that the row reaches the first of them and may be longer. For a drop, drop_run lets the page
+# count the days for the slider's setting.
 _ALERTS_SQL = f"""
 WITH {_DV}, {_COMPS},
 sel AS (SELECT unnest($days::DATE[]) AS sel_day),
@@ -169,13 +174,65 @@ r AS (
         {_ALERT_ANOMALY} AS anomaly, coalesce(d.value = 0, false) AS zero
     FROM usual u JOIN comps c ON c.component_id = u.component_id
     JOIN dv d ON d.component_id = c.component_id AND d.day = u.sel_day
+),
+-- The alert of each day, to count days in a row: the direction of Adobe's flag, a value of 0,
+-- or a drop of more than the slider's lowest setting. A day without an alert ends a row.
+k AS (
+    SELECT sel_day, component_id, pct_vs_usual,
+        CASE WHEN anomaly IS NOT NULL THEN anomaly
+            WHEN zero THEN 'zero'
+            WHEN usual >= {MIN_USUAL} AND pct_vs_usual < -{MIN_CHANGE_ALERT} THEN 'drop'
+        END AS kind
+    FROM r
+),
+-- Days in a row with the same alert get the same grp, because each day and its place in the
+-- list grow by one together.
+g AS (
+    SELECT *, sel_day - CAST(row_number() OVER (
+        PARTITION BY component_id, kind ORDER BY sel_day) AS INTEGER) AS grp
+    FROM k WHERE kind IS NOT NULL
+),
+streaks AS (
+    SELECT *, min(sel_day) OVER (PARTITION BY component_id, kind, grp) AS first_day FROM g
+),
+-- A large drop depends on the slider. For each day back from a drop, this keeps the smallest
+-- drop so far. The page counts the entries that are past the slider.
+back AS (
+    SELECT a.sel_day, a.component_id, b.sel_day AS back_day,
+        max(b.pct_vs_usual) OVER (
+            PARTITION BY a.sel_day, a.component_id ORDER BY b.sel_day DESC) AS smallest
+    FROM streaks a JOIN streaks b ON b.component_id = a.component_id AND b.kind = a.kind
+        AND b.grp = a.grp AND b.sel_day <= a.sel_day
+    WHERE a.kind = 'drop'
+),
+drop_runs AS (
+    SELECT sel_day, component_id, list(smallest ORDER BY back_day DESC) AS drop_run
+    FROM back GROUP BY ALL
 )
-SELECT CAST(sel_day AS VARCHAR) AS day, name, component_id, metric_type, expected, actual,
-    usual, pct_vs_expected, pct_vs_usual, anomaly, zero, unused
+SELECT CAST(r.sel_day AS VARCHAR) AS day, name, r.component_id, metric_type, expected, actual,
+    usual, pct_vs_expected, r.pct_vs_usual, anomaly, zero, unused,
+    s.sel_day - s.first_day + 1 AS days_in_row, dr.drop_run,
+    s.first_day = $first_day AS streak_open
 FROM r
+LEFT JOIN streaks s ON s.sel_day = r.sel_day AND s.component_id = r.component_id
+LEFT JOIN drop_runs dr ON dr.sel_day = r.sel_day AND dr.component_id = r.component_id
 WHERE anomaly IS NOT NULL OR zero
-    OR (usual >= {MIN_USUAL} AND pct_vs_usual < -{MIN_CHANGE_ALERT})
-ORDER BY sel_day DESC, {_ORDER}
+    OR (usual >= {MIN_USUAL} AND r.pct_vs_usual < -{MIN_CHANGE_ALERT})
+ORDER BY r.sel_day DESC, {_ORDER}
+"""
+
+# The weekday average of an Individual Component Summary pair for each day the reader can
+# pick, by the same rule as a component's: the same weekday in the baseline weeks, over 12.
+_PAIR_AVERAGE_SQL = f"""
+WITH {_DV},
+sel AS (SELECT unnest($days::DATE[]) AS sel_day)
+SELECT CAST(s.sel_day AS VARCHAR) AS day, coalesce(sum(d.value), 0) / 12 AS average
+FROM sel s
+LEFT JOIN dv d ON d.component_id = $series_id
+    AND d.day BETWEEN $baseline_start AND $baseline_end
+    AND dayofweek(d.day) = dayofweek(s.sel_day)
+GROUP BY s.sel_day
+ORDER BY s.sel_day
 """
 
 _TOP_SQL = """
@@ -306,10 +363,16 @@ def _pairs(store: Store, run_id: int, p: dict[str, Any]) -> list[dict[str, Any]]
                 tables[r["kind"]]["rows"].append(
                     {"rank": r["rank"], "item": r["item"], "values": r["values"]}
                 )
+        series_id = f"{INDIVIDUAL_PREFIX}{pair['pair']}"
+        averages = {
+            r["day"]: r["average"]
+            for r in _rows(store, _PAIR_AVERAGE_SQL, {**q, "series_id": series_id})
+        }
         out.append(
             {
                 "pair": pair["pair"],
-                "series_id": f"{INDIVIDUAL_PREFIX}{pair['pair']}",
+                "series_id": series_id,
+                "weekday_average": averages,
                 "dimension": pair["dimension"],
                 "metric": pair["metric"],
                 "dimension_name": pair["dimension_name"]
@@ -380,6 +443,7 @@ def build_view(
         "run_id": run_id,
         "groups": GROUP_ORDER,
         "days": w.selectable_days,
+        "first_day": min(w.selectable_days),
         "yesterday": w.yesterday,
         "start": w.start,
         "week_start": w.week_start,

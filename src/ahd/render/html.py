@@ -109,6 +109,9 @@ ALERT_FIELDS = (
     "pct_vs_usual",
     "anomaly",
     "zero",
+    "days_in_row",
+    "drop_run",
+    "streak_open",
 )
 SERIES_FIELDS = ("value", "expected", "upper", "lower", "anomaly")
 
