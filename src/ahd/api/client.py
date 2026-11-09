@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import random
 import threading
@@ -158,6 +159,11 @@ class AdobeClient:
         # expired token at once, only the first signs in again and the rest reuse its header.
         self._header_lock = threading.Lock()
         self._header_gen = 0
+        # Sign-in tries so far, and the error of the last one that failed. A thread that saw
+        # the old token while another thread's sign-in failed gets that error, so a failed
+        # sign-in is not tried again by every waiting thread in turn.
+        self._sign_ins = 0
+        self._sign_in_error: BaseException | None = None
         self.company_id = company_id
         self.company_name = company_name
         self.companies = companies
@@ -206,7 +212,7 @@ class AdobeClient:
             if self._pacer is not None:
                 self._pacer.wait()
             with self._header_lock:
-                header, gen = self._header, self._header_gen
+                header, gen, sign_ins = self._header, self._header_gen, self._sign_ins
             try:
                 resp = self._session.request(
                     method, url, headers=header, params=params, json=json, timeout=TIMEOUT
@@ -221,7 +227,7 @@ class AdobeClient:
             status = resp.status_code
             if status == 401 and not relogged:
                 relogged = True
-                self._renew(gen)
+                self._renew(gen, sign_ins)
                 continue
             kind = self._temporary(resp)
             if kind is not None and tries[kind] < kind.retries:
@@ -242,12 +248,27 @@ class AdobeClient:
         log.debug("%s from %s %s, retry %d in %.1fs", what, method, path, retry, delay)
         self._sleep(delay)
 
-    def _renew(self, seen_gen: int) -> None:
-        """Sign in again, unless another thread already did since `seen_gen`."""
+    def _renew(self, seen_gen: int, seen_sign_ins: int) -> None:
+        """Sign in again, unless another thread tried since this thread read the header.
+
+        When that try worked, the next request uses its header. When it failed, this thread
+        raises the same error. A request made after the failure tries again.
+        """
         with self._header_lock:
-            if self._header_gen == seen_gen:
-                self._header = dict(self._relogin())
-                self._header_gen += 1
+            if self._header_gen != seen_gen:
+                return
+            if self._sign_ins != seen_sign_ins and self._sign_in_error is not None:
+                # A copy, so that threads do not share one traceback.
+                raise copy.copy(self._sign_in_error)
+            self._sign_ins += 1
+            try:
+                header = dict(self._relogin())
+            except BaseException as e:
+                self._sign_in_error = e
+                raise
+            self._sign_in_error = None
+            self._header = header
+            self._header_gen += 1
 
     @staticmethod
     def _temporary(resp: Any) -> Waits | None:
