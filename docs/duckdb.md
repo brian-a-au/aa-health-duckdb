@@ -207,8 +207,8 @@ Without `SMTP_HOST`, it writes `alerts.eml` in the current folder, which you can
 It exits with these codes:
 
 - 0 when it sent or wrote a message
-- 1 when something is wrong, e.g., the file holds no finished run of a suite. The alerts of the other suites are still sent.
-- 2 when there was nothing to send, or when an option is wrong. A wrong option also prints the usage.
+- 1 when something is wrong, e.g., the file holds no finished run of a suite. The alerts of the other suites are still sent. A wrong option also exits with 1 and prints the usage.
+- 2 when there was nothing to send
 
 To run the check and the email every morning on Windows, macOS or Linux, see [Run it every day](scheduling.md).
 
