@@ -100,10 +100,10 @@ These read-only tools use the same kind of credential. One credential can serve 
 
 ## Known limits
 
-- It covers one report suite per run.
+- Each run and each report covers one report suite. `ahd run` can check several suites in one command, but it checks them one after another and writes one report for each.
 - It is in English only.
 - The `ahd` command does not send email. The [DuckDB guide](docs/duckdb.md#email-recipes) shows how to send alerts with a short script.
-- Adobe publishes no rate limits, so the tool sends a small number of parallel requests, and it waits and tries again after a rate limit or a temporary error.
+- Adobe allows 12 requests in any 6 seconds for each user, and the tool starts no more than that. Two `ahd` commands that run at the same time with the same credential each keep their own count, so together they can go over the limit. After a rate limit or a temporary error, the tool waits and tries again. See [Troubleshooting](docs/troubleshooting.md#problems-in-the-status-section).
 
 ## License
 
