@@ -8,6 +8,7 @@ This page describes every `ahd` command, with its options and exit codes. Run ev
 
 - [A typical session](#a-typical-session)
 - [Options that every command shares](#options-that-every-command-shares)
+- [How IDs and names are matched](#how-ids-and-names-are-matched): what `--rsid` and the other options accept
 - [check](#check): test the sign-in and access
 - [suites and segments](#suites-and-segments): list what the credential can see
 - [run](#run): fetch data and write the report
@@ -41,7 +42,37 @@ uv run ahd runs                           # list what is stored
 
 The commands that sign in are `check`, `suites`, `segments`, `run` and `individual`. The others never call Adobe. `runs` and `render` only read the database. `prune` deletes runs from it. Only `run` creates a new database. The other commands stop when the file does not exist.
 
-Where a command takes a report suite, segment, dimension or metric, it accepts an ID or a name, in any case. If two items have the same name, the tool lists their IDs and asks you to use one.
+Where a command takes a report suite, segment, dimension or metric, it accepts an ID or a name. See [How IDs and names are matched](#how-ids-and-names-are-matched).
+
+## How IDs and names are matched
+
+`--rsid` and `--segment` take an ID or a name. The tool reads the list of report suites or segments from Adobe and picks one this way:
+
+1. If the text is exactly the ID of an item, the tool uses that item. The case must match, e.g., `my_suite` does not match the ID `My_Suite`. Spaces before or after the text are not ignored here.
+2. Otherwise, the tool looks for an item with that name. The case does not matter, and spaces before or after the name are ignored, e.g., `--rsid " my suite "` matches the suite named "My Suite".
+3. If two or more items have that name, the tool stops and lists their IDs. Give one of the IDs instead.
+4. If nothing matches, the tool stops. For a report suite, it tells you to run `ahd suites`. For a segment, it tells you to run `ahd segments --rsid` with the suite.
+
+`--dimension` and `--metric` follow the same steps, with two differences:
+
+- The ID matches in any case, and spaces before or after it are ignored.
+- You can leave out the start of the ID, e.g., `evar17` for `variables/evar17`, or `cartadditions` for `metrics/cartadditions`.
+
+When nothing matches a dimension or metric, the tool suggests an ID such as `evar1`, or the name shown in Analysis Workspace.
+
+`--company` takes a global company ID or a name. Both match in any case, and spaces before or after the text are ignored. If two login companies match, the tool uses the first one that Adobe lists.
+
+With several `--rsid` options, `ahd run` matches each one before it checks any suite. If one does not match, the command stops and checks no suite. A suite that you give twice, e.g., once by ID and once by name, is checked once.
+
+The example script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning) does not look up names. It takes only report suite IDs and segment IDs, and they must match exactly.
+
+### Compared with aa_auto_sdr
+
+[aa_auto_sdr](https://github.com/brian-a-au/aa_auto_sdr) also takes a report suite ID or a name. Both tools first look for the exact ID, with the case as you typed it. Then both look for the name in any case. They differ in these ways:
+
+- When two suites have the same name, aa_auto_sdr uses all of them by default. `ahd` stops and asks for the ID.
+- aa_auto_sdr has the option `--name-match` with the values `exact`, `insensitive` and `fuzzy`. The default is `insensitive`, which matches the name in any case. `exact` needs the same case, and `fuzzy` also accepts a name that is spelled almost the same. With `exact` or `fuzzy`, aa_auto_sdr also stops when two suites have the same name. `ahd` has no such option.
+- `ahd` ignores spaces before or after the name. aa_auto_sdr does not.
 
 ## check
 
@@ -51,6 +82,10 @@ Tests the sign-in, and what the credential can see.
 uv run ahd check
 uv run ahd check --rsid "My Suite"
 ```
+
+| Option | What it does |
+|---|---|
+| `--rsid` | A report suite, by ID or name, to check in more detail. See [How IDs and names are matched](#how-ids-and-names-are-matched). |
 
 Without `--rsid`, it prints the login company and how many report suites the credential can see. With `--rsid`, it also counts the custom events, eVars and props and tests anomaly detection. When something is missing, it explains the fix in plain words. Run it before your first full run, and after any change in the Adobe Admin Console.
 
@@ -62,6 +97,10 @@ List what the credential can see, with the ID and the name of each item.
 uv run ahd suites
 uv run ahd segments --rsid "My Suite"
 ```
+
+| Option | What it does |
+|---|---|
+| `--rsid` | For `segments` only, and required. The report suite, by ID or name. See [How IDs and names are matched](#how-ids-and-names-are-matched). |
 
 `segments` lists the segments you can use with that report suite, shared ones included.
 
@@ -80,7 +119,7 @@ uv run ahd run --all-suites
 
 | Option | What it does |
 |---|---|
-| `--rsid` | The report suite, by ID or name. Give it more than once to check several suites. You need `--rsid` or `--all-suites`. |
+| `--rsid` | The report suite, by ID or name. See [How IDs and names are matched](#how-ids-and-names-are-matched). Give it more than once to check several suites. You need `--rsid` or `--all-suites`. |
 | `--all-suites` | Checks every report suite the credential can see. |
 | `--segment` | A segment, by ID or name. Every request is filtered by it. |
 | `--dimension`, `--metric` | The first Individual Component Summary pair. Each takes a full ID (`variables/evar17`), a short ID (`evar17`) or a name (`"Internal Search Term"`). Any dimension or metric of the suite works. The default is Page by Occurrences. |

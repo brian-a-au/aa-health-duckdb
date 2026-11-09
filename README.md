@@ -63,6 +63,8 @@ You need:
    uv run ahd check --rsid "My Suite"
    ```
 
+   `--rsid` takes a report suite ID or a name. [How IDs and names are matched](docs/usage.md#how-ids-and-names-are-matched) gives the rules.
+
 4. Fetch the data and write the report. It takes about 1 minute for a suite with 400 components, and it prints the report's path at the end:
 
    ```
