@@ -86,12 +86,12 @@ def find_chrome() -> str | None:
 def chrome_or_skip() -> str:
     """The Chrome path. Skips the test without Chrome, or fails it when CI is set."""
     path = find_chrome()
-    if path:
-        return path
-    message = "Chrome or Chromium was not found. Set AHD_CHROME to its path."
-    if os.environ.get("CI"):
-        pytest.fail(message)
-    pytest.skip(message)
+    if not path:
+        message = "Chrome or Chromium was not found. Set AHD_CHROME to its path."
+        if os.environ.get("CI"):
+            pytest.fail(message)
+        pytest.skip(message)
+    return path
 
 
 def without_csp(page: str) -> str:

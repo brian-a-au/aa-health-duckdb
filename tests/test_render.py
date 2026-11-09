@@ -553,8 +553,6 @@ def test_copy_buttons():
 
 
 def test_every_form_control_has_a_name():
-    import re
-
     html = render_html(sample_view())
     textarea = re.search(r"<textarea[^>]*>", html).group(0)
     assert 'aria-label="Alert summary as text"' in textarea

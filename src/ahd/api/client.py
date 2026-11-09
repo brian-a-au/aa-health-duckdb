@@ -231,6 +231,7 @@ class AdobeClient:
                     if retry_after:
                         delay = min(RETRY_AFTER_CAP, max(delay, float(retry_after)))
                 except ValueError:
+                    # Retry-After may also be a date. Then the tool keeps its own delay.
                     pass
                 tries[kind] += 1
                 self._wait(f"HTTP {status}", method, path, tries[kind], delay)
