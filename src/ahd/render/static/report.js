@@ -1094,7 +1094,7 @@
     }
     row([[true, "actual", "Actual"], [hasExpected, "expected", "Expected"],
       [hasBands, "band", "Expected range"], [chosen >= 0, "chosen", "Chosen day"],
-      [average !== null, "average", "Weekday average (12 weeks)"], [!!week, "week", "Chosen week"]]);
+      [average !== null, "average", "Weekday average"], [!!week, "week", "Chosen week"]]);
     row([[anyHigh, "high", "Flagged above range"], [anyLow, "low", "Flagged below range"]]);
     host.appendChild(legend);
     if (!hasBands) {
