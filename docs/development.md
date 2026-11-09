@@ -64,14 +64,14 @@ The tool is on PyPI as [aa-health-duckdb](https://pypi.org/project/aa-health-duc
    - checks that every link in the README is a full web address, so the links work on PyPI
    - installs the wheel in a new environment and runs `ahd --help`
    - writes SHA-256 sums
-2. **publish** uploads the same files to PyPI with trusted publishing, so no PyPI token is stored anywhere. It runs in the `pypi` environment, which waits for the maintainer's approval and accepts only tags `v*.*.*`. PyPI trusts this publisher: owner `brian-a-au`, repository `aa-health-duckdb`, workflow `release.yml` and environment `pypi`.
+2. **publish** uploads the same files to PyPI with trusted publishing, so no PyPI token is stored anywhere. It runs in the `pypi` environment, which accepts only tags `v*.*.*`. It does not wait for an approval, so a pushed tag goes to PyPI as soon as the build job passes. PyPI trusts this publisher: owner `brian-a-au`, repository `aa-health-duckdb`, workflow `release.yml` and environment `pypi`.
 3. **github-release** creates the GitHub release with the files, the sums and the changelog section as its notes.
 
 To release:
 
 1. In a pull request, set the new `version` in `pyproject.toml`, run `uv lock`, and add a section to `CHANGELOG.md`, e.g., `## 0.2.0 (2026-12-01)`. Follow [Semantic Versioning](https://semver.org/). Until 1.0.0, raise the minor version, e.g., 0.2.0, for a change to the database layout or the options, and the patch version, e.g., 0.1.1, for fixes.
 2. Merge the pull request with `gh pr merge --merge`, and wait for the checks on `main` to pass.
-3. Optionally, open the release workflow on GitHub and choose "Run workflow". It runs the build job only, as a dry run, and uploads nothing.
+3. Optionally, open the release workflow on GitHub and choose "Run workflow". It runs the build job only, as a dry run, and uploads nothing. Nothing waits for an approval after the tag, so this is the last check before the upload.
 4. Tag the merge commit on `main` and push the tag:
 
    ```
@@ -80,7 +80,7 @@ To release:
    git push origin v0.2.0
    ```
 
-5. Approve the publish job on GitHub: open the run in the Actions tab, choose "Review deployments", and approve `pypi`.
+5. Watch the run in the Actions tab. The upload starts as soon as the build job passes.
 6. Check the page on PyPI and the GitHub release. Try the release from a clean shell: `uvx --from aa-health-duckdb ahd --help`.
 
 Release tags cannot be deleted or moved. PyPI never accepts the same version twice, so a mistake needs a new version.
