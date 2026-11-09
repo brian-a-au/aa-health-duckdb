@@ -681,3 +681,12 @@ def test_a_normal_run_says_yesterday():
     assert "Top 100 values yesterday" in html
     assert 'aria-label="Yesterday at a glance"' in html
     assert WEEK_NOTE in html
+
+
+def test_earlier_runs_hint_names_the_segment():
+    v = sample_view()
+    v["run"]["segment_id"] = "seg1"
+    assert "of this report suite and segment in the database" in render_html(v)
+    v["run"]["segment_id"] = None
+    html = render_html(v)
+    assert "of this report suite in the database, newest first, up to 30 runs." in html

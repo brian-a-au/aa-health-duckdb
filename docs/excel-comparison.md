@@ -23,6 +23,7 @@ aa-health-duckdb is an unofficial alternative to Adobe's Excel workbook ["Analyt
 - **Alerts for any of the last 7 days**, with a slider for large drops. Each alert shows how many days in a row it held.
 - **Charts that mark the chosen day** and its weekday average.
 - **A calendar of alerts by day** for the last 13 weeks, for the whole suite. It shows the days when many components broke at once.
+- **Earlier runs** of the same suite, with their alert counts, in each report.
 - **A warning when components disappear** between runs, which usually means a permission change.
 - **Plain sign-in errors** that name the cause and the fix.
 - **SQL on every run, suite and organization**, with recipes for alert emails, owner routing and audits. See the [DuckDB guide](duckdb.md).

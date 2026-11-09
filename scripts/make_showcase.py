@@ -192,6 +192,16 @@ def series(rng: random.Random, cid: str, base: float) -> list[DailyValue]:
 def build_store(path: Path) -> tuple[Store, int]:
     rng = random.Random(7)
     store = Store.open(path)
+    comps = components()
+    values: list[DailyValue] = []
+    for c in comps:
+        base = rng.choice([800, 1500, 3200, 6400, 12000, 24000, 52000])
+        values += series(rng, c.id, base)
+    values += [
+        DailyValue("individual/1", v.day, v.value, v.expected, v.upper, v.lower, v.anomaly)
+        for v in series(rng, "variables/page", 310000)
+    ]
+    add_earlier_runs(store, comps, values)
     rid = store.create_run(
         "example.prod",
         "Example Retail",
@@ -201,16 +211,7 @@ def build_store(path: Path) -> tuple[Store, int]:
         "0.1.0",
     )
     store.add_pair(rid, "variables/page", "metrics/occurrences", "Page", "Occurrences", "int")
-    comps = components()
     store.add_components(rid, comps)
-    values: list[DailyValue] = []
-    for c in comps:
-        base = rng.choice([800, 1500, 3200, 6400, 12000, 24000, 52000])
-        values += series(rng, c.id, base)
-    values += [
-        DailyValue("individual/1", v.day, v.value, v.expected, v.upper, v.lower, v.anomaly)
-        for v in series(rng, "variables/page", 310000)
-    ]
     store.add_daily_values(rid, values)
     current = [(i + 1, p, float(round(32000 * 0.82**i))) for i, p in enumerate(PAGES)]
     hist_order = (
@@ -239,6 +240,27 @@ def build_store(path: Path) -> tuple[Store, int]:
         store.add_breakdown(rid, kind, labels, rows, totals)
     store.finish_run(rid, "ok")
     return store, rid
+
+
+def add_earlier_runs(store: Store, comps: list[Component], values: list[DailyValue]) -> None:
+    """Daily runs for the 6 run dates before TODAY, from the same daily values.
+
+    They come first, so the main run is run 7, and the Earlier runs table has something to show.
+    """
+    for back in range(6, 0, -1):
+        today = TODAY - timedelta(days=back)
+        rid = store.create_run("example.prod", "Example Retail", None, today, "US/Pacific", "0.1.0")
+        store.add_components(rid, comps)
+        start, end = today - timedelta(days=91), today - timedelta(days=1)
+        store.add_daily_values(
+            rid,
+            [
+                v
+                for v in values
+                if start <= v.day <= end and not v.component_id.startswith("individual/")
+            ],
+        )
+        store.finish_run(rid, "ok")
 
 
 # Each slide: step label, headline, description, proof lines, setup script, parts to keep.
@@ -385,7 +407,7 @@ footer { position:absolute; bottom:27px; left:40px; right:40px; display:flex;
 <div class="story"><div class="kicker">{{kicker}}</div><h1>{{title}}</h1>
 <p class="description">{{description}}</p><div class="proof">{{proof}}</div></div>
 <div class="window {{theme}}"><div class="bar"><i class="dot"></i><i class="dot"></i>
-<i class="dot"></i><span class="filename">ahd_example.prod_2026-11-07_run1.html · excerpt</span></div>
+<i class="dot"></i><span class="filename">ahd_example.prod_2026-11-07_run7.html · excerpt</span></div>
 <img class="shot" src="{{shot}}" alt=""></div>
 <footer><div class="steps">{{steps}}</div>
 <div class="disclosure">Synthetic data · Actual report excerpts</div></footer>

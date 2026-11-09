@@ -1555,6 +1555,55 @@
     fitTables();
   }
 
+  // ---- earlier runs ---------------------------------------------------------------
+  // The SQL counts the alerts on the last day of each run of this suite and segment, by the
+  // same rules as the tiles. Large drops follow the slider: the SQL lists each candidate's
+  // change, and the page counts the ones past the slider.
+  var RUN_NOTES = { partial: " (some gaps)", failed: " (failed)", running: " (not finished)" };
+  function renderHistory() {
+    var host = byId("history");
+    if (!host) return;
+    clear(host);
+    var run = data.run || {};
+    var runs = data.history || [];
+    if (runs.length < 2) {
+      host.appendChild(el("p", { "class": "empty" }, "This is the only run of this report suite" +
+        (run.segment_id ? " and segment" : "") + " in the database. Later runs will show here."));
+      return;
+    }
+    var rows = runs.map(function (h) {
+      var drops = h.drops.filter(function (p) { return p < -state.t; }).length;
+      return { h: h, drops: drops, total: h.high + h.low + drops + h.zero };
+    });
+    var max = rows.reduce(function (m, r) { return Math.max(m, r.total); }, 0);
+    function totalCell(r) {
+      var wrap = el("span", { "class": "dev" });
+      var bar = el("span", { "class": "runbar", "aria-hidden": "true" });
+      var fill = el("span");
+      fill.style.width = (max ? r.total / max * 100 : 0) + "%";
+      bar.appendChild(fill);
+      wrap.appendChild(bar);
+      wrap.appendChild(el("span", null, numFmt.format(r.total)));
+      return { c: wrap, k: r.total };
+    }
+    host.appendChild(table(
+      [{ label: "Run" }, { label: "Day checked" }, { label: "Components", num: true, cls: "days" },
+       { label: "Above range", num: true, cls: "days" },
+       { label: "Below range", num: true, cls: "days" },
+       { label: "Large drops", num: true, cls: "days" },
+       { label: "Dropped to zero", num: true, cls: "days" },
+       { label: "All alerts", num: true }, { label: "Problems", num: true, cls: "days" }],
+      rows.map(function (r) {
+        var h = r.h, mine = h.run_id === run.id;
+        var name = el("span", { "class": mine ? "this-run nowrap" : "nowrap" },
+          "Run " + h.run_id + (mine ? " (this run)" : "") + (RUN_NOTES[h.status] || ""));
+        function n(v) { return { c: numFmt.format(v), k: v }; }
+        return [{ c: name, k: h.run_id },
+          { c: el("span", { "class": "nowrap" }, fmtDay(h.day, true)), k: h.day }, n(h.checked),
+          n(h.high), n(h.low), n(r.drops), n(h.zero), totalCell(r), n(h.problems)];
+      }), null, "history", { labelledby: "history-title" }));
+  }
+
   // ---- copying ------------------------------------------------------------------
   // Puts HTML and plain text on the clipboard together. An email program pastes the HTML as a
   // formatted table; a chat or text editor pastes the text. Without the rich clipboard (older
@@ -1824,6 +1873,7 @@
     renderTiles();
     renderTables();
     renderAlerts();
+    renderHistory();
   });
 
   renderTiles();
@@ -1834,4 +1884,5 @@
   renderCalendar();
   renderIndividual();
   renderAlerts();
+  renderHistory();
 })();

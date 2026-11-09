@@ -823,3 +823,103 @@ def test_calendar_leaves_out_a_day_without_data(tmp_path):
     store, rid = _build(tmp_path, [_comp(cid, "E", number=1)], vals)
     days = [c["day"] for c in build_view(store, rid)["calendar"]]
     assert len(days) == 90 and gap.isoformat() not in days
+
+
+def _run(store, today, rsid="rs1", segment=None, last=None, status="ok", issues=0):
+    """A run with 4 components. last maps a component to its value on the run's last day."""
+    rid = store.create_run(rsid, "Suite", segment, today, "UTC", "0.1")
+    cids = [f"metrics/event{i}" for i in range(1, 5)]
+    store.add_components(rid, [_comp(c, c, number=i) for i, c in enumerate(cids, start=1)])
+    yesterday = today - timedelta(days=1)
+    values = []
+    for c in cids:
+        for d in _days(today - timedelta(days=91), yesterday):
+            v = 0.0 if c == "metrics/event4" else 100.0
+            if d == yesterday and c in (last or {}):
+                v = last[c]
+            if isinstance(v, tuple):  # (value, Adobe flag direction)
+                value, flag = v
+                upper, lower = (value - 1, value - 2) if flag == "high" else (value + 2, value + 1)
+                values.append(_dv(c, d, value, value, upper, lower, True))
+            else:
+                values.append(_dv(c, d, v))
+    store.add_daily_values(rid, values)
+    for n in range(issues):
+        store.add_issue(rid, "component", f"metrics/x{n}", "unauthorized_metric", "hidden")
+    store.finish_run(rid, status)
+    return rid
+
+
+def _tile_counts(view):
+    """What the page's tiles count on the run's last day, at the lowest slider setting."""
+    yesterday = date.fromisoformat(view["run"]["today"]) - timedelta(days=1)
+    rows = view["views"][f"day:{yesterday.isoformat()}"]
+    return {
+        "checked": len(rows),
+        "high": sum(r["anomaly"] == "high" for r in rows),
+        "low": sum(r["anomaly"] == "low" for r in rows),
+        "zero": sum(r["zero"] and not r["unused"] and not r["anomaly"] for r in rows),
+        "unused": sum(r["zero"] and r["unused"] for r in rows),
+        "drops": sorted(
+            r["pct"]
+            for r in rows
+            if not r["anomaly"]
+            and r["value"] != 0
+            and r["pct"] is not None
+            and r["pct"] < -0.1
+            and r["baseline"] >= 10
+        ),
+        "problems": len(view["issues"]),
+    }
+
+
+def test_history_lists_earlier_runs_by_the_tile_rules(tmp_path):
+    store = Store.open(tmp_path / "h.duckdb")
+    d = date(2026, 11, 1)
+    first = _run(store, d, last={"metrics/event1": 50.0}, issues=2)
+    _run(store, d, segment="seg1")  # another segment
+    _run(store, d, rsid="rs2")  # another suite
+    _run(store, d + timedelta(days=1), status="failed")
+    second = _run(
+        store,
+        d + timedelta(days=2),
+        status="partial",
+        last={"metrics/event2": (500.0, "high"), "metrics/event3": 0.0},
+    )
+    third = _run(store, d + timedelta(days=4), last={"metrics/event1": (5.0, "low")})
+    later = _run(store, d + timedelta(days=5))  # a later run date
+    rerun = _run(store, d + timedelta(days=4))  # the same date, made after this run
+    backfill = _run(store, d + timedelta(days=3))  # made later, for an earlier date
+    history = build_view(store, third)["history"]
+    assert [h["run_id"] for h in history] == [third, backfill, second, first]
+    assert later not in [h["run_id"] for h in history]
+    assert rerun not in [h["run_id"] for h in history]
+    assert history[0]["day"] == "2026-11-04" and history[0]["today"] == "2026-11-05"
+    assert history[2]["status"] == "partial"
+    for h in history:
+        want = _tile_counts(build_view(store, h["run_id"]))
+        assert h["drops"] == pytest.approx(want.pop("drops")), h["run_id"]
+        assert {k: h[k] for k in want} == want, h["run_id"]
+    assert history[3]["drops"] == pytest.approx([-0.5]) and history[3]["problems"] == 2
+    assert (history[2]["high"], history[2]["zero"], history[2]["unused"]) == (1, 1, 1)
+    assert history[0]["low"] == 1
+
+
+def test_history_keeps_this_run_even_when_it_failed(tmp_path):
+    store = Store.open(tmp_path / "h.duckdb")
+    rid = _run(store, date(2026, 11, 1), status="failed")
+    history = build_view(store, rid)["history"]
+    assert [h["run_id"] for h in history] == [rid] and history[0]["status"] == "failed"
+
+
+def test_history_keeps_the_newest_runs(tmp_path, monkeypatch):
+    from ahd import summary
+
+    store = Store.open(tmp_path / "h.duckdb")
+    runs = [_run(store, date(2026, 11, 1) + timedelta(days=n)) for n in range(4)]
+    _run(store, date(2026, 11, 2))  # a second run for an earlier date: still older
+    monkeypatch.setattr(
+        summary, "_HISTORY_SQL", summary._HISTORY_SQL.replace("LIMIT 30", "LIMIT 2")
+    )
+    history = build_view(store, runs[-1])["history"]
+    assert [h["run_id"] for h in history] == [runs[3], runs[2]]

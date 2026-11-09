@@ -1299,6 +1299,52 @@ def test_the_find_box_filters_every_table(chrome, showcase, tmp_path):
     assert len(got["cleared"]["rows"]) == 49
 
 
+# ---- earlier runs ------------------------------------------------------------------------
+
+HISTORY_PROBE = """
+function read() {
+  var host = document.getElementById("history");
+  return {
+    rows: [].map.call(host.querySelectorAll("tbody tr"), function (tr) {
+      return [].map.call(tr.cells, function (c) { return c.textContent; });
+    }),
+    bars: [].map.call(host.querySelectorAll(".runbar span"), function (s) { return s.style.width; }),
+    empty: (host.querySelector(".empty") || {}).textContent || null
+  };
+}
+var out = { "30": read() };
+var slider = document.getElementById("change-alert");
+slider.value = "10";
+slider.dispatchEvent(new Event("input"));
+out["10"] = read();
+return out;
+"""
+
+
+def test_earlier_runs_follow_the_slider(chrome, showcase, tmp_path):
+    view = build_view(*showcase)
+    got = run_probe(chrome, render_html(view), HISTORY_PROBE, tmp_path)
+    rows = got["30"]["rows"]
+    assert [r[0] for r in rows] == ["Run 7 (this run)"] + [f"Run {n}" for n in range(6, 0, -1)]
+    assert [r[1] for r in rows[:2]] == ["Fri, Nov 6, 2026", "Thu, Nov 5, 2026"]
+    # This run's row is the same as the tiles: 49 checked, 2 above, 3 below, 5 in all.
+    assert rows[0][2:] == ["49", "2", "3", "0", "0", "5", "0"]
+    assert got["30"]["bars"][:3] == ["100%", "20%", "20%"]
+    # At 10 percent, the run for Nov 5 has 2 large drops.
+    nov5 = view["history"][1]
+    assert len(nov5["drops"]) == 2 and all(-0.3 < p < -0.1 for p in nov5["drops"])
+    assert got["10"]["rows"][1][5] == "2" and got["10"]["rows"][1][7] == "3"
+    assert got["30"]["empty"] is None
+
+
+def test_a_single_run_says_it_is_the_only_one(chrome, edges, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*edges)), HISTORY_PROBE, tmp_path)
+    assert got["30"]["rows"] == []
+    assert got["30"]["empty"] == (
+        "This is the only run of this report suite in the database. Later runs will show here."
+    )
+
+
 # Reads which tables scroll in their own box, and whether the page scrolls sideways.
 FIT_PROBE = """
 document.getElementById("tab-alerts").click();

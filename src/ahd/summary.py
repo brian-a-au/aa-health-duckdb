@@ -27,6 +27,8 @@ DEFAULT_CHANGE_ALERT = 0.30
 MIN_CHANGE_ALERT = 0.10
 # A percent drop alert needs a usual value of at least this much. Small numbers swing a lot.
 MIN_USUAL = 10
+# The earlier runs that a report lists, newest first.
+HISTORY_RUNS = 30
 # Warn when a run sees more than this share fewer custom components than the run before.
 DROP_THRESHOLD = 0.2
 GROUP_LABELS = {
@@ -259,6 +261,66 @@ SELECT CAST(day AS VARCHAR) AS day,
 FROM v
 GROUP BY day
 ORDER BY day
+"""
+
+# The alerts on the last day of each run of the same report suite and segment, by the same
+# rules as the tiles: one query over every run's stored values. Each run uses its own dates.
+# The runs are this one and the runs for earlier run dates, newest date first, and for this
+# run's date, the runs made up to this one. A run made later with --date for an earlier date
+# is listed too. drops lists the change of every candidate for a large drop, so the page can
+# count them for the slider's setting. A failed or unfinished run is left out, unless it is
+# this one.
+_HISTORY_SQL = f"""
+WITH cur AS (SELECT rsid, segment_id, today FROM runs WHERE run_id = $run_id),
+r AS (
+    SELECT r.run_id, r.today, r.status
+    FROM runs r, cur
+    WHERE r.rsid = cur.rsid AND r.segment_id IS NOT DISTINCT FROM cur.segment_id
+        AND (r.today < cur.today OR (r.today = cur.today AND r.run_id <= $run_id))
+        AND (r.status IN ('ok', 'partial') OR r.run_id = $run_id)
+    ORDER BY r.today DESC, r.run_id DESC
+    LIMIT {HISTORY_RUNS}
+),
+dv AS (
+    SELECT d.run_id, d.component_id, d.day, r.today,
+        CASE WHEN isfinite(d.value) THEN d.value END AS value,
+        CASE WHEN isfinite(d.upper) THEN d.upper END AS upper,
+        d.anomaly
+    FROM daily_values d JOIN r ON r.run_id = d.run_id
+),
+c AS (
+    SELECT k.run_id, k.component_id,
+        NOT coalesce(bool_or(d.value <> 0)
+            FILTER (WHERE d.day BETWEEN d.today - 91 AND d.today - 1), false) AS unused,
+        coalesce(sum(d.value) FILTER (WHERE d.day BETWEEN d.today - 91 AND d.today - 8
+            AND dayofweek(d.day) = dayofweek(d.today - 1)), 0) / 12 AS usual
+    FROM components k
+    JOIN dv d ON d.run_id = k.run_id AND d.component_id = k.component_id
+    WHERE NOT starts_with(k.component_id, 'individual/')
+    GROUP BY ALL
+),
+last AS (
+    SELECT c.run_id, c.component_id, c.unused, c.usual,
+        {_pct("d.value", "c.usual")} AS pct,
+        {_ALERT_ANOMALY} AS anomaly,
+        coalesce(d.value = 0, false) AS zero
+    FROM c JOIN r ON r.run_id = c.run_id
+    LEFT JOIN dv d ON d.run_id = c.run_id AND d.component_id = c.component_id
+        AND d.day = r.today - 1
+)
+SELECT r.run_id, CAST(r.today AS VARCHAR) AS today, CAST(r.today - 1 AS VARCHAR) AS day,
+    r.status,
+    count(l.component_id) AS checked,
+    count(*) FILTER (WHERE l.anomaly = 'high') AS high,
+    count(*) FILTER (WHERE l.anomaly = 'low') AS low,
+    count(*) FILTER (WHERE l.zero AND NOT l.unused AND l.anomaly IS NULL) AS zero,
+    count(*) FILTER (WHERE l.zero AND l.unused) AS unused,
+    coalesce(list(l.pct ORDER BY l.pct) FILTER (WHERE l.anomaly IS NULL AND NOT l.zero
+        AND l.usual >= {MIN_USUAL} AND l.pct < -{MIN_CHANGE_ALERT}), []) AS drops,
+    (SELECT count(*) FROM issues i WHERE i.run_id = r.run_id) AS problems
+FROM r LEFT JOIN last l ON l.run_id = r.run_id
+GROUP BY r.run_id, r.today, r.status
+ORDER BY r.today DESC, r.run_id DESC
 """
 
 _TOP_SQL = """
@@ -495,6 +557,7 @@ def build_view(
         "series": series,
         "alerts": _rows(store, _ALERTS_SQL, p),
         "calendar": _rows(store, _CALENDAR_SQL, p),
+        "history": _rows(store, _HISTORY_SQL, p),
         "pairs": _pairs(store, run_id, p),
         "issues": _rows(store, _ISSUES_SQL, p),
         "component_drops": component_drops(store, run_id),

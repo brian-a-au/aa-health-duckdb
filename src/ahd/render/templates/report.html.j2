@@ -228,6 +228,11 @@
     <summary>Show the alert summary as text</summary>
     <textarea id="alert-text" readonly rows="8" aria-label="Alert summary as text"></textarea>
   </details>
+  <section class="history" aria-labelledby="history-title">
+    <h2 id="history-title">Earlier runs</h2>
+    <p class="hint">The alerts on the last day of each run of this report suite{% if run.segment_id %} and segment{% endif %} in the database, newest first, up to {{ history_runs }} runs. Every run is counted by the rules of this report, and large drops follow the slider. Runs for later dates are not listed.</p>
+    <div id="history"></div>
+  </section>
 </section>
 </main>
 
