@@ -27,10 +27,11 @@ GitHub Actions runs the tests for every push to `main` and every pull request:
 
 - On Linux the tests run on Python 3.12, 3.13 and 3.14.
 - On Windows and macOS they run on Python 3.14.
-- A pull request that changes only Markdown files or the slideshow images skips the tests.
 - "Run workflow" on the tests workflow runs them on any branch.
 
 A run fails if branch coverage drops below 95 percent.
+
+CodeQL scans the code for every push to `main`, every pull request and once a week, with GitHub's security and quality queries. It checks the Python code, the report's page script `report.js` and the workflow files. Its results are under Security, Code scanning on GitHub.
 
 ## Release a new version
 

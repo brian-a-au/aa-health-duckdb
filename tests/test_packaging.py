@@ -45,3 +45,10 @@ def test_the_release_workflow_matches_the_pypi_publisher():
     assert "pypa/gh-action-pypi-publish@" in workflow
     # The upload and the GitHub release run only for a pushed tag, never for a dry run.
     assert workflow.count("if: github.event_name == 'push'") == 2
+
+
+def test_codeql_scans_python_javascript_and_the_workflows():
+    workflow = (ROOT / ".github" / "workflows" / "codeql.yml").read_text(encoding="utf-8")
+    for language in ("python", "javascript-typescript", "actions"):
+        assert f"- language: {language}" in workflow
+    assert "queries: security-and-quality" in workflow and "security-events: write" in workflow
