@@ -63,6 +63,8 @@ You need:
    uv run ahd check --rsid "My Suite"
    ```
 
+   `--rsid` takes a report suite ID or a name. [How IDs and names are matched](docs/usage.md#how-ids-and-names-are-matched) gives the rules.
+
 4. Fetch the data and write the report. It takes about 1 minute for a suite with 400 components, and it prints the report's path at the end:
 
    ```
@@ -91,17 +93,21 @@ If something fails, see [Troubleshooting](docs/troubleshooting.md).
 
 ## Related tools
 
-These read-only tools use the same kind of credential. One credential can serve all three. See [Share one credential across tools](docs/configuration.md#share-one-credential-across-tools).
+These read-only tools also work with Adobe Analytics implementations. aa_auto_sdr and cja_auto_sdr use the same kind of credential as `ahd`, and one credential can serve all three. See [Share one credential across tools](docs/configuration.md#share-one-credential-across-tools).
 
 - [aa_auto_sdr](https://github.com/brian-a-au/aa_auto_sdr) builds a Solution Design Reference for Adobe Analytics report suites. It shares its profiles with `ahd`.
 - [cja_auto_sdr](https://github.com/brian-a-au/cja_auto_sdr) does the same for Customer Journey Analytics data views.
+- [sdr-grader](https://github.com/brian-a-au/sdr-grader) checks an Adobe Analytics or Customer Journey Analytics implementation against a set of rules, and writes an HTML report card with a grade.
+- [sdr-visualizer](https://github.com/brian-a-au/sdr-visualizer) writes one HTML file with a searchable catalog of the components, and a graph of which components refer to which.
+
+sdr-grader and sdr-visualizer read the JSON files that aa_auto_sdr and cja_auto_sdr write. They do not call Adobe themselves. With `--rsid`, each one runs aa_auto_sdr for you, and aa_auto_sdr signs in with its profile as usual.
 
 ## Known limits
 
-- It covers one report suite per run.
+- Each run and each report covers one report suite. `ahd run` can check several suites in one command, but it checks them one after another and writes one report for each.
 - It is in English only.
 - The `ahd` command does not send email. The [DuckDB guide](docs/duckdb.md#email-recipes) shows how to send alerts with a short script.
-- Adobe publishes no rate limits, so the tool sends a small number of parallel requests, and it waits and tries again after a rate limit or a temporary error.
+- Adobe allows 12 requests in any 6 seconds for each user, and the tool starts no more than that. Two `ahd` commands that run at the same time with the same credential each keep their own count, so together they can go over the limit. After a rate limit or a temporary error, the tool waits and tries again. See [Troubleshooting](docs/troubleshooting.md#problems-in-the-status-section).
 
 ## License
 

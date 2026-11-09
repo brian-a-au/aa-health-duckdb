@@ -1,6 +1,6 @@
 # The report
 
-[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · **The report** · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md)
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · **The report** · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 Each run writes one HTML file, e.g., `reports/ahd_my_suite_2026-11-07_run3.html`. This page walks through everything on it.
 
@@ -22,7 +22,7 @@ The report is one file with its styles, script and data inside it. Open it in an
 
 Working offline does not mean the report is cleared for sharing. It holds your component names and values, so share it only where your organization allows.
 
-A switch at the top right chooses light mode, dark mode or your computer's setting. Your browser remembers the choice. Every table can be sorted by clicking a column heading.
+A switch at the top right chooses light mode, dark mode or your computer's setting. Your browser remembers the choice. Every table can be sorted by clicking a column heading. Every table also has a name that a screen reader reads out, e.g., "Custom events" or "Top 100 values yesterday".
 
 ## The top of the page
 

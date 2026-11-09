@@ -1,6 +1,6 @@
 # Use the database with DuckDB
 
-[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · **DuckDB guide** · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md)
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · **DuckDB guide** · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 Every `ahd` run is saved in one DuckDB file. The HTML report shows one run at a time. The file holds every run, for every report suite, and you can ask it any question with SQL. This guide shows what you can do with it, from a daily alert email to an audit of unused variables across all your organizations.
 
@@ -95,7 +95,7 @@ Every row carries its `run_id`, so you can always tell which run it came from.
 
 | Table | What it holds, for each run |
 |---|---|
-| `runs` | Report suite, segment, run date, time zone, currency, status, and start and end times |
+| `runs` | Report suite ID and name, segment, run date, time zone, currency, the version of `ahd`, status, and start and end times |
 | `components` | The events, eVars, props and solution components that were checked, with their names, groups and metric types |
 | `daily_values` | One row per component per day: the value, Adobe's expected value and range, and whether Adobe flagged it |
 | `pairs` | The Individual Component Summary pairs: one dimension by one metric each |
@@ -112,7 +112,7 @@ Every file comes with two views and one table macro. A view is a saved query tha
 
 ### `latest_runs`
 
-The newest finished run of each report suite and segment.
+The newest run of each report suite and segment that ended "ok" or "partial". Failed runs are left out.
 
 ```sql
 FROM latest_runs SELECT run_id, rsid_name, today, status ORDER BY run_id DESC;
@@ -139,14 +139,14 @@ One row per run, component and full day, with everything the report computes:
 - `unused`: the value was 0 on every day of the run, so the component never collected data
 - `is_yesterday`: the row is for the last full day of the run
 
-### `alerts(run, threshold, min_usual, for_day)`
+### `alerts(run, threshold := 0.30, min_usual := 10, for_day := NULL)`
 
-The alerts of one run, by the report's rules:
+The alerts of one run, by the report's rules. Give the run number first. Give the other options by name, e.g., `alerts(1, threshold := 0.20)`.
 
 - `run`: the run number. It can be a query, e.g., `(SELECT max(run_id) FROM latest_runs WHERE rsid = 'my_suite' AND segment_id IS NULL)`. The query must return one run. `latest_runs` holds one row for each segment of a suite, so name the segment, or use `segment_id IS NULL` for the run without a segment.
 - `threshold`: the percent for a large drop, as a share. The default is `0.30`, the same as the report's slider.
 - `min_usual`: a large drop needs a usual value of at least this much. The default is `10`.
-- `for_day`: the day to check. The default is yesterday.
+- `for_day`: the day to check, e.g., `'2026-11-03'`. The default is the day before the run date.
 
 ```sql
 FROM alerts(2) SELECT alert, name, round(usual) AS usual, value;
@@ -200,15 +200,15 @@ uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite o
 uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb --all
 ```
 
-It reads the latest finished run of each suite without a segment. `--all` uses every suite that has a finished run in the file. Add `--segment ID` for the latest runs with that segment. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`.
+It reads the latest run of each suite without a segment, from `latest_runs`. `--all` uses every suite that has such a run in the file. Add `--segment ID` for the latest runs with that segment. The script takes only report suite IDs and segment IDs, not names, and they must match exactly. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`.
 
-Without `SMTP_HOST`, it writes `alerts.eml` in the current folder, which you can open and check first. To send, set `SMTP_HOST`, `MAIL_FROM` and `MAIL_TO`. Set `SMTP_PORT` when the server does not use 587. Set `SMTP_USER` and `SMTP_PASSWORD` when the server needs a login.
+Without `SMTP_HOST`, it writes `alerts.eml` in the current folder, which you can open and check first. To send, set `SMTP_HOST`, `MAIL_FROM` and `MAIL_TO`. Set `SMTP_PORT` when the server does not use 587. Set `SMTP_USER` and `SMTP_PASSWORD` when the server needs a login. The script connects without encryption and then turns it on with the STARTTLS command. It does not work with a server that needs encryption from the start, e.g., on port 465.
 
 It exits with these codes:
 
 - 0 when it sent or wrote a message
 - 1 when something is wrong, e.g., the file holds no finished run of a suite. The alerts of the other suites are still sent.
-- 2 when there was nothing to send
+- 2 when there was nothing to send, or when an option is wrong. A wrong option also prints the usage.
 
 To run the check and the email every morning on Windows, macOS or Linux, see [Run it every day](scheduling.md).
 
@@ -219,7 +219,7 @@ If the same variable has been broken for a week, a daily email about it adds not
 ```sql
 SET VARIABLE runs = (
     SELECT list(run_id ORDER BY run_id DESC) FROM runs
-    WHERE rsid = 'my_suite' AND status IN ('ok', 'partial')
+    WHERE rsid = 'my_suite' AND segment_id IS NULL AND status IN ('ok', 'partial')
 );
 SELECT alert, name, value
 FROM alerts(getvariable('runs')[1])
@@ -228,7 +228,7 @@ WHERE component_id NOT IN (
 );
 ```
 
-`SET VARIABLE` keeps a value for later queries, here the list of runs with the newest first. When the suite has only one run, every alert is new.
+`SET VARIABLE` keeps a value for later queries, here the list of runs without a segment, with the newest first. When the suite has only one such run, every alert is new.
 
 ### Send each alert to its owner
 
@@ -269,7 +269,7 @@ FROM routed GROUP BY ALL ORDER BY alerts DESC;
 
 ### Send one digest for every suite
 
-One row per report suite, with yesterday's alerts from the latest run of each. Each alert counts once, by the same rules as the `alerts` macro. An Adobe flag comes first, then a value of 0, then a large drop.
+One row per report suite, with yesterday's alerts from the latest run of each that has no segment. Each alert counts once, by the same rules as the `alerts` macro. An Adobe flag comes first, then a value of 0, then a large drop.
 
 ```sql
 SELECT r.rsid_name AS suite, r.today - 1 AS day,
@@ -280,6 +280,7 @@ SELECT r.rsid_name AS suite, r.today - 1 AS day,
     count(*) FILTER (WHERE d.unused) AS never_collected,
     (SELECT count(*) FROM issues i WHERE i.run_id = r.run_id) AS problems
 FROM latest_runs r JOIN component_days d ON d.run_id = r.run_id AND d.is_yesterday
+WHERE r.segment_id IS NULL
 GROUP BY ALL ORDER BY suite;
 ```
 
@@ -307,23 +308,23 @@ Each profile has its own file. `ATTACH` opens several at once, and each file get
 ```sql
 ATTACH '~/.aa/orgs/prod/ahd.duckdb' AS prod (READ_ONLY);
 ATTACH '~/.aa/orgs/emea/ahd.duckdb' AS emea (READ_ONLY);
-SELECT 'prod' AS org, rsid_name, today, status FROM prod.latest_runs
+SELECT 'prod' AS org, rsid_name, segment_id, today, status FROM prod.latest_runs
 UNION ALL BY NAME
-SELECT 'emea' AS org, rsid_name, today, status FROM emea.latest_runs
-ORDER BY org, rsid_name;
+SELECT 'emea' AS org, rsid_name, segment_id, today, status FROM emea.latest_runs
+ORDER BY org, rsid_name, segment_id;
 ```
 
 `UNION ALL BY NAME` matches columns by name, so the two sides do not need the same column order.
 
 ### Variables that never collected data
 
-A cleanup list: components with no data on any of the last 91 days, by report suite and group:
+This query makes a cleanup list of the components with no data on any of the last 91 days, by report suite and group. It uses the latest run of each suite that has no segment.
 
 ```sql
 SELECT r.rsid_name AS suite, d."group", count(*) AS never_collected,
     list(d.component_id ORDER BY d.number)[1:3] AS first_three
 FROM component_days d JOIN latest_runs r USING (run_id)
-WHERE d.is_yesterday AND d.unused
+WHERE d.is_yesterday AND d.unused AND r.segment_id IS NULL
 GROUP BY ALL ORDER BY suite, never_collected DESC;
 ```
 

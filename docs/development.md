@@ -1,6 +1,6 @@
 # Development
 
-[README](../README.md) · [AGENTS.md](../AGENTS.md) · **Development**
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · **Development**
 
 This page is for anyone who changes the code. [AGENTS.md](../AGENTS.md) explains the layout of the code and the rules for changing it. It is written for people and for AI coding agents.
 
@@ -12,7 +12,10 @@ Run the same checks as GitHub Actions:
 uv run pytest --cov=ahd --cov-branch
 uv run ruff check
 uv run ruff format --check
+uv lock --check
 ```
+
+`uv lock --check` tests that `uv.lock` matches `pyproject.toml`. Run `uv lock` after you change `pyproject.toml`.
 
 - The tests use saved Adobe responses and never call Adobe.
 - Every test runs with the network blocked, so a test fails if it tries to open a connection.

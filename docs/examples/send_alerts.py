@@ -4,8 +4,8 @@ Usage:
     uv run python docs/examples/send_alerts.py DATABASE RSID [RSID ...] [--threshold 0.30]
     uv run python docs/examples/send_alerts.py DATABASE --all [--segment ID]
 
-It reads the latest finished run of each suite with the alerts() macro that every ahd
-database holds. It builds one HTML email with a plain text part, with one section for each
+It reads the latest run of each suite that ended "ok" or "partial", with the alerts() macro
+that every ahd database holds. It takes report suite IDs and a segment ID, not names. It builds one HTML email with a plain text part, with one section for each
 suite that has alerts. --all uses every suite that has a finished run in the database.
 Without --segment it uses the latest runs without a segment. --threshold is the large drop
 percent as a share, e.g. 0.30 for 30 percent, the default.
@@ -17,7 +17,7 @@ alerts.eml in the current folder instead, so you can open it and check it first.
 Exit codes, so a scheduler can tell the cases apart:
     0  it sent or wrote a message
     1  something is wrong, e.g. a suite has no finished run. The other suites are still sent.
-    2  there were no alerts
+    2  there were no alerts, or an option is wrong
 """
 
 from __future__ import annotations
@@ -45,11 +45,6 @@ ORDER BY lower(rsid_name), rsid
 """
 
 NAME_QUERY = "SELECT rsid_name FROM runs WHERE run_id = $run"
-
-QUERY = """
-SELECT max(run_id) FROM latest_runs
-WHERE rsid = $rsid AND segment_id IS NOT DISTINCT FROM $segment
-"""
 
 QUERY = """
 FROM alerts($run, threshold := $threshold)

@@ -1,6 +1,6 @@
 # Configuration
 
-[README](../README.md) · [Usage](usage.md) · **Configuration** · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md)
+[README](../README.md) · [Usage](usage.md) · **Configuration** · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 The tool signs in to Adobe with an [OAuth Server-to-Server credential](https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/), which you create in the [Adobe Developer Console](https://developer.adobe.com/console/). This page explains how to create it, where the tool looks for it, and which permissions it needs.
 
@@ -66,6 +66,8 @@ One OAuth Server-to-Server credential can serve this tool and its two companion 
 | [cja_auto_sdr](https://github.com/brian-a-au/cja_auto_sdr) | Solution Design Reference for Customer Journey Analytics data views | `~/.cja/orgs/<name>/config.json` |
 
 All three read the same four values: `org_id`, `client_id`, `secret` and `scopes`.
+
+[sdr-grader](https://github.com/brian-a-au/sdr-grader) and [sdr-visualizer](https://github.com/brian-a-au/sdr-visualizer) need no credential of their own. They read the JSON files that aa_auto_sdr and cja_auto_sdr write. With `--rsid`, each one runs aa_auto_sdr, which uses its profile as usual.
 
 ### ahd and aa_auto_sdr
 

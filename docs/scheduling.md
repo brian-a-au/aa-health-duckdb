@@ -1,6 +1,6 @@
 # Run it every day
 
-[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · **Run it every day** · [Troubleshooting](troubleshooting.md)
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · **Run it every day** · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 This page shows how to check every report suite each morning and get one email with the alerts. The schedule runs two commands:
 
@@ -26,7 +26,7 @@ The script with the commands holds your mail password when your server needs a l
 
 `ahd run` checks the other suites when one fails. Its exit code is then 1. The schedule below sends the email anyway, so the alerts of the other suites still reach you. The run's output, which the schedule keeps in a log file, names the suite that failed.
 
-The email uses the latest finished run of each suite. For a suite whose run failed today, that is an older run. Each section of the email gives the date of its alerts, so you can see this.
+The email uses the latest run of each suite that ended "ok" or "partial". For a suite whose run failed today, that is an older run. Each section of the email gives the date of its alerts, so you can see this.
 
 ## macOS and Linux
 
@@ -60,7 +60,7 @@ cron does not run a job while the computer sleeps or is off. On a Mac, use launc
 
 ### With launchd on a Mac
 
-launchd runs a job that it missed when the Mac was asleep, as soon as the Mac wakes. Save this file as `~/Library/LaunchAgents/local.ahd.daily.plist`. Change `you` to your user name:
+launchd runs a job that it missed when the Mac was asleep, as soon as the Mac wakes. It does not run a job that it missed when the Mac was off. That job waits for the next 7:30. Save this file as `~/Library/LaunchAgents/local.ahd.daily.plist`. Change `you` to your user name:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -109,12 +109,14 @@ set MAIL_FROM=ahd@example.com
 set MAIL_TO=team@example.com
 set SMTP_USER=ahd@example.com
 set SMTP_PASSWORD=your mail password
+set UV=%USERPROFILE%\.local\bin\uv.exe
 (
-  uv run ahd run --profile prod --all-suites
-  uv run python docs\examples\send_alerts.py "%USERPROFILE%\.aa\orgs\prod\ahd.duckdb" --all
+  "%UV%" run ahd run --profile prod --all-suites
+  "%UV%" run python docs\examples\send_alerts.py "%USERPROFILE%\.aa\orgs\prod\ahd.duckdb" --all
 ) >> "%USERPROFILE%\ahd-daily.log" 2>&1
 ```
 
+- A scheduled task may not find `uv` by name, so the file gives its full path. The uv installer puts `uv.exe` in `%USERPROFILE%\.local\bin` by default. Run `where uv` in Command Prompt to see where it is on your computer.
 - The file is in your user folder. By default, other users of the computer cannot read it, except administrators.
 - The part in brackets adds the output of both commands to `ahd-daily.log` in your user folder.
 
@@ -130,6 +132,6 @@ schtasks /Create /TN "ahd daily" /SC DAILY /ST 07:30 /TR "%USERPROFILE%\aa-healt
 
 ## Check that it works
 
-- Read the log file after the first scheduled run. Each suite has a line such as "Run 12 for my_suite finished with status: ok", and the last line counts the suites that ended "ok", "partial" and "failed".
+- Read the log file after the first scheduled run. Each suite has a line such as "Run 12 for my_suite finished with status: ok". The last line from `ahd run` counts the suites that ended "ok", "partial" and "failed". The lines from `send_alerts.py` come after it. When the credential sees only one suite, `ahd run` does not print the count line.
 - Run `uv run ahd runs --profile prod` to list the stored runs.
-- The database grows by one run for each suite each day. To delete old runs, see [Deleting runs](runs.md#deleting-runs).
+- The database grows by one run for each suite each day. To delete old runs, see [Deleting runs](runs.md#deleting-runs). In a schedule, add `--yes` to `ahd prune`, because there is no input to read the answer from.

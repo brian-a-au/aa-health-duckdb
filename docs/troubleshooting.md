@@ -1,6 +1,6 @@
 # Troubleshooting
 
-[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · **Troubleshooting**
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · **Troubleshooting** · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 Start with `ahd check --rsid <suite>`. It signs in, counts what the credential can see, tests anomaly detection, and explains any fix in plain words. The sections below cover each message in more detail.
 
@@ -10,6 +10,7 @@ Start with `ahd check --rsid <suite>`. It signs in, counts what the credential c
 - [Limited access](#limited-access)
 - [Fewer components than last time](#fewer-components-than-last-time)
 - [Problems in the status section](#problems-in-the-status-section)
+- [Time zones](#time-zones)
 - [Profiles and config files](#profiles-and-config-files)
 - [The database](#the-database)
 - [Getting more detail](#getting-more-detail)
@@ -25,7 +26,7 @@ When sign-in fails, the tool says what is wrong and what to fix. The fixes happe
 | "the org ID does not belong to this credential" | The org ID is from another organization. | Copy the organization ID shown on the same credential. It ends with `@AdobeOrg`. |
 | "the scopes are wrong" | A required scope is missing. Adobe still gives a token, but the token sees no Analytics company. | Copy the full scopes list from the Developer Console. The message names what is missing. |
 | "this credential sees no Adobe Analytics company" | The credential is not in an Analytics product profile. | In the Adobe Admin Console, add the credential's technical account to an Adobe Analytics product profile. |
-| "This credential signs in but sees no report suites" | The product profile includes no report suites. `ahd check` exits with 2. | Add the report suites to the product profile in the Admin Console. |
+| "This credential signs in but sees no report suites" | The product profile includes no report suites. `ahd check` and `ahd suites` exit with 2. `ahd run --all-suites` exits with 1. | Add the report suites to the product profile in the Admin Console. |
 | "This credential cannot see the login company" | `--company` names a login company the credential cannot see. | Use one of the companies the message lists. |
 
 Changes in the Admin Console can take a while to reach Analytics. Wait a little and run `ahd check` again.
@@ -42,7 +43,7 @@ See [Configuration](configuration.md#permissions) for the full list of permissio
 
 ## Fewer components than last time
 
-After each run, the tool compares the number of custom events, eVars and props with the previous run of the same report suite. If any of them fell by more than 20 percent, the run output and the report show a warning.
+After each run, the tool compares the number of custom events, eVars and props with the previous run of the same report suite that stored any components. That run can have another segment. If any of them fell by more than 20 percent, the run output and the report show a warning.
 
 Data did not stop. This run simply cannot see the missing components, so the report does not check them. The usual cause is one of these:
 
@@ -51,7 +52,7 @@ Data did not stop. This run simply cannot see the missing components, so the rep
 
 ## Problems in the status section
 
-A run that finished with status "partial" lists what it could not read. `ahd run` exits with 3 in that case. Common causes:
+A run that finished with status "partial" lists what it could not read. `ahd run` and `ahd individual` exit with 3 in that case. Common causes:
 
 - **"Some metrics or dimensions are not visible to this credential."** The product profile hides those components. The list under the heading names them.
 - **"Some parts of the Individual Component Summary came back empty."** The product profile may hide the chosen dimension, or it had no data.
