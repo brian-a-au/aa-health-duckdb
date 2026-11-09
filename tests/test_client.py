@@ -268,6 +268,7 @@ def test_connect_signs_in_and_relogin_gets_a_new_token(monkeypatch):
     )
     monkeypatch.setattr(client_mod, "get_token", lambda session, c: next(tokens))
     c = AdobeClient.connect(creds)
+    assert (c._pacer.limit, c._pacer.window) == (12, 6.0)
     assert c.company_id == "co7"
     assert c._header["Authorization"] == "Bearer T0"
     assert c._relogin()["Authorization"] == "Bearer T1"
@@ -343,3 +344,100 @@ def test_connection_wait_is_short_and_answer_wait_is_long():
     c, s, _sleeps = make([(200, {"ok": 1}, {})])
     c.get("/x")
     assert s.timeout == (10, 120)
+
+
+class FakeClock:
+    """A clock that moves only when someone sleeps, so the pacer tests do not wait."""
+
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def _pacer(clock):
+    from ahd.api.client import Pacer
+
+    return Pacer(clock=clock, sleep=clock.sleep)
+
+
+def test_pacer_starts_12_requests_then_waits_for_the_window():
+    clock = FakeClock()
+    pacer = _pacer(clock)
+    for _ in range(12):
+        pacer.wait()
+    assert clock.sleeps == []
+    pacer.wait()
+    assert clock.sleeps == [6.0]
+
+
+def test_pacer_does_not_wait_when_requests_are_spread_out():
+    clock = FakeClock()
+    pacer = _pacer(clock)
+    for _ in range(30):
+        pacer.wait()
+        clock.now += 0.5  # 12 requests take 6 seconds
+    assert clock.sleeps == []
+
+
+def test_pacer_waits_only_until_the_oldest_start_leaves_the_window():
+    clock = FakeClock()
+    pacer = _pacer(clock)
+    for _ in range(12):
+        pacer.wait()
+        clock.now += 0.25
+    pacer.wait()  # at 3.0 s; the first start leaves the window at 6.0 s
+    assert clock.sleeps == [3.0]
+
+
+def test_pacer_keeps_the_limit_across_threads():
+    import threading
+    from collections import deque
+
+    clock = FakeClock()
+    pacer = _pacer(clock)
+    starts = []
+
+    class Recorded(deque):
+        # The pacer appends each start while it holds its lock, so the times are exact.
+        def append(self, now):
+            starts.append(now)
+            super().append(now)
+
+    pacer._starts = Recorded()
+    ready = threading.Barrier(8, timeout=5)
+
+    def worker():
+        ready.wait()  # every thread starts together
+        for _ in range(10):
+            pacer.wait()
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(starts) == 80 and starts == sorted(starts)
+    # Any 13 starts in a row span at least 6 seconds.
+    assert all(starts[i + 12] - starts[i] >= 6.0 for i in range(len(starts) - 12))
+
+
+def test_client_waits_for_the_pacer_before_each_try():
+    clock = FakeClock()
+    script = [(200, {"ok": 1}, {})] * 12 + [(429, None, {}), (200, {"ok": 1}, {})]
+    sleeps = []
+    session = FakeSession(script)
+    c = AdobeClient._from_parts(
+        session, dict(HEADER), "co1", lambda: dict(HEADER), sleep=sleeps.append, pacer=_pacer(clock)
+    )
+    for _ in range(13):
+        c.get("/x")
+    # The 13th request waited for the pacer. Its retry after the 429 counts as a request too.
+    assert len(session.calls) == 14
+    assert clock.sleeps[0] == 6.0 and len(sleeps) == 1
