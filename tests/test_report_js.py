@@ -1862,3 +1862,15 @@ def test_the_chart_breaks_its_lines_at_missing_days(chrome, tmp_path):
     got = run_probe(chrome, _one_metric_page(tmp_path, values), LINES_PROBE, tmp_path)
     assert got["spark"] == [2]
     assert sum(got["actual"]) == 2 and sum(got["expected"]) == 2 and sum(got["band"]) == 2
+
+
+@pytest.mark.parametrize(
+    ("days", "labels"),
+    [((1,), ["Nov 6"]), ((2, 1), ["Nov 5", "Nov 6"]), ((3, 2, 1), ["Nov 4", "Nov 5", "Nov 6"])],
+)
+def test_the_chart_names_each_day_on_its_bottom_edge_once(chrome, tmp_path, days, labels):
+    # A short series has fewer days than the chart has date labels.
+    cid = "metrics/event1"
+    values = [_dv(cid, YESTERDAY - timedelta(days=d - 1), 5.0) for d in days]
+    got = run_probe(chrome, _one_metric_page(tmp_path, values), LINES_PROBE, tmp_path)
+    assert got["axis"] == labels

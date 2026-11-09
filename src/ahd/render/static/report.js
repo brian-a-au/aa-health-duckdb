@@ -972,13 +972,16 @@
       lab.textContent = fmtShort(v, type);
       svg.appendChild(lab);
     }
-    var ticks = W < 480 ? 3 : 5;
+    // A short series has fewer days than labels, so each day gets one label at most.
+    var ticks = W < 480 ? 3 : 5, lastIdx = -1;
     for (var i = 0; i < ticks; i++) {
       var idx = Math.round(i * (points.length - 1) / (ticks - 1));
+      if (idx === lastIdx) continue;
+      lastIdx = idx;
       var p = points[idx];
       var tx = sv("text", {
         x: x(p), y: H - 8, "class": "axis",
-        "text-anchor": i === 0 ? "start" : i === ticks - 1 ? "end" : "middle"
+        "text-anchor": idx === 0 ? "start" : idx === points.length - 1 ? "end" : "middle"
       });
       tx.textContent = fmtShortDay(p[0]);
       svg.appendChild(tx);
