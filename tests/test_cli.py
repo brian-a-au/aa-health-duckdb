@@ -11,6 +11,7 @@ from fakes import (
 )
 
 from ahd.cli import main
+from ahd.store import Store
 
 CONFIG = {
     "org_id": "o@AdobeOrg",
@@ -93,6 +94,28 @@ def test_run_partial_exit_code(tmp_path, cfg):
     )
     assert code == 3
     assert len(list(out.glob("*.html"))) == 1
+
+
+def test_a_report_that_cannot_be_written_is_a_plain_error(tmp_path, cfg, capsys):
+    # --out names a file, so the folder for the report cannot be made.
+    taken = tmp_path / "taken"
+    taken.write_text("not a folder", encoding="utf-8")
+    fake = fake_for("rs1", events(3), custom_dims())
+    code = main(
+        args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", "2026-11-07", "--out", str(taken)),
+        client_factory=lambda creds, company_id=None: fake,
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert f"\nError: The report could not be written to {taken} (" in err
+    assert "Run 1 is stored. Then run ahd render --run 1 to write the report." in err
+    assert "Traceback" not in err
+    store = Store.open(tmp_path / "t.duckdb", read_only=True)
+    assert [r["status"] for r in store.list_runs()] == ["ok"]
+    store.con.close()
+    code = main(["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--out", str(taken)])
+    assert code == 1
+    assert "Error: The report could not be written to" in capsys.readouterr().err
 
 
 def test_render_needs_no_client(tmp_path, cfg, capsys):

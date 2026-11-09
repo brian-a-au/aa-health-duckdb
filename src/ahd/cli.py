@@ -449,6 +449,19 @@ def _alert_line(store: Store, run_id: int, threshold: float, spike: float) -> st
     return f"Alerts for {day.isoformat()}: {', '.join(parts)}"
 
 
+def _write(view: dict[str, Any], out: Path) -> Path:
+    """Write the report. A file system error becomes a plain ConfigError that names the fix."""
+    try:
+        return write_report(view, out)
+    except OSError as e:
+        run_id = view["run"]["id"]
+        raise ConfigError(
+            f"The report could not be written to {out} ({e.strerror or type(e).__name__}). "
+            "Choose another folder with --out, or fix this one. "
+            f"Run {run_id} is stored. Then run ahd render --run {run_id} to write the report."
+        ) from None
+
+
 def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -> str:
     """Check one suite, write its report and print its result. Returns the run's status."""
     segment = resolve_segment(client, rsid, args.segment) if args.segment else None
@@ -474,7 +487,7 @@ def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -
     status = store.get_run(run_id)["status"]
     threshold = args.change_alert / 100
     spike = args.spike_alert / 100
-    path = write_report(build_view(store, run_id, threshold, spike), args.out)
+    path = _write(build_view(store, run_id, threshold, spike), args.out)
     print(path)
     print(f"Run {run_id} for {rsid} finished with status: {status}")
     if status != "failed":
@@ -547,7 +560,7 @@ def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     finally:
         progress.done()
     print(
-        write_report(
+        _write(
             build_view(store, args.run, args.change_alert / 100, args.spike_alert / 100),
             args.out,
         )
@@ -566,7 +579,7 @@ def _render(args: argparse.Namespace) -> int:
     except KeyError:
         raise ConfigError(f"There is no stored run {args.run}.") from None
     print(
-        write_report(
+        _write(
             build_view(store, args.run, args.change_alert / 100, args.spike_alert / 100),
             args.out,
         )
