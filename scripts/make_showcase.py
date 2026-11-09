@@ -326,8 +326,8 @@ SCENES = [
         "Page by Occurrences<br>Browser and device breakdowns",
         "document.getElementById('tab-individual').click();",
         [
-            "#panel-individual h2:nth-of-type(3)",
-            "#panel-individual .hint:nth-of-type(3)",
+            "details:has(#browser-title) > summary",
+            "details:has(#browser-title) > .hint",
             "#browser",
         ],
         "light",

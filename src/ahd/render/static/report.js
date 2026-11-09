@@ -233,6 +233,40 @@
     resizeTimer = setTimeout(redrawAll, 150);
   });
 
+  // ---- folding sections ----------------------------------------------------------------
+  // Some sections are <details class="fold"> elements, open at the start. The reader can fold
+  // them. Some browsers give a folded chart or table no width, so the page draws everything
+  // again when a folded section opens. The browser also sends a toggle event for each open
+  // section when the page loads, so the page only redraws for a section that was folded first.
+  // The toggle event does not bubble, so the page listens in the capture phase.
+  document.addEventListener("toggle", function (e) {
+    var d = e.target;
+    if (!d.classList || !d.classList.contains("fold")) return;
+    if (!d.open) d.setAttribute("data-folded", "");
+    else if (d.hasAttribute("data-folded")) {
+      d.removeAttribute("data-folded");
+      redrawAll();
+    }
+  }, true);
+  // Opens every folded section that holds the node, e.g., before the page shows a chart.
+  function openFolds(node) {
+    for (var n = node; n; n = n.parentNode) {
+      if (n.tagName === "DETAILS" && n.classList.contains("fold")) n.open = true;
+    }
+  }
+  // A folded section does not print, so the page opens them all to print and folds them again
+  // after.
+  var foldedForPrint = [];
+  window.addEventListener("beforeprint", function () {
+    foldedForPrint = Array.prototype.filter.call(document.querySelectorAll("details.fold"),
+      function (d) { return !d.open; });
+    foldedForPrint.forEach(function (d) { d.open = true; });
+  });
+  window.addEventListener("afterprint", function () {
+    foldedForPrint.forEach(function (d) { d.open = false; });
+    foldedForPrint = [];
+  });
+
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
   function selectTab(tab) {
     tabs.forEach(function (t) {
@@ -616,7 +650,7 @@
     allRows.forEach(function (r) { hasGroup[r.group] = true; });
 
     // Links to each group's heading. The ids use the group's place, not its name.
-    var jump = el("nav", { "class": "jump", "aria-label": "Jump to a group" });
+    var jump = el("nav", { "class": "jump", id: "jump", "aria-label": "Jump to a group" });
     jump.appendChild(el("span", { "class": "jump-label" }, "Jump to"));
     var jumpList = el("ul");
     jump.appendChild(jumpList);
@@ -628,7 +662,14 @@
       a.appendChild(el("span", { "class": "jump-count" }, " " + rows.length));
       li.appendChild(a);
       jumpList.appendChild(li);
-      return groupBlock(title, rows, custom, empty, id);
+      var frag = groupBlock(title, rows, custom, empty, id);
+      // A link back to the jump links after each table, to choose another group.
+      if (rows.length) {
+        var back = el("p", { "class": "back-top" });
+        back.appendChild(el("a", { href: "#jump" }, "Back to the top of the tables"));
+        frag.appendChild(back);
+      }
+      return frag;
     }
     host.appendChild(jump);
 
@@ -1011,6 +1052,7 @@
         }
         rows.forEach(function (r, i) { if (r.component_id === cid) select.selectedIndex = i; });
         look = day ? { cid: cid, day: day } : null;
+        openFolds(host);
         draw();
         var svg = host.querySelector("svg");
         if (svg) svg.focus(); else host.scrollIntoView();
