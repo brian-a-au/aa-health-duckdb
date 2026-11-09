@@ -99,7 +99,7 @@ ln -s ~/.cja/orgs/prod/config.json ~/.aa/orgs/prod/config.json
 
 Run `ahd check --profile prod` and `aa_auto_sdr --profile-test prod` afterwards. If `ahd check` signs in but sees no report suites, the technical account is not yet in an Adobe Analytics product profile. See [Troubleshooting](troubleshooting.md#sign-in-problems).
 
-The live checks for this tool use exactly this setup: a credential made for cja_auto_sdr, with the Adobe Analytics API added.
+The maintainer tests the tool with this setup. The credential was made for cja_auto_sdr, and the Adobe Analytics API was added to it.
 
 ## Permissions
 
@@ -119,7 +119,7 @@ Changes in the Admin Console can take a while to reach Analytics. Run `ahd check
 - It never writes a credential value or a token to the screen, to logs, to the database or to the report.
 - It never sends usage data anywhere.
 
-Keep `config.json` out of version control. This repository's `.gitignore` already does.
+Keep `config.json` out of version control. If you work from a clone of this repository, its `.gitignore` already leaves the file out.
 
 If sign-in fails, see [Troubleshooting](troubleshooting.md#sign-in-problems).
 

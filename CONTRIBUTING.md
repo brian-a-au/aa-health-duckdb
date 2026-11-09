@@ -1,14 +1,7 @@
 # Contributing to aa-health-duckdb
 
-Thanks for your interest. This project has a deliberately tight scope. Read
-[AGENTS.md](AGENTS.md), the canonical guide for contributors and coding agents,
-before making changes. It covers setup, the required checks, where the code is,
-and the rules for changing it.
+This project has a narrow scope. Read [AGENTS.md](AGENTS.md) before you change anything. It is the main guide for people and coding agents. It covers setup, the checks that must pass, where the code is, and the rules for changing it.
 
-Discuss non-trivial features in an issue before implementation. In the pull
-request, describe your change and record how you checked it. By participating,
-you agree to follow the [code of conduct](CODE_OF_CONDUCT.md). Report security
-issues privately as described in [SECURITY.md](SECURITY.md).
+Open an issue to discuss a large feature before you write it. In the pull request, describe the change and say how you checked it. By taking part, you agree to follow the [code of conduct](CODE_OF_CONDUCT.md). Report security issues privately, as [SECURITY.md](SECURITY.md) describes.
 
-For tests, lint and the README slideshow, see
-[docs/development.md](docs/development.md).
+For tests, lint, releases and the README slideshow, see [docs/development.md](docs/development.md).
