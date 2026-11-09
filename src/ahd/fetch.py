@@ -110,9 +110,13 @@ class RunOptions:
     workers: int = DEFAULT_WORKERS
 
 
+# The tool's name on PyPI. The Python package is "ahd", but "ahd" on PyPI is another project.
+DIST_NAME = "aa-health-duckdb"
+
+
 def _tool_version() -> str:
     try:
-        return metadata.version("ahd")
+        return metadata.version(DIST_NAME)
     except metadata.PackageNotFoundError:
         return "unknown"
 
