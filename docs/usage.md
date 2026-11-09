@@ -124,7 +124,8 @@ uv run ahd run --all-suites
 | `--segment` | A segment, by ID or name. Every request is filtered by it. With several suites, the tool looks up the segment again for each suite. |
 | `--dimension`, `--metric` | The first Individual Component Summary pair. Each takes a full ID (`variables/evar17`), a short ID (`evar17`) or a name (`"Internal Search Term"`). Any dimension or metric of the suite works. The default is Page by Occurrences. |
 | `--date` | Treats this date as today, e.g., `2026-11-07` to repeat an earlier day. Write it as YYYY-MM-DD. By default, today is today in the report suite's time zone. With `--date`, the report says so under the run date, and it names the day before that date instead of saying "yesterday". |
-| `--change-alert` | Where the report's large drop slider starts: 10 to 100, in steps of 5. The default is 30. The slider shows it as a negative change, e.g., 30 is -30%. See [The report](report.md#the-large-drop-slider). |
+| `--change-alert` | Where the report's large drop slider starts: 10 to 100, in steps of 5. The default is 30. The slider shows it as a negative change, e.g., 30 is -30%. See [The report](report.md#the-large-drop-and-spike-sliders). |
+| `--spike-alert` | Where the report's large spike slider starts: 10 to 200, in steps of 10. The default is 50. See [The report](report.md#the-large-drop-and-spike-sliders). |
 | `--out` | The folder for the HTML report. The default is `./reports/`. |
 | `--batch-size` | How many columns go into one trend request, from 1 to 100. The default is 20. |
 | `--workers` | How many requests run at the same time, from 1 to 16. The default is 8. The tool starts no more than 12 requests in any 6 seconds, which is Adobe's limit. |
@@ -134,10 +135,10 @@ While it runs, it prints its progress on stderr, e.g., "Daily trends: 12 of 21 r
 ```
 reports/ahd_my_suite_2026-11-08_run12.html
 Run 12 for my_suite finished with status: ok
-Alerts for 2026-11-07: 2 unusual values, 1 large drop, 0 drops to zero
+Alerts for 2026-11-07: 2 unusual values, 1 large drop, 0 large spikes, 0 drops to zero
 ```
 
-The alerts line uses the `--change-alert` percent for large drops. It is left out after a failed run.
+The alerts line uses the `--change-alert` percent for large drops and the `--spike-alert` percent for large spikes. It is left out after a failed run.
 
 If the run sees more than 20 percent fewer custom events, eVars or props than the run before it for the same suite, it prints a warning. The warning gives both counts and the usual cause. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 
@@ -164,7 +165,7 @@ uv run ahd individual --run 3 --dimension evar17 --metric revenue
 uv run ahd individual --run 3 --dimension "Internal Search Term" --metric "Cart Additions"
 ```
 
-`--run`, `--dimension` and `--metric` are required. `--dimension` and `--metric` work as in `run`. The report's Dimension and Metric dropdowns then switch between all the pairs of the run. `--out` and `--change-alert` work as in `run`.
+`--run`, `--dimension` and `--metric` are required. `--dimension` and `--metric` work as in `run`. The report's Dimension and Metric dropdowns then switch between all the pairs of the run. `--out`, `--change-alert` and `--spike-alert` work as in `run`.
 
 It stops with an error in these cases:
 
@@ -181,7 +182,7 @@ uv run ahd render --run 3
 uv run ahd render --run 3 --change-alert 50 --out ./shared/
 ```
 
-`--run` is required. `--out` and `--change-alert` work as in `run`. `render` only reads the database, so it works while a `duckdb -readonly` session has the file open.
+`--run` is required. `--out`, `--change-alert` and `--spike-alert` work as in `run`. `render` only reads the database, so it works while a `duckdb -readonly` session has the file open.
 
 ## runs
 
@@ -221,5 +222,6 @@ It lists the runs it will delete and asks you to type y first. `--yes` skips the
 | Report folder | `./reports/` |
 | Individual Component Summary pair | Page by Occurrences |
 | Large drop slider | 30 percent |
+| Large spike slider | 50 percent |
 | Columns per trend request | 20 |
 | Requests at the same time | 8 |

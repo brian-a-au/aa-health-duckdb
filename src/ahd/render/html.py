@@ -113,6 +113,7 @@ ALERT_FIELDS = (
     "zero",
     "days_in_row",
     "drop_run",
+    "spike_run",
     "streak_open",
 )
 SERIES_FIELDS = ("value", "expected", "upper", "lower", "anomaly")
@@ -270,6 +271,7 @@ def render_html(view: dict[str, Any]) -> str:
         issue_groups=_issue_groups(view.get("issues", [])),
         component_drops=view.get("component_drops", []),
         change_alert_pct=round(view.get("change_alert", 0.3) * 100),
+        spike_alert_pct=round(view.get("spike_alert", 0.5) * 100),
         min_usual=view.get("min_usual", 10),
         history_runs=HISTORY_RUNS,
         decline_weeks=DECLINE_WEEKS,

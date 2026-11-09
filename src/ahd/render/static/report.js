@@ -204,7 +204,8 @@
   // call it "usual"; the page always calls it the weekday average.
   var state = { gran: "day", day: yesterday, alertDay: yesterday, range: "", flagged: false,
     find: "",
-    t: typeof data.change_alert === "number" ? data.change_alert : 0.3 };
+    t: typeof data.change_alert === "number" ? data.change_alert : 0.3,
+    s: typeof data.spike_alert === "number" ? data.spike_alert : 0.5 };
   var MIN_USUAL = typeof data.min_usual === "number" ? data.min_usual : 10;
   var sortState = {};
   var anomalyBlocked = (data.issues || []).some(function (i) {
@@ -442,9 +443,22 @@
       "% below the weekday average. Set the percent with the slider at the top of the page.");
   }
 
+  function spikeBadge() {
+    return badge("flag", "▲", "Large spike", "More than " + Math.round(state.s * 100) +
+      "% above the weekday average. Set the percent with the slider at the top of the page.");
+  }
+
+  // An arrow for a change past a slider: the drop slider for down, the spike slider for up.
   function arrowFor(pct) {
-    if (pct === null || pct === undefined || Math.abs(pct) <= state.t) return null;
-    return pct > 0 ? "up" : "down";
+    if (pct === null || pct === undefined) return null;
+    if (pct < -state.t) return "down";
+    if (pct > state.s) return "up";
+    return null;
+  }
+  // A value that rose further above its weekday average than the spike slider allows.
+  function isLargeSpike(value, usual, pct) {
+    return value !== 0 && pct !== null && pct !== undefined && pct > state.s &&
+      usual !== null && usual >= MIN_USUAL;
   }
   // A value that fell further below its weekday average than the slider allows. Zero is its own
   // alert.
@@ -464,8 +478,9 @@
   }
 
   // A percent change with a small bar: left of the gray center line for down, right for up.
-  // Half the bar is a change of 100 percent. Two ticks mark the slider's percent, with a light
-  // band between them, and a bar past a tick is in the flag color. The text and the arrow carry
+  // Half the bar is a change of 100 percent. A tick on the left marks the drop slider and a tick
+  // on the right the spike slider, with a light band between them. A bar past a tick is in the
+  // flag color. The text and the arrow carry
   // the same facts as the bar.
   function devCell(arrow, pct) {
     if (pct === null || pct === undefined) return { c: "", k: null };
@@ -476,15 +491,15 @@
     var w = Math.min(Math.abs(pct), 1) * 50;
     fill.style.width = Math.max(w, 1.5) + "%";
     if (pct < 0) fill.style.right = "50%"; else fill.style.left = "50%";
-    var reach = Math.min(state.t, 1) * 50;
+    var down = Math.min(state.t, 1) * 50, up = Math.min(state.s, 1) * 50;
     var zone = el("span", { "class": "zone" });
-    zone.style.left = (50 - reach) + "%";
-    zone.style.width = (2 * reach) + "%";
+    zone.style.left = (50 - down) + "%";
+    zone.style.width = (down + up) + "%";
     bar.appendChild(zone);
     bar.appendChild(fill);
-    [-1, 1].forEach(function (side) {
+    [50 - down, 50 + up].forEach(function (at) {
       var tick = el("span", { "class": "tick" });
-      tick.style.left = (50 + side * reach) + "%";
+      tick.style.left = at + "%";
       bar.appendChild(tick);
     });
     wrap.appendChild(bar);
@@ -512,12 +527,14 @@
     var a = daily ? anomalyCell(row.anomaly) : { c: "", k: null };
     if (row.anomaly) return a;
     if (isLargeDrop(row.value, row.baseline, row.pct)) return { c: dropBadge(), k: 0.5 };
+    if (isLargeSpike(row.value, row.baseline, row.pct)) return { c: spikeBadge(), k: 0.6 };
     return a;
   }
 
   function isFlagged(row) {
     return !!(row.anomaly || (row.zero && !row.unused) ||
-      isLargeDrop(row.value, row.baseline, row.pct));
+      isLargeDrop(row.value, row.baseline, row.pct) ||
+      isLargeSpike(row.value, row.baseline, row.pct));
   }
 
   // The find box matches a component's name, number, e.g., "eVar5", or id, in any case.
@@ -633,6 +650,8 @@
     var when = state.gran === "week" ? "The week ending " + fmtDay(yesterday, false) :
       fmtDay(state.day, false) + dayNote(state.day);
     byId("change-alert-result").textContent = dropSummary(currentRows(), when,
+      state.gran === "week");
+    byId("spike-alert-result").textContent = spikeSummary(currentRows(), when,
       state.gran === "week");
   }
 
@@ -1376,6 +1395,9 @@
     if (a.anomaly === "low") return a.actual === 0 ? "below the expected range, value is 0" :
       "below the expected range";
     if (a.anomaly === "high") return "above the expected range";
+    if (!a.zero && a.pct_vs_usual > 0) {
+      return fmtPct(a.pct_vs_usual).replace("+", "") + " above the weekday average";
+    }
     if (!a.zero) return fmtPct(a.pct_vs_usual).replace("-", "") + " below the weekday average";
     return "value is 0";
   }
@@ -1390,20 +1412,28 @@
       drops: alerts.filter(function (a) {
         return plain(a) && !a.zero && isLargeDrop(a.actual, a.usual, a.pct_vs_usual);
       }),
+      spikes: alerts.filter(function (a) {
+        return plain(a) && !a.zero && isLargeSpike(a.actual, a.usual, a.pct_vs_usual);
+      }),
       zero: alerts.filter(function (a) { return plain(a) && a.zero && !a.unused; }),
       unused: alerts.filter(function (a) { return plain(a) && a.zero && a.unused; })
     };
   }
 
   // How many days in a row, up to the alert's day, the same alert held. The SQL counts it. For a
-  // large drop it lists the change for each day back, and the page counts the days that pass
-  // the slider. open: the row reaches the first day of the report, so it may be longer.
+  // large drop or spike it lists the change for each day back, and the page counts the days
+  // that pass the slider. open: the row reaches the first day of the report, so it may be
+  // longer.
   function streak(a) {
     var n = typeof a.days_in_row === "number" ? a.days_in_row : 1;
     var open = !!a.streak_open;
     if (a.drop_run && a.drop_run.length) {
       n = a.drop_run.filter(function (p) { return p < -state.t; }).length;
       open = open && n === a.drop_run.length;
+    }
+    if (a.spike_run && a.spike_run.length) {
+      n = a.spike_run.filter(function (p) { return p > state.s; }).length;
+      open = open && n === a.spike_run.length;
     }
     return { n: n, open: open };
   }
@@ -1444,12 +1474,12 @@
       lines.push(title + " (" + list.length + "):");
       list.forEach(function (a) { lines.push(alertLine(a)); });
     }
-    if (!parts.unusual.length && !parts.drops.length && !parts.zero.length) {
+    if (!anyAlert(parts)) {
       lines.push("No alerts for this day.");
     } else {
       section("Unusual values", parts.unusual);
-      section("Drops of more than " + Math.round(state.t * 100) + "% below the weekday average",
-        parts.drops);
+      section(dropTitle(), parts.drops);
+      section(spikeTitle(), parts.spikes);
       section("Dropped to zero", parts.zero);
     }
     if (parts.unused.length) {
@@ -1460,6 +1490,17 @@
       lines.push("Some data could not be read in this run. See the status section of the report.");
     }
     return lines.join("\n");
+  }
+
+  function anyAlert(parts) {
+    return !!(parts.unusual.length || parts.drops.length || parts.spikes.length ||
+      parts.zero.length);
+  }
+  function dropTitle() {
+    return "Drops of more than " + Math.round(state.t * 100) + "% below the weekday average";
+  }
+  function spikeTitle() {
+    return "Spikes of more than " + Math.round(state.s * 100) + "% above the weekday average";
   }
 
   function groupHeading(id, title, count) {
@@ -1506,6 +1547,30 @@
       componentLabel(worst) + ").";
   }
 
+  // The same sentence for large spikes, naming the largest rise.
+  function spikeSummary(rows, when, week) {
+    var base = week ? "the average week" : "the weekday average";
+    var pct = Math.round(state.s * 100) + "%";
+    var spikes = rows.filter(function (r) { return isLargeSpike(r.value, r.baseline, r.pct); });
+    var flagged = spikes.length;
+    var byAdobe = spikes.filter(function (r) { return !!r.anomaly; }).length;
+    var best = null;
+    rows.forEach(function (r) {
+      if (r.pct === null || r.pct === undefined || r.pct <= 0) return;
+      if (r.baseline === null || r.baseline < MIN_USUAL) return;
+      if (!best || r.pct > best.pct) best = r;
+    });
+    var head = flagged ?
+      when + ": " + flagged + (flagged === 1 ? " component is" : " components are") +
+        " more than " + pct + " above " + base + (byAdobe ? ", and Adobe also flagged " +
+        (byAdobe === flagged ? (flagged === 1 ? "it" : "all of them") : byAdobe + " of them") :
+        "") + "." :
+      when + ": no component is more than " + pct + " above " + base + ".";
+    if (!best) return head + " No component is above " + base + ".";
+    return head + " The largest rise is " + fmtPct(best.pct).replace("+", "") + " (" +
+      componentLabel(best) + ").";
+  }
+
   function renderAlerts() {
     var host = byId("alerts");
     clear(host);
@@ -1535,8 +1600,7 @@
     host.appendChild(g1);
 
     var g2 = el("section", { "class": "alert-group", "aria-labelledby": "drops-title" });
-    g2.appendChild(groupHeading("drops-title", "Drops of more than " + pct + " below the weekday average",
-      parts.drops.length));
+    g2.appendChild(groupHeading("drops-title", dropTitle(), parts.drops.length));
     if (parts.drops.length) {
       g2.appendChild(el("p", { "class": "hint" },
         "These values were more than " + pct + " below their weekday average, but " +
@@ -1556,6 +1620,30 @@
         dropSummary(data.views["day:" + state.alertDay] || [], alertDayText())));
     }
     host.appendChild(g2);
+
+    var spct = Math.round(state.s * 100) + "%";
+    var g2b = el("section", { "class": "alert-group", "aria-labelledby": "spikes-title" });
+    g2b.appendChild(groupHeading("spikes-title", spikeTitle(), parts.spikes.length));
+    if (parts.spikes.length) {
+      g2b.appendChild(el("p", { "class": "hint" },
+        "These values were more than " + spct + " above their weekday average, but " +
+        "Adobe did not flag them. A value that doubled, e.g., from a tag that fires twice, is " +
+        "about +100%. Move the spike slider at the top of the page to change the percent."));
+      g2b.appendChild(table(
+        [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
+         { label: "Weekday average", num: true }, { label: "Actual", num: true },
+         { label: "Change from weekday average", num: true },
+         { label: "Days in a row", num: true, cls: "days" }],
+        parts.spikes.map(function (a) {
+          return nameIdCells(a).concat([{ c: fmtRound(a.usual, a.metric_type), k: a.usual },
+            { c: fmtNum(a.actual, a.metric_type), k: a.actual },
+            devCell(arrowFor(a.pct_vs_usual), a.pct_vs_usual), streakCell(a)]);
+        }), null, "alerts-spikes", { labelledby: "spikes-title" }));
+    } else {
+      g2b.appendChild(el("p", { "class": "empty" },
+        spikeSummary(data.views["day:" + state.alertDay] || [], alertDayText())));
+    }
+    host.appendChild(g2b);
 
     var g3 = el("section", { "class": "alert-group", "aria-labelledby": "zero-title" });
     g3.appendChild(groupHeading("zero-title", "Dropped to zero", parts.zero.length));
@@ -1657,7 +1745,9 @@
     }
     var rows = runs.map(function (h) {
       var drops = h.drops.filter(function (p) { return p < -state.t; }).length;
-      return { h: h, drops: drops, total: h.high + h.low + drops + h.zero };
+      var spikes = (h.spikes || []).filter(function (p) { return p > state.s; }).length;
+      return { h: h, drops: drops, spikes: spikes,
+        total: h.high + h.low + drops + spikes + h.zero };
     });
     var max = rows.reduce(function (m, r) { return Math.max(m, r.total); }, 0);
     function totalCell(r) {
@@ -1675,6 +1765,7 @@
        { label: "Above range", num: true, cls: "days" },
        { label: "Below range", num: true, cls: "days" },
        { label: "Large drops", num: true, cls: "days" },
+       { label: "Large spikes", num: true, cls: "days" },
        { label: "Dropped to zero", num: true, cls: "days" },
        { label: "All alerts", num: true }, { label: "Problems", num: true, cls: "days" }],
       rows.map(function (r) {
@@ -1684,7 +1775,7 @@
         function n(v) { return { c: numFmt.format(v), k: v }; }
         return [{ c: name, k: h.run_id },
           { c: el("span", { "class": "nowrap" }, fmtDay(h.day, true)), k: h.day }, n(h.checked),
-          n(h.high), n(h.low), n(r.drops), n(h.zero), totalCell(r), n(h.problems)];
+          n(h.high), n(h.low), n(r.drops), n(r.spikes), n(h.zero), totalCell(r), n(h.problems)];
       }), null, "history", { labelledby: "history-title" }));
     fitTables();
   }
@@ -1754,7 +1845,7 @@
       box.appendChild(el("p", { style: MAIL.h }, title + " (" + list.length + ")"));
       box.appendChild(mailTable(headers, list.map(cells)));
     }
-    if (!parts.unusual.length && !parts.drops.length && !parts.zero.length) {
+    if (!anyAlert(parts)) {
       box.appendChild(el("p", { style: MAIL.p }, "No alerts for this day."));
     }
     section("Unusual values, flagged by Adobe", parts.unusual,
@@ -1766,13 +1857,15 @@
           a.expected === null ? "Not available" : fmtRound(a.expected, a.metric_type),
           fmtNum(a.actual, a.metric_type), fmtPct(a.pct_vs_expected), streakText(a)];
       });
-    section("Drops of more than " + pct + " below the weekday average", parts.drops,
-      [{ label: "Component" }, { label: "Weekday average", num: true }, { label: "Actual", num: true },
-       { label: "Change", num: true }, { label: "Days in a row", num: true, cls: "days" }],
-      function (a) {
-        return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type),
-          fmtPct(a.pct_vs_usual), streakText(a)];
-      });
+    function changeCells(a) {
+      return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type),
+        fmtPct(a.pct_vs_usual), streakText(a)];
+    }
+    var changeHeaders = [{ label: "Component" }, { label: "Weekday average", num: true },
+      { label: "Actual", num: true }, { label: "Change", num: true },
+      { label: "Days in a row", num: true, cls: "days" }];
+    section(dropTitle(), parts.drops, changeHeaders, changeCells);
+    section(spikeTitle(), parts.spikes, changeHeaders, changeCells);
     section("Dropped to zero", parts.zero,
       [{ label: "Component" }, { label: "Weekday average", num: true },
        { label: "Actual", num: true }, { label: "Days in a row", num: true, cls: "days" }],
@@ -1866,6 +1959,9 @@
     var drops = rows.filter(function (r) {
       return !r.anomaly && isLargeDrop(r.value, r.baseline, r.pct);
     }).length;
+    var spikes = rows.filter(function (r) {
+      return !r.anomaly && isLargeSpike(r.value, r.baseline, r.pct);
+    }).length;
     var problems = (data.issues || []).length;
     var dayText = yesterday ? fmtDay(yesterday, false) : "";
 
@@ -1893,6 +1989,8 @@
     }
     tile("flag", "▼", "Large drops", numFmt.format(drops),
       "More than " + Math.round(state.t * 100) + "% below the weekday average", toAlerts);
+    tile("flag", "▲", "Large spikes", numFmt.format(spikes),
+      "More than " + Math.round(state.s * 100) + "% above the weekday average", toAlerts);
     tile("zero", "●", "Dropped to zero", numFmt.format(zero),
       unused ? numFmt.format(unused) + " others never collected data" : "Had data on other days",
       toAlerts);
@@ -1961,6 +2059,12 @@
     input.style.setProperty("--pos", Math.round(pos * 1000) / 10 + "%");
     input.style.setProperty("--strength", Math.round(20 + far * 80) + "%");
   }
+  function afterSlider() {
+    renderTiles();
+    renderTables();
+    renderAlerts();
+    renderHistory();
+  }
   var slider = byId("change-alert");
   slider.value = String(-Math.round(state.t * 100));
   paintSlider(slider, "left");
@@ -1969,10 +2073,19 @@
     paintSlider(slider, "left");
     byId("change-alert-value").textContent = slider.value + "%";
     slider.setAttribute("aria-valuetext", slider.value + "%");
-    renderTiles();
-    renderTables();
-    renderAlerts();
-    renderHistory();
+    afterSlider();
+  });
+  // The spike slider runs from +10% on the left to +200% on the right, so moving it right flags
+  // only bigger spikes. Its orange is strongest at the right end.
+  var spikeSlider = byId("spike-alert");
+  spikeSlider.value = String(Math.round(state.s * 100));
+  paintSlider(spikeSlider, "right");
+  spikeSlider.addEventListener("input", function () {
+    state.s = Number(spikeSlider.value) / 100;
+    paintSlider(spikeSlider, "right");
+    byId("spike-alert-value").textContent = "+" + spikeSlider.value + "%";
+    spikeSlider.setAttribute("aria-valuetext", "+" + spikeSlider.value + "%");
+    afterSlider();
   });
 
   renderTiles();

@@ -198,6 +198,7 @@ def test_alerts_zero_and_anomaly(tmp_path):
         "unused": False,
         "days_in_row": 1,
         "drop_run": None,
+        "spike_run": None,
         "streak_open": False,
     }
     assert zero["actual"] == 0 and zero["expected"] is None
@@ -585,11 +586,13 @@ def test_unused_versus_dropped_to_zero(tmp_path):
     [
         (100.0, 85.0, True),  # 15 percent below a usual of 100
         (100.0, 95.0, False),  # 5 percent below: under the slider's lowest setting
-        (100.0, 150.0, False),  # a rise is never a drop alert
+        (100.0, 150.0, True),  # 50 percent above: a spike
+        (100.0, 105.0, False),  # 5 percent above: under the spike slider's lowest setting
         (8.0, 1.0, False),  # usual under 10: small numbers are skipped
+        (8.0, 30.0, False),  # the same for a spike
     ],
 )
-def test_drop_candidates(tmp_path, friday_value, yesterday_value, included):
+def test_change_candidates(tmp_path, friday_value, yesterday_value, included):
     cid = "metrics/event1"
     store, rid = _build(
         tmp_path, [_comp(cid, "E", number=1)], _series(cid, friday_value, yesterday_value)
@@ -631,7 +634,7 @@ def test_duration_text(seconds, text):
 @pytest.mark.parametrize("threshold", [0.10, 0.30, 0.60])
 def test_alerts_macro(tmp_path, threshold):
     # tests/test_report_js.py checks that the page shows the same alerts as this macro.
-    comps = [_comp(f"metrics/event{i}", f"E{i}", number=i) for i in range(1, 8)]
+    comps = [_comp(f"metrics/event{i}", f"E{i}", number=i) for i in range(1, 11)]
     vals = (
         _series("metrics/event1", 100.0, 85.0)  # 15 percent drop
         + _series("metrics/event2", 100.0, 50.0)  # 50 percent drop
@@ -643,6 +646,9 @@ def test_alerts_macro(tmp_path, threshold):
         # Never collected data, but Adobe flags yesterday's 0 as below its range.
         + [v for v in _series("metrics/event7", 0.0, 0.0) if v.day != YESTERDAY]
         + [_dv("metrics/event7", YESTERDAY, 0.0, 50.0, 80.0, 20.0, True)]
+        + _series("metrics/event8", 100.0, 160.0)  # 60 percent spike
+        + _series("metrics/event9", 100.0, 130.0)  # 30 percent spike
+        + _series("metrics/event10", 8.0, 30.0)  # small usual value: skipped
     )
     store, rid = _build(tmp_path, comps, vals)
     view = build_view(store, rid)
@@ -650,19 +656,34 @@ def test_alerts_macro(tmp_path, threshold):
     rows = store.con.execute(
         "select component_id, alert from alerts(?, threshold := ?)", [rid, threshold]
     ).fetchall()
-    want = {"metrics/event3": "dropped to zero", "metrics/event6": "unusual"}
+    # The spike setting keeps its default of 50 percent.
+    want = {
+        "metrics/event3": "dropped to zero",
+        "metrics/event6": "unusual",
+        "metrics/event8": "large spike",
+    }
     if threshold < 0.15:
         want["metrics/event1"] = "large drop"
     if threshold < 0.50:
         want["metrics/event2"] = "large drop"
     assert dict(rows) == want
+    # The spike setting works the same way.
+    spikes = store.con.execute(
+        "select component_id from alerts(?, spike_threshold := ?) where alert = 'large spike'",
+        [rid, threshold],
+    ).fetchall()
+    # A spike of exactly the setting is not "more than" it, as for a drop.
+    assert sorted(c for (c,) in spikes) == sorted(
+        (["metrics/event8"] if threshold < 0.60 else [])
+        + (["metrics/event9"] if threshold < 0.30 else [])
+    )
     day_row = next(r for r in view["views"][f"day:{day}"] if r["component_id"] == "metrics/event7")
     assert day_row["anomaly"] is None and day_row["unused"]
     other = store.con.execute(
         "select count(*) from alerts(?, for_day := ?)", [rid, "2026-11-05"]
     ).fetchone()[0]
     # On that Thursday every component is 0. Events 4 and 7 never collected data.
-    assert other == 5
+    assert other == 8
 
 
 @pytest.mark.parametrize(
@@ -743,6 +764,10 @@ def test_days_in_row(tmp_path):
         "metrics/event5": [0.0] * 7,
         # A day without data ends the row.
         "metrics/event6": [0.0, None, 0.0],
+        # Spikes of 50, 20 and 80 percent, oldest first, after a normal day.
+        "metrics/event7": [100.0, 150.0, 120.0, 180.0],
+        # A spike after a drop: a new kind of alert starts a new row.
+        "metrics/event8": [100.0, 50.0, 150.0],
     }
     comps = [_comp(cid, cid, number=i) for i, cid in enumerate(cases, start=1)]
     vals = []
@@ -758,11 +783,21 @@ def test_days_in_row(tmp_path):
         "metrics/event4": 3,
         "metrics/event5": 7,
         "metrics/event6": 1,
+        "metrics/event7": 3,
+        "metrics/event8": 1,
     }
     assert [cid for cid, a in got.items() if a["streak_open"]] == ["metrics/event5"]
     # For a drop, the smallest drop so far on each day back, from yesterday.
     assert got["metrics/event4"]["drop_run"] == pytest.approx([-0.4, -0.2, -0.2])
     assert all(a["drop_run"] is None for cid, a in got.items() if cid != "metrics/event4")
+    # For a spike, the smallest spike so far on each day back.
+    assert got["metrics/event7"]["spike_run"] == pytest.approx([0.8, 0.2, 0.2])
+    assert got["metrics/event8"]["spike_run"] == pytest.approx([0.5])
+    assert all(
+        a["spike_run"] is None
+        for cid, a in got.items()
+        if cid not in ("metrics/event7", "metrics/event8")
+    )
     # The day before yesterday counts back from its own day.
     before = YESTERDAY - timedelta(days=1)
     earlier = [a for a in build_view(store, rid)["alerts"] if a["day"] == before.isoformat()]

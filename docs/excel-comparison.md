@@ -9,9 +9,9 @@ aa-health-duckdb is an unofficial alternative to Adobe's Excel workbook ["Analyt
 - **The week** is the 7 days ending yesterday. **The baseline** is the 84 days from 91 days ago through 8 days ago, divided by 12 to give a weekly average.
 - **"Today"** is today in the report suite's time zone, not your computer's. The workbook asks for today's partial data as well. The tool fetches that row and ignores it.
 - **The top 100 tables** compare yesterday with the 90 days before it, from 91 days ago through 2 days ago. The browser and device tables use yesterday.
-- **Arrows** show when the change is more than the slider's percent, 30 percent by default. The workbook uses a fixed 20 percent. When the baseline is zero, there is no percent change and no arrow.
+- **Arrows** show when the change is past a slider's percent: a down arrow past the drop slider, 30 percent by default, and an up arrow past the spike slider, 50 percent by default. The workbook uses a fixed 20 percent. When the baseline is zero, there is no percent change and no arrow.
 - **Zero values.** The workbook alerts on every component with a value of 0. The tool alerts on a component that dropped to 0, and it lists a component that was 0 on every day separately, as never collected data.
-- **Large drops.** The workbook alerts only on Adobe's anomaly flags and on zero values. The tool also alerts on drops larger than the slider's percent.
+- **Large drops.** The workbook alerts only on Adobe's anomaly flags and on zero values. The tool also alerts on drops and spikes larger than the sliders' percents.
 - **Unreadable data.** A column the credential cannot read is listed as a problem. It is never shown as 0.
 - **Currency.** A currency metric shows in the report suite's currency, e.g., $1,234.56.
 - **eVars** are treated as dimensions, like props, so they appear in the Dimension chart. The workbook filed them under events. Each eVar is still counted with its instances metric, as in the workbook.
@@ -20,7 +20,7 @@ aa-health-duckdb is an unofficial alternative to Adobe's Excel workbook ["Analyt
 
 - **Several Individual Component Summary pairs per run.** The workbook keeps one pair at a time. The tool keeps every pair you add, for any dimension and metric of the suite, and switches between them at once.
 - **History.** Every run stays in the database, so you can compare runs over weeks. The workbook replaces its data on each refresh.
-- **Alerts for any of the last 7 days**, with a slider for large drops. Each alert shows how many days in a row it held.
+- **Alerts for any of the last 7 days**, with sliders for large drops and spikes. Each alert shows how many days in a row it held.
 - **Charts that mark the chosen day** and its weekday average.
 - **A calendar of alerts by day** for the last 13 weeks, for the whole suite. It shows the days when many components broke at once.
 - **Earlier runs** of the same suite, with their alert counts, in each report.

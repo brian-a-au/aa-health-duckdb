@@ -183,8 +183,10 @@ def test_alert_line_counts_each_kind(tmp_path, capsys):
         day += timedelta(days=1)
     store.add_daily_values(rid, values)
     store.finish_run(rid, "ok")
-    line = _alert_line(store, rid, 0.30)
-    assert line == "Alerts for 2026-11-06: 0 unusual values, 2 large drops, 1 drop to zero"
-    assert _alert_line(store, rid, 0.55) == (
-        "Alerts for 2026-11-06: 0 unusual values, 1 large drop, 1 drop to zero"
+    line = _alert_line(store, rid, 0.30, 0.50)
+    assert line == (
+        "Alerts for 2026-11-06: 0 unusual values, 2 large drops, 0 large spikes, 1 drop to zero"
+    )
+    assert _alert_line(store, rid, 0.55, 0.50) == (
+        "Alerts for 2026-11-06: 0 unusual values, 1 large drop, 0 large spikes, 1 drop to zero"
     )

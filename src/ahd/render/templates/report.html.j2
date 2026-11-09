@@ -32,22 +32,30 @@
 </header>
 
 <div class="change-alert">
+  <div class="sliders">
   <label for="change-alert">Large drop alert: flag changes below</label>
   <input type="range" id="change-alert" min="-100" max="-10" step="5" value="-{{ change_alert_pct }}" aria-valuetext="-{{ change_alert_pct }}%" aria-describedby="change-alert-hint">
   <output for="change-alert" id="change-alert-value">-{{ change_alert_pct }}%</output>
   <span>from the weekday average</span>
+  <label for="spike-alert">Large spike alert: flag changes above</label>
+  <input type="range" id="spike-alert" min="10" max="200" step="10" value="{{ spike_alert_pct }}" aria-valuetext="+{{ spike_alert_pct }}%" aria-describedby="change-alert-hint">
+  <output for="spike-alert" id="spike-alert-value">+{{ spike_alert_pct }}%</output>
+  <span>from the weekday average</span>
+  </div>
   <p class="change-alert-result" id="change-alert-result" role="status" aria-live="polite"></p>
+  <p class="change-alert-result" id="spike-alert-result" role="status" aria-live="polite"></p>
   <p class="hint" id="change-alert-hint">The weekday average is the average of the same weekday in the 12 weeks before the day.</p>
   <details class="rule" id="change-alert-rule">
-    <summary>How a large drop is found</summary>
+    <summary>How large drops and spikes are found</summary>
     <ul>
       <li>The weekday average for a day is the average of the same weekday in the 12 weeks before it, e.g., the 12 Mondays before a Monday.</li>
-      <li>A value is a large drop when its change from the weekday average is below the slider's setting, e.g., below -30%. Move the slider left to flag only deeper drops.</li>
+      <li>A value is a large drop when its change from the weekday average is below the drop slider's setting, e.g., below -30%. Move the slider left to flag only deeper drops.</li>
+      <li>A value is a large spike when its change from the weekday average is above the spike slider's setting, e.g., above +50%. Move the slider right to flag only bigger spikes. A value that doubled is about +100%.</li>
       <li>Components with a weekday average under {{ min_usual }} are skipped, because small numbers change a lot from day to day.</li>
       <li>A value of 0 is not a large drop. It is listed as "Dropped to zero".</li>
-      <li>A value that Adobe flagged is listed as an unusual value, not as a large drop.</li>
-      <li>A large drop gets a "Large drop" badge in the Flag column, and it is listed on the Alerts tab.</li>
-      <li>The same percent sets when the tables show an arrow, for a change up or down.</li>
+      <li>A value that Adobe flagged is listed as an unusual value, not as a large drop or spike.</li>
+      <li>A large drop gets a "Large drop" badge in the Flag column, a large spike gets a "Large spike" badge, and both are listed on the Alerts tab.</li>
+      <li>The tables show a down arrow for a change past the drop slider, and an up arrow for a change past the spike slider.</li>
     </ul>
   </details>
 </div>
@@ -139,7 +147,7 @@
 
   <details class="fold calendar-card" open>
     <summary><h2 id="calendar-title">Alerts by day, last 13 weeks</h2></summary>
-    <p class="hint">Each square is one day. A darker square had more components that Adobe flagged or that dropped to zero. Large drops are not counted, because only the last 7 days have a weekday average. Choose a day to list its components, and choose one to see it on the chart.</p>
+    <p class="hint">Each square is one day. A darker square had more components that Adobe flagged or that dropped to zero. Large drops and spikes are not counted, because only the last 7 days have a weekday average. Choose a day to list its components, and choose one to see it on the chart.</p>
     <div id="calendar"></div>
   </details>
 
@@ -225,7 +233,7 @@
       <select id="alert-day"></select>
     </label>
   </div>
-  <p class="hint">Components that Adobe flagged as unusual, that fell further below their weekday average than the slider allows, or that dropped to 0.</p>
+  <p class="hint">Components that Adobe flagged as unusual, that fell further below or rose further above their weekday average than the sliders allow, or that dropped to 0.</p>
   <div class="copy-row">
     <button type="button" id="copy-alerts">Copy alerts</button>
     <span id="copy-result" role="status" aria-live="polite"></span>
@@ -245,7 +253,7 @@
   </details>
   <details class="fold history" open>
     <summary><h2 id="history-title">Earlier runs</h2></summary>
-    <p class="hint">The alerts on the last day of each run of this report suite{% if run.segment_id %} and segment{% endif %} in the database, newest first, up to {{ history_runs }} runs. Every run is counted by the rules of this report, and large drops follow the slider. Runs for later dates are not listed.</p>
+    <p class="hint">The alerts on the last day of each run of this report suite{% if run.segment_id %} and segment{% endif %} in the database, newest first, up to {{ history_runs }} runs. Every run is counted by the rules of this report, and large drops and spikes follow the sliders. Runs for later dates are not listed.</p>
     <div id="history"></div>
   </details>
 </section>

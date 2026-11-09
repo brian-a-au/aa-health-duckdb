@@ -8,7 +8,7 @@ Each run writes one HTML file, e.g., `reports/ahd_my_suite_2026-11-07_run3.html`
 
 - [Open and share it](#open-and-share-it)
 - [The top of the page](#the-top-of-the-page)
-- [The large drop slider](#the-large-drop-slider)
+- [The large drop and spike sliders](#the-large-drop-and-spike-sliders)
 - [Summary tiles](#summary-tiles)
 - [Status](#status)
 - [Components Summary](#components-summary)
@@ -45,19 +45,23 @@ Every day in the report counts back from the run date. "Yesterday" is the day be
 
 A run made with `ahd run --date` is about an earlier day. A line under the header then says "Run date set with --date", and names the last day of the report, e.g., 2026-09-15. The page uses that date instead of the word "yesterday", and the Day pickers mark it "(day before the run date)".
 
-## The large drop slider
+## The large drop and spike sliders
 
-The slider above the tiles sets how far a value must fall below its weekday average to count as a large drop. It shows the drop as a negative change, from -100% on the left to -10% on the right. Move it left to flag only deeper drops. It starts at -30%, or at the value you chose with `--change-alert`, e.g., `--change-alert 45` starts it at -45%. The part of the line left of the handle is the range that gets flagged. Its orange is stronger further from zero, and the handle takes the color of the line under it.
+Two sliders above the tiles set when a change from the weekday average is an alert.
 
-Under the slider, one line says what the weekday average is. Open "How a large drop is found" to read the full rule:
+The drop slider sets how far a value must fall below its weekday average to count as a large drop. It shows the drop as a negative change, from -100% on the left to -10% on the right. Move it left to flag only deeper drops. It starts at -30%, or at the value you chose with `--change-alert`, e.g., `--change-alert 45` starts it at -45%. The part of the line left of the handle is the range that gets flagged. Its orange is stronger further from zero, and the handle takes the color of the line under it.
+
+The spike slider sets how far a value must rise above its weekday average to count as a large spike. It runs from +10% on the left to +200% on the right, in steps of 10. Move it right to flag only bigger spikes. It starts at +50%, or at the value you chose with `--spike-alert`. The part of the line right of the handle gets flagged, and its orange is strongest at the right end. A value that doubled, e.g., because a tag fires twice, is a change of about +100%.
+
+Under the sliders, one line says what the weekday average is. Open "How large drops and spikes are found" to read the full rule:
 
 - **The weekday average** is the average of the same weekday in the 12 weeks before the day, e.g., the 12 Mondays before a Monday. It is not Adobe's expected value. Adobe's anomaly detection computes the expected value with its own model.
-- **Small numbers are skipped.** Components with a weekday average under 10 are never large drops, because small numbers change a lot from day to day.
-- **Zero and Adobe flags come first.** A value of 0 is listed as "Dropped to zero", and a value that Adobe flagged is listed as an unusual value. Neither one is also a large drop.
-- **Arrows follow the slider.** The tables show an up or down arrow when a value changes by more than the same percent.
-- **Everything updates at once.** When you move the slider, the tiles, the tables, the "Show only flagged" filter and the alerts change right away.
+- **Small numbers are skipped.** Components with a weekday average under 10 are never large drops or spikes, because small numbers change a lot from day to day.
+- **Zero and Adobe flags come first.** A value of 0 is listed as "Dropped to zero", and a value that Adobe flagged is listed as an unusual value. Neither one is also a large drop or spike.
+- **Arrows follow the sliders.** The tables show a down arrow for a change past the drop slider, and an up arrow for a change past the spike slider.
+- **Everything updates at once.** When you move a slider, the tiles, the tables, the "Show only flagged" filter and the alerts change right away.
 
-A line under the slider says how many components are large drops on the day the Components Summary shows. It also names the largest drop, even when that drop is under the percent, so you can see why nothing was flagged.
+Two lines under the sliders say how many components are large drops and large spikes on the day the Components Summary shows. Each also names the largest drop or rise, even when it is under the slider's percent, so you can see why nothing was flagged.
 
 ## Summary tiles
 
@@ -66,6 +70,7 @@ The tiles count yesterday's results:
 - components checked
 - values above and below Adobe's expected range
 - large drops
+- large spikes
 - components that dropped to zero, and how many others never collected data
 - problems in the run
 
@@ -86,7 +91,7 @@ This tab shows every custom event, eVar and prop, then the solution components, 
 - **Show:** daily or weekly. Weekly shows the 7 days ending yesterday, against the average week of the 12 weeks before.
 - **Day:** any of the last 7 days. Yesterday comes first.
 - **Component numbers:** a range, e.g., 101 to 200, for custom events, eVars and props.
-- **Show only flagged:** hides everything that is not an Adobe flag, a large drop or a drop to zero.
+- **Show only flagged:** hides everything that is not an Adobe flag, a large drop, a large spike or a drop to zero.
 
 ### Alerts by day
 
@@ -95,7 +100,7 @@ A calendar shows the last 13 weeks. Each square is one day, and a darker square 
 - Adobe flagged the value above or below its expected range.
 - The value dropped to 0, and the component had data on other days.
 
-Large drops are not counted, because only the last 7 days have a weekday average. A day with no data at all is an outline.
+Large drops and spikes are not counted, because only the last 7 days have a weekday average. A day with no data at all is an outline.
 
 A release that breaks tracking usually breaks many components on the same day, so it shows as one dark square. Choose a square, or move with the arrow keys, to list that day's components. The left and right keys move a week, and the up and down keys move a day. Choose a component in the list to see it on the metric or dimension chart. The text under the chart is then about that day.
 
@@ -124,10 +129,10 @@ Each row shows:
 - the component number and name
 - the total for the day or the week
 - the weekday average, or the average week in the weekly view
-- the change from that average, with an arrow when it passes the slider's percent, and a small bar
+- the change from that average, with an arrow when it passes a slider's percent, and a small bar
 - a flag
 
-The bar goes left of a gray center line for a drop and right of it for a rise. Half the bar is a change of 100 percent. Two ticks with a light band between them mark the slider's percent. A bar that passes a tick is orange.
+The bar goes left of a gray center line for a drop and right of it for a rise. Half the bar is a change of 100 percent. A tick on the left marks the drop slider and a tick on the right marks the spike slider, with a light band between them. A bar that passes a tick is orange.
 
 A small line in each row shows the component's last 13 weeks, on a scale from 0 to its largest value, with a dot on the chosen day. A drop to zero or a break in tracking shows as a dip at the right end. Choose the line to see the component on the metric or dimension chart above.
 
@@ -135,7 +140,7 @@ The "Find a component" box above the tables keeps only the components whose name
 
 The table headings stay in view while you scroll. A table that is too wide for the window, e.g., on a phone, scrolls in its own box, and its headings stay at the top of that box. The links under "Jump to" above the tables go to each group, and show how many components each group has. After each table, the link "Back to the top of the tables" goes back to these links.
 
-The flag is Adobe's "Above range" or "Below range", or "Large drop" when the slider flags it. A red "Zero data" badge marks a value of 0 on a component that has data on other days. A gray "never collected data" note marks a component that was 0 on every day.
+The flag is Adobe's "Above range" or "Below range", or "Large drop" or "Large spike" when a slider flags it. A red "Zero data" badge marks a value of 0 on a component that has data on other days. A gray "never collected data" note marks a component that was 0 on every day.
 
 ## Individual Component Summary
 
@@ -157,7 +162,8 @@ The page cannot fetch a new pair by itself, because it works offline. The hint o
 This tab lists the alerts for one day. It starts on yesterday, and the Day picker chooses any of the last 7 days. The alerts come in these groups:
 
 - **Unusual values.** Adobe's anomaly detection flagged the value as outside the expected range.
-- **Drops of more than 30% below the weekday average.** The heading shows the slider's percent. The value was further below its weekday average than the slider allows, and Adobe did not flag it.
+- **Drops of more than 30% below the weekday average.** The heading shows the drop slider's percent. The value was further below its weekday average than the slider allows, and Adobe did not flag it.
+- **Spikes of more than 50% above the weekday average.** The heading shows the spike slider's percent. The value was further above its weekday average than the slider allows, and Adobe did not flag it.
 - **Dropped to zero.** The value was 0, but the component had data on other days in the run.
 - **Never collected data.** The value was 0 on every day in the run. These are often unused slots, so they are not alerts, even when Adobe flags the 0. They are in a closed list at the end.
 
@@ -165,6 +171,7 @@ Each alert list has a "Days in a row" column. It counts the days, up to the chos
 
 - For an unusual value, Adobe flagged the value in the same direction on each day, e.g., above the expected range.
 - For a drop, the value was further below its weekday average than the slider allows on each day. The count changes when you move the slider.
+- For a spike, the value was further above its weekday average than the spike slider allows on each day.
 - For a drop to zero, the value was 0 on each day.
 
 The report covers 7 days. When the count reaches the first of them, the column says "or more", e.g., "7 or more", because the alert may have started earlier.
@@ -176,7 +183,7 @@ The report covers 7 days. When the count reaches the first of them, the column s
 - a formatted table, which Outlook, Gmail and Apple Mail paste
 - plain text, which a chat or a text editor pastes
 
-The copy follows the chosen day and the slider. It includes the days in a row for each alert. If the browser cannot copy, open "Show the alert summary as text" and copy the text from there.
+The copy follows the chosen day and the sliders. It includes the days in a row for each alert. If the browser cannot copy, open "Show the alert summary as text" and copy the text from there.
 
 To send alerts on a schedule, or only when something is new, see the [DuckDB guide](duckdb.md#email-recipes).
 
@@ -199,7 +206,7 @@ At the end of the tab, a table lists the runs of the same report suite and segme
 
 - the components checked
 - values above and below Adobe's expected range
-- large drops, at the slider's percent
+- large drops and large spikes, at the sliders' percents
 - drops to zero
 - all alerts, with a bar to compare the runs
 - problems in the run

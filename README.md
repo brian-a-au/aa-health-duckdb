@@ -20,7 +20,7 @@ It is an unofficial alternative to Adobe's Excel workbook ["Analytics Health Das
 ## What it does
 
 - **One report you can open anywhere.** Each run writes one HTML file that works in any browser, offline. It has three tabs: Components Summary, Individual Component Summary and Alerts Summary. [The report](docs/report.md) walks through it.
-- **Alerts that matter.** It lists Adobe's anomaly flags, drops larger than a percent you set with a slider, and components that dropped to zero. Components that never collected data are listed apart, so they don't hide real problems.
+- **Alerts that matter.** It lists Adobe's anomaly flags, drops and spikes larger than percents you set with two sliders, and components that dropped to zero. Components that never collected data are listed apart, so they don't hide real problems.
 - **Every run kept.** It stores each run in a local DuckDB file, so you can compare runs, report suites and organizations with SQL, and send alert emails only when something is new. See the [DuckDB guide](docs/duckdb.md).
 - **Any dimension by any metric.** The Individual Component Summary can hold several pairs, e.g., Internal Search Term by Cart Additions, and you add one in a few seconds.
 - **Plain errors.** When sign-in or access fails, it names the cause and the fix.
@@ -83,7 +83,7 @@ If something fails, see [Troubleshooting](docs/troubleshooting.md).
 |---|---|
 | [Usage](docs/usage.md) | Every command, with its options, exit codes and defaults |
 | [Configuration](docs/configuration.md) | Where the tool finds your credential, profiles, and the Admin Console permissions it needs |
-| [The report](docs/report.md) | A walkthrough of the HTML report: the slider, tiles, tabs, alerts and copying |
+| [The report](docs/report.md) | A walkthrough of the HTML report: the sliders, tiles, tabs, alerts and copying |
 | [How runs are stored](docs/runs.md) | The DuckDB file, run numbers, deleting runs, and the tables inside |
 | [Run it every day](docs/scheduling.md) | A daily check of every suite with an alert email, on Windows, macOS and Linux |
 | [DuckDB guide](docs/duckdb.md) | SQL recipes: alert emails, owner routing, digests across suites and organizations, audits and exports |

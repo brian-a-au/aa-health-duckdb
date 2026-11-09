@@ -532,7 +532,7 @@ def test_change_alert_slider():
         "weekday in the 12 weeks before the day.</p>"
     ) in html
     rule = html[html.index('<details class="rule"') : html.index("</details>")]
-    assert "<summary>How a large drop is found</summary>" in rule
+    assert "<summary>How large drops and spikes are found</summary>" in rule
     assert "weekday average under 10 are skipped" in rule
     v["change_alert"] = 0.45
     html = render_html(v)

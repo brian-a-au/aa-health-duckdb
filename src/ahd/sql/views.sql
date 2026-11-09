@@ -41,12 +41,14 @@ LEFT JOIN usual u ON u.run_id = dv.run_id AND u.component_id = dv.component_id
     AND u.dow = dayofweek(dv.day)
 LEFT JOIN used ON used.run_id = dv.run_id AND used.component_id = dv.component_id;
 
-CREATE MACRO alerts(run_number, threshold := 0.30, min_usual := 10, for_day := NULL) AS TABLE
+CREATE MACRO alerts(run_number, threshold := 0.30, spike_threshold := 0.50, min_usual := 10,
+    for_day := NULL) AS TABLE
 SELECT run_id, day, component_id, name, "group", metric_type, value, usual, expected,
     pct_vs_usual,
     CASE
         WHEN anomaly IS NOT NULL THEN 'unusual'
         WHEN zero THEN 'dropped to zero'
+        WHEN pct_vs_usual > 0 THEN 'large spike'
         ELSE 'large drop'
     END AS alert,
     anomaly
@@ -54,5 +56,6 @@ FROM component_days
 WHERE run_id = run_number
     AND (CASE WHEN for_day IS NULL THEN is_yesterday ELSE day = for_day::DATE END)
     AND NOT (zero AND unused)
-    AND (anomaly IS NOT NULL OR zero OR (usual >= min_usual AND pct_vs_usual < -threshold))
+    AND (anomaly IS NOT NULL OR zero OR (usual >= min_usual
+        AND (pct_vs_usual < -threshold OR pct_vs_usual > spike_threshold)))
 ORDER BY alert DESC, "group", component_id;
