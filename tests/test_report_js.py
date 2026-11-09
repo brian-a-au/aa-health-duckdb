@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
-from chrome import chrome_or_skip, run_probe, without_csp
+from chrome import chrome_or_skip, find_chrome, run_probe, without_csp
 
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
@@ -358,27 +358,23 @@ def test_a_probe_error_fails_the_test(chrome, edges, tmp_path):
 
 
 def test_missing_chrome_skips_on_a_laptop_and_fails_in_ci(monkeypatch):
-    import chrome as module
-
-    monkeypatch.setattr(module, "find_chrome", lambda: None)
+    monkeypatch.setattr("chrome.find_chrome", lambda: None)
     monkeypatch.delenv("CI", raising=False)
     with pytest.raises(pytest.skip.Exception, match="AHD_CHROME"):
-        module.chrome_or_skip()
+        chrome_or_skip()
     monkeypatch.setenv("CI", "true")
     with pytest.raises(pytest.fail.Exception, match="AHD_CHROME"):
-        module.chrome_or_skip()
+        chrome_or_skip()
 
 
 def test_ahd_chrome_chooses_the_program(monkeypatch, tmp_path):
-    import chrome as module
-
     program = tmp_path / "my-chrome"
     program.write_text("", encoding="utf-8")
     monkeypatch.setenv("AHD_CHROME", str(program))
-    assert module.find_chrome() == str(program)
+    assert find_chrome() == str(program)
     monkeypatch.setenv("AHD_CHROME", str(tmp_path / "missing"))
     with pytest.raises(pytest.fail.Exception, match="no file there"):
-        module.find_chrome()
+        find_chrome()
 
 
 @pytest.fixture(scope="module")

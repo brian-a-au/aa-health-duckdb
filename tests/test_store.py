@@ -217,11 +217,9 @@ def test_delete_runs_clears_every_table(tmp_path):
 
 
 def test_delete_runs_is_all_or_nothing(tmp_path, monkeypatch):
-    import ahd.store as store_mod
-
     s = Store.open(tmp_path / "a.duckdb")
     a = _fill(s)
-    monkeypatch.setattr(store_mod, "RUN_TABLES", ("components", "no_such_table", "runs"))
+    monkeypatch.setattr("ahd.store.RUN_TABLES", ("components", "no_such_table", "runs"))
     with pytest.raises(duckdb.Error):
         s.delete_runs([a])
     assert s.con.execute("SELECT count(*) FROM components WHERE run_id = ?", [a]).fetchone()[0]

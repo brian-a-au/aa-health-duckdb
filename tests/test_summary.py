@@ -975,7 +975,8 @@ def test_history_lists_earlier_runs_by_the_tile_rules(tmp_path):
     assert history[2]["status"] == "partial"
     for h in history:
         want = _tile_counts(build_view(store, h["run_id"]))
-        assert h["drops"] == pytest.approx(want.pop("drops")), h["run_id"]
+        drops = want.pop("drops")
+        assert h["drops"] == pytest.approx(drops), h["run_id"]
         assert {k: h[k] for k in want} == want, h["run_id"]
     assert history[3]["drops"] == pytest.approx([-0.5]) and history[3]["problems"] == 2
     assert (history[2]["high"], history[2]["zero"], history[2]["unused"]) == (1, 1, 1)

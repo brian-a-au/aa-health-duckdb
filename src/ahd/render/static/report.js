@@ -474,7 +474,8 @@
         arrow === "up" ? "▲ " : "▼ "));
     }
     span.appendChild(document.createTextNode(fmtPct(pct)));
-    return { c: span, k: pct === null || pct === undefined ? null : pct };
+    // devCell, the only caller, returns before this for a missing percent.
+    return { c: span, k: pct };
   }
 
   // A percent change with a small bar: left of the gray center line for down, right for up.
@@ -545,7 +546,7 @@
       if (extra) cell.appendChild(extra);
       return { c: cell, k: wf.high * 2 + wf.low + (extra ? 0.5 : 0) };
     }
-    var a = daily ? anomalyCell(row.anomaly) : { c: "", k: null };
+    var a = anomalyCell(row.anomaly);
     if (row.anomaly) return a;
     if (isLargeDrop(row.value, row.baseline, row.pct)) return { c: dropBadge(), k: 0.5 };
     if (isLargeSpike(row.value, row.baseline, row.pct)) return { c: spikeBadge(), k: 0.6 };
@@ -2055,7 +2056,6 @@
   function alertHtml() {
     var run = data.run || {};
     var parts = splitAlerts();
-    var pct = Math.round(state.t * 100) + "%";
     var box = el("div", { style: MAIL.wrap });
     box.appendChild(el("p", { style: MAIL.h + "margin-top:0;" },
       "Analytics Health alerts for " + (run.rsid_name || run.rsid) + ", " + alertDayText()));
