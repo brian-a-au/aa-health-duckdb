@@ -6,7 +6,7 @@ This file tells coding agents how to work on this repository. People can read it
 
 `ahd` checks the health of an Adobe Analytics report suite. It reads data from the Adobe Analytics 2.0 API, stores each run in a local DuckDB file, and writes one self-contained HTML report. It is an unofficial alternative to Adobe's Excel workbook "Analytics Health Dashboard". It may differ from the workbook when that gives a better design, but the counts must stay correct.
 
-The repository is private and the tool is not released. Nobody depends on old database files or old command options yet.
+The repository is public, and the tool is on PyPI as `aa-health-duckdb`. The command and the Python package are both `ahd`. Until version 1.0.0, a minor release may change the database layout or the command options. Record each change for users in `CHANGELOG.md`. Do not change the version, tag or publish a release unless the maintainer asks. "Release a new version" in `docs/development.md` gives the steps.
 
 ## Commands
 
@@ -25,7 +25,7 @@ uv run ruff format --check
 uv lock --check
 ```
 
-The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 on Windows and macOS. Pull requests run Linux only, to save Actions minutes. Windows and macOS run on `main`, or by hand with "Run workflow". For a change that could behave differently on Windows or macOS, e.g., file paths, run the workflow by hand on the branch before you merge. Branch coverage must stay at 95 percent or more. Run `uv lock` after you change `pyproject.toml`, so that `uv lock --check` passes.
+The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 on Windows and macOS. Branch coverage must stay at 95 percent or more. Run `uv lock` after you change `pyproject.toml`, so that `uv lock --check` passes.
 
 ## Where things are
 

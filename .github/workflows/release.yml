@@ -1,0 +1,96 @@
+name: release
+
+# Publishes aa-health-duckdb to PyPI with trusted publishing. No PyPI token is stored in the
+# repository. PyPI gives the job a short-lived upload credential because it trusts this
+# publisher:
+#
+#   owner=brian-a-au  repository=aa-health-duckdb  workflow=release.yml  environment=pypi
+#
+# Keep those four values in step with this file. The file name must stay release.yml, and the
+# job must run in the "pypi" environment, or PyPI rejects the upload.
+#
+# It runs when a GitHub release is published. A draft release starts nothing, and a tag alone
+# starts nothing, so the upload happens only when you publish the release. See "Release a new
+# version" in docs/development.md.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The "pypi" environment, under Settings > Environments. Add a required reviewer there to
+    # approve each upload by hand.
+    environment: pypi
+    permissions:
+      contents: read
+      # Lets the job ask GitHub for the token that PyPI trusts.
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: 0.13.6
+          python-version: "3.14"
+
+      # A mistyped tag must not publish a package with the wrong version.
+      - name: Check that the tag matches the version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          VERSION="$(uv run --no-project python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::The release tag $TAG does not match the version v$VERSION in pyproject.toml."
+            exit 1
+          fi
+          if ! grep -q "^## $VERSION " CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no section for $VERSION."
+            exit 1
+          fi
+          echo "Releasing $VERSION"
+
+      - name: Build the wheel and the source package
+        run: uv build
+
+      # PyPI shows the README outside the repository, so a relative link would point at pypi.org.
+      - name: Check the README links in the package
+        run: |
+          uv run --no-project python - <<'PYTHON'
+          import re
+          import zipfile
+          from email import policy
+          from email.parser import BytesParser
+          from pathlib import Path
+
+          wheel = next(Path("dist").glob("*.whl"))
+          with zipfile.ZipFile(wheel) as z:
+              name = next(n for n in z.namelist() if n.endswith(".dist-info/METADATA"))
+              meta = BytesParser(policy=policy.default).parsebytes(z.read(name))
+          text = meta.get_payload(decode=True).decode("utf-8")
+          bad = [t for t in re.findall(r"\]\(([^)\s]+)\)", text) if not re.match(r"(https?:|mailto:|#)", t)]
+          if bad:
+              raise SystemExit(f"Relative links in the package README: {bad}")
+          print("README links are absolute")
+          PYTHON
+
+      # Installs the built wheel in a new environment, as a user would, and runs the command.
+      - name: Install the wheel and run ahd
+        run: |
+          set -euo pipefail
+          uv venv --python 3.14 "$RUNNER_TEMP/try"
+          uv pip install --python "$RUNNER_TEMP/try" dist/*.whl
+          "$RUNNER_TEMP/try/bin/ahd" --help
+          "$RUNNER_TEMP/try/bin/python" -c 'from importlib.metadata import version; print(version("aa-health-duckdb"))'
+
+      # Pinned by commit because this job can publish.
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

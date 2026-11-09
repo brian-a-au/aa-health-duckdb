@@ -2,7 +2,7 @@
 
 [README](../README.md) · **Usage** · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
-This page describes every `ahd` command, with its options and exit codes. Run every command with `uv run ahd` from the project folder, or add `--help` to any command to see its options.
+This page describes every `ahd` command, with its options and exit codes. Add `--help` to any command to see its options. If you work from a clone of the repository instead of an installed tool, put `uv run` in front of each command, e.g., `uv run ahd check`.
 
 ## Contents
 
@@ -22,12 +22,12 @@ This page describes every `ahd` command, with its options and exit codes. Run ev
 ## A typical session
 
 ```
-uv run ahd check                          # does the sign-in work?
-uv run ahd suites                         # which report suites can it see?
-uv run ahd check --rsid "My Suite"        # does it have full access to this suite?
-uv run ahd run --rsid "My Suite"          # fetch, store and write the report
-uv run ahd individual --run 1 --dimension evar17 --metric "Cart Additions"
-uv run ahd runs                           # list what is stored
+ahd check                          # does the sign-in work?
+ahd suites                         # which report suites can it see?
+ahd check --rsid "My Suite"        # does it have full access to this suite?
+ahd run --rsid "My Suite"          # fetch, store and write the report
+ahd individual --run 1 --dimension evar17 --metric "Cart Additions"
+ahd runs                           # list what is stored
 ```
 
 ## Options that every command shares
@@ -79,8 +79,8 @@ The example script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-mornin
 Tests the sign-in, and what the credential can see.
 
 ```
-uv run ahd check
-uv run ahd check --rsid "My Suite"
+ahd check
+ahd check --rsid "My Suite"
 ```
 
 | Option | What it does |
@@ -94,8 +94,8 @@ Without `--rsid`, it prints the login company and how many report suites the cre
 List what the credential can see, with the ID and the name of each item, sorted by name.
 
 ```
-uv run ahd suites
-uv run ahd segments --rsid "My Suite"
+ahd suites
+ahd segments --rsid "My Suite"
 ```
 
 | Option | What it does |
@@ -109,12 +109,12 @@ uv run ahd segments --rsid "My Suite"
 Fetches 92 days of data, stores it as a new run, and writes the HTML report.
 
 ```
-uv run ahd run --rsid "My Suite"
-uv run ahd run --rsid my_suite --segment "Mobile visits"
-uv run ahd run --rsid my_suite --dimension "Internal Search Term" --metric "Cart Additions"
-uv run ahd run --rsid my_suite --date 2026-11-07 --out ./reports/
-uv run ahd run --rsid my_suite --rsid "Other Suite"
-uv run ahd run --all-suites
+ahd run --rsid "My Suite"
+ahd run --rsid my_suite --segment "Mobile visits"
+ahd run --rsid my_suite --dimension "Internal Search Term" --metric "Cart Additions"
+ahd run --rsid my_suite --date 2026-11-07 --out ./reports/
+ahd run --rsid my_suite --rsid "Other Suite"
+ahd run --all-suites
 ```
 
 | Option | What it does |
@@ -161,8 +161,8 @@ A run of a suite with about 400 components takes about 1 minute with the default
 Adds a dimension by metric pair to a stored run, then writes the report again. It makes 5 requests and takes a few seconds, not a full run. It uses the run's report suite, segment and dates.
 
 ```
-uv run ahd individual --run 3 --dimension evar17 --metric revenue
-uv run ahd individual --run 3 --dimension "Internal Search Term" --metric "Cart Additions"
+ahd individual --run 3 --dimension evar17 --metric revenue
+ahd individual --run 3 --dimension "Internal Search Term" --metric "Cart Additions"
 ```
 
 `--run`, `--dimension` and `--metric` are required. `--dimension` and `--metric` work as in `run`. The report's Dimension and Metric dropdowns then switch between all the pairs of the run. `--out`, `--change-alert` and `--spike-alert` work as in `run`.
@@ -178,8 +178,8 @@ It stops with an error in these cases:
 Rebuilds the report of a stored run from the database, with no calls to Adobe. A rebuilt report uses the current version of the page design.
 
 ```
-uv run ahd render --run 3
-uv run ahd render --run 3 --change-alert 50 --out ./shared/
+ahd render --run 3
+ahd render --run 3 --change-alert 50 --out ./shared/
 ```
 
 `--run` is required. `--out`, `--change-alert` and `--spike-alert` work as in `run`. `render` only reads the database, so it works while a `duckdb -readonly` session has the file open.
@@ -189,8 +189,8 @@ uv run ahd render --run 3 --change-alert 50 --out ./shared/
 Lists every stored run, newest first, with its number, report suite, date, status and how long it took.
 
 ```
-uv run ahd runs
-AA_PROFILE=prod uv run ahd runs
+ahd runs
+AA_PROFILE=prod ahd runs
 ```
 
 ## prune
@@ -198,8 +198,8 @@ AA_PROFILE=prod uv run ahd runs
 Deletes stored runs from the database. Give `--run` once for each run number, `--before` to delete every run whose run date is before a day, or both. Without either option, it stops with an error.
 
 ```
-uv run ahd prune --run 1 --run 4
-uv run ahd prune --before 2026-10-01 --yes
+ahd prune --run 1 --run 4
+ahd prune --before 2026-10-01 --yes
 ```
 
 It lists the runs it will delete and asks you to type y first. `--yes` skips the question. When there is no input to read the answer from, e.g., in a scheduled job, it deletes nothing and exits with 1, so add `--yes` there. A run that is still marked "running" is kept unless you add `--force`. Reports that are already written stay in the reports folder. See [How runs are stored](runs.md#deleting-runs).

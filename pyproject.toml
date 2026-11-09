@@ -1,11 +1,30 @@
 [project]
-name = "ahd"
+# The name on PyPI. The command and the Python package are both "ahd". The name "ahd" on PyPI
+# belongs to an unrelated project.
+name = "aa-health-duckdb"
 version = "0.1.0"
-description = "Analytics Health Dashboard rebuilt as Python, DuckDB and a single HTML file"
+description = "Adobe Analytics report suite health checks with the 2.0 API, DuckDB and one HTML report. Unofficial."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
+authors = [{ name = "Brian Au", email = "brian.a.au@gmail.com" }]
+keywords = ["adobe-analytics", "duckdb", "analytics", "data-quality", "monitoring", "report"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Database",
+    "Topic :: Internet :: Log Analysis",
+    "Topic :: Utilities",
+]
 dependencies = [
     "requests",
     "duckdb>=2.0",
@@ -13,6 +32,13 @@ dependencies = [
     # Windows has no time zone files of its own. zoneinfo reads them from this package.
     "tzdata",
 ]
+
+[project.urls]
+Homepage = "https://github.com/brian-a-au/aa-health-duckdb"
+Documentation = "https://github.com/brian-a-au/aa-health-duckdb/tree/main/docs"
+Repository = "https://github.com/brian-a-au/aa-health-duckdb"
+Issues = "https://github.com/brian-a-au/aa-health-duckdb/issues"
+Changelog = "https://github.com/brian-a-au/aa-health-duckdb/blob/main/CHANGELOG.md"
 
 [project.scripts]
 ahd = "ahd.cli:main"
@@ -30,6 +56,18 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ahd"]
+
+# The source package holds what it takes to build and test the tool. The planning notes, the
+# slideshow images and the agent files stay in the repository only.
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "docs/superpowers",
+    "docs/*.gif",
+    "docs/*.png",
+    "CLAUDE.md",
+    "AGENTS.md",
+    ".github",
+]
 
 [tool.ruff]
 line-length = 100

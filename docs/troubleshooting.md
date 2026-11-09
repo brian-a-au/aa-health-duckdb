@@ -72,7 +72,7 @@ When Adobe asks for a longer wait with a Retry-After header, the tool waits that
 
 ## Time zones
 
-- **"which this computer does not know"**: the time zone data is missing, e.g., on Windows after an incomplete install. Run `uv sync` to install it. To make a run anyway, give the date with `ahd run --date YYYY-MM-DD`.
+- **"which this computer does not know"**: the time zone data is missing, e.g., on Windows after an incomplete install. Install the tool again, e.g., `uv tool install --reinstall aa-health-duckdb`, or run `uv sync` in a clone. To make a run anyway, give the date with `ahd run --date YYYY-MM-DD`.
 
 ## Profiles and config files
 
@@ -125,7 +125,7 @@ A run that stopped in another way, e.g., because you closed the window, keeps th
 Add `--verbose` before the command to write debug detail to stderr, e.g., each retry:
 
 ```
-uv run ahd --verbose run --rsid my_suite
+ahd --verbose run --rsid my_suite
 ```
 
 The debug output never includes a credential value or a token.

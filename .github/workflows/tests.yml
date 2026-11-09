@@ -3,8 +3,7 @@ name: tests
 on:
   push:
     branches: [main]
-  # A pull request runs on Linux only. Windows and macOS cost 2 and 10 times as many Actions
-  # minutes, so they run on main, or by hand with "Run workflow" on any branch.
+  # A pull request that changes only Markdown files or the slideshow images skips the tests.
   pull_request:
     paths-ignore:
       - "**/*.md"
@@ -30,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.12", "3.13", "3.14"]
         # Windows and macOS run on the newest Python only, to keep the matrix small.
         exclude:

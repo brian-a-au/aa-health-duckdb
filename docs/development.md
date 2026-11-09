@@ -23,13 +23,31 @@ uv lock --check
 - The example script in `docs/examples` has tests too.
 - The tests in `tests/test_report_js.py` open reports in headless Google Chrome or Chromium. They check the page script, e.g., that the alert lists match the `alerts` macro. The tests look for Chrome in the usual places. To choose the program, set `AHD_CHROME` to its path. Without Chrome these tests are skipped, but on GitHub Actions they fail.
 
-GitHub Actions runs the tests in these cases:
+GitHub Actions runs the tests for every push to `main` and every pull request:
 
-- On Linux the tests run on Python 3.12, 3.13 and 3.14, for every push to `main` and every pull request.
-- On Windows and macOS they run on Python 3.14, for every push to `main` only. These runners cost 2 and 10 times as many Actions minutes, and the repository is private, so its minutes are limited. To run them on a branch, open the tests workflow on GitHub and choose "Run workflow".
+- On Linux the tests run on Python 3.12, 3.13 and 3.14.
+- On Windows and macOS they run on Python 3.14.
 - A pull request that changes only Markdown files or the slideshow images skips the tests.
+- "Run workflow" on the tests workflow runs them on any branch.
 
 A run fails if branch coverage drops below 95 percent.
+
+## Release a new version
+
+The tool is on PyPI as [aa-health-duckdb](https://pypi.org/project/aa-health-duckdb/). The workflow `.github/workflows/release.yml` uploads it when you publish a GitHub release. It uses PyPI trusted publishing, so no PyPI token is stored anywhere. PyPI trusts this publisher: owner `brian-a-au`, repository `aa-health-duckdb`, workflow `release.yml` and environment `pypi`.
+
+1. In a pull request, set the new `version` in `pyproject.toml`, run `uv lock`, and add a section to `CHANGELOG.md`, e.g., `## 0.2.0 (2026-12-01)`. Follow [Semantic Versioning](https://semver.org/). Until 1.0.0, raise the minor version, e.g., 0.2.0, for a change to the database layout or the options, and the patch version, e.g., 0.1.1, for fixes.
+2. Merge the pull request and wait for the checks on `main` to pass.
+3. Publish the release with its tag. Use the changelog section as the notes:
+
+   ```
+   gh release create v0.2.0 --title v0.2.0 --notes-file notes.md
+   ```
+
+4. The release workflow checks that the tag matches the version and that `CHANGELOG.md` has its section. It builds the package, checks that the README links work outside GitHub, installs the wheel and runs `ahd --help`. Then it uploads to PyPI. If the `pypi` environment has a required reviewer, approve the job on GitHub.
+5. Check the page on PyPI, and try the release from a clean shell: `uvx --from aa-health-duckdb ahd --help`.
+
+A tag alone or a draft release uploads nothing. PyPI never accepts the same version twice, so a mistake needs a new version.
 
 ## Remake the slideshow
 

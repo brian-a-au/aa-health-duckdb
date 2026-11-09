@@ -2,6 +2,7 @@
 
 [![Tests](https://github.com/brian-a-au/aa-health-duckdb/actions/workflows/tests.yml/badge.svg)](https://github.com/brian-a-au/aa-health-duckdb/actions/workflows/tests.yml)
 [![Lint](https://github.com/brian-a-au/aa-health-duckdb/actions/workflows/lint.yml/badge.svg)](https://github.com/brian-a-au/aa-health-duckdb/actions/workflows/lint.yml)
+[![PyPI](https://img.shields.io/pypi/v/aa-health-duckdb.svg)](https://pypi.org/project/aa-health-duckdb/)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](https://github.com/brian-a-au/aa-health-duckdb/tree/main/tests)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
@@ -9,7 +10,7 @@
 [![DuckDB 2.0](https://img.shields.io/badge/DuckDB-2.0-fff000.svg)](https://duckdb.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/brian-a-au/aa-health-duckdb/blob/main/LICENSE)
 
-[![Slideshow of the report: summary tiles, a calendar of alerts by day, trend charts with expected ranges, component tables, alerts, browser breakdowns, and light and dark mode](docs/showcase.gif)](docs/showcase.png)
+[![Slideshow of the report: summary tiles, a calendar of alerts by day, trend charts with expected ranges, component tables, alerts, browser breakdowns, and light and dark mode](https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/main/docs/showcase.gif)](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/showcase.png)
 
 32-second loop of real report excerpts, made from synthetic data. Click the animation for a still image.
 
@@ -19,32 +20,34 @@ It is an unofficial alternative to Adobe's Excel workbook ["Analytics Health Das
 
 ## What it does
 
-- **One report you can open anywhere.** Each run writes one HTML file that works in any browser, offline. It has three tabs: Components Summary, Individual Component Summary and Alerts Summary. [The report](docs/report.md) walks through it.
+- **One report you can open anywhere.** Each run writes one HTML file that works in any browser, offline. It has three tabs: Components Summary, Individual Component Summary and Alerts Summary. [The report](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/report.md) walks through it.
 - **Alerts that matter.** It lists Adobe's anomaly flags, drops and spikes larger than percents you set with two sliders, and components that dropped to zero. Components that never collected data are listed apart, so they don't hide real problems.
-- **Every run kept.** It stores each run in a local DuckDB file, so you can compare runs, report suites and organizations with SQL, and send alert emails only when something is new. See the [DuckDB guide](docs/duckdb.md).
+- **Every run kept.** It stores each run in a local DuckDB file, so you can compare runs, report suites and organizations with SQL, and send alert emails only when something is new. See the [DuckDB guide](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/duckdb.md).
 - **Any dimension by any metric.** The Individual Component Summary can hold several pairs, e.g., Internal Search Term by Cart Additions, and you add one in a few seconds.
 - **Plain errors.** When sign-in or access fails, it names the cause and the fix.
 - **Read-only and private.** It only reads from Adobe, never shows or stores your credential, and never sends usage data.
 
-[Compared with the Excel workbook](docs/excel-comparison.md) lists how the numbers and features differ.
+[Compared with the Excel workbook](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/excel-comparison.md) lists how the numbers and features differ.
 
 ## Quick start
 
 You need:
 
-- Python 3.12 or newer and [uv](https://docs.astral.sh/uv/)
+- Python 3.12 or newer, and [uv](https://docs.astral.sh/uv/) or [pipx](https://pipx.pypa.io/) to install the tool
 - an [OAuth Server-to-Server credential](https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/) for the Adobe Analytics API, made in the [Adobe Developer Console](https://developer.adobe.com/console/)
 - the credential's technical account in an [Adobe Analytics product profile](https://experienceleague.adobe.com/en/docs/analytics/admin/admin-console/permissions/product-profile), in the [Adobe Admin Console](https://adminconsole.adobe.com/)
 
-[Configuration](docs/configuration.md#create-the-credential) walks through both steps.
+[Configuration](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/configuration.md#create-the-credential) walks through both steps.
 
-1. Install the tool from the project folder:
+1. Install the tool from [PyPI](https://pypi.org/project/aa-health-duckdb/). It adds the `ahd` command:
 
    ```
-   uv sync
+   uv tool install aa-health-duckdb
    ```
 
-2. Save the credential's four values in `config.json` in the project folder, or use a profile. See [Configuration](docs/configuration.md).
+   With pipx, run `pipx install aa-health-duckdb` instead. To work from a clone of this repository, see [Development](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/development.md), and put `uv run` in front of each command, e.g., `uv run ahd check`.
+
+2. Save the credential's four values in `config.json` in the folder where you run `ahd`, or use a profile. See [Configuration](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/configuration.md).
 
    ```json
    {
@@ -58,42 +61,42 @@ You need:
 3. Check the sign-in and find your report suite:
 
    ```
-   uv run ahd check
-   uv run ahd suites
-   uv run ahd check --rsid "My Suite"
+   ahd check
+   ahd suites
+   ahd check --rsid "My Suite"
    ```
 
-   `--rsid` takes a report suite ID or a name. [How IDs and names are matched](docs/usage.md#how-ids-and-names-are-matched) gives the rules.
+   `--rsid` takes a report suite ID or a name. [How IDs and names are matched](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/usage.md#how-ids-and-names-are-matched) gives the rules.
 
 4. Fetch the data and write the report. It takes about 1 minute for a suite with 400 components, and it prints the report's path at the end:
 
    ```
-   uv run ahd run --rsid "My Suite"
+   ahd run --rsid "My Suite"
    ```
 
    To check several suites, give `--rsid` more than once, or use `--all-suites` for every suite.
 
 5. Open the HTML file in your browser.
 
-If something fails, see [Troubleshooting](docs/troubleshooting.md).
+If something fails, see [Troubleshooting](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/troubleshooting.md).
 
 ## Documentation
 
 | Document | What it covers |
 |---|---|
-| [Usage](docs/usage.md) | Every command, with its options, exit codes and defaults |
-| [Configuration](docs/configuration.md) | Where the tool finds your credential, profiles, and the Admin Console permissions it needs |
-| [The report](docs/report.md) | A walkthrough of the HTML report: the sliders, tiles, tabs, alerts and copying |
-| [How runs are stored](docs/runs.md) | The DuckDB file, run numbers, deleting runs, and the tables inside |
-| [Run it every day](docs/scheduling.md) | A daily check of every suite with an alert email, on Windows, macOS and Linux |
-| [DuckDB guide](docs/duckdb.md) | SQL recipes: alert emails, owner routing, digests across suites and organizations, audits and exports |
-| [Troubleshooting](docs/troubleshooting.md) | Sign-in problems, limited access, warnings and database errors |
-| [Compared with the Excel workbook](docs/excel-comparison.md) | How the numbers differ, what the tool adds, and what it leaves out |
-| [Development](docs/development.md) | Tests, lint and the README slideshow. See also [AGENTS.md](AGENTS.md) |
+| [Usage](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/usage.md) | Every command, with its options, exit codes and defaults |
+| [Configuration](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/configuration.md) | Where the tool finds your credential, profiles, and the Admin Console permissions it needs |
+| [The report](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/report.md) | A walkthrough of the HTML report: the sliders, tiles, tabs, alerts and copying |
+| [How runs are stored](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/runs.md) | The DuckDB file, run numbers, deleting runs, and the tables inside |
+| [Run it every day](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/scheduling.md) | A daily check of every suite with an alert email, on Windows, macOS and Linux |
+| [DuckDB guide](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/duckdb.md) | SQL recipes: alert emails, owner routing, digests across suites and organizations, audits and exports |
+| [Troubleshooting](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/troubleshooting.md) | Sign-in problems, limited access, warnings and database errors |
+| [Compared with the Excel workbook](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/excel-comparison.md) | How the numbers differ, what the tool adds, and what it leaves out |
+| [Development](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/development.md) | Tests, lint and the README slideshow. See also [AGENTS.md](https://github.com/brian-a-au/aa-health-duckdb/blob/main/AGENTS.md) |
 
 ## Related tools
 
-These read-only tools also work with Adobe Analytics implementations. aa_auto_sdr and cja_auto_sdr use the same kind of credential as `ahd`, and one credential can serve all three. See [Share one credential across tools](docs/configuration.md#share-one-credential-across-tools).
+These read-only tools also work with Adobe Analytics implementations. aa_auto_sdr and cja_auto_sdr use the same kind of credential as `ahd`, and one credential can serve all three. See [Share one credential across tools](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/configuration.md#share-one-credential-across-tools).
 
 - [aa_auto_sdr](https://github.com/brian-a-au/aa_auto_sdr) builds a Solution Design Reference for Adobe Analytics report suites. It shares its profiles with `ahd`.
 - [cja_auto_sdr](https://github.com/brian-a-au/cja_auto_sdr) does the same for Customer Journey Analytics data views.
@@ -106,15 +109,15 @@ sdr-grader and sdr-visualizer read the JSON files that aa_auto_sdr and cja_auto_
 
 - Each run and each report covers one report suite. `ahd run` can check several suites in one command, but it checks them one after another and writes one report for each.
 - It is in English only.
-- The `ahd` command does not send email. The [DuckDB guide](docs/duckdb.md#email-recipes) shows how to send alerts with a short script.
-- Adobe allows 12 requests in any 6 seconds for each user, and the tool starts no more than that. Two `ahd` commands that run at the same time with the same credential each keep their own count, so together they can go over the limit. After a rate limit or a temporary error, the tool waits and tries again. See [Troubleshooting](docs/troubleshooting.md#problems-in-the-status-section).
+- The `ahd` command does not send email. The [DuckDB guide](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/duckdb.md#email-recipes) shows how to send alerts with a short script.
+- Adobe allows 12 requests in any 6 seconds for each user, and the tool starts no more than that. Two `ahd` commands that run at the same time with the same credential each keep their own count, so together they can go over the limit. After a rate limit or a temporary error, the tool waits and tries again. See [Troubleshooting](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/troubleshooting.md#problems-in-the-status-section).
 
 ## Community
 
-Contributions are welcome within the project's intentionally narrow scope. Read [CONTRIBUTING.md](CONTRIBUTING.md) before you open a pull request. Report security issues privately as described in [SECURITY.md](SECURITY.md). Do not put a vulnerability, a credential or data from Adobe in a public issue. Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+Contributions are welcome within the project's intentionally narrow scope. Read [CONTRIBUTING.md](https://github.com/brian-a-au/aa-health-duckdb/blob/main/CONTRIBUTING.md) before you open a pull request. Report security issues privately as described in [SECURITY.md](https://github.com/brian-a-au/aa-health-duckdb/blob/main/SECURITY.md). Do not put a vulnerability, a credential or data from Adobe in a public issue. Participation is governed by the [Code of Conduct](https://github.com/brian-a-au/aa-health-duckdb/blob/main/CODE_OF_CONDUCT.md).
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](https://github.com/brian-a-au/aa-health-duckdb/blob/main/LICENSE).
 
 This is an unofficial tool. Adobe does not make, support or endorse it. Adobe, Adobe Analytics and Analytics Health Dashboard are names that belong to Adobe.
