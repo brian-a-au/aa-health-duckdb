@@ -25,7 +25,7 @@ uv run ruff format --check
 uv lock --check
 ```
 
-The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 on Windows and macOS. Branch coverage must stay at 95 percent or more. Run `uv lock` after you change `pyproject.toml`, so that `uv lock --check` passes.
+The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 on Windows and macOS. Pull requests run Linux only, to save Actions minutes. Windows and macOS run on `main`, or by hand with "Run workflow". For a change that could behave differently on Windows or macOS, e.g., file paths, run the workflow by hand on the branch before you merge. Branch coverage must stay at 95 percent or more. Run `uv lock` after you change `pyproject.toml`, so that `uv lock --check` passes.
 
 ## Where things are
 

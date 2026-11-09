@@ -3,7 +3,14 @@ name: tests
 on:
   push:
     branches: [main]
+  # A pull request runs on Linux only. Windows and macOS cost 2 and 10 times as many Actions
+  # minutes, so they run on main, or by hand with "Run workflow" on any branch.
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/*.gif"
+      - "docs/*.png"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,18 +30,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
         python-version: ["3.12", "3.13", "3.14"]
+        # Windows and macOS run on the newest Python only, to keep the matrix small.
+        exclude:
+          - os: windows-latest
+            python-version: "3.12"
+          - os: windows-latest
+            python-version: "3.13"
+          - os: macos-latest
+            python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.13"
         include:
           # Coverage runs once. The 95 percent floor does not depend on the Python version.
           - os: ubuntu-latest
             python-version: "3.14"
             coverage: true
-          # Windows and macOS run on the newest Python only, to keep the matrix small.
-          - os: windows-latest
-            python-version: "3.14"
-          - os: macos-latest
-            python-version: "3.14"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
