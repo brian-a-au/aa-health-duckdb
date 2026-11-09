@@ -22,7 +22,7 @@ The report is one file with its styles, script and data inside it. Open it in an
 
 Working offline does not mean the report is cleared for sharing. It holds your component names and values, so share it only where your organization allows.
 
-A switch at the top right chooses light mode, dark mode or your computer's setting. Your browser remembers the choice. Every table can be sorted by clicking a column heading.
+A switch at the top right chooses light mode, dark mode or your computer's setting. Your browser remembers the choice. Every table can be sorted by clicking a column heading. Every table also has a name that a screen reader reads out, e.g., "Custom events" or "Top 100 values yesterday".
 
 ## The top of the page
 

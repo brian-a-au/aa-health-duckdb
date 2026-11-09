@@ -22,9 +22,10 @@ Run the same checks as GitHub Actions before every commit:
 uv run pytest --cov=ahd --cov-branch
 uv run ruff check
 uv run ruff format --check
+uv lock --check
 ```
 
-The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 on Windows and macOS. Branch coverage must stay at 95 percent or more. CI also runs `uv lock --check`, so run `uv lock` after you change `pyproject.toml`.
+The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 on Windows and macOS. Branch coverage must stay at 95 percent or more. Run `uv lock` after you change `pyproject.toml`, so that `uv lock --check` passes.
 
 ## Where things are
 
@@ -35,6 +36,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 | `src/ahd/api/auth.py` | OAuth Server-to-Server sign-in, with a plain message for each way it can fail |
 | `src/ahd/api/client.py` | The only HTTP client for Adobe: retries, backoff, and one sign-in renewal across threads |
 | `src/ahd/api/reports.py` | Builds report request bodies and parses responses |
+| `src/ahd/dates.py` | Every date a run uses: today, yesterday, the week, the baseline and the 92 days of trends |
 | `src/ahd/catalog.py`, `src/ahd/data/` | Decides which components a run checks and how each is counted |
 | `src/ahd/fetch.py` | One run: catalog, anomaly probe, batched trends, and Individual Component Summary pairs |
 | `src/ahd/lookup.py` | Lists suites and segments, and turns names into IDs |
