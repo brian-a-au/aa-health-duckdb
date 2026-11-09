@@ -843,10 +843,10 @@ def test_the_charts_mark_the_chosen_day_and_its_weekday_average(chrome, showcase
     # The line, the dot and the average bar share the chosen day's x.
     for m in (y, p, got["dimension"], got["individual"]):
         assert m["line"] is not None and m["line"] == m["dot"] == pytest.approx(m["average"])
-        assert {"Chosen day", "Weekday average (12 weeks)"} <= set(m["legend"])
+        assert {"Chosen day", "Weekday average"} <= set(m["legend"])
         # The key's top row ends with the chosen day and its weekday average.
         assert m["rows"][0][0] == "Actual"
-        assert m["rows"][0][-2:] == ["Chosen day", "Weekday average (12 weeks)"]
+        assert m["rows"][0][-2:] == ["Chosen day", "Weekday average"]
     # The top row holds the lines, the band and the chosen day. Adobe's flags get the second row,
     # each in a 12 by 12 box like the triangles on the chart.
     assert got["yesterday"]["rows"][0] == [
@@ -854,7 +854,7 @@ def test_the_charts_mark_the_chosen_day_and_its_weekday_average(chrome, showcase
         "Expected",
         "Expected range",
         "Chosen day",
-        "Weekday average (12 weeks)",
+        "Weekday average",
     ]
     assert len(got["yesterday"]["rows"]) == 2
     assert set(got["yesterday"]["rows"][1]) <= {"Flagged above range", "Flagged below range"}
