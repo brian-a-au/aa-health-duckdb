@@ -189,8 +189,10 @@
   // A run made with ahd run --date is about the days before that date, not before the run time.
   var yesterdayNote = (data.run || {}).date_given ? " (day before the run date)" : " (yesterday)";
   function dayNote(d) { return d === yesterday ? yesterdayNote : ""; }
-  // t: the slider's share. A drop below usual by more than t is flagged, and a change by more
-  // than t either way gets an arrow.
+  // t: the slider's share. A drop below the weekday average by more than t is flagged, and a
+  // change by more than t either way gets an arrow.
+  // The weekday average is the average of the same weekday over 12 weeks. The data and the SQL
+  // call it "usual"; the page always calls it the weekday average.
   var state = { gran: "day", day: yesterday, alertDay: yesterday, range: "", flagged: false,
     t: typeof data.change_alert === "number" ? data.change_alert : 0.3 };
   var MIN_USUAL = typeof data.min_usual === "number" ? data.min_usual : 10;
@@ -246,8 +248,8 @@
     return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
   }
 
-  // Tables start in their usual order. A heading click sorts (numbers largest first, text A to Z),
-  // a second click reverses, a third goes back to the usual order.
+  // Tables start in their original order. A heading click sorts (numbers largest first, text A
+  // to Z), a second click reverses, a third goes back to the original order.
   // name is what a screen reader calls the table: {label: text} or {labelledby: a heading's id}.
   function table(headers, rows, foot, id, name) {
     var wrap = el("div", { "class": "table-wrap" });
@@ -306,7 +308,7 @@
         var how = numSort(h) ? (st.dir === 1 ? "largest first" : "smallest first") :
           (st.dir === 1 ? "A to Z" : "Z to A");
         note.appendChild(document.createTextNode("Sorted by " + h.label + ", " + how + "."));
-        var reset = el("button", { type: "button" }, "Usual order");
+        var reset = el("button", { type: "button" }, "Original order");
         reset.addEventListener("click", function () { setSort(-1, 0); });
         note.appendChild(reset);
         note.hidden = false;
@@ -377,14 +379,15 @@
 
   function dropBadge() {
     return badge("flag", "▼", "Large drop", "More than " + Math.round(state.t * 100) +
-      "% below the usual value. Set the percent with the slider at the top of the page.");
+      "% below the weekday average. Set the percent with the slider at the top of the page.");
   }
 
   function arrowFor(pct) {
     if (pct === null || pct === undefined || Math.abs(pct) <= state.t) return null;
     return pct > 0 ? "up" : "down";
   }
-  // A value that fell further below the usual value than the slider allows. Zero is its own alert.
+  // A value that fell further below its weekday average than the slider allows. Zero is its own
+  // alert.
   function isLargeDrop(value, usual, pct) {
     return value !== 0 && pct !== null && pct !== undefined && pct < -state.t &&
       usual !== null && usual >= MIN_USUAL;
@@ -455,10 +458,11 @@
     headers.push({ label: "Name", cls: "name" });
     headers.push({ label: daily ? "Total for the day" : "Total for the week", num: true });
     headers.push({
-      label: daily ? "Usual for this weekday (12-week average)" : "Usual week (12-week average)",
+      label: daily ? "Weekday average (12 weeks)" : "Average week (12 weeks)",
       num: true
     });
-    headers.push({ label: "Change from usual", num: true });
+    headers.push({ label: daily ? "Change from weekday average" : "Change from average week",
+      num: true });
     headers.push({ label: "Flag" });
     var body = rows.map(function (r) {
       var cells = [];
@@ -491,7 +495,8 @@
   function renderSliderResult() {
     var when = state.gran === "week" ? "The week ending " + fmtDay(yesterday, false) :
       fmtDay(state.day, false) + dayNote(state.day);
-    byId("change-alert-result").textContent = dropSummary(currentRows(), when);
+    byId("change-alert-result").textContent = dropSummary(currentRows(), when,
+      state.gran === "week");
   }
 
   function renderTables() {
@@ -925,7 +930,7 @@
     if (a.anomaly === "low") return a.actual === 0 ? "below the expected range, value is 0" :
       "below the expected range";
     if (a.anomaly === "high") return "above the expected range";
-    if (!a.zero) return fmtPct(a.pct_vs_usual).replace("-", "") + " below the usual value";
+    if (!a.zero) return fmtPct(a.pct_vs_usual).replace("-", "") + " below the weekday average";
     return "value is 0";
   }
 
@@ -951,7 +956,7 @@
       if (a.expected !== null) s += ", expected " + fmtRound(a.expected, a.metric_type);
       if (a.pct_vs_expected !== null) s += ", change " + fmtPct(a.pct_vs_expected);
     } else if (a.usual !== null) {
-      s += ", usual " + fmtRound(a.usual, a.metric_type);
+      s += ", weekday average " + fmtRound(a.usual, a.metric_type);
     }
     return s + ".";
   }
@@ -972,7 +977,8 @@
       lines.push("No alerts for this day.");
     } else {
       section("Unusual values", parts.unusual);
-      section("Drops of more than " + Math.round(state.t * 100) + "% below usual", parts.drops);
+      section("Drops of more than " + Math.round(state.t * 100) + "% below the weekday average",
+        parts.drops);
       section("Dropped to zero", parts.zero);
     }
     if (parts.unused.length) {
@@ -1004,8 +1010,10 @@
   }
 
   // One plain sentence about large drops in these rows, naming the largest drop even when it is
-  // under the slider, so a reader can see why nothing was flagged.
-  function dropSummary(rows, when) {
+  // under the slider, so a reader can see why nothing was flagged. A week is compared with the
+  // average week, and a day with its weekday average.
+  function dropSummary(rows, when, week) {
+    var base = week ? "the average week" : "the weekday average";
     var pct = Math.round(state.t * 100) + "%";
     var drops = rows.filter(function (r) { return isLargeDrop(r.value, r.baseline, r.pct); });
     var flagged = drops.length;
@@ -1018,11 +1026,11 @@
     });
     var head = flagged ?
       when + ": " + flagged + (flagged === 1 ? " component is" : " components are") +
-        " more than " + pct + " below usual" + (byAdobe ? ", and Adobe also flagged " +
+        " more than " + pct + " below " + base + (byAdobe ? ", and Adobe also flagged " +
         (byAdobe === flagged ? (flagged === 1 ? "it" : "all of them") : byAdobe + " of them") :
         "") + "." :
-      when + ": no component is more than " + pct + " below usual.";
-    if (!worst) return head + " No component is below its usual value.";
+      when + ": no component is more than " + pct + " below " + base + ".";
+    if (!worst) return head + " No component is below " + base + ".";
     return head + " The largest drop is " + fmtPct(worst.pct).replace("-", "") + " (" +
       componentLabel(worst) + ").";
   }
@@ -1056,16 +1064,16 @@
     host.appendChild(g1);
 
     var g2 = el("section", { "class": "alert-group", "aria-labelledby": "drops-title" });
-    g2.appendChild(groupHeading("drops-title", "Drops of more than " + pct + " below usual",
+    g2.appendChild(groupHeading("drops-title", "Drops of more than " + pct + " below the weekday average",
       parts.drops.length));
     if (parts.drops.length) {
       g2.appendChild(el("p", { "class": "hint" },
-        "These values were more than " + pct + " below the usual value for the weekday, but " +
+        "These values were more than " + pct + " below their weekday average, but " +
         "Adobe did not flag them. Move the slider at the top of the page to change the percent."));
       g2.appendChild(table(
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
-         { label: "Usual", num: true }, { label: "Actual", num: true },
-         { label: "Change from usual", num: true }],
+         { label: "Weekday average", num: true }, { label: "Actual", num: true },
+         { label: "Change from weekday average", num: true }],
         parts.drops.map(function (a) {
           return nameIdCells(a).concat([{ c: fmtRound(a.usual, a.metric_type), k: a.usual },
             { c: fmtNum(a.actual, a.metric_type), k: a.actual },
@@ -1085,7 +1093,7 @@
         alertDayText() + "."));
       g3.appendChild(table(
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
-         { label: "Usual", num: true }, { label: "Expected", num: true },
+         { label: "Weekday average", num: true }, { label: "Expected", num: true },
          { label: "Actual", num: true }],
         parts.zero.map(function (a) {
           var name = el("span");
@@ -1192,15 +1200,16 @@
           a.expected === null ? "Not available" : fmtRound(a.expected, a.metric_type),
           fmtNum(a.actual, a.metric_type), fmtPct(a.pct_vs_expected)];
       });
-    section("Drops of more than " + pct + " below usual", parts.drops,
-      [{ label: "Component" }, { label: "Usual", num: true }, { label: "Actual", num: true },
+    section("Drops of more than " + pct + " below the weekday average", parts.drops,
+      [{ label: "Component" }, { label: "Weekday average", num: true }, { label: "Actual", num: true },
        { label: "Change", num: true }],
       function (a) {
         return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type),
           fmtPct(a.pct_vs_usual)];
       });
     section("Dropped to zero", parts.zero,
-      [{ label: "Component" }, { label: "Usual", num: true }, { label: "Actual", num: true }],
+      [{ label: "Component" }, { label: "Weekday average", num: true },
+       { label: "Actual", num: true }],
       function (a) {
         return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type)];
       });
@@ -1316,7 +1325,7 @@
       tile("flag", "▼", "Below expected range", numFmt.format(low), "Flagged by Adobe", toAlerts);
     }
     tile("flag", "▼", "Large drops", numFmt.format(drops),
-      "More than " + Math.round(state.t * 100) + "% below usual", toAlerts);
+      "More than " + Math.round(state.t * 100) + "% below the weekday average", toAlerts);
     tile("zero", "●", "Dropped to zero", numFmt.format(zero),
       unused ? numFmt.format(unused) + " others never collected data" : "Had data on other days",
       toAlerts);

@@ -129,12 +129,12 @@ FROM latest_runs SELECT run_id, rsid_name, today, status ORDER BY run_id DESC;
 
 ### `component_days`
 
-One row per run, component and full day, with everything the report computes:
+One row per run, component and full day, with everything the report computes. The column `usual` is the value that the report calls the weekday average.
 
 - `value`, `expected`, `lower` and `upper` from Adobe
 - `anomaly`: "high" or "low" when Adobe flagged the value, else empty
-- `usual`: the 12-week average for the same weekday, as in the report
-- `pct_vs_usual`: the change from the usual value, e.g., -0.25 for 25 percent below
+- `usual`: the weekday average, which is the average of the same weekday in the 12 weeks before the day
+- `pct_vs_usual`: the change from the weekday average, e.g., -0.25 for 25 percent below
 - `zero`: the value was 0
 - `unused`: the value was 0 on every day of the run, so the component never collected data
 - `is_yesterday`: the row is for the last full day of the run
@@ -145,7 +145,7 @@ The alerts of one run, by the report's rules. Give the run number first. Give th
 
 - `run`: the run number. It can be a query, e.g., `(SELECT max(run_id) FROM latest_runs WHERE rsid = 'my_suite' AND segment_id IS NULL)`. The query must return one run. `latest_runs` holds one row for each segment of a suite, so name the segment, or use `segment_id IS NULL` for the run without a segment.
 - `threshold`: the percent for a large drop, as a share. The default is `0.30`, the same as the report's slider.
-- `min_usual`: a large drop needs a usual value of at least this much. The default is `10`.
+- `min_usual`: a large drop needs a weekday average (`usual`) of at least this much. The default is `10`.
 - `for_day`: the day to check, e.g., `'2026-11-03'`. The default is the day before the run date.
 
 ```sql

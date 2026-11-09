@@ -1,5 +1,7 @@
 """The example scripts in docs/examples run against a real ahd database."""
 
+import email
+import email.policy
 import importlib.util
 from datetime import date, timedelta
 from pathlib import Path
@@ -54,8 +56,14 @@ def test_send_alerts_writes_a_draft_without_smtp(tmp_path, monkeypatch):
     assert mod.main([str(db), "rs1"]) == 0
     eml = (tmp_path / "alerts.eml").read_text(encoding="utf-8")
     assert "Subject: 1 Analytics Health alerts for rs1 on 2026-11-06" in eml
-    assert "25,000,000" in eml and "e+07" not in eml
-    assert "Big &lt;event&gt;" in eml  # names are escaped in the HTML part
+    # Read the parts decoded, so that a line break in the encoded file does not matter.
+    msg = email.message_from_string(eml, policy=email.policy.default)
+    text = msg.get_body(("plain",)).get_content()
+    page = msg.get_body(("html",)).get_content()
+    assert "25,000,000" in text and "e+07" not in text
+    assert "weekday average 25,000,000, actual 5,000,000" in text
+    assert "<th style='text-align:left;padding:4px 8px'>Weekday average</th>" in page
+    assert "Big &lt;event&gt;" in page  # names are escaped in the HTML part
 
 
 def test_send_alerts_nothing_to_send(tmp_path, monkeypatch, capsys):

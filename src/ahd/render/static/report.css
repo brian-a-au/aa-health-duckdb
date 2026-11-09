@@ -136,6 +136,8 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .change-alert output { font-weight: 600; min-width: 3.5em; }
 .change-alert .hint { flex-basis: 100%; margin: 0; }
 .change-alert-result { flex-basis: 100%; margin: 4px 0 0; font-weight: 600; }
+.change-alert .rule { flex-basis: 100%; }
+.rule ul { margin: 4px 0 0; padding-left: 20px; font-size: 0.9rem; color: var(--text-2); }
 .unused-badge { margin-left: 6px; font-size: 0.8rem; }
 .warning {
   border-left: 4px solid var(--flag);
@@ -256,6 +258,10 @@ td.id, td.id code { white-space: nowrap; overflow-wrap: normal; }
 .badge-good .icon { color: var(--good); }
 td.name .badge { margin-left: 8px; }
 .status-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* With no problems, the status box is one line: the heading, a badge and a sentence. */
+.status-ok { padding: 10px 16px; }
+.status-ok .status-line { margin: 0; }
+.status-ok h2 { margin: 0; font-size: 1rem; }
 
 /* ---- summary tiles ---- */
 .tiles {
