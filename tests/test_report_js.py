@@ -580,6 +580,7 @@ var KINDS = ["body", ".muted", ".hint", "th", "td", ".tile-label", ".tile-note",
   "button", ".group-count", ".chart-readout", ".empty", "summary", "code", "select", "label",
   ".badge-good", ".badge-flag", ".badge-zero", ".jump a", ".jump-count", ".jump-label",
   ".calendar-readout", ".calendar-list-title", "button.link", ".calendar-legend"];
+var SVG_KINDS = ["#metric-chart text.axis", "#calendar text.axis"];
 function background(n) {
   while (n) {
     var c = getComputedStyle(n).backgroundColor;
@@ -595,6 +596,11 @@ var out = {};
   KINDS.forEach(function (k) {
     var n = document.querySelector(k);
     if (n) colors[k] = [getComputedStyle(n).color, background(n), background(document.body)];
+  });
+  // SVG text takes its color from fill, not color.
+  SVG_KINDS.forEach(function (k) {
+    var n = document.querySelector(k);
+    if (n) colors[k] = [getComputedStyle(n).fill, background(n), background(document.body)];
   });
   out[choice] = {
     theme: document.documentElement.getAttribute("data-theme"),
@@ -634,6 +640,7 @@ def test_theme_buttons_and_text_contrast(chrome, showcase, tmp_path):
         t = got[choice]
         assert (t["theme"], t["pressed"], t["saved"]) == (choice, [choice], choice)
         assert len(t["colors"]) >= 15
+        assert "#metric-chart text.axis" in t["colors"] and "#calendar text.axis" in t["colors"]
         low = {k: round(_contrast(*c), 2) for k, c in t["colors"].items() if _contrast(*c) < 4.5}
         assert low == {}, f"text below a contrast of 4.5 in the {choice} theme: {low}"
     assert got["auto"]["theme"] is None and got["auto"]["pressed"] == ["auto"]
