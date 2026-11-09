@@ -109,6 +109,10 @@ sdr-grader and sdr-visualizer read the JSON files that aa_auto_sdr and cja_auto_
 - The `ahd` command does not send email. The [DuckDB guide](docs/duckdb.md#email-recipes) shows how to send alerts with a short script.
 - Adobe allows 12 requests in any 6 seconds for each user, and the tool starts no more than that. Two `ahd` commands that run at the same time with the same credential each keep their own count, so together they can go over the limit. After a rate limit or a temporary error, the tool waits and tries again. See [Troubleshooting](docs/troubleshooting.md#problems-in-the-status-section).
 
+## Community
+
+Contributions are welcome within the project's intentionally narrow scope. Read [CONTRIBUTING.md](CONTRIBUTING.md) before you open a pull request. Report security issues privately as described in [SECURITY.md](SECURITY.md). Do not put a vulnerability, a credential or data from Adobe in a public issue. Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
