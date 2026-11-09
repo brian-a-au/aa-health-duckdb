@@ -60,7 +60,7 @@ cron does not run a job while the computer sleeps or is off. On a Mac, use launc
 
 ### With launchd on a Mac
 
-launchd runs a job that it missed when the Mac was asleep, as soon as the Mac wakes. Save this file as `~/Library/LaunchAgents/local.ahd.daily.plist`. Change `you` to your user name:
+launchd runs a job that it missed when the Mac was asleep, as soon as the Mac wakes. It does not run a job that it missed when the Mac was off. That job waits for the next 7:30. Save this file as `~/Library/LaunchAgents/local.ahd.daily.plist`. Change `you` to your user name:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -109,12 +109,14 @@ set MAIL_FROM=ahd@example.com
 set MAIL_TO=team@example.com
 set SMTP_USER=ahd@example.com
 set SMTP_PASSWORD=your mail password
+set UV=%USERPROFILE%\.local\bin\uv.exe
 (
-  uv run ahd run --profile prod --all-suites
-  uv run python docs\examples\send_alerts.py "%USERPROFILE%\.aa\orgs\prod\ahd.duckdb" --all
+  "%UV%" run ahd run --profile prod --all-suites
+  "%UV%" run python docs\examples\send_alerts.py "%USERPROFILE%\.aa\orgs\prod\ahd.duckdb" --all
 ) >> "%USERPROFILE%\ahd-daily.log" 2>&1
 ```
 
+- A scheduled task may not find `uv` by name, so the file gives its full path. The uv installer puts `uv.exe` in `%USERPROFILE%\.local\bin` by default. Run `where uv` in Command Prompt to see where it is on your computer.
 - The file is in your user folder. By default, other users of the computer cannot read it, except administrators.
 - The part in brackets adds the output of both commands to `ahd-daily.log` in your user folder.
 
