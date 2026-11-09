@@ -744,19 +744,24 @@
     return out;
   }
 
+  // One entry of the chart's key. A line or band gets an 18 by 12 box. A mark gets a 12 by 12
+  // box, with the same triangle as on the chart, so it sits next to its label like the lines.
+  var MARK_KINDS = ["high", "low", "chosen", "average"];
   function legendItem(kind, label) {
     var li = el("li");
-    var s = sv("svg", { viewBox: "0 0 18 10", "aria-hidden": "true" });
-    if (kind === "actual") s.appendChild(sv("line", { x1: 1, y1: 5, x2: 17, y2: 5, "class": "actual" }));
-    if (kind === "expected") s.appendChild(sv("line", { x1: 1, y1: 5, x2: 17, y2: 5, "class": "expected" }));
-    if (kind === "band") s.appendChild(sv("rect", { x: 1, y: 1, width: 16, height: 8, "class": "band" }));
-    if (kind === "high") s.appendChild(sv("path", { d: "M9 0.5 L14.5 9.5 L3.5 9.5 Z", "class": "mark-high" }));
-    if (kind === "low") s.appendChild(sv("path", { d: "M9 9.5 L14.5 0.5 L3.5 0.5 Z", "class": "mark-low" }));
+    var mark = MARK_KINDS.indexOf(kind) >= 0, w = mark ? 12 : 18;
+    var s = sv("svg", { viewBox: "0 0 " + w + " 12", width: w, height: 12, "aria-hidden": "true",
+      "class": mark ? "key-mark" : "key-line" });
+    if (kind === "actual") s.appendChild(sv("line", { x1: 1, y1: 6, x2: 17, y2: 6, "class": "actual" }));
+    if (kind === "expected") s.appendChild(sv("line", { x1: 1, y1: 6, x2: 17, y2: 6, "class": "expected" }));
+    if (kind === "band") s.appendChild(sv("rect", { x: 1, y: 2, width: 16, height: 8, "class": "band" }));
+    if (kind === "high") s.appendChild(sv("path", { d: "M6 0 L12 12 L0 12 Z", "class": "mark-high" }));
+    if (kind === "low") s.appendChild(sv("path", { d: "M6 12 L12 0 L0 0 Z", "class": "mark-low" }));
     if (kind === "chosen") {
-      s.appendChild(sv("line", { x1: 9, y1: 0, x2: 9, y2: 10, "class": "chosen" }));
-      s.appendChild(sv("circle", { cx: 9, cy: 5, r: 3.5, "class": "chosen-dot" }));
+      s.appendChild(sv("line", { x1: 6, y1: 0, x2: 6, y2: 12, "class": "chosen" }));
+      s.appendChild(sv("circle", { cx: 6, cy: 6, r: 3.5, "class": "chosen-dot" }));
     }
-    if (kind === "average") s.appendChild(sv("line", { x1: 3, y1: 5, x2: 15, y2: 5, "class": "average" }));
+    if (kind === "average") s.appendChild(sv("line", { x1: 0, y1: 6, x2: 12, y2: 6, "class": "average" }));
     li.appendChild(s);
     li.appendChild(el("span", null, label));
     return li;
@@ -951,14 +956,18 @@
 
     host.appendChild(svg);
     host.appendChild(readout);
-    var legend = el("ul", { "class": "legend" });
-    legend.appendChild(legendItem("actual", "Actual"));
-    if (hasExpected) legend.appendChild(legendItem("expected", "Expected"));
-    if (hasBands) legend.appendChild(legendItem("band", "Expected range"));
-    if (anyHigh) legend.appendChild(legendItem("high", "Flagged above range"));
-    if (anyLow) legend.appendChild(legendItem("low", "Flagged below range"));
-    if (chosen >= 0) legend.appendChild(legendItem("chosen", "Chosen day"));
-    if (average !== null) legend.appendChild(legendItem("average", "Weekday average (12 weeks)"));
+    // The key has two rows: the lines, the band and the chosen day with its weekday average, then
+    // Adobe's flags. A row with nothing in it is left out.
+    var legend = el("div", { "class": "legend" });
+    function row(items) {
+      var ul = el("ul", { "class": "legend-row" });
+      items.forEach(function (it) { if (it[0]) ul.appendChild(legendItem(it[1], it[2])); });
+      if (ul.firstChild) legend.appendChild(ul);
+    }
+    row([[true, "actual", "Actual"], [hasExpected, "expected", "Expected"],
+      [hasBands, "band", "Expected range"], [chosen >= 0, "chosen", "Chosen day"],
+      [average !== null, "average", "Weekday average"]]);
+    row([[anyHigh, "high", "Flagged above range"], [anyLow, "low", "Flagged below range"]]);
     host.appendChild(legend);
     if (!hasBands) {
       host.appendChild(byId("no-bands-template").content.cloneNode(true));
