@@ -123,7 +123,7 @@ The bar goes left of a gray center line for a drop and right of it for a rise. H
 
 A small line in each row shows the component's last 13 weeks, on a scale from 0 to its largest value, with a dot on the chosen day. A drop to zero or a break in tracking shows as a dip at the right end. Choose the line to see the component on the metric or dimension chart above.
 
-The "Find a component" box above the tables keeps only the components whose name, number or ID contains the text, e.g., "campaign", "evar5" or "metrics/event12". It works with the number range and with "Show only flagged".
+The "Find a component" box above the tables keeps only the components whose name, number or ID contains the text, e.g., "evar5". It works with the number range and with "Show only flagged".
 
 The table headings stay in view while you scroll. A table that is too wide for the window, e.g., on a phone, scrolls in its own box, and its headings stay at the top of that box. The links under "Jump to" above the tables go to each group, and show how many components each group has.
 
