@@ -1,6 +1,6 @@
 # Use the database with DuckDB
 
-[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · **DuckDB guide** · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md)
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · **DuckDB guide** · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 Every `ahd` run is saved in one DuckDB file. The HTML report shows one run at a time. The file holds every run, for every report suite, and you can ask it any question with SQL. This guide shows what you can do with it, from a daily alert email to an audit of unused variables across all your organizations.
 

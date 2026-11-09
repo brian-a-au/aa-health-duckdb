@@ -1,6 +1,6 @@
 # Run it every day
 
-[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · **Run it every day** · [Troubleshooting](troubleshooting.md)
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · **Run it every day** · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 This page shows how to check every report suite each morning and get one email with the alerts. The schedule runs two commands:
 

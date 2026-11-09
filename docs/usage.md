@@ -1,6 +1,6 @@
 # Usage
 
-[README](../README.md) · **Usage** · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md)
+[README](../README.md) · **Usage** · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 This page describes every `ahd` command, with its options and exit codes. Run every command with `uv run ahd` from the project folder, or add `--help` to any command to see its options.
 

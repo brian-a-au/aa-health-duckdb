@@ -1,6 +1,6 @@
 # How runs are stored
 
-[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · **How runs are stored** · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md)
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · **How runs are stored** · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 Each time you use `ahd run`, the tool saves a new run in a DuckDB file on your computer. This page explains how runs are kept, and what is inside the file.
 

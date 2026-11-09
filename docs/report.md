@@ -1,6 +1,6 @@
 # The report
 
-[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · **The report** · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md)
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · **The report** · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 Each run writes one HTML file, e.g., `reports/ahd_my_suite_2026-11-07_run3.html`. This page walks through everything on it.
 

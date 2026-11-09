@@ -1,6 +1,6 @@
 # Configuration
 
-[README](../README.md) · [Usage](usage.md) · **Configuration** · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md)
+[README](../README.md) · [Usage](usage.md) · **Configuration** · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 The tool signs in to Adobe with an [OAuth Server-to-Server credential](https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/), which you create in the [Adobe Developer Console](https://developer.adobe.com/console/). This page explains how to create it, where the tool looks for it, and which permissions it needs.
 
