@@ -336,8 +336,8 @@ def test_wait_totals_match_the_troubleshooting_page():
     assert BUSY.total() == (30.5, 61.0)
     assert FAILED.total() == (3.5, 7.0)
     page = (Path(__file__).parents[1] / "docs" / "troubleshooting.md").read_text(encoding="utf-8")
-    assert "up to 6 more times and waits 30 to 60 seconds in all" in page
-    assert "up to 3 more times and waits 3 to 7 seconds in all" in page
+    assert "up to 6 more times and waits about 30 seconds to 1 minute in all" in page
+    assert "up to 3 more times and waits about 3 to 7 seconds in all" in page
 
 
 def test_connection_wait_is_short_and_answer_wait_is_long():

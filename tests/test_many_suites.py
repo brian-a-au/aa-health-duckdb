@@ -94,6 +94,21 @@ def test_a_failed_suite_does_not_stop_the_others(run, tmp_path, capsys):
     assert "Checked 3 report suites: 2 ok, 0 partial, 1 failed." in captured.out
 
 
+def test_a_failed_sign_in_stops_every_suite(run, tmp_path, capsys):
+    # A failed sign-in means the credential is broken, so every later suite would fail too.
+    from ahd.api.auth import WRONG_SECRET, SignInError
+
+    def sign_in_fails(body):
+        raise SignInError(WRONG_SECRET)
+
+    assert run(fake(posts=[(lambda body: True, sign_in_fails)]), "--all-suites") == 1
+    captured = capsys.readouterr()
+    assert stored(tmp_path) == [("rs1", "failed")]
+    assert "Report suite 2 of 3" not in captured.out
+    assert "Checked 3 report suites" not in captured.out
+    assert "\nError: Sign-in failed: the client secret is wrong." in captured.err
+
+
 def test_a_partial_suite_gives_exit_code_3(run, tmp_path, capsys):
     def rs2_anomaly(body):
         return is_anomaly_trend(body) and body.get("rsid") == "rs2"
