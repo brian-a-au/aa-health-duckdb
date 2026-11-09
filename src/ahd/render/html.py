@@ -22,7 +22,7 @@ from markupsafe import Markup
 from ahd.summary import DECLINE_MIN_FIT, DECLINE_PER_WEEK, DECLINE_WEEKS, HISTORY_RUNS
 
 NO_BANDS_NOTE = "Anomaly bands are not available. See the status section."
-WEEK_NOTE = "This week is the 7 days ending yesterday. The Excel version used 8 to 2 days ago."
+WEEK_NOTE = "This week is the 7 days ending yesterday."
 
 ISSUE_HEADINGS = {
     "anomaly_not_allowed": (
