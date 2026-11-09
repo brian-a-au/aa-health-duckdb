@@ -17,6 +17,7 @@ from typing import Any
 
 import requests
 
+from ahd.api.auth import SignInUnavailable
 from ahd.api.client import ApiError
 from ahd.api.reports import (
     Column,
@@ -54,6 +55,7 @@ INDIVIDUAL_PREFIX = "individual/"
 # Adobe flags anomalies only when the credential is allowed to; these issue codes say it was not.
 NO_ANOMALY_CODES = ("anomaly_not_allowed", "anomaly_probe_failed")
 NETWORK_ERROR = "network_error"
+SIGN_IN_UNAVAILABLE = "sign_in_unavailable"
 
 # Plain names for the Individual requests, used in issue messages.
 INDIVIDUAL_LABELS = {
@@ -238,7 +240,7 @@ def _run(
     if columns:
         try:
             allowed = probe_anomaly(client, opts.rsid, window, columns[0], opts.segment_id)
-        except (ApiError, requests.RequestException) as e:
+        except (ApiError, SignInUnavailable, requests.RequestException) as e:
             anomaly = False
             issue("permissions", None, "anomaly_probe_failed", _probe_failed_message(e))
         else:
@@ -282,6 +284,11 @@ def _run(
                 code = e.error_code or f"http_{e.status}"
                 for col in batch:
                     issue("column", col.component_id, code, e.message)
+                continue
+            except SignInUnavailable as e:
+                # Signing in again failed for a while. Later requests may still work.
+                for col in batch:
+                    issue("column", col.component_id, SIGN_IN_UNAVAILABLE, str(e))
                 continue
             except requests.RequestException as e:
                 for col in batch:
@@ -372,6 +379,9 @@ def _store_pair(
             resp = fut.result()
         except ApiError as e:
             issue("individual", cid, e.error_code or f"http_{e.status}", f"{what}: {e.message}")
+            continue
+        except SignInUnavailable as e:
+            issue("individual", cid, SIGN_IN_UNAVAILABLE, f"{what}: {e}")
             continue
         except requests.RequestException as e:
             issue("individual", cid, NETWORK_ERROR, f"{what}: {_network_message(e)}")

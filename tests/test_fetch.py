@@ -477,6 +477,55 @@ def test_network_error_in_one_batch_continues(store):
     assert store.get_run(rid)["status"] == "partial"
 
 
+def test_a_temporary_sign_in_problem_in_one_batch_continues(store):
+    from ahd.api.auth import SignInUnavailable
+
+    @after_probe
+    def renewal_fails(body):
+        return is_trend(body) and "metrics/event2" in metric_ids(body)
+
+    def raise_unavailable(body):
+        raise SignInUnavailable("Adobe's sign-in service is busy.")
+
+    fake = fake_for("rs1", events(3), custom_dims(), posts=[(renewal_fails, raise_unavailable)])
+    rid = run_fetch(fake, store, opts(batch_size=2))
+    col_issues = [(r[1], r[2]) for r in issues(store, rid) if r[0] == "column"]
+    assert col_issues == [
+        ("metrics/event1", "sign_in_unavailable"),
+        ("metrics/event2", "sign_in_unavailable"),
+    ]
+    for cid in ["metrics/event3", "variables/prop1", "variables/page", "individual/1"]:
+        assert values_for(store, rid, cid) == 92
+    assert store.get_run(rid)["status"] == "partial"
+
+
+def test_a_temporary_sign_in_problem_in_an_individual_request_is_one_issue(store):
+    from ahd.api.auth import SignInUnavailable
+
+    def is_browser(body):
+        return breakdown_dimension(body) == "variables/browsertype"
+
+    def raise_unavailable(body):
+        raise SignInUnavailable("Adobe's sign-in service is busy.")
+
+    fake = fake_for("rs1", events(1), custom_dims(), posts=[(is_browser, raise_unavailable)])
+    rid = run_fetch(fake, store, opts())
+    ind = [r for r in issues(store, rid) if r[0] == "individual"]
+    assert [(r[1], r[2]) for r in ind] == [("individual/1", "sign_in_unavailable")]
+    assert "Browser table" in ind[0][3]
+    assert store.get_run(rid)["status"] == "partial"
+
+
+def test_a_temporary_sign_in_problem_in_the_probe_is_an_issue(store):
+    from ahd.api.auth import SignInUnavailable
+
+    def raise_unavailable(body):
+        raise SignInUnavailable("busy")
+
+    fake, rid = _probe_failure_run(store, raise_unavailable)
+    _assert_probe_failed_and_continued(store, fake, rid)
+
+
 def test_network_error_in_individual_request_is_one_issue(store):
     import requests
 

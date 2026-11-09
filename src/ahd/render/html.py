@@ -42,6 +42,10 @@ ISSUE_HEADINGS = {
     "network_error": (
         "Some requests failed because of network problems. Running again may fix this."
     ),
+    "sign_in_unavailable": (
+        "Some requests failed because Adobe's sign-in service had a temporary problem when the "
+        "tool signed in again. Running again may fix this."
+    ),
     "invalid_response": (
         "Adobe sent an answer that could not be read for some requests. Running again may fix this."
     ),

@@ -12,7 +12,7 @@ from typing import Any
 
 import requests
 
-from ahd.api.auth import NO_REPORT_SUITES, SignInError
+from ahd.api.auth import NO_REPORT_SUITES, SignInError, SignInUnavailable
 from ahd.api.client import AdobeClient, ApiError
 from ahd.catalog import CUSTOM_GROUPS
 from ahd.config import ConfigError, chosen_profile, load_credentials, profile_dir
@@ -355,7 +355,7 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     if catalog:
         try:
             allowed = probe_anomaly(client, args.rsid, window, catalog[0].column)
-        except (ApiError, requests.RequestException) as e:
+        except (ApiError, SignInUnavailable, requests.RequestException) as e:
             # Only the exception type: messages can carry URLs.
             print(f"Anomaly detection: could not be tested ({type(e).__name__})")
             untested = True
@@ -485,7 +485,8 @@ def _run_suites(args: argparse.Namespace, factory: Callable[..., Any], store: St
         try:
             status = _run_suite(args, client, store, rsid)
             statuses[rsid] = status if status in WORST_LAST else "failed"
-        except (ConfigError, ApiError, requests.RequestException) as e:
+        except (ConfigError, ApiError, SignInUnavailable, requests.RequestException) as e:
+            # A wrong credential (any other SignInError) stops every suite, as each would fail.
             print(f"Error for {rsid}: {_error_text(e)}", file=sys.stderr)
             statuses[rsid] = "failed"
     counts = {s: sum(1 for v in statuses.values() if v == s) for s in WORST_LAST}

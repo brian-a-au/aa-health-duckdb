@@ -109,6 +109,23 @@ def test_a_failed_sign_in_stops_every_suite(run, tmp_path, capsys):
     assert "\nError: Sign-in failed: the client secret is wrong." in captured.err
 
 
+def test_a_temporary_sign_in_problem_fails_only_that_suite(run, tmp_path, capsys):
+    from ahd.api.auth import SignInUnavailable
+
+    def unavailable(params):
+        raise SignInUnavailable("Sign-in failed: Adobe's sign-in service answered HTTP 503.")
+
+    client = fake()
+    client.gets["/reportsuites/collections/suites/rs2"] = unavailable
+    assert run(client, "--all-suites") == 1
+    captured = capsys.readouterr()
+    assert [r for r, _ in stored(tmp_path)] == ["rs1", "rs3"]
+    assert "Error for rs2: Sign-in failed: Adobe's sign-in service answered HTTP 503." in (
+        captured.err
+    )
+    assert "Checked 3 report suites: 2 ok, 0 partial, 1 failed." in captured.out
+
+
 def test_a_partial_suite_gives_exit_code_3(run, tmp_path, capsys):
     def rs2_anomaly(body):
         return is_anomaly_trend(body) and body.get("rsid") == "rs2"

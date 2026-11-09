@@ -394,6 +394,7 @@ def test_issue_headings_for_known_codes():
     for code in (
         "unauthorized_metric",
         "network_error",
+        "sign_in_unavailable",
         "anomaly_probe_failed",
         "no_rows",
         "anomaly_not_allowed",
