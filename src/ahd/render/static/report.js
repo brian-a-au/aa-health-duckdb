@@ -262,7 +262,10 @@
     var tbody = el("tbody");
     var note = el("p", { "class": "sort-note", hidden: true });
     var st = (id && sortState[id]) || { col: -1, dir: 0 };
-    function cls(h) { return h ? (h.num ? "num" : h.cls || null) : null; }
+    function cls(h) {
+      if (!h) return null;
+      return [h.num ? "num" : null, h.cls].filter(Boolean).join(" ") || null;
+    }
 
     function buildRow(cells) {
       var r = el("tr");
@@ -403,15 +406,30 @@
     return { c: span, k: pct === null || pct === undefined ? null : pct };
   }
 
+  // A percent change with a small bar: left of the gray center line for down, right for up.
+  // Half the bar is a change of 100 percent. Two ticks mark the slider's percent, with a light
+  // band between them, and a bar past a tick is in the flag color. The text and the arrow carry
+  // the same facts as the bar.
   function devCell(arrow, pct) {
     if (pct === null || pct === undefined) return { c: "", k: null };
     var wrap = el("span", { "class": "dev" });
     var bar = el("span", { "class": "devbar", "aria-hidden": "true" });
-    var fill = el("span", { "class": pct < 0 ? "neg" : "pos" });
+    var fill = el("span", { "class": "fill " + (pct < 0 ? "neg" : "pos") +
+      (arrow ? " over" : "") });
     var w = Math.min(Math.abs(pct), 1) * 50;
     fill.style.width = Math.max(w, 1.5) + "%";
     if (pct < 0) fill.style.right = "50%"; else fill.style.left = "50%";
+    var reach = Math.min(state.t, 1) * 50;
+    var zone = el("span", { "class": "zone" });
+    zone.style.left = (50 - reach) + "%";
+    zone.style.width = (2 * reach) + "%";
+    bar.appendChild(zone);
     bar.appendChild(fill);
+    [-1, 1].forEach(function (side) {
+      var tick = el("span", { "class": "tick" });
+      tick.style.left = (50 + side * reach) + "%";
+      bar.appendChild(tick);
+    });
     wrap.appendChild(bar);
     wrap.appendChild(changeCell(arrow, pct).c);
     return { c: wrap, k: pct };
@@ -470,16 +488,16 @@
       cells.push(nameCell(r));
       cells.push({ c: fmtNum(r.value, r.metric_type), k: r.value });
       cells.push({ c: fmtRound(r.baseline, r.metric_type), k: r.baseline });
-      cells.push(changeCell(arrowFor(r.pct), r.pct));
+      cells.push(devCell(arrowFor(r.pct), r.pct));
       cells.push(flagCell(r, daily));
       return cells;
     });
     return table(headers, body, null, id, { label: title });
   }
 
-  function groupBlock(title, rows, custom, emptyText) {
+  function groupBlock(title, rows, custom, emptyText, id) {
     var frag = document.createDocumentFragment();
-    var h = el("h3", { "class": "group-title" }, title);
+    var h = el("h3", { "class": "group-title", id: id }, title);
     if (rows.length) h.appendChild(el("span", { "class": "group-count" },
       rows.length === 1 ? "1 component" : rows.length + " components"));
     frag.appendChild(h);
@@ -511,6 +529,23 @@
     var hasGroup = {};
     allRows.forEach(function (r) { hasGroup[r.group] = true; });
 
+    // Links to each group's heading. The ids use the group's place, not its name.
+    var jump = el("nav", { "class": "jump", "aria-label": "Jump to a group" });
+    jump.appendChild(el("span", { "class": "jump-label" }, "Jump to"));
+    var jumpList = el("ul");
+    jump.appendChild(jumpList);
+    var groupNumber = 0;
+    function block(title, rows, custom, empty) {
+      var id = "group-" + groupNumber++;
+      var li = el("li");
+      var a = el("a", { href: "#" + id }, title);
+      a.appendChild(el("span", { "class": "jump-count" }, " " + rows.length));
+      li.appendChild(a);
+      jumpList.appendChild(li);
+      return groupBlock(title, rows, custom, empty, id);
+    }
+    host.appendChild(jump);
+
     host.appendChild(el("h2", null, "Custom components"));
     CUSTOM.forEach(function (g) {
       var all = byGroup[g] || [];
@@ -519,7 +554,7 @@
       if (!hasGroup[g]) empty = "None were found. See the status section if you expected some.";
       else if (state.flagged && !all.length) empty = "Nothing flagged in this group.";
       else empty = "None in this number range.";
-      host.appendChild(groupBlock(CUSTOM_TITLES[g], shown, true, empty));
+      host.appendChild(block(CUSTOM_TITLES[g], shown, true, empty));
     });
 
     host.appendChild(el("h2", null, "Solution components"));
@@ -531,7 +566,7 @@
     known.forEach(function (g) {
       if (!byGroup[g] || !byGroup[g].length) return;
       any = true;
-      host.appendChild(groupBlock(g, byGroup[g], false, ""));
+      host.appendChild(block(g, byGroup[g], false, ""));
     });
     if (!any) host.appendChild(el("p", { "class": "empty" },
       state.flagged ? "Nothing flagged in the solution components." : "None were found."));
@@ -565,13 +600,22 @@
     if (kind === "band") s.appendChild(sv("rect", { x: 1, y: 1, width: 16, height: 8, "class": "band" }));
     if (kind === "high") s.appendChild(sv("path", { d: "M9 0.5 L14.5 9.5 L3.5 9.5 Z", "class": "mark-high" }));
     if (kind === "low") s.appendChild(sv("path", { d: "M9 9.5 L14.5 0.5 L3.5 0.5 Z", "class": "mark-low" }));
+    if (kind === "chosen") {
+      s.appendChild(sv("line", { x1: 9, y1: 0, x2: 9, y2: 10, "class": "chosen" }));
+      s.appendChild(sv("circle", { cx: 9, cy: 5, r: 3.5, "class": "chosen-dot" }));
+    }
+    if (kind === "average") s.appendChild(sv("line", { x1: 3, y1: 5, x2: 15, y2: 5, "class": "average" }));
     li.appendChild(s);
     li.appendChild(el("span", null, label));
     return li;
   }
 
-  function describe(p, type) {
+  // average: the weekday average, given only for the chosen day.
+  function describe(p, type, average) {
     var parts = [fmtDay(p[0], true) + ": " + fmtNum(p[1], type)];
+    if (average !== null && average !== undefined) {
+      parts.push("weekday average " + fmtRound(average, type));
+    }
     if (p[2] !== null) parts.push("expected " + fmtRound(p[2], type));
     if (p[3] !== null && p[4] !== null) {
       parts.push("expected range " + fmtRound(p[4], type) + " to " + fmtRound(p[3], type));
@@ -582,7 +626,9 @@
     return text;
   }
 
-  function drawChart(host, points, title, type) {
+  // mark: {day, average} marks the chosen day with a line and a dot, and its weekday average
+  // with a short bar. Without it, or when the day is not in the chart, nothing is marked.
+  function drawChart(host, points, title, type, mark) {
     clear(host);
     points = (points || []).filter(function (p) { return p && p[0]; });
     if (!points.length) {
@@ -598,11 +644,16 @@
     function x(p) { return L + ((parseDay(p[0]).getTime() - t0) / 864e5) / span * pw; }
     var hasBands = points.some(function (p) { return p[3] !== null && p[4] !== null; });
     var hasExpected = points.some(function (p) { return p[2] !== null; });
-    var max = 0;
+    var chosen = -1;
+    if (mark && mark.day) {
+      points.forEach(function (p, k) { if (p[0] === mark.day) chosen = k; });
+    }
+    var average = chosen >= 0 && typeof mark.average === "number" ? mark.average : null;
+    var max = average !== null && average > 0 ? average : 0;
     points.forEach(function (p) {
       [p[1], p[2], p[3]].forEach(function (v) { if (v !== null && v > max) max = v; });
     });
-    var min = 0;
+    var min = average !== null && average < 0 ? average : 0;
     points.forEach(function (p) {
       [p[1], p[4]].forEach(function (v) { if (v !== null && v < min) min = v; });
     });
@@ -615,6 +666,7 @@
     var svg = sv("svg", {
       viewBox: "0 0 " + W + " " + H, role: "img", tabindex: 0,
       "aria-label": "Trend chart for " + title + ", " + points.length + " days. " +
+        (chosen >= 0 ? "A line marks the chosen day, " + fmtDay(points[chosen][0], false) + ". " : "") +
         "Use the left and right arrow keys to read each day."
     });
 
@@ -637,6 +689,11 @@
       svg.appendChild(tx);
     }
 
+    // The chosen day's line sits behind the data.
+    if (chosen >= 0) {
+      svg.appendChild(sv("line", { x1: x(points[chosen]), x2: x(points[chosen]), y1: T, y2: T + ph,
+        "class": "chosen" }));
+    }
     if (hasBands) {
       segments(points, function (p) { return p[3] !== null && p[4] !== null ? 1 : null; })
         .forEach(function (seg) {
@@ -675,6 +732,18 @@
       }
     });
 
+    // The weekday average as a short bar on the chosen day, and the chosen value as a dot. Each
+    // has a ring in the surface color, so it stays clear where it crosses a line.
+    if (average !== null) {
+      var ax = x(points[chosen]), ay = y(average);
+      svg.appendChild(sv("line", { x1: ax - 8, x2: ax + 8, y1: ay, y2: ay, "class": "average-ring" }));
+      svg.appendChild(sv("line", { x1: ax - 8, x2: ax + 8, y1: ay, y2: ay, "class": "average" }));
+    }
+    if (chosen >= 0 && points[chosen][1] !== null) {
+      svg.appendChild(sv("circle", { cx: x(points[chosen]), cy: y(points[chosen][1]), r: 4,
+        "class": "chosen-dot" }));
+    }
+
     // hover and keyboard readout
     var cross = sv("line", { y1: T, y2: T + ph, "class": "cross", visibility: "hidden" });
     var dot = sv("circle", { r: 4, "class": "dot", visibility: "hidden" });
@@ -684,11 +753,13 @@
     svg.appendChild(hit);
     var readout = el("p", { "class": "chart-readout", "aria-live": "polite" });
     var last = points.length - 1;
-    var active = last;
+    // At rest, the readout describes the chosen day, or the last day when none is chosen.
+    var rest = chosen >= 0 ? chosen : last;
+    var active = rest;
     function show(k, visible) {
       active = Math.max(0, Math.min(last, k));
       var p = points[active];
-      readout.textContent = describe(p, type);
+      readout.textContent = describe(p, type, active === chosen ? average : null);
       var cx = x(p);
       cross.setAttribute("x1", cx);
       cross.setAttribute("x2", cx);
@@ -712,13 +783,13 @@
       return best;
     }
     svg.addEventListener("pointermove", function (e) { show(nearest(e), true); });
-    svg.addEventListener("pointerleave", function () { show(last, false); });
+    svg.addEventListener("pointerleave", function () { show(rest, false); });
     svg.addEventListener("keydown", function (e) {
       if (e.key === "ArrowLeft") { e.preventDefault(); show(active - 1, true); }
       if (e.key === "ArrowRight") { e.preventDefault(); show(active + 1, true); }
     });
-    svg.addEventListener("blur", function () { show(last, false); });
-    show(last, false);
+    svg.addEventListener("blur", function () { show(rest, false); });
+    show(rest, false);
 
     host.appendChild(svg);
     host.appendChild(readout);
@@ -728,10 +799,26 @@
     if (hasBands) legend.appendChild(legendItem("band", "Expected range"));
     if (anyHigh) legend.appendChild(legendItem("high", "Flagged above range"));
     if (anyLow) legend.appendChild(legendItem("low", "Flagged below range"));
+    if (chosen >= 0) legend.appendChild(legendItem("chosen", "Chosen day"));
+    if (average !== null) legend.appendChild(legendItem("average", "Weekday average (12 weeks)"));
     host.appendChild(legend);
     if (!hasBands) {
       host.appendChild(byId("no-bands-template").content.cloneNode(true));
     }
+  }
+
+  // The day the Day picker chose, or null in the weekly view, which marks no day.
+  function chosenDay() { return state.gran === "day" ? state.day : null; }
+  var averageByDay = {};
+  function weekdayAverage(cid, day) {
+    if (!averageByDay[day]) {
+      averageByDay[day] = {};
+      (data.views["day:" + day] || []).forEach(function (r) {
+        averageByDay[day][r.component_id] = r.baseline;
+      });
+    }
+    var v = averageByDay[day][cid];
+    return v === undefined ? null : v;
   }
 
   // The type filter in the Dimension card sorts dimensions into eVars, props and other.
@@ -797,7 +884,9 @@
           (kind === "metric" ? "No metric data was read." : "No dimension data was read.")));
         return;
       }
-      drawChart(host, data.series[r.component_id], componentLabel(r), r.metric_type);
+      var day = chosenDay();
+      drawChart(host, data.series[r.component_id], componentLabel(r), r.metric_type,
+        day ? { day: day, average: weekdayAverage(r.component_id, day) } : null);
     }
     fill();
     select.addEventListener("change", draw);
@@ -832,8 +921,11 @@
 
   function drawIndividual() {
     var p = pairs[pairIndex];
+    var day = chosenDay();
+    var averages = (p && p.weekday_average) || {};
     drawChart(byId("individual-chart"), p ? data.series[p.series_id] : [], pairLabel(p),
-      p ? p.metric_type : null);
+      p ? p.metric_type : null,
+      day ? { day: day, average: day in averages ? averages[day] : null } : null);
   }
 
   function fillPairPickers() {
@@ -949,6 +1041,31 @@
     };
   }
 
+  // How many days in a row, up to the alert's day, the same alert held. The SQL counts it. For a
+  // large drop it lists the change for each day back, and the page counts the days that pass
+  // the slider. open: the row reaches the first day of the report, so it may be longer.
+  function streak(a) {
+    var n = typeof a.days_in_row === "number" ? a.days_in_row : 1;
+    var open = !!a.streak_open;
+    if (a.drop_run && a.drop_run.length) {
+      n = a.drop_run.filter(function (p) { return p < -state.t; }).length;
+      open = open && n === a.drop_run.length;
+    }
+    return { n: n, open: open };
+  }
+  function streakText(a) {
+    var s = streak(a);
+    return s.open ? s.n + " or more" : String(s.n);
+  }
+  function streakCell(a) {
+    return { c: streakText(a), k: streak(a).n };
+  }
+  function streakSentence(a) {
+    var s = streak(a);
+    if (s.open) return s.n + " or more days in a row.";
+    return s.n === 1 ? "First day with this alert." : s.n + " days in a row.";
+  }
+
   function alertLine(a) {
     var s = "- " + a.name + " (" + a.component_id + "): " + alertReason(a) +
       ". Actual " + fmtNum(a.actual, a.metric_type);
@@ -958,7 +1075,7 @@
     } else if (a.usual !== null) {
       s += ", weekday average " + fmtRound(a.usual, a.metric_type);
     }
-    return s + ".";
+    return s + ". " + streakSentence(a);
   }
 
   function alertText() {
@@ -1050,11 +1167,11 @@
       g1.appendChild(table(
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" }, { label: "Flag" },
          { label: "Expected", num: true }, { label: "Actual", num: true },
-         { label: "Change from expected", num: true }],
+         { label: "Change from expected", num: true }, { label: "Days in a row", num: true, cls: "days" }],
         parts.unusual.map(function (a) {
           return nameIdCells(a).concat([anomalyCell(a.anomaly), expectedCell(a),
             { c: fmtNum(a.actual, a.metric_type), k: a.actual },
-            devCell(arrowFor(a.pct_vs_expected), a.pct_vs_expected)]);
+            devCell(arrowFor(a.pct_vs_expected), a.pct_vs_expected), streakCell(a)]);
         }), null, "alerts-unusual", { labelledby: "unusual-title" }));
     } else {
       g1.appendChild(el("p", { "class": "empty" }, anomalyBlocked ?
@@ -1073,11 +1190,12 @@
       g2.appendChild(table(
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
          { label: "Weekday average", num: true }, { label: "Actual", num: true },
-         { label: "Change from weekday average", num: true }],
+         { label: "Change from weekday average", num: true },
+         { label: "Days in a row", num: true, cls: "days" }],
         parts.drops.map(function (a) {
           return nameIdCells(a).concat([{ c: fmtRound(a.usual, a.metric_type), k: a.usual },
             { c: fmtNum(a.actual, a.metric_type), k: a.actual },
-            devCell(arrowFor(a.pct_vs_usual), a.pct_vs_usual)]);
+            devCell(arrowFor(a.pct_vs_usual), a.pct_vs_usual), streakCell(a)]);
         }), null, "alerts-drops", { labelledby: "drops-title" }));
     } else {
       g2.appendChild(el("p", { "class": "empty" },
@@ -1094,14 +1212,14 @@
       g3.appendChild(table(
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
          { label: "Weekday average", num: true }, { label: "Expected", num: true },
-         { label: "Actual", num: true }],
+         { label: "Actual", num: true }, { label: "Days in a row", num: true, cls: "days" }],
         parts.zero.map(function (a) {
           var name = el("span");
           name.appendChild(document.createTextNode(a.name));
           name.appendChild(zeroBadge());
           return [{ c: name, k: a.name }, { c: el("code", null, a.component_id), k: a.component_id },
             { c: fmtRound(a.usual, a.metric_type), k: a.usual }, expectedCell(a),
-            { c: fmtNum(a.actual, a.metric_type), k: a.actual }];
+            { c: fmtNum(a.actual, a.metric_type), k: a.actual }, streakCell(a)];
         }), null, "alerts-zero", { labelledby: "zero-title" }));
     } else {
       g3.appendChild(el("p", { "class": "empty" },
@@ -1194,24 +1312,26 @@
     }
     section("Unusual values, flagged by Adobe", parts.unusual,
       [{ label: "Component" }, { label: "Flag" }, { label: "Expected", num: true },
-       { label: "Actual", num: true }, { label: "Change", num: true }],
+       { label: "Actual", num: true }, { label: "Change", num: true },
+       { label: "Days in a row", num: true, cls: "days" }],
       function (a) {
         return [name(a), a.anomaly === "high" ? "Above range" : "Below range",
           a.expected === null ? "Not available" : fmtRound(a.expected, a.metric_type),
-          fmtNum(a.actual, a.metric_type), fmtPct(a.pct_vs_expected)];
+          fmtNum(a.actual, a.metric_type), fmtPct(a.pct_vs_expected), streakText(a)];
       });
     section("Drops of more than " + pct + " below the weekday average", parts.drops,
       [{ label: "Component" }, { label: "Weekday average", num: true }, { label: "Actual", num: true },
-       { label: "Change", num: true }],
+       { label: "Change", num: true }, { label: "Days in a row", num: true, cls: "days" }],
       function (a) {
         return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type),
-          fmtPct(a.pct_vs_usual)];
+          fmtPct(a.pct_vs_usual), streakText(a)];
       });
     section("Dropped to zero", parts.zero,
       [{ label: "Component" }, { label: "Weekday average", num: true },
-       { label: "Actual", num: true }],
+       { label: "Actual", num: true }, { label: "Days in a row", num: true, cls: "days" }],
       function (a) {
-        return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type)];
+        return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type),
+          streakText(a)];
       });
     var notes = [];
     if (parts.unused.length) {
@@ -1340,12 +1460,18 @@
     daySel.appendChild(el("option", { value: d },
       fmtDay(d, true) + dayNote(d)));
   });
-  daySel.addEventListener("change", function () { state.day = daySel.value; renderTables(); });
+  // The Day picker also moves the mark on the charts, so they are drawn again.
+  daySel.addEventListener("change", function () {
+    state.day = daySel.value;
+    renderTables();
+    redrawAll();
+  });
   byId("granularity").addEventListener("change", function (e) {
     state.gran = e.target.value;
     byId("week-note").hidden = state.gran !== "week";
     byId("day-label").hidden = state.gran === "week";
     renderTables();
+    redrawAll();
   });
   byId("range").addEventListener("change", function (e) {
     state.range = e.target.value;

@@ -196,6 +196,9 @@ def test_alerts_zero_and_anomaly(tmp_path):
         "anomaly": "high",
         "zero": False,
         "unused": False,
+        "days_in_row": 1,
+        "drop_run": None,
+        "streak_open": False,
     }
     assert zero["actual"] == 0 and zero["expected"] is None
     assert zero["anomaly"] is None and zero["zero"] is True and zero["unused"] is True
@@ -710,3 +713,71 @@ def test_component_days_matches_the_report_view(tmp_path):
         "select min(day), max(day), count(*) from component_days where run_id = ?", [rid]
     ).fetchone()
     assert days == (START, YESTERDAY, 91)
+
+
+def _streak_values(cid, last_days):
+    """100 on every day, then the values in last_days, oldest first, ending yesterday."""
+    out = [_dv(cid, d, 100.0) for d in _days(START, YESTERDAY - timedelta(days=len(last_days)))]
+    for back, v in enumerate(reversed(last_days)):
+        day = YESTERDAY - timedelta(days=back)
+        if isinstance(v, tuple):  # (value, Adobe flag direction)
+            value, flag = v
+            upper, lower = (value - 1, value - 2) if flag == "high" else (value + 2, value + 1)
+            out.append(_dv(cid, day, value, value, upper, lower, True))
+        else:
+            out.append(_dv(cid, day, v))
+    return out
+
+
+def test_days_in_row(tmp_path):
+    cases = {
+        # The last 3 days were 0, and the day before was normal.
+        "metrics/event1": [100.0, 0.0, 0.0, 0.0],
+        # 2 days above Adobe's range, after a day below it: only the same direction counts.
+        "metrics/event2": [(5.0, "low"), (500.0, "high"), (500.0, "high")],
+        # A 0 that Adobe flagged is an unusual value, so it ends a row of zeros.
+        "metrics/event3": [0.0, (0.0, "low"), 0.0],
+        # Drops of 50, 20 and 40 percent, oldest first, after a normal day.
+        "metrics/event4": [100.0, 50.0, 80.0, 60.0],
+        # 0 on all 7 days that the reader can pick: the row may be longer.
+        "metrics/event5": [0.0] * 7,
+        # A day without data ends the row.
+        "metrics/event6": [0.0, None, 0.0],
+    }
+    comps = [_comp(cid, cid, number=i) for i, cid in enumerate(cases, start=1)]
+    vals = []
+    for cid, last in cases.items():
+        vals += [v for v in _streak_values(cid, last) if v.value is not None]
+    store, rid = _build(tmp_path, comps, vals)
+    day = YESTERDAY.isoformat()
+    got = {a["component_id"]: a for a in build_view(store, rid)["alerts"] if a["day"] == day}
+    assert {cid: a["days_in_row"] for cid, a in got.items()} == {
+        "metrics/event1": 3,
+        "metrics/event2": 2,
+        "metrics/event3": 1,
+        "metrics/event4": 3,
+        "metrics/event5": 7,
+        "metrics/event6": 1,
+    }
+    assert [cid for cid, a in got.items() if a["streak_open"]] == ["metrics/event5"]
+    # For a drop, the smallest drop so far on each day back, from yesterday.
+    assert got["metrics/event4"]["drop_run"] == pytest.approx([-0.4, -0.2, -0.2])
+    assert all(a["drop_run"] is None for cid, a in got.items() if cid != "metrics/event4")
+    # The day before yesterday counts back from its own day.
+    before = YESTERDAY - timedelta(days=1)
+    earlier = [a for a in build_view(store, rid)["alerts"] if a["day"] == before.isoformat()]
+    rows = {a["component_id"]: a for a in earlier}
+    assert rows["metrics/event1"]["days_in_row"] == 2
+    assert rows["metrics/event4"]["drop_run"] == pytest.approx([-0.2, -0.2])
+
+
+def test_pair_weekday_average(tmp_path):
+    cid = "metrics/event1"
+    vals = _series(cid, 12.0, 0.0) + [
+        _dv("individual/1", d, 24.0 if d.weekday() == 4 else 6.0) for d in _days(START, TODAY)
+    ]
+    store, rid = _build(tmp_path, [_comp(cid, "E", number=1)], vals)
+    pair = build_view(store, rid)["pairs"][0]
+    averages = pair["weekday_average"]
+    assert len(averages) == 7 and averages[YESTERDAY.isoformat()] == pytest.approx(24.0)
+    assert averages["2026-11-05"] == pytest.approx(6.0)
