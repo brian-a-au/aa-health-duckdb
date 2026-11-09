@@ -33,6 +33,10 @@ The header names the report suite, the Individual Component Summary pairs, the s
 - **Failed:** no data could be read.
 - **Not finished:** the run stopped in the middle, e.g., because the window was closed.
 
+Every day in the report counts back from the run date. "Yesterday" is the day before the run date. For a normal run, that is the day before the run was made.
+
+A run made with `ahd run --date` is about an earlier day. A line under the header then says "Run date set with --date", and names the last day of the report, e.g., 2026-09-15. The page uses that date instead of the word "yesterday", and the Day pickers mark it "(day before the run date)".
+
 ## The large drop slider
 
 The slider above the tiles sets how far a value must fall below its usual value to count as a large drop. It goes from 10 to 100 percent, and it starts at 30 percent, or at the value you chose with `--change-alert`.

@@ -570,3 +570,41 @@ def test_packed_series_keeps_missing_days_out():
     assert _unpack(json.loads(json.dumps(packed)))["series"] == view["series"]
     view["series"]["metrics/a"].pop()
     assert "gaps" not in pack_view(view)["series"]["metrics/a"]
+
+
+def _view_with_date_given(given: bool) -> dict:
+    with tempfile.TemporaryDirectory() as tmp:
+        store, rid = sample_store(Path(tmp) / "s.duckdb")
+        try:
+            store.con.execute("UPDATE runs SET date_given = ? WHERE run_id = ?", [given, rid])
+            return build_view(store, rid)
+        finally:
+            store.con.close()
+
+
+def test_a_run_made_with_date_names_its_days():
+    view = _view_with_date_given(True)
+    today = date.fromisoformat(view["run"]["today"])
+    last = (today - timedelta(days=1)).isoformat()
+    html = render_html(view)
+    assert view["run"]["date_given"] is True
+    assert (
+        '<p class="hint" id="date-note"><strong>Run date set with --date.</strong> Every day in '
+        f"this report counts back from the run date, so the last day is {last}.</p>"
+    ) in html
+    assert f"Top 100 values on {last}" in html
+    assert f"Top 10 values on {last} for each major browser group." in html
+    assert f"Top 10 values on {last} for each device type." in html
+    assert f'aria-label="{last} at a glance"' in html
+    assert f"This week is the 7 days ending on {last}." in html
+    assert "Top 100 values yesterday" not in html
+
+
+def test_a_normal_run_says_yesterday():
+    view = _view_with_date_given(False)
+    html = render_html(view)
+    assert view["run"]["date_given"] is False
+    assert "Run date set with --date" not in html and 'id="date-note"' not in html
+    assert "Top 100 values yesterday" in html
+    assert 'aria-label="Yesterday at a glance"' in html
+    assert WEEK_NOTE in html

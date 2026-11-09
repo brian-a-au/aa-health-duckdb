@@ -197,6 +197,7 @@ def run_fetch(
         zone,
         _tool_version(),
         currency=suite.get("currency") if isinstance(suite.get("currency"), str) else None,
+        date_given=opts.today is not None,
     )
     try:
         status = _run(client, store, opts, run_id, catalog, window, progress)

@@ -664,3 +664,26 @@ def test_every_control_and_table_has_a_name(chrome, request, tmp_path, which):
     page = render_html(build_view(*request.getfixturevalue(which)))
     got = run_probe(chrome, page, NAMES_PROBE, tmp_path)
     assert got["count"] > 10 and got["unnamed"] == []
+
+
+DAY_LABEL_PROBE = """
+return {
+  day: document.getElementById("day").options[0].textContent,
+  alertDay: document.getElementById("alert-day").options[0].textContent,
+  slider: document.getElementById("change-alert-result").textContent
+};
+"""
+
+
+@pytest.mark.parametrize(
+    ("given", "label"), [(False, "(yesterday)"), (True, "(day before the run date)")]
+)
+def test_day_labels_follow_the_date_option(chrome, edges, tmp_path, given, label):
+    view = build_view(*edges)
+    view["run"]["date_given"] = given
+    got = run_probe(chrome, render_html(view), DAY_LABEL_PROBE, tmp_path)
+    assert got["day"] == "Fri, Nov 6, 2026 " + label
+    assert got["alertDay"] == "Fri, Nov 6, 2026 " + label
+    assert got["slider"].startswith("Fri, Nov 6 " + label + ":")
+    other = "(day before the run date)" if not given else "(yesterday)"
+    assert other not in got["day"] + got["alertDay"] + got["slider"]
