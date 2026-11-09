@@ -1602,6 +1602,7 @@
           { c: el("span", { "class": "nowrap" }, fmtDay(h.day, true)), k: h.day }, n(h.checked),
           n(h.high), n(h.low), n(r.drops), n(h.zero), totalCell(r), n(h.problems)];
       }), null, "history", { labelledby: "history-title" }));
+    fitTables();
   }
 
   // ---- copying ------------------------------------------------------------------

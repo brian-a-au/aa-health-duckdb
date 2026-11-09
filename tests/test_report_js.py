@@ -1312,11 +1312,14 @@ function read() {
     empty: (host.querySelector(".empty") || {}).textContent || null
   };
 }
+document.getElementById("tab-alerts").click();
 var out = { "30": read() };
 var slider = document.getElementById("change-alert");
 slider.value = "10";
 slider.dispatchEvent(new Event("input"));
 out["10"] = read();
+var wrap = document.querySelector("#history .table-wrap");
+out.boxed = wrap ? wrap.classList.contains("scrolls") : null;
 return out;
 """
 
@@ -1335,6 +1338,14 @@ def test_earlier_runs_follow_the_slider(chrome, showcase, tmp_path):
     assert len(nov5["drops"]) == 2 and all(-0.3 < p < -0.1 for p in nov5["drops"])
     assert got["10"]["rows"][1][5] == "2" and got["10"]["rows"][1][7] == "3"
     assert got["30"]["empty"] is None
+    assert got["boxed"] is False
+
+
+def test_a_wide_earlier_runs_table_gets_its_own_box(chrome, showcase, tmp_path):
+    # At 700 pixels the table of 9 columns is too wide, so it scrolls in its own box.
+    page = render_html(build_view(*showcase))
+    got = run_probe(chrome, page, HISTORY_PROBE, tmp_path, width=700)
+    assert got["30"]["rows"] and got["boxed"] is True
 
 
 def test_a_single_run_says_it_is_the_only_one(chrome, edges, tmp_path):
