@@ -74,11 +74,14 @@ uv run ahd run --rsid "My Suite"
 uv run ahd run --rsid my_suite --segment "Mobile visits"
 uv run ahd run --rsid my_suite --dimension "Internal Search Term" --metric "Cart Additions"
 uv run ahd run --rsid my_suite --date 2026-11-07 --out ./reports/
+uv run ahd run --rsid my_suite --rsid "Other Suite"
+uv run ahd run --all-suites
 ```
 
 | Option | What it does |
 |---|---|
-| `--rsid` | The report suite, by ID or name. Required. |
+| `--rsid` | The report suite, by ID or name. Give it more than once to check several suites. You need `--rsid` or `--all-suites`. |
+| `--all-suites` | Checks every report suite the credential can see. |
 | `--segment` | A segment, by ID or name. Every request is filtered by it. |
 | `--dimension`, `--metric` | The first Individual Component Summary pair. Each takes a full ID (`variables/evar17`), a short ID (`evar17`) or a name (`"Internal Search Term"`). Any dimension or metric of the suite works. The default is Page by Occurrences. |
 | `--date` | Treats this date as today, e.g., to repeat an earlier day. By default, today is today in the report suite's time zone. |
@@ -87,7 +90,17 @@ uv run ahd run --rsid my_suite --date 2026-11-07 --out ./reports/
 | `--batch-size` | How many columns go into one trend request, from 1 to 100. The default is 20. |
 | `--workers` | How many requests run at the same time, from 1 to 16. The default is 8. |
 
-While it runs, it prints its progress on stderr, e.g., "Daily trends: 12 of 21 requests done". When it ends, it prints the path of the report and the run's status. If the run sees far fewer components than the run before it, it prints a warning. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
+While it runs, it prints its progress on stderr, e.g., "Daily trends: 12 of 21 requests done". When it ends, it prints the path of the report, the run's status and the number of alerts for yesterday, e.g.:
+
+```
+reports/ahd_my_suite_2026-11-08_run12.html
+Run 12 for my_suite finished with status: ok
+Alerts for 2026-11-07: 2 unusual values, 1 large drop, 0 drops to zero
+```
+
+The alerts line uses the `--change-alert` percent for large drops. It is left out after a failed run. If the run sees far fewer components than the run before it, it prints a warning.
+
+With several suites, the command signs in once and checks the suites one after another. Each suite gets its own run and its own report. A suite that fails does not stop the others. At the end, the command prints one line with the number of suites that ended "ok", "partial" and "failed". The exit code is the one of the worst suite, e.g., 1 when one suite failed. A wrong suite name stops the command before it checks any suite. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 
 A run of a suite with about 400 components takes about 2 minutes.
 
@@ -138,7 +151,7 @@ It lists the runs it will delete and asks you to type y first. `--yes` skips the
 | 0 | Everything worked. |
 | 1 | The command failed. The message on stderr says why. `prune` also exits with 1 when you answer no. |
 | 2 | `check` found limited access, or a check could not be run. `suites` found no report suites. Any command also exits with 2 when an option is wrong, e.g., `--change-alert 12`, and prints its usage. |
-| 3 | `run` or `individual` finished, but some columns or requests had problems. The report's status section lists them. |
+| 3 | `run` or `individual` finished, but some columns or requests had problems. The report's status section lists them. After a run of several suites, at least one suite ended "partial" and none failed. |
 | 130 | You stopped the command with Ctrl-C. A run that `ahd run` had started is marked "failed". A pair that `ahd individual` was adding is removed. |
 
 ## Defaults
@@ -150,4 +163,4 @@ It lists the runs it will delete and asks you to type y first. `--yes` skips the
 | Individual Component Summary pair | Page by Occurrences |
 | Large drop slider | 30 percent |
 | Columns per trend request | 20 |
-| Requests at the same time | 4 |
+| Requests at the same time | 8 |

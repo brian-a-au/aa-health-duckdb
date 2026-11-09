@@ -49,8 +49,10 @@ def _pick(value: str, rows: list[dict], what: str, hint: str) -> str:
     raise ConfigError(f"No {what} has the ID or name {value!r}. {hint}")
 
 
-def resolve_suite(client: Any, value: str) -> str:
-    return _pick(value, list_suites(client), "report suite", "Run ahd suites to list them.")
+def resolve_suite(client: Any, value: str, suites: list[dict] | None = None) -> str:
+    """A report suite ID from an ID or a name. Pass the suites to save a request."""
+    rows = list_suites(client) if suites is None else suites
+    return _pick(value, rows, "report suite", "Run ahd suites to list them.")
 
 
 def resolve_segment(client: Any, rsid: str, value: str) -> str:

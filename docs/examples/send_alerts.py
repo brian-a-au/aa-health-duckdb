@@ -1,12 +1,14 @@
-"""Email the latest alerts for one report suite, but only when there are any.
+"""Email the latest alerts for one or more report suites, but only when there are any.
 
 Usage:
-    uv run python docs/examples/send_alerts.py DATABASE RSID [THRESHOLD] [--segment ID]
+    uv run python docs/examples/send_alerts.py DATABASE RSID [RSID ...] [--threshold 0.30]
+    uv run python docs/examples/send_alerts.py DATABASE --all [--segment ID]
 
-It reads the latest finished run of the suite with the alerts() macro that every ahd
-database holds, and builds an HTML email with a plain text part. Without --segment it uses
-the latest run without a segment. THRESHOLD is the large drop percent as a share, e.g.
-0.30 for 30 percent, the default.
+It reads the latest finished run of each suite with the alerts() macro that every ahd
+database holds. It builds one HTML email with a plain text part, with one section for each
+suite that has alerts. --all uses every suite that has a finished run in the database.
+Without --segment it uses the latest runs without a segment. --threshold is the large drop
+percent as a share, e.g. 0.30 for 30 percent, the default.
 
 To send, set SMTP_HOST, SMTP_PORT (default 587), MAIL_FROM and MAIL_TO, and SMTP_USER and
 SMTP_PASSWORD when the server needs a login. Without SMTP_HOST, it writes the message to
@@ -14,7 +16,7 @@ alerts.eml in the current folder instead, so you can open it and check it first.
 
 Exit codes, so a scheduler can tell the cases apart:
     0  it sent or wrote a message
-    1  something is wrong, e.g. the database has no finished run of the suite
+    1  something is wrong, e.g. a suite has no finished run. The other suites are still sent.
     2  there were no alerts
 """
 
@@ -31,6 +33,20 @@ from pathlib import Path
 import duckdb
 
 RUN_QUERY = """
+SELECT max(run_id) FROM latest_runs
+WHERE rsid = $rsid AND segment_id IS NOT DISTINCT FROM $segment
+"""
+
+# Every suite with a finished run, with the segment or without one, by name.
+ALL_QUERY = """
+SELECT rsid FROM latest_runs
+WHERE segment_id IS NOT DISTINCT FROM $segment
+ORDER BY lower(rsid_name), rsid
+"""
+
+NAME_QUERY = "SELECT rsid_name FROM runs WHERE run_id = $run"
+
+QUERY = """
 SELECT max(run_id) FROM latest_runs
 WHERE rsid = $rsid AND segment_id IS NOT DISTINCT FROM $segment
 """
@@ -62,24 +78,23 @@ def _share(text: str) -> float:
 
 
 def _parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Email the latest ahd alerts for one report suite.")
+    p = argparse.ArgumentParser(description="Email the latest ahd alerts for report suites.")
     p.add_argument("database", help="The ahd DuckDB file.")
-    p.add_argument("rsid", help="The report suite ID.")
+    p.add_argument("rsids", nargs="*", metavar="RSID", help="A report suite ID.")
+    p.add_argument("--all", action="store_true", help="Every suite with a finished run.")
     p.add_argument(
-        "threshold",
-        nargs="?",
+        "--threshold",
         type=_share,
         default=0.30,
         help="The large drop percent as a share (default 0.30).",
     )
-    p.add_argument("--segment", help="Use the latest run with this segment ID.")
+    p.add_argument("--segment", help="Use the latest runs with this segment ID.")
     return p
 
 
-def build(rows: list[tuple], rsid: str, threshold: float) -> EmailMessage:
-    day = rows[0][-1]
-    subject = f"{len(rows)} Analytics Health alerts for {rsid} on {day}"
-    text = [subject, ""]
+def _table(rows: list[tuple]) -> tuple[list[str], str]:
+    """The plain text lines and the HTML table for one suite's alerts."""
+    text = []
     cells = []
     for alert, name, cid, usual, value, pct, _day in rows:
         change = "" if pct is None else f"{pct:+.1f}%"
@@ -93,65 +108,108 @@ def build(rows: list[tuple], rsid: str, threshold: float) -> EmailMessage:
         + "</tr>"
         for row in cells
     )
-    body = (
-        f"<p>{html.escape(subject)}. A large drop is more than {threshold:.0%} below the usual "
-        f"value for the weekday.</p><table style='border-collapse:collapse'><tr>{th}</tr>{trs}"
-        "</table>"
-    )
+    return text, f"<table style='border-collapse:collapse'><tr>{th}</tr>{trs}</table>"
+
+
+def build(sections: list[tuple[str, str, list[tuple]]], threshold: float) -> EmailMessage:
+    """One email. Each section is (rsid, suite name, alert rows), for a suite with alerts."""
+    total = sum(len(rows) for _, _, rows in sections)
+    if len(sections) == 1:
+        rsid, _name, rows = sections[0]
+        subject = f"{total} Analytics Health alerts for {rsid} on {rows[0][-1]}"
+    else:
+        subject = f"{total} Analytics Health alerts for {len(sections)} report suites"
+    text = [subject, ""]
+    parts = [
+        (
+            f"<p>{html.escape(subject)}. A large drop is more than {threshold:.0%} below the usual "
+            "value for the weekday.</p>"
+        )
+    ]
+    for rsid, name, rows in sections:
+        heading = f"{name} ({rsid}), {rows[0][-1]}: {len(rows)} alerts"
+        lines, table = _table(rows)
+        text += [heading, *lines, ""]
+        parts.append(f"<h3>{html.escape(heading)}</h3>{table}")
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = os.environ.get("MAIL_FROM", "ahd@localhost")
     msg["To"] = os.environ.get("MAIL_TO", "you@example.com")
-    msg.set_content("\n".join(text))
-    msg.add_alternative(body, subtype="html")
+    msg.set_content("\n".join(text).rstrip() + "\n")
+    msg.add_alternative("".join(parts), subtype="html")
     return msg
 
 
-def _read(args: argparse.Namespace) -> tuple[int | None, list[tuple]]:
-    """The run number and its alerts. The run is None when the suite has no finished run."""
+def _read(args: argparse.Namespace) -> tuple[list[str], list[tuple[str, str, list[tuple]]]]:
+    """The suites without a finished run, and (rsid, name, alerts) for each suite with one."""
+    missing: list[str] = []
+    found: list[tuple[str, str, list[tuple]]] = []
     with duckdb.connect(args.database, read_only=True) as con:
-        run = con.execute(RUN_QUERY, {"rsid": args.rsid, "segment": args.segment}).fetchone()[0]
-        if run is None:
-            return None, []
-        params = {"run": run, "threshold": args.threshold}
-        return run, con.execute(QUERY, params).fetchall()
+        rsids = args.rsids
+        if args.all:
+            rows = con.execute(ALL_QUERY, {"segment": args.segment}).fetchall()
+            rsids = [r[0] for r in rows]
+        for rsid in dict.fromkeys(rsids):
+            run = con.execute(RUN_QUERY, {"rsid": rsid, "segment": args.segment}).fetchone()[0]
+            if run is None:
+                missing.append(rsid)
+                continue
+            name = con.execute(NAME_QUERY, {"run": run}).fetchone()[0] or rsid
+            alerts = con.execute(QUERY, {"run": run, "threshold": args.threshold}).fetchall()
+            found.append((rsid, name, alerts))
+    return missing, found
 
 
-def main(argv: list[str]) -> int:
-    args = _parser().parse_args(argv)
-    if not Path(args.database).is_file():
-        print(f"There is no database at {args.database}.", file=sys.stderr)
-        return 1
-    try:
-        run, rows = _read(args)
-    except duckdb.Error as e:
-        # e.g. "Could not set lock on file" while ahd run writes to it.
-        print(f"Could not read {args.database}: {e}", file=sys.stderr)
-        return 1
-    if run is None:
-        which = f"with the segment {args.segment}" if args.segment else "without a segment"
-        print(
-            f"{args.database} holds no finished run of {args.rsid} {which}. Check the report "
-            "suite ID, or run ahd runs to list the runs.",
-            file=sys.stderr,
-        )
-        return 1
-    if not rows:
-        print(f"No alerts for {args.rsid} in run {run}. Nothing to send.")
-        return 2
-    msg = build(rows, args.rsid, args.threshold)
+def _send(msg: EmailMessage, count: int) -> None:
     host = os.environ.get("SMTP_HOST")
     if not host:
         Path("alerts.eml").write_bytes(bytes(msg))
-        print(f"Wrote alerts.eml with {len(rows)} alerts. Set SMTP_HOST to send it.")
-        return 0
+        print(f"Wrote alerts.eml with {count} alerts. Set SMTP_HOST to send it.")
+        return
     with smtplib.SMTP(host, int(os.environ.get("SMTP_PORT", "587"))) as smtp:
         smtp.starttls()
         if os.environ.get("SMTP_USER"):
             smtp.login(os.environ["SMTP_USER"], os.environ.get("SMTP_PASSWORD", ""))
         smtp.send_message(msg)
-    print(f"Sent {len(rows)} alerts to {msg['To']}.")
-    return 0
+    print(f"Sent {count} alerts to {msg['To']}.")
+
+
+def main(argv: list[str]) -> int:
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if bool(args.rsids) == args.all:
+        parser.error("give one or more report suite IDs, or --all, but not both")
+    if not Path(args.database).is_file():
+        print(f"There is no database at {args.database}.", file=sys.stderr)
+        return 1
+    try:
+        missing, found = _read(args)
+    except duckdb.Error as e:
+        # e.g. "Could not set lock on file" while ahd run writes to it.
+        print(f"Could not read {args.database}: {e}", file=sys.stderr)
+        return 1
+    which = f"with the segment {args.segment}" if args.segment else "without a segment"
+    for rsid in missing:
+        print(
+            f"{args.database} holds no finished run of {rsid} {which}. Check the report "
+            "suite ID, or run ahd runs to list the runs.",
+            file=sys.stderr,
+        )
+    if args.all and not found:
+        print(f"{args.database} holds no finished run {which}.", file=sys.stderr)
+        return 1
+    sections = [f for f in found if f[2]]
+    for rsid, _name, _rows in found:
+        if not _rows:
+            print(f"No alerts for {rsid}.")
+    if sections:
+        count = sum(len(rows) for _, _, rows in sections)
+        _send(build(sections, args.threshold), count)
+    elif found:
+        print("Nothing to send.")
+    if missing:
+        return 1
+    return 0 if sections else 2
 
 
 if __name__ == "__main__":
