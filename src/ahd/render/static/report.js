@@ -245,10 +245,13 @@
 
   // Tables start in their usual order. A heading click sorts (numbers largest first, text A to Z),
   // a second click reverses, a third goes back to the usual order.
-  function table(headers, rows, foot, id) {
+  // name is what a screen reader calls the table: {label: text} or {labelledby: a heading's id}.
+  function table(headers, rows, foot, id, name) {
     var wrap = el("div", { "class": "table-wrap" });
     var outer = document.createDocumentFragment();
     var t = el("table");
+    if (name && name.label) t.setAttribute("aria-label", name.label);
+    if (name && name.labelledby) t.setAttribute("aria-labelledby", name.labelledby);
     var thead = el("thead");
     var tr = el("tr");
     var tbody = el("tbody");
@@ -442,7 +445,7 @@
     return row.number !== null && row.number >= +p[0] && row.number <= +p[1];
   }
 
-  function componentTable(rows, custom, id) {
+  function componentTable(rows, custom, id, title) {
     var daily = state.gran === "day";
     var headers = [];
     if (custom) headers.push({ label: "Number" });
@@ -464,7 +467,7 @@
       cells.push(flagCell(r, daily));
       return cells;
     });
-    return table(headers, body, null, id);
+    return table(headers, body, null, id, { label: title });
   }
 
   function groupBlock(title, rows, custom, emptyText) {
@@ -473,7 +476,7 @@
     if (rows.length) h.appendChild(el("span", { "class": "group-count" },
       rows.length === 1 ? "1 component" : rows.length + " components"));
     frag.appendChild(h);
-    frag.appendChild(rows.length ? componentTable(rows, custom, "group:" + title) :
+    frag.appendChild(rows.length ? componentTable(rows, custom, "group:" + title, title) :
       el("p", { "class": "empty" }, emptyText));
     return frag;
   }
@@ -879,7 +882,7 @@
         rows.map(function (r) {
           return [movementCell(r.movement), { c: String(r.rank), k: r.rank }, r.item,
             { c: fmtNum(r.value, type), k: r.value }];
-        }), null, "top100"));
+        }), null, "top100", { labelledby: "top100-title" }));
     }
     ["browser", "device"].forEach(function (kind) {
       var host = byId(kind);
@@ -904,7 +907,7 @@
       });
       var foot = b.totals && b.totals.length ?
         ["Total"].concat(b.totals.map(function (v) { return fmtNum(v, type); })) : null;
-      host.appendChild(table(headers, body, foot, kind));
+      host.appendChild(table(headers, body, foot, kind, { labelledby: kind + "-title" }));
     });
   }
 
@@ -1041,7 +1044,7 @@
           return nameIdCells(a).concat([anomalyCell(a.anomaly), expectedCell(a),
             { c: fmtNum(a.actual, a.metric_type), k: a.actual },
             devCell(arrowFor(a.pct_vs_expected), a.pct_vs_expected)]);
-        }), null, "alerts-unusual"));
+        }), null, "alerts-unusual", { labelledby: "unusual-title" }));
     } else {
       g1.appendChild(el("p", { "class": "empty" }, anomalyBlocked ?
         "Anomaly detection is not available for this run, so no values could be flagged. " +
@@ -1064,7 +1067,7 @@
           return nameIdCells(a).concat([{ c: fmtRound(a.usual, a.metric_type), k: a.usual },
             { c: fmtNum(a.actual, a.metric_type), k: a.actual },
             devCell(arrowFor(a.pct_vs_usual), a.pct_vs_usual)]);
-        }), null, "alerts-drops"));
+        }), null, "alerts-drops", { labelledby: "drops-title" }));
     } else {
       g2.appendChild(el("p", { "class": "empty" },
         dropSummary(data.views["day:" + state.alertDay] || [], alertDayText())));
@@ -1088,7 +1091,7 @@
           return [{ c: name, k: a.name }, { c: el("code", null, a.component_id), k: a.component_id },
             { c: fmtRound(a.usual, a.metric_type), k: a.usual }, expectedCell(a),
             { c: fmtNum(a.actual, a.metric_type), k: a.actual }];
-        }), null, "alerts-zero"));
+        }), null, "alerts-zero", { labelledby: "zero-title" }));
     } else {
       g3.appendChild(el("p", { "class": "empty" },
         "No component that collects data had a value of 0 on " + alertDayText() + "."));
@@ -1102,7 +1105,8 @@
         "These components had a value of 0 on every day in this run, so they are not alerts. " +
         "They are often unused slots. If you expected data from one, check its tracking."));
       g4.appendChild(table([{ label: "Name", cls: "name" }, { label: "ID", cls: "id" }],
-        parts.unused.map(nameIdCells), null, "alerts-unused"));
+        parts.unused.map(nameIdCells), null, "alerts-unused",
+        { label: "Never collected data" }));
       host.appendChild(g4);
     }
 
