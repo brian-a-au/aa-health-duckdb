@@ -843,16 +843,22 @@ def test_the_charts_mark_the_chosen_day_and_its_weekday_average(chrome, showcase
     # The line, the dot and the average bar share the chosen day's x.
     for m in (y, p, got["dimension"], got["individual"]):
         assert m["line"] is not None and m["line"] == m["dot"] == pytest.approx(m["average"])
-        assert m["legend"][-2:] == ["Chosen day", "Weekday average (12 weeks)"]
-        # The key's last row is the chosen day and its weekday average. Marks get a 12 by 12 box.
+        assert {"Chosen day", "Weekday average (12 weeks)"} <= set(m["legend"])
+        # The key's top row ends with the chosen day and its weekday average.
         assert m["rows"][0][0] == "Actual"
-        assert m["rows"][-1] == ["Chosen day", "Weekday average (12 weeks)"]
-        assert set(m["markBoxes"]) == {"0 0 12 12"}
-    # Lines and band, then Adobe's flags, then the chosen day.
-    assert got["yesterday"]["rows"][0] == ["Actual", "Expected", "Expected range"]
-    assert len(got["yesterday"]["rows"]) in (2, 3)
-    if len(got["yesterday"]["rows"]) == 3:
-        assert set(got["yesterday"]["rows"][1]) <= {"Flagged above range", "Flagged below range"}
+        assert m["rows"][0][-2:] == ["Chosen day", "Weekday average (12 weeks)"]
+    # The top row holds the lines, the band and the chosen day. Adobe's flags get the second row,
+    # each in a 12 by 12 box like the triangles on the chart.
+    assert got["yesterday"]["rows"][0] == [
+        "Actual",
+        "Expected",
+        "Expected range",
+        "Chosen day",
+        "Weekday average (12 weeks)",
+    ]
+    assert len(got["yesterday"]["rows"]) == 2
+    assert set(got["yesterday"]["rows"][1]) <= {"Flagged above range", "Flagged below range"}
+    assert set(got["yesterday"]["markBoxes"]) == {"0 0 12 12"}
     # The Day picker moves the marks: Nov 4 is 2 days left of Nov 6.
     assert p["line"] < y["line"]
     assert y["label"].endswith(
