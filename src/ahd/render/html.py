@@ -9,6 +9,7 @@ Safety rules (Review Focus 2):
 
 from __future__ import annotations
 
+import html
 import json
 import re
 from datetime import date, timedelta
@@ -264,6 +265,7 @@ def render_html(view: dict[str, Any]) -> str:
     template = _env.get_template("report.html.j2")
     return template.render(
         run=run,
+        run_mark=run_mark(run),
         status_label=STATUS_LABELS.get(status, status),
         status=status,
         status_kind=STATUS_BADGES.get(status, ("plain", "•"))[0],
@@ -297,11 +299,48 @@ def _safe_part(value: Any) -> str:
     return text or "unknown"
 
 
+# A mark in each report's head that names its run, so that write_report can tell a report
+# of this run from one of a run with the same number in another database file.
+RUN_MARK_RE = re.compile(r'<meta name="ahd-run" content="([^"]*)">')
+
+
+def run_mark(run: dict[str, Any]) -> str:
+    """The report suite, segment, run number and start time of the run, e.g., for the mark."""
+    parts = [run.get("rsid"), run.get("segment_id"), run.get("id"), run.get("started_at")]
+    return "|".join("" if p is None else str(p) for p in parts)
+
+
+def _mark_in(path: Path) -> str | None:
+    """The run mark of an existing report, or None for a file without one.
+
+    A path that cannot be read, e.g., a folder, gets "", which matches no run.
+    """
+    try:
+        with path.open(encoding="utf-8", errors="replace") as f:
+            head = f.read(4096)
+    except OSError:
+        return ""
+    m = RUN_MARK_RE.search(head)
+    return html.unescape(m.group(1)) if m else None
+
+
 def write_report(view: dict[str, Any], out_dir: Path) -> Path:
+    """Write the report and return its path.
+
+    A file of the same name that holds a report of another run, e.g., run 1 of another database
+    file, is kept. The report then gets the next free name ending in _2, _3 and so on.
+    """
     run = view["run"]
-    name = f"ahd_{_safe_part(run['rsid'])}_{_safe_part(run['today'])}_run{int(run['id'])}.html"
+    segment = f"_{_safe_part(run['segment_id'])}" if run.get("segment_id") else ""
+    stem = f"ahd_{_safe_part(run['rsid'])}{segment}_{_safe_part(run['today'])}_run{int(run['id'])}"
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / name
+    mark = run_mark(run)
+    n = 1
+    while True:
+        path = out_dir / (f"{stem}.html" if n == 1 else f"{stem}_{n}.html")
+        if not path.exists() or _mark_in(path) in (None, mark):
+            break
+        n += 1
     path.write_text(render_html(view), encoding="utf-8")
     return path

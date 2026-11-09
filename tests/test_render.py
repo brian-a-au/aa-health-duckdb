@@ -355,6 +355,46 @@ def test_write_report_file_name(tmp_path):
     assert path.read_text(encoding="utf-8") == render_html(v)
 
 
+def test_write_report_names_the_segment(tmp_path):
+    v = sample_view()
+    v["run"]["segment_id"] = "s300000_5a1b"
+    path = write_report(v, tmp_path)
+    assert path.name == f"ahd_luma.prod_s300000_5a1b_2026-11-07_run{v['run']['id']}.html"
+
+
+def test_write_report_keeps_the_report_of_a_run_from_another_file(tmp_path):
+    # Two database files can each hold a run 1 of the same suite and date, e.g., after the
+    # user starts a new file. The second report must not replace the first.
+    first = sample_view()
+    path = write_report(first, tmp_path)
+    other = sample_view()
+    other["run"]["started_at"] = "2026-11-07T09:00:00.123456"
+    second = write_report(other, tmp_path)
+    assert second.name == path.name.replace(".html", "_2.html")
+    assert path.read_text(encoding="utf-8") == render_html(first)
+    assert second.read_text(encoding="utf-8") == render_html(other)
+    # Writing a report again replaces the file of the same run.
+    assert write_report(other, tmp_path) == second
+    assert write_report(first, tmp_path) == path
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted([path.name, second.name])
+
+
+def test_write_report_replaces_a_report_without_a_run_mark(tmp_path):
+    # Reports from 0.1.1 and earlier have no mark, so the run they belong to is not known.
+    v = sample_view()
+    name = f"ahd_luma.prod_2026-11-07_run{v['run']['id']}.html"
+    (tmp_path / name).write_text("<!doctype html><title>old</title>", encoding="utf-8")
+    assert write_report(v, tmp_path) == tmp_path / name
+    assert (tmp_path / name).read_text(encoding="utf-8") == render_html(v)
+
+
+def test_write_report_passes_a_folder_of_the_same_name(tmp_path):
+    v = sample_view()
+    stem = f"ahd_luma.prod_2026-11-07_run{v['run']['id']}"
+    (tmp_path / f"{stem}.html").mkdir()
+    assert write_report(v, tmp_path).name == f"{stem}_2.html"
+
+
 def test_write_report_sanitizes_rsid(tmp_path):
     v = sample_view()
     v["run"]["rsid"] = "../evil/rs"
