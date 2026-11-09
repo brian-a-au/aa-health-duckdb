@@ -114,6 +114,9 @@ ALERT_FIELDS = (
     "streak_open",
 )
 SERIES_FIELDS = ("value", "expected", "upper", "lower", "anomaly")
+CALENDAR_FIELDS = ("day", "high", "low", "zero", "alerts")
+# The calendar's lists of components, by place in "components".
+CALENDAR_LISTS = ("high", "low", "zero")
 
 
 def _number(v: Any) -> Any:
@@ -162,6 +165,16 @@ def pack_view(view: dict[str, Any]) -> dict[str, Any]:
         k: [[_number(r[f]) for f in ROW_FIELDS] for r in rows] for k, rows in views.items()
     }
     packed["alerts"] = [[_number(a[f]) for f in ALERT_FIELDS] for a in view.get("alerts", [])]
+    # Each calendar day names its components by their place in "components", which keeps the
+    # order it was built in. A component that is not there keeps its id.
+    place = {cid: i for i, cid in enumerate(components)}
+    packed["calendar"] = [
+        [
+            [place.get(cid, cid) for cid in c[f]] if f in CALENDAR_LISTS else _number(c[f])
+            for f in CALENDAR_FIELDS
+        ]
+        for c in view.get("calendar", [])
+    ]
     packed["series"] = {
         cid: _pack_series(points) for cid, points in view.get("series", {}).items() if points
     }
@@ -171,6 +184,7 @@ def pack_view(view: dict[str, Any]) -> dict[str, Any]:
         "row": ROW_FIELDS,
         "alert": ALERT_FIELDS,
         "series": SERIES_FIELDS,
+        "calendar": CALENDAR_FIELDS,
     }
     return packed
 

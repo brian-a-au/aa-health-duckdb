@@ -80,6 +80,21 @@ This tab shows every custom event, eVar and prop, then the solution components, 
 - **Component numbers:** a range, e.g., 101 to 200, for custom events, eVars and props.
 - **Show only flagged:** hides everything that is not an Adobe flag, a large drop or a drop to zero.
 
+### Alerts by day
+
+A calendar shows the last 13 weeks. Each square is one day, and a darker square had more components with an alert:
+
+- Adobe flagged the value above or below its expected range.
+- The value dropped to 0, and the component had data on other days.
+
+Large drops are not counted, because only the last 7 days have a weekday average. A day with no data at all is an outline.
+
+A release that breaks tracking usually breaks many components on the same day, so it shows as one dark square. Choose a square, or move with the arrow keys, to list that day's components. The left and right keys move a week, and the up and down keys move a day. Choose a component in the list to see it on the metric or dimension chart. The text under the chart is then about that day.
+
+"Days with the most alerts" lists the 5 days with the most alerts, with the count of each kind.
+
+The calendar follows the Day picker. DuckDB finds the alerts for every day and component in one query. In a test with 410 components and 92 days, the query took about 10 milliseconds.
+
 ### Charts
 
 Two charts show 91 days of one metric and one dimension. Each shows the actual values, Adobe's expected value and expected range, and markers where Adobe flagged a value. Use the arrow keys on a chart to read each day.
@@ -106,7 +121,7 @@ Each row shows:
 
 The bar goes left of a gray center line for a drop and right of it for a rise. Half the bar is a change of 100 percent. Two ticks with a light band between them mark the slider's percent. A bar that passes a tick is orange.
 
-The table headings stay in view while you scroll. On a narrow screen, such as a phone, a long table scrolls in its own box. The links under "Jump to" above the tables go to each group, and show how many components each group has.
+The table headings stay in view while you scroll. A table that is too wide for the window, e.g., on a phone, scrolls in its own box, and its headings stay at the top of that box. The links under "Jump to" above the tables go to each group, and show how many components each group has.
 
 The flag is Adobe's "Above range" or "Below range", or "Large drop" when the slider flags it. A red "Zero data" badge marks a value of 0 on a component that has data on other days. A gray "never collected data" note marks a component that was 0 on every day.
 

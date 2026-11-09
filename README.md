@@ -9,9 +9,9 @@
 [![DuckDB 2.0](https://img.shields.io/badge/DuckDB-2.0-fff000.svg)](https://duckdb.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/brian-a-au/aa-health-duckdb/blob/main/LICENSE)
 
-[![Slideshow of the report: summary tiles, trend charts with expected ranges, component tables, alerts, browser breakdowns, and light and dark mode](docs/showcase.gif)](docs/showcase.png)
+[![Slideshow of the report: summary tiles, a calendar of alerts by day, trend charts with expected ranges, component tables, alerts, browser breakdowns, and light and dark mode](docs/showcase.gif)](docs/showcase.png)
 
-27-second loop of real report excerpts, made from synthetic data. Click the animation for a still image.
+32-second loop of real report excerpts, made from synthetic data. Click the animation for a still image.
 
 aa-health-duckdb checks the health of an Adobe Analytics report suite. For every custom event, eVar and prop, it shows yesterday's value, its weekday average, and whether Adobe's anomaly detection flagged it. The weekday average is the average of the same weekday in the 12 weeks before, e.g., the 12 Mondays before a Monday. It also finds large drops, values that dropped to zero, and components that never collected data.
 

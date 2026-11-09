@@ -31,6 +31,15 @@
     d.alerts = (d.alerts || []).map(function (a) {
       return withComponent(obj(f.alert, a), f.alert_component);
     });
+    // Calendar lists name components by their place in d.components.
+    var ids = Object.keys(d.components || {});
+    d.calendar = (d.calendar || []).map(function (c) {
+      var o = obj(f.calendar || [], c);
+      ["high", "low", "zero"].forEach(function (k) {
+        o[k] = (o[k] || []).map(function (x) { return typeof x === "number" ? ids[x] : x; });
+      });
+      return o;
+    });
     Object.keys(d.series).forEach(function (cid) {
       var s = d.series[cid], start = Date.parse(s.start + "T00:00:00Z"), points = [];
       var gaps = s.gaps || [];
@@ -204,6 +213,19 @@
   // ---- tabs ----------------------------------------------------------------
   var redrawers = [];
   function redrawAll() { redrawers.forEach(function (f) { f(); }); }
+
+  // A table that is wider than its place gets its own scroll box (the class "scrolls"). Every
+  // other table stays part of the page, so its headings stick to the top of the window. The page
+  // checks after it draws tables, and when a tab opens or the window changes size. A table on a
+  // hidden tab has no width yet, so it is checked when its tab opens.
+  function fitTables() {
+    Array.prototype.forEach.call(document.querySelectorAll(".table-wrap"), function (w) {
+      w.classList.remove("scrolls");
+      var t = w.firstChild;
+      if (t && w.clientWidth && t.offsetWidth > w.clientWidth + 1) w.classList.add("scrolls");
+    });
+  }
+  redrawers.push(fitTables);
   var resizeTimer = null;
   window.addEventListener("resize", function () {
     clearTimeout(resizeTimer);
@@ -570,6 +592,7 @@
     });
     if (!any) host.appendChild(el("p", { "class": "empty" },
       state.flagged ? "Nothing flagged in the solution components." : "None were found."));
+    fitTables();
   }
 
   // ---- charts --------------------------------------------------------------
@@ -628,6 +651,8 @@
 
   // mark: {day, average} marks the chosen day with a line and a dot, and its weekday average
   // with a short bar. Without it, or when the day is not in the chart, nothing is marked.
+  // mark.look: a day to read and to show with the crosshair, e.g., a day chosen in the
+  // calendar. The readout starts on it instead of the chosen day.
   function drawChart(host, points, title, type, mark) {
     clear(host);
     points = (points || []).filter(function (p) { return p && p[0]; });
@@ -753,8 +778,12 @@
     svg.appendChild(hit);
     var readout = el("p", { "class": "chart-readout", "aria-live": "polite" });
     var last = points.length - 1;
-    // At rest, the readout describes the chosen day, or the last day when none is chosen.
-    var rest = chosen >= 0 ? chosen : last;
+    // At rest, the readout describes the look day, else the chosen day, else the last day.
+    var look = -1;
+    if (mark && mark.look) {
+      points.forEach(function (p, k) { if (p[0] === mark.look) look = k; });
+    }
+    var rest = look >= 0 ? look : chosen >= 0 ? chosen : last;
     var active = rest;
     function show(k, visible) {
       active = Math.max(0, Math.min(last, k));
@@ -783,13 +812,13 @@
       return best;
     }
     svg.addEventListener("pointermove", function (e) { show(nearest(e), true); });
-    svg.addEventListener("pointerleave", function () { show(rest, false); });
+    svg.addEventListener("pointerleave", function () { show(rest, look >= 0); });
     svg.addEventListener("keydown", function (e) {
       if (e.key === "ArrowLeft") { e.preventDefault(); show(active - 1, true); }
       if (e.key === "ArrowRight") { e.preventDefault(); show(active + 1, true); }
     });
-    svg.addEventListener("blur", function () { show(rest, false); });
-    show(rest, false);
+    svg.addEventListener("blur", function () { show(rest, look >= 0); });
+    show(rest, look >= 0);
 
     host.appendChild(svg);
     host.appendChild(readout);
@@ -885,17 +914,230 @@
         return;
       }
       var day = chosenDay();
-      drawChart(host, data.series[r.component_id], componentLabel(r), r.metric_type,
-        day ? { day: day, average: weekdayAverage(r.component_id, day) } : null);
+      var mark = day ? { day: day, average: weekdayAverage(r.component_id, day) } : {};
+      if (look && look.cid === r.component_id) mark.look = look.day;
+      drawChart(host, data.series[r.component_id], componentLabel(r), r.metric_type, mark);
     }
+    // A component and day picked elsewhere on the page, e.g., in the calendar. It holds until
+    // the reader picks another component or day.
+    var look = null;
     fill();
-    select.addEventListener("change", draw);
+    select.addEventListener("change", function () { look = null; draw(); });
     if (typeSelect) {
       typeSelect.disabled = !all.length;
-      typeSelect.addEventListener("change", function () { fill(); draw(); });
+      typeSelect.addEventListener("change", function () { look = null; fill(); draw(); });
     }
     redrawers.push(draw);
     draw();
+    return {
+      forget: function () { look = null; },
+      has: function (cid) {
+        return all.some(function (r) { return r.component_id === cid; });
+      },
+      // Shows the component on this chart and reads the given day, then moves to the chart.
+      show: function (cid, day) {
+        if (typeSelect && typeSelect.value) {
+          typeSelect.value = "";
+          fill();
+        }
+        rows.forEach(function (r, i) { if (r.component_id === cid) select.selectedIndex = i; });
+        look = day ? { cid: cid, day: day } : null;
+        draw();
+        var svg = host.querySelector("svg");
+        if (svg) svg.focus(); else host.scrollIntoView();
+      }
+    };
+  }
+
+  // ---- alerts by day: a calendar of the last 13 weeks ---------------------------
+  // Each square is a day, darker for more components with an alert that day. The SQL lists the
+  // components for each day. The page only places the squares and shows the lists.
+  var pickers = {};
+  var calendar = { select: function () {} };
+  var LEVELS = 4;
+  var CAL_KINDS = [
+    { key: "low", label: "Below the expected range" },
+    { key: "high", label: "Above the expected range" },
+    { key: "zero", label: "Dropped to zero" }
+  ];
+  var LIST_SHOWN = 12;
+
+  function showOnChart(cid, day) {
+    var picker = pickers.metric && pickers.metric.has(cid) ? pickers.metric :
+      pickers.dimension && pickers.dimension.has(cid) ? pickers.dimension : null;
+    if (picker) picker.show(cid, day);
+  }
+
+  function renderCalendar() {
+    var host = byId("calendar");
+    if (!host || !yesterday) return;
+    var byDay = {};
+    (data.calendar || []).forEach(function (c) { byDay[c.day] = c; });
+    var rowsById = {};
+    (data.views.week || []).forEach(function (r) { rowsById[r.component_id] = r; });
+    var end = parseDay(yesterday).getTime();
+    var days = [];
+    for (var n = 90; n >= 0; n--) days.push(new Date(end - n * 864e5).toISOString().slice(0, 10));
+    var max = 0;
+    days.forEach(function (d) { if (byDay[d] && byDay[d].alerts > max) max = byDay[d].alerts; });
+    // Monday is row 0. The first column may start part way through a week.
+    var offset = (parseDay(days[0]).getUTCDay() + 6) % 7;
+    var cols = Math.ceil((days.length + offset) / 7);
+    var selected = days.length - 1;
+
+    function level(d) {
+      var c = byDay[d];
+      if (!c) return -1;
+      return c.alerts ? Math.max(1, Math.ceil(c.alerts / max * LEVELS)) : 0;
+    }
+    function countText(c) {
+      return c.alerts === 1 ? "1 component with an alert" : c.alerts + " components with an alert";
+    }
+    function dayText(d) {
+      var c = byDay[d];
+      return fmtDay(d, true) + ": " + (c ? countText(c) : "no data was read") + ".";
+    }
+
+    var svgHost = el("div", { "class": "calendar-grid" });
+    var readout = el("p", { "class": "chart-readout calendar-readout", "aria-live": "polite" });
+    var lists = el("div", { "class": "calendar-lists" });
+
+    function drawGrid() {
+      clear(svgHost);
+      var width = svgHost.clientWidth || host.clientWidth || 640;
+      var L = 40, R = 18, T = 16, gap = 3;
+      var size = Math.max(10, Math.min(22, Math.floor((width - L - R) / cols) - gap));
+      var W = L + cols * (size + gap) + R, H = T + 7 * (size + gap);
+      var svg = sv("svg", { viewBox: "0 0 " + W + " " + H, width: W, height: H, role: "img",
+        tabindex: 0, "class": "calendar-svg",
+        "aria-label": "Alerts by day for the 13 weeks ending " + fmtDay(yesterday, false) +
+          ". Use the arrow keys to move between days." });
+      ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].forEach(function (name, row) {
+        var t = sv("text", { x: L - 6, y: T + row * (size + gap) + size * 0.75,
+          "text-anchor": "end", "class": "axis" });
+        t.textContent = name;
+        svg.appendChild(t);
+      });
+      var lastMonth = "";
+      var cells = days.map(function (d, i) {
+        var at = i + offset, col = Math.floor(at / 7), row = at % 7;
+        var x = L + col * (size + gap), y = T + row * (size + gap);
+        var month = parseDay(d).toLocaleDateString(undefined, { month: "short", timeZone: "UTC" });
+        if (month !== lastMonth && row === 0) {
+          var m = sv("text", { x: x, y: T - 5, "class": "axis" });
+          m.textContent = month;
+          svg.appendChild(m);
+          lastMonth = month;
+        }
+        var lv = level(d);
+        var rect = sv("rect", { x: x, y: y, width: size, height: size, rx: 3,
+          "class": "cal-cell " + (lv < 0 ? "missing" : "l" + lv), "data-day": d });
+        var title = sv("title", {});
+        title.textContent = dayText(d);
+        rect.appendChild(title);
+        svg.appendChild(rect);
+        return { x: x, y: y };
+      });
+      var ring = sv("rect", { width: size + 4, height: size + 4, rx: 5, "class": "cal-ring" });
+      svg.appendChild(ring);
+      function place() {
+        ring.setAttribute("x", cells[selected].x - 2);
+        ring.setAttribute("y", cells[selected].y - 2);
+      }
+      place();
+      svg.addEventListener("click", function (e) {
+        var d = e.target.getAttribute && e.target.getAttribute("data-day");
+        if (d) select(days.indexOf(d));
+      });
+      svg.addEventListener("keydown", function (e) {
+        var step = { ArrowLeft: -7, ArrowRight: 7, ArrowUp: -1, ArrowDown: 1 }[e.key];
+        if (!step) return;
+        e.preventDefault();
+        select(Math.max(0, Math.min(days.length - 1, selected + step)));
+      });
+      svgHost.appendChild(svg);
+      drawGrid.place = place;
+    }
+
+    function listBlock(kind, ids, d) {
+      var box = el("div", { "class": "calendar-list" });
+      box.appendChild(el("p", { "class": "calendar-list-title" }, kind.label + " (" + ids.length + ")"));
+      function item(cid) {
+        var row = rowsById[cid];
+        var b = el("button", { type: "button", "class": "link",
+          title: "Show this component on the chart for " + fmtDay(d, false) },
+          row ? componentLabel(row) : cid);
+        b.addEventListener("click", function () { showOnChart(cid, d); });
+        return el("li", null).appendChild(b).parentNode;
+      }
+      var ul = el("ul");
+      ids.slice(0, LIST_SHOWN).forEach(function (cid) { ul.appendChild(item(cid)); });
+      box.appendChild(ul);
+      if (ids.length > LIST_SHOWN) {
+        var more = el("details");
+        more.appendChild(el("summary", null, "Show " + (ids.length - LIST_SHOWN) + " more"));
+        var ul2 = el("ul");
+        ids.slice(LIST_SHOWN).forEach(function (cid) { ul2.appendChild(item(cid)); });
+        more.appendChild(ul2);
+        box.appendChild(more);
+      }
+      return box;
+    }
+
+    function select(i) {
+      if (i < 0) return;
+      selected = i;
+      if (drawGrid.place) drawGrid.place();
+      var d = days[i], c = byDay[d];
+      readout.textContent = dayText(d);
+      clear(lists);
+      if (!c || !c.alerts) return;
+      CAL_KINDS.forEach(function (k) {
+        if (c[k.key] && c[k.key].length) lists.appendChild(listBlock(k, c[k.key], d));
+      });
+    }
+    calendar.select = function (d) { select(days.indexOf(d)); };
+
+    var legend = el("div", { "class": "calendar-legend", "aria-hidden": "true" });
+    legend.appendChild(el("span", null, "None"));
+    for (var lv = 0; lv <= LEVELS; lv++) legend.appendChild(el("span", { "class": "swatch l" + lv }));
+    legend.appendChild(el("span", null, max ? "Most: " + numFmt.format(max) : "Most"));
+
+    // The table view: the days with the most alerts, newest first among equal days.
+    var top = (data.calendar || []).filter(function (c) { return c.alerts > 0; })
+      .sort(function (a, b) { return b.alerts - a.alerts || (a.day < b.day ? 1 : -1); }).slice(0, 5);
+    var topBox = el("div", { "class": "calendar-top" });
+    topBox.appendChild(el("h3", { id: "calendar-top-title" }, "Days with the most alerts"));
+    if (!top.length) {
+      topBox.appendChild(el("p", { "class": "empty" },
+        "No day in the last 13 weeks had a component that Adobe flagged or that dropped to zero."));
+    } else {
+      topBox.appendChild(table(
+        [{ label: "Day" }, { label: "Below range", num: true, cls: "days" },
+         { label: "Above range", num: true, cls: "days" },
+         { label: "Dropped to zero", num: true, cls: "days" }, { label: "Total", num: true, cls: "days" }],
+        top.map(function (c) {
+          var b = el("button", { type: "button", "class": "link nowrap" }, fmtDay(c.day, false));
+          b.addEventListener("click", function () {
+            select(days.indexOf(c.day));
+            var svg = svgHost.querySelector("svg");
+            if (svg) svg.focus();
+          });
+          return [{ c: b, k: c.day }, { c: String(c.low.length), k: c.low.length },
+            { c: String(c.high.length), k: c.high.length },
+            { c: String(c.zero.length), k: c.zero.length }, { c: String(c.alerts), k: c.alerts }];
+        }), null, "calendar-top", { labelledby: "calendar-top-title" }));
+    }
+
+    clear(host);
+    var main = el("div", { "class": "calendar-main" });
+    append(main, [append(el("div", { "class": "calendar-left" }), [svgHost, legend]),
+      append(el("div", { "class": "calendar-right" }), [readout, lists])]);
+    append(host, [main, topBox]);
+    fitTables();
+    drawGrid();
+    redrawers.push(drawGrid);
+    select(days.indexOf(state.day) >= 0 ? days.indexOf(state.day) : days.length - 1);
   }
 
   // ---- individual component tab ---------------------------------------------
@@ -1009,6 +1251,7 @@
         ["Total"].concat(b.totals.map(function (v) { return fmtNum(v, type); })) : null;
       host.appendChild(table(headers, body, foot, kind, { labelledby: kind + "-title" }));
     });
+    fitTables();
   }
 
   function renderIndividual() {
@@ -1240,6 +1483,7 @@
     }
 
     byId("alert-text").value = alertText();
+    fitTables();
   }
 
   // ---- copying ------------------------------------------------------------------
@@ -1461,15 +1705,22 @@
       fmtDay(d, true) + dayNote(d)));
   });
   // The Day picker also moves the mark on the charts, so they are drawn again.
+  // A new day or view ends a day picked in the calendar, so the charts read the chosen day.
+  function forgetLook() {
+    Object.keys(pickers).forEach(function (k) { pickers[k].forget(); });
+  }
   daySel.addEventListener("change", function () {
     state.day = daySel.value;
+    forgetLook();
     renderTables();
     redrawAll();
+    calendar.select(state.day);
   });
   byId("granularity").addEventListener("change", function (e) {
     state.gran = e.target.value;
     byId("week-note").hidden = state.gran !== "week";
     byId("day-label").hidden = state.gran === "week";
+    forgetLook();
     renderTables();
     redrawAll();
   });
@@ -1504,8 +1755,10 @@
 
   renderTiles();
   renderTables();
-  fillPicker(byId("metric-pick"), "metric", "metric-chart", byId("metric-type"));
-  fillPicker(byId("dimension-pick"), "dimension", "dimension-chart", byId("dimension-type"));
+  pickers.metric = fillPicker(byId("metric-pick"), "metric", "metric-chart", byId("metric-type"));
+  pickers.dimension = fillPicker(byId("dimension-pick"), "dimension", "dimension-chart",
+    byId("dimension-type"));
+  renderCalendar();
   renderIndividual();
   renderAlerts();
 })();
