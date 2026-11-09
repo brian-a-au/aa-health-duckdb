@@ -640,7 +640,20 @@ def _runs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _replace_unknown_characters() -> None:
+    """Print a character that the output cannot show as "?" instead of stopping with an error.
+
+    On Windows, output sent to a file or a pipe uses an older code page, e.g., cp1252, which
+    cannot show names such as "日本サイト".
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="replace")
+
+
 def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> int:
+    _replace_unknown_characters()
     args = _parser().parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

@@ -727,6 +727,41 @@ def test_suites_and_segments_commands(cfg, capsys):
     assert code == 0 and "s300_abc  Mobile visits" in out
 
 
+def test_names_that_the_output_encoding_cannot_show_do_not_crash(cfg, monkeypatch):
+    # On Windows, output sent to a file or a pipe uses an older code page, e.g., cp1252.
+    import io
+
+    from fakes import FakeClient
+
+    fake = FakeClient(
+        gets={
+            "/reportsuites/collections/suites": {
+                "content": [{"rsid": "jp1", "name": "日本サイト"}],
+                "lastPage": True,
+            }
+        }
+    )
+    out = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    err = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    monkeypatch.setattr("sys.stdout", out)
+    monkeypatch.setattr("sys.stderr", err)
+    assert main(["suites", "--config", str(cfg)], client_factory=lambda c: fake) == 0
+    out.flush()
+    assert "jp1  ?????" in out.buffer.getvalue().decode("cp1252")
+
+
+def test_output_without_reconfigure_is_left_as_it_is(monkeypatch):
+    import io
+
+    from ahd.cli import _replace_unknown_characters
+
+    out = io.StringIO()
+    monkeypatch.setattr("sys.stdout", out)
+    _replace_unknown_characters()
+    print("日本サイト")
+    assert out.getvalue() == "日本サイト\n"
+
+
 def test_suites_none_visible(cfg, capsys):
     from fakes import FakeClient
 
