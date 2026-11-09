@@ -34,20 +34,29 @@ A run fails if branch coverage drops below 95 percent.
 
 ## Release a new version
 
-The tool is on PyPI as [aa-health-duckdb](https://pypi.org/project/aa-health-duckdb/). The workflow `.github/workflows/release.yml` uploads it when you publish a GitHub release. It uses PyPI trusted publishing, so no PyPI token is stored anywhere. PyPI trusts this publisher: owner `brian-a-au`, repository `aa-health-duckdb`, workflow `release.yml` and environment `pypi`.
+The tool is on PyPI as [aa-health-duckdb](https://pypi.org/project/aa-health-duckdb/). Pushing a tag `vX.Y.Z` starts `.github/workflows/release.yml`. It works like the release workflow of sdr-visualizer, and has three jobs:
+
+1. **build** runs lint and the tests, checks that the tag matches the version in `pyproject.toml` and that `CHANGELOG.md` has its section, builds the wheel and the source package, checks that the README links work outside GitHub, installs the wheel in a new environment and runs `ahd --help`, and writes SHA-256 sums.
+2. **publish** uploads the same files to PyPI with trusted publishing, so no PyPI token is stored anywhere. It runs in the `pypi` environment, which waits for the maintainer's approval and accepts only tags `v*.*.*`. PyPI trusts this publisher: owner `brian-a-au`, repository `aa-health-duckdb`, workflow `release.yml` and environment `pypi`.
+3. **github-release** creates the GitHub release with the files, the sums and the changelog section as its notes.
+
+To release:
 
 1. In a pull request, set the new `version` in `pyproject.toml`, run `uv lock`, and add a section to `CHANGELOG.md`, e.g., `## 0.2.0 (2026-12-01)`. Follow [Semantic Versioning](https://semver.org/). Until 1.0.0, raise the minor version, e.g., 0.2.0, for a change to the database layout or the options, and the patch version, e.g., 0.1.1, for fixes.
-2. Merge the pull request and wait for the checks on `main` to pass.
-3. Publish the release with its tag. Use the changelog section as the notes:
+2. Merge the pull request, and wait for the checks on `main` to pass.
+3. Optionally, open the release workflow on GitHub and choose "Run workflow". It runs the build job only, as a dry run, and uploads nothing.
+4. Tag the merge commit on `main` and push the tag:
 
    ```
-   gh release create v0.2.0 --title v0.2.0 --notes-file notes.md
+   git switch main && git pull
+   git tag v0.2.0
+   git push origin v0.2.0
    ```
 
-4. The release workflow checks that the tag matches the version and that `CHANGELOG.md` has its section. It builds the package, checks that the README links work outside GitHub, installs the wheel and runs `ahd --help`. Then it uploads to PyPI. If the `pypi` environment has a required reviewer, approve the job on GitHub.
-5. Check the page on PyPI, and try the release from a clean shell: `uvx --from aa-health-duckdb ahd --help`.
+5. Approve the publish job on GitHub: open the run in the Actions tab, choose "Review deployments", and approve `pypi`.
+6. Check the page on PyPI and the GitHub release. Try the release from a clean shell: `uvx --from aa-health-duckdb ahd --help`.
 
-A tag alone or a draft release uploads nothing. PyPI never accepts the same version twice, so a mistake needs a new version.
+Release tags cannot be deleted or moved. PyPI never accepts the same version twice, so a mistake needs a new version.
 
 ## Remake the slideshow
 

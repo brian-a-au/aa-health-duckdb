@@ -40,6 +40,8 @@ def test_the_readme_installs_from_pypi():
 def test_the_release_workflow_matches_the_pypi_publisher():
     # PyPI trusts this file name and environment. Changing either one breaks the upload.
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-    assert "types: [published]" in workflow
+    assert 'tags:\n      - "v*.*.*"' in workflow and "workflow_dispatch:" in workflow
     assert "environment: pypi" in workflow and "id-token: write" in workflow
     assert "pypa/gh-action-pypi-publish@" in workflow
+    # The upload and the GitHub release run only for a pushed tag, never for a dry run.
+    assert workflow.count("if: github.event_name == 'push'") == 2
