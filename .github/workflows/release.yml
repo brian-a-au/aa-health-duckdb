@@ -5,8 +5,8 @@ name: release
 #
 # 1. build: lint, tests, the tag and changelog checks, the build, a check of the README links,
 #    an install of the built wheel, and SHA-256 sums. It keeps the files as an artifact.
-# 2. publish: uploads the same files to PyPI. It runs in the "pypi" environment, which waits for
-#    the maintainer's approval and accepts only v*.*.* tags.
+# 2. publish: uploads the same files to PyPI. It runs in the "pypi" environment, which accepts
+#    only v*.*.* tags. It does not wait for an approval.
 # 3. github-release: creates the GitHub release with the files, the sums and the changelog
 #    section as notes.
 #
@@ -148,7 +148,7 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Waits for the maintainer's approval, and accepts only v*.*.* tags.
+    # Accepts only v*.*.* tags. It does not wait for an approval.
     environment: pypi
     permissions:
       # Lets the job ask GitHub for the token that PyPI trusts.
