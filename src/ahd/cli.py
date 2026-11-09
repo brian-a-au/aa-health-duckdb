@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import sys
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -76,6 +77,25 @@ ACCESS_FIX = (
     'and the Report Suite Tools item "Anomaly Detection". Changes in the Admin Console can '
     "take a while to reach Analytics, so wait a little and run this check again."
 )
+
+
+def _run_date(text: str) -> date:
+    """An argparse type for --date: a date as YYYY-MM-DD whose 92 trend days are real dates."""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        raise argparse.ArgumentTypeError(f"{text!r} is not a date in the form YYYY-MM-DD.")
+    try:
+        day = date.fromisoformat(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not a date in the form YYYY-MM-DD."
+        ) from None
+    try:
+        RunWindow.for_today(day)
+    except OverflowError:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is too early or too late. A run reads the 91 days before the date."
+        ) from None
+    return day
 
 
 def _whole_number(low: int, high: int) -> Callable[[str], int]:
@@ -177,7 +197,11 @@ def _parser() -> argparse.ArgumentParser:
         help="Check every report suite this credential can see.",
     )
     run.add_argument("--segment", help="A segment ID or name, to filter every request.")
-    run.add_argument("--date", type=date.fromisoformat, help="Use this date as today (YYYY-MM-DD).")
+    run.add_argument(
+        "--date",
+        type=_run_date,
+        help="Use this date as today (YYYY-MM-DD). It cannot be after today in the suite's time zone.",
+    )
     run.add_argument("--dimension", default="page", help=DIMENSION_HELP + " Default: Page.")
     run.add_argument("--metric", default="occurrences", help=METRIC_HELP + " Default: Occurrences.")
     run.add_argument(

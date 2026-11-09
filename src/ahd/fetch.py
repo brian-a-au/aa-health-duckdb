@@ -193,7 +193,15 @@ def run_fetch(
     catalog, suite = fetch_catalog(client, opts.rsid)
     progress(f"Found {len(catalog)} components to check.")
     zone = suite.get("timezoneZoneinfo") or "UTC"
-    today = opts.today or today_in_zone(zone, now())
+    suite_today = today_in_zone(zone, now())
+    if opts.today is not None and opts.today > suite_today:
+        # The last full day would be today or later, which has no full data yet.
+        raise ConfigError(
+            f"The date {opts.today.isoformat()} is after today in the report suite's time zone "
+            f"({zone}), which is {suite_today.isoformat()}. Give a date up to "
+            f"{suite_today.isoformat()}."
+        )
+    today = opts.today or suite_today
     window = RunWindow.for_today(today)
     run_id = store.create_run(
         opts.rsid,

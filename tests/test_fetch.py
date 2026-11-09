@@ -17,6 +17,7 @@ from fakes import (
 
 from ahd.api.client import ApiError
 from ahd.api.reports import Column
+from ahd.config import ConfigError
 from ahd.dates import RunWindow
 from ahd.fetch import RunOptions, fetch_catalog, probe_anomaly, run_fetch
 from ahd.store import Store
@@ -326,6 +327,22 @@ def test_today_uses_suite_zone_via_now(store):
     assert run["today"] == TODAY
     assert run["timezone"] == "US/Pacific" and run["rsid_name"] == "Test Suite"
     assert all(date_range(b) == W.trend_range() for b in fake.trend_bodies())
+
+
+def test_a_date_after_the_suites_today_is_refused(store):
+    # 19:00 on Nov 7 in Pacific. Nov 7 has not ended, and Nov 8 has not begun.
+    now = datetime(2026, 11, 8, 3, 0, tzinfo=UTC)
+    fake = fake_for("rs1", events(1), custom_dims(), tz="US/Pacific")
+    with pytest.raises(ConfigError) as e:
+        run_fetch(fake, store, opts(today=date(2026, 11, 8)), now=lambda: now)
+    assert str(e.value) == (
+        "The date 2026-11-08 is after today in the report suite's time zone (US/Pacific), "
+        "which is 2026-11-07. Give a date up to 2026-11-07."
+    )
+    assert store.list_runs() == [] and fake.posted() == []
+    # Today in the suite's time zone is allowed. Its last full day is yesterday.
+    rid = run_fetch(fake, store, opts(today=date(2026, 11, 7)), now=lambda: now)
+    assert store.get_run(rid)["today"] == date(2026, 11, 7)
 
 
 def test_fetch_catalog_calls():

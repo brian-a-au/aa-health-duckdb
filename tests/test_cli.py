@@ -236,6 +236,21 @@ def test_batch_size_and_workers_must_be_in_range(tmp_path, cfg, capsys, option, 
     assert "is not a whole number from 1 to" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "value",
+    ["0001-01-01", "0001-03-31", "9999-12-31", "20261107", "2026-W45-1", "2026-11-7", "2026-02-30"],
+)
+def test_date_must_be_a_plain_date_that_has_its_trend_days(tmp_path, cfg, capsys, value):
+    with pytest.raises(SystemExit) as e:
+        main(args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", value))
+    assert e.value.code == 2
+    err = capsys.readouterr().err
+    assert (
+        f"{value!r} is not a date in the form YYYY-MM-DD" in err or "too early or too late" in err
+    )
+    assert "Traceback" not in err
+
+
 def test_run_defaults_to_8_workers_and_batches_of_20():
     from ahd.cli import _parser
     from ahd.fetch import RunOptions
