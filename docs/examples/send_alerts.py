@@ -2,6 +2,7 @@
 
 Usage:
     uv run python docs/examples/send_alerts.py DATABASE RSID [RSID ...] [--threshold 0.30]
+        [--spike-threshold 0.50]
     uv run python docs/examples/send_alerts.py DATABASE --all [--segment ID]
 
 It reads the latest run of each suite that ended "ok" or "partial", with the alerts() macro
@@ -9,7 +10,8 @@ that every ahd database holds. It takes report suite IDs and a segment ID, not n
 builds one HTML email with a plain text part, with one section for each suite that has
 alerts. --all uses every suite that has a finished run in the database.
 Without --segment it uses the latest runs without a segment. --threshold is the large drop
-percent as a share, e.g. 0.30 for 30 percent, the default.
+percent as a share, e.g. 0.30 for 30 percent, the default. --spike-threshold is the large spike
+percent as a share, e.g. 0.50 for 50 percent, the default.
 
 To send, set SMTP_HOST, SMTP_PORT (default 587), MAIL_FROM and MAIL_TO, and SMTP_USER and
 SMTP_PASSWORD when the server needs a login. Without SMTP_HOST, it writes the message to
@@ -49,7 +51,7 @@ ORDER BY lower(rsid_name), rsid
 NAME_QUERY = "SELECT rsid_name FROM runs WHERE run_id = $run"
 
 QUERY = """
-FROM alerts($run, threshold := $threshold)
+FROM alerts($run, threshold := $threshold, spike_threshold := $spike)
 SELECT alert, name, component_id, round(usual) AS usual, value,
     round(pct_vs_usual * 100, 1) AS pct, day
 ORDER BY alert DESC, pct
@@ -62,16 +64,20 @@ def _number(v: float | None) -> str:
     return "No data" if v is None else f"{v:,.0f}"
 
 
-def _share(text: str) -> float:
+def _share(text: str, top: float = 1.0) -> float:
     try:
         value = float(text)
     except ValueError:
         value = -1.0
-    if not 0 < value <= 1:
+    if not 0 < value <= top:
         raise argparse.ArgumentTypeError(
-            f"{text!r} is not a share between 0 and 1. Write 0.30 for 30 percent."
+            f"{text!r} is not a share between 0 and {top:g}. Write 0.30 for 30 percent."
         )
     return value
+
+
+def _spike_share(text: str) -> float:
+    return _share(text, 2.0)
 
 
 class _Parser(argparse.ArgumentParser):
@@ -92,6 +98,12 @@ def _parser() -> argparse.ArgumentParser:
         type=_share,
         default=0.30,
         help="The large drop percent as a share (default 0.30).",
+    )
+    p.add_argument(
+        "--spike-threshold",
+        type=_spike_share,
+        default=0.50,
+        help="The large spike percent as a share, up to 2 (default 0.50).",
     )
     p.add_argument("--segment", help="Use the latest runs with this segment ID.")
     return p
@@ -118,7 +130,9 @@ def _table(rows: list[tuple]) -> tuple[list[str], str]:
     return text, f"<table style='border-collapse:collapse'><tr>{th}</tr>{trs}</table>"
 
 
-def build(sections: list[tuple[str, str, list[tuple]]], threshold: float) -> EmailMessage:
+def build(
+    sections: list[tuple[str, str, list[tuple]]], threshold: float, spike: float = 0.50
+) -> EmailMessage:
     """One email. Each section is (rsid, suite name, alert rows), for a suite with alerts."""
     total = sum(len(rows) for _, _, rows in sections)
     if len(sections) == 1:
@@ -130,7 +144,8 @@ def build(sections: list[tuple[str, str, list[tuple]]], threshold: float) -> Ema
     parts = [
         (
             f"<p>{html.escape(subject)}. A large drop is more than {threshold:.0%} below the "
-            "weekday average, the average of the same weekday in the 12 weeks before.</p>"
+            f"weekday average, and a large spike is more than {spike:.0%} above it. The weekday "
+            "average is the average of the same weekday in the 12 weeks before.</p>"
         )
     ]
     for rsid, name, rows in sections:
@@ -162,7 +177,9 @@ def _read(args: argparse.Namespace) -> tuple[list[str], list[tuple[str, str, lis
                 missing.append(rsid)
                 continue
             name = con.execute(NAME_QUERY, {"run": run}).fetchone()[0] or rsid
-            alerts = con.execute(QUERY, {"run": run, "threshold": args.threshold}).fetchall()
+            alerts = con.execute(
+                QUERY, {"run": run, "threshold": args.threshold, "spike": args.spike_threshold}
+            ).fetchall()
             found.append((rsid, name, alerts))
     return missing, found
 
@@ -211,7 +228,7 @@ def main(argv: list[str]) -> int:
             print(f"No alerts for {rsid}.")
     if sections:
         count = sum(len(rows) for _, _, rows in sections)
-        _send(build(sections, args.threshold), count)
+        _send(build(sections, args.threshold, args.spike_threshold), count)
     elif found:
         print("Nothing to send.")
     if missing:

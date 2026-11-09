@@ -139,13 +139,14 @@ One row per run, component and full day, with everything the report computes. Th
 - `unused`: the value was 0 on every day of the run, so the component never collected data
 - `is_yesterday`: the row is for the last full day of the run
 
-### `alerts(run, threshold := 0.30, min_usual := 10, for_day := NULL)`
+### `alerts(run, threshold := 0.30, spike_threshold := 0.50, min_usual := 10, for_day := NULL)`
 
 The alerts of one run, by the report's rules. Give the run number first. Give the other options by name, e.g., `alerts(1, threshold := 0.20)`.
 
 - `run`: the run number. It can be a query, e.g., `(SELECT max(run_id) FROM latest_runs WHERE rsid = 'my_suite' AND segment_id IS NULL)`. The query must return one run. `latest_runs` holds one row for each segment of a suite, so name the segment, or use `segment_id IS NULL` for the run without a segment.
-- `threshold`: the percent for a large drop, as a share. The default is `0.30`, the same as the report's slider.
-- `min_usual`: a large drop needs a weekday average (`usual`) of at least this much. The default is `10`.
+- `threshold`: the percent for a large drop, as a share. The default is `0.30`, the same as the report's drop slider.
+- `spike_threshold`: the percent for a large spike, as a share. The default is `0.50`, the same as the report's spike slider. A value that doubled is a spike of about `1.0`.
+- `min_usual`: a large drop or spike needs a weekday average (`usual`) of at least this much. The default is `10`.
 - `for_day`: the day to check, e.g., `'2026-11-03'`. The default is the day before the run date.
 
 ```sql
@@ -153,18 +154,20 @@ FROM alerts(2) SELECT alert, name, round(usual) AS usual, value;
 ```
 
 ```
-┌────────────┬─────────────────┬───────┬────────┐
-│   alert    │      name       │ usual │ value  │
-├────────────┼─────────────────┼───────┼────────┤
-│ unusual    │ Page            │ 650.0 │ 2714.0 │
-│ unusual    │ Checkouts       │   8.0 │   68.0 │
-│ unusual    │ Unique Visitors │  77.0 │  252.0 │
-│ unusual    │ Visits          │  82.0 │  276.0 │
-│ large drop │ Units           │  24.0 │   16.0 │
-└────────────┴─────────────────┴───────┴────────┘
+┌─────────────┬─────────────────┬───────┬────────┐
+│    alert    │      name       │ usual │ value  │
+├─────────────┼─────────────────┼───────┼────────┤
+│ unusual     │ Page            │ 650.0 │ 2714.0 │
+│ unusual     │ Checkouts       │   8.0 │   68.0 │
+│ unusual     │ Unique Visitors │  77.0 │  252.0 │
+│ unusual     │ Visits          │  82.0 │  276.0 │
+│ large spike │ Cart Additions  │  17.0 │   93.0 │
+│ large spike │ Revenue         │ 188.0 │  301.0 │
+│ large drop  │ Units           │  24.0 │   16.0 │
+└─────────────┴─────────────────┴───────┴────────┘
 ```
 
-Each alert is one of these: "unusual" (Adobe flagged it), "large drop" or "dropped to zero".
+Each alert is one of these: "unusual" (Adobe flagged it), "large spike", "large drop" or "dropped to zero".
 
 When you query a file through `ATTACH`, run `USE` with its name before you call `alerts()`, e.g., `USE prod;`. The views work without it.
 
@@ -200,7 +203,7 @@ uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite o
 uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb --all
 ```
 
-It reads the latest run of each suite without a segment, from `latest_runs`. `--all` uses every suite that has such a run in the file. Add `--segment ID` for the latest runs with that segment. The script takes only report suite IDs and segment IDs, not names, and they must match exactly. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`.
+It reads the latest run of each suite without a segment, from `latest_runs`. `--all` uses every suite that has such a run in the file. Add `--segment ID` for the latest runs with that segment. The script takes only report suite IDs and segment IDs, not names, and they must match exactly. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`. `--spike-threshold` sets the large spike percent the same way, up to `2`. The default is `0.50`.
 
 Without `SMTP_HOST`, it writes `alerts.eml` in the current folder, which you can open and check first. To send, set `SMTP_HOST`, `MAIL_FROM` and `MAIL_TO`. Set `SMTP_PORT` when the server does not use 587. Set `SMTP_USER` and `SMTP_PASSWORD` when the server needs a login. The script connects without encryption and then turns it on with the STARTTLS command. It does not work with a server that needs encryption from the start, e.g., on port 465.
 
@@ -269,7 +272,7 @@ FROM routed GROUP BY ALL ORDER BY alerts DESC;
 
 ### Send one digest for every suite
 
-One row per report suite, with yesterday's alerts from the latest run of each that has no segment. Each alert counts once, by the same rules as the `alerts` macro. An Adobe flag comes first, then a value of 0, then a large drop.
+One row per report suite, with yesterday's alerts from the latest run of each that has no segment. Each alert counts once, by the same rules as the `alerts` macro. An Adobe flag comes first, then a value of 0, then a large drop or spike.
 
 ```sql
 SELECT r.rsid_name AS suite, r.today - 1 AS day,
@@ -277,6 +280,8 @@ SELECT r.rsid_name AS suite, r.today - 1 AS day,
     count(*) FILTER (WHERE d.zero AND NOT d.unused AND d.anomaly IS NULL) AS dropped_to_zero,
     count(*) FILTER (WHERE d.usual >= 10 AND d.pct_vs_usual < -0.30
                      AND NOT d.zero AND d.anomaly IS NULL) AS large_drops,
+    count(*) FILTER (WHERE d.usual >= 10 AND d.pct_vs_usual > 0.50
+                     AND NOT d.zero AND d.anomaly IS NULL) AS large_spikes,
     count(*) FILTER (WHERE d.unused) AS never_collected,
     (SELECT count(*) FROM issues i WHERE i.run_id = r.run_id) AS problems
 FROM latest_runs r JOIN component_days d ON d.run_id = r.run_id AND d.is_yesterday
@@ -285,12 +290,12 @@ GROUP BY ALL ORDER BY suite;
 ```
 
 ```
-┌─────────────┬────────────┬─────────┬─────────────────┬─────────────┬─────────────────┬──────────┐
-│    suite    │    day     │ unusual │ dropped_to_zero │ large_drops │ never_collected │ problems │
-├─────────────┼────────────┼─────────┼─────────────────┼─────────────┼─────────────────┼──────────┤
-│ Adobe Store │ 2026-11-07 │       9 │               0 │           1 │              20 │        0 │
-│ Demo Data   │ 2026-11-07 │       0 │               0 │           0 │              42 │        0 │
-└─────────────┴────────────┴─────────┴─────────────────┴─────────────┴─────────────────┴──────────┘
+┌─────────────┬────────────┬─────────┬─────────────────┬─────────────┬──────────────┬─────────────────┬──────────┐
+│    suite    │    day     │ unusual │ dropped_to_zero │ large_drops │ large_spikes │ never_collected │ problems │
+├─────────────┼────────────┼─────────┼─────────────────┼─────────────┼──────────────┼─────────────────┼──────────┤
+│ Adobe Store │ 2026-11-07 │       9 │               0 │           1 │            2 │              20 │        0 │
+│ Demo Data   │ 2026-11-07 │       0 │               0 │           0 │            1 │              42 │        0 │
+└─────────────┴────────────┴─────────┴─────────────────┴─────────────┴──────────────┴─────────────────┴──────────┘
 ```
 
 Run it with `-html` and wrap the rows in `<table>` to get an email body:

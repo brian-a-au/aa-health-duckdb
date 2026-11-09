@@ -649,12 +649,29 @@ def test_change_alert_option(tmp_path, cfg):
     out2 = tmp_path / "o2"
     main(["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--out", str(out2)])
     assert 'value="-30"' in next(out2.glob("*.html")).read_text(encoding="utf-8")
+    # The spike slider starts at +50%, or where --spike-alert says.
+    assert 'id="spike-alert" min="10" max="200" step="10" value="50"' in (
+        next(out2.glob("*.html")).read_text(encoding="utf-8")
+    )
+    out3 = tmp_path / "o3"
+    main(
+        ["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--out", str(out3)]
+        + ["--spike-alert", "120"]
+    )
+    page = next(out3.glob("*.html")).read_text(encoding="utf-8")
+    assert 'step="10" value="120"' in page and ">+120%</output>" in page
 
 
 @pytest.mark.parametrize("bad", ["5", "33", "105"])
 def test_change_alert_must_be_a_slider_step(tmp_path, bad):
     with pytest.raises(SystemExit):
         main(["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--change-alert", bad])
+
+
+@pytest.mark.parametrize("bad", ["0", "55", "210"])
+def test_spike_alert_must_be_a_slider_step(tmp_path, bad):
+    with pytest.raises(SystemExit):
+        main(["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--spike-alert", bad])
 
 
 # ---- suites, segments, names, company, progress --------------------------------

@@ -83,6 +83,9 @@ CASES = {
         'Name with </script> & "quotes" and   a line separator',
         lambda c: [v for v in _series(c, 50.0, 50.0) if v.day != YESTERDAY - timedelta(days=3)],
     ),
+    "event14": ("Spike of 60 percent", lambda c: _series(c, 100.0, 160.0)),
+    "event15": ("Spike of 20 percent", lambda c: _series(c, 100.0, 120.0)),
+    "event16": ("Weekday average 8, yesterday 30", lambda c: _series(c, 8.0, 30.0)),
 }
 
 
@@ -140,6 +143,8 @@ function snapshot() {
     strength: document.getElementById("change-alert").style.getPropertyValue("--strength"),
     unusual: ids("#alerts section[aria-labelledby=unusual-title]"),
     drops: ids("#alerts section[aria-labelledby=drops-title]"),
+    spikes: ids("#alerts section[aria-labelledby=spikes-title]"),
+    spikeShown: document.getElementById("spike-alert-value").textContent,
     zero: ids("#alerts section[aria-labelledby=zero-title]"),
     unused: ids("#alerts details.alert-group"),
     text: document.getElementById("alert-text").value,
@@ -148,18 +153,23 @@ function snapshot() {
 }
 var out = { "30": snapshot() };
 var slider = document.getElementById("change-alert");
+var spike = document.getElementById("spike-alert");
+// Both sliders move to the same percent. The spike slider moves in steps of 10, so 15 becomes 20.
 SLIDER.forEach(function (p) {
   slider.value = String(-p);
   slider.dispatchEvent(new Event("input"));
+  spike.value = String(p);
+  spike.dispatchEvent(new Event("input"));
   out[String(p)] = snapshot();
 });
 return out;
 """
 
 
-def _macro(store, rid, threshold):
+def _macro(store, rid, threshold, spike=0.5):
     rows = store.con.execute(
-        "select component_id, alert, anomaly from alerts(?, threshold := ?)", [rid, threshold]
+        "select component_id, alert, anomaly from alerts(?, threshold := ?, spike_threshold := ?)",
+        [rid, threshold, spike],
     ).fetchall()
     return {cid: (alert, anomaly) for cid, alert, anomaly in rows}
 
@@ -185,7 +195,8 @@ def alert_pages(chrome, edges, tmp_path_factory):
 def test_alert_lists_match_the_alerts_macro(alert_pages, edges, pct):
     store, rid = edges
     page = alert_pages[str(pct)]
-    macro = _macro(store, rid, pct / 100)
+    spike = int(page["spikeShown"].strip("+%")) / 100
+    macro = _macro(store, rid, pct / 100, spike)
 
     def where(kind):
         return sorted(cid for cid, (alert, _) in macro.items() if alert == kind)
@@ -199,6 +210,7 @@ def test_alert_lists_match_the_alerts_macro(alert_pages, edges, pct):
     assert page["strength"] == f"{round(20 + far * 80)}%"
     assert page["unusual"] == where("unusual")
     assert page["drops"] == where("large drop")
+    assert page["spikes"] == where("large spike")
     assert page["zero"] == where("dropped to zero")
     assert page["unused"] == _never_collected(store, rid)
     listed = re.findall(r"^- .*\((metrics/[^)]+)\): ", page["text"], re.MULTILINE)
@@ -207,6 +219,11 @@ def test_alert_lists_match_the_alerts_macro(alert_pages, edges, pct):
         assert (
             f"Drops of more than {pct}% below the weekday average ({len(where('large drop'))}):"
             in page["text"]
+        )
+    if where("large spike"):
+        assert (
+            f"Spikes of more than {round(spike * 100)}% above the weekday average "
+            f"({len(where('large spike'))}):" in page["text"]
         )
 
 
@@ -230,7 +247,8 @@ def test_alert_edge_cases(alert_pages):
 def test_tiles_match_the_alerts_macro(alert_pages, edges, pct):
     store, rid = edges
     tiles = alert_pages[str(pct)]["tiles"]
-    macro = _macro(store, rid, pct / 100).values()
+    spike = int(alert_pages[str(pct)]["spikeShown"].strip("+%"))
+    macro = _macro(store, rid, pct / 100, spike / 100).values()
 
     def count(alert, anomaly=None):
         return str(sum(1 for a, f in macro if a == alert and (anomaly is None or f == anomaly)))
@@ -241,6 +259,10 @@ def test_tiles_match_the_alerts_macro(alert_pages, edges, pct):
     assert tiles["Large drops"] == {
         "value": count("large drop"),
         "note": f"More than {pct}% below the weekday average",
+    }
+    assert tiles["Large spikes"] == {
+        "value": count("large spike"),
+        "note": f"More than {spike}% above the weekday average",
     }
     unused = len(_never_collected(edges[0], edges[1]))
     assert tiles["Dropped to zero"] == {
@@ -257,6 +279,16 @@ def test_the_slider_changes_the_lists_and_tiles(alert_pages):
     assert drops[30] == ["metrics/event5"] and drops[60] == []
     tiles = {p: alert_pages[str(p)]["tiles"]["Large drops"]["value"] for p in drops}
     assert tiles == {30: "1", 10: "4", 15: "3", 20: "2", 60: "0"}
+    # The spike slider starts at +50%, and moves to +10%, +20%, +20% and +60%. A spike of exactly
+    # the setting is not flagged, and a weekday average under 10 never is.
+    spikes = {p: alert_pages[str(p)]["spikes"] for p in (30, *SLIDER)}
+    assert spikes == {
+        30: ["metrics/event14"],
+        10: ["metrics/event14", "metrics/event15"],
+        15: ["metrics/event14"],
+        20: ["metrics/event14"],
+        60: [],
+    }
 
 
 # Runs the page's own unpackView on the page data, and returns the result.
@@ -744,7 +776,7 @@ def test_the_page_says_weekday_average_not_usual(chrome, request, tmp_path, whic
     page = render_html(build_view(*request.getfixturevalue(which)))
     text = run_probe(chrome, page, WORDS_PROBE, tmp_path)
     assert "Weekday average (12 weeks)" in text and "Average week (12 weeks)" in text
-    assert "Original order" in text and "How a large drop is found" in text
+    assert "Original order" in text and "How large drops and spikes are found" in text
     assert re.findall(r"\busual\b", text, re.IGNORECASE) == []
 
 
@@ -956,6 +988,10 @@ var slider = document.getElementById("change-alert");
 slider.value = "-60";
 slider.dispatchEvent(new Event("input"));
 out["60"] = bars();
+var spike = document.getElementById("spike-alert");
+spike.value = "30";
+spike.dispatchEvent(new Event("input"));
+out.spike30 = bars();
 return out;
 """
 
@@ -969,16 +1005,20 @@ def test_the_change_column_has_a_bar_with_ticks_at_the_slider(chrome, edges, tmp
         "side": "left",
         "over": True,
         "width": "25%",
-        "ticks": ["35%", "65%"],
+        # The drop slider at -30% and the spike slider at +50%.
+        "ticks": ["35%", "75%"],
         "hidden": "true",
     }
     assert p60["Drop of 50 percent"]["over"] is False
-    assert p60["Drop of 50 percent"]["ticks"] == ["20%", "80%"]
+    assert p60["Drop of 50 percent"]["ticks"] == ["20%", "75%"]
     assert p30["Drop of 15 percent"]["over"] is False
-    # A rise of 40 percent: right of the center, past the tick at 30 and short of the one at 60.
+    # A rise of 40 percent: right of the center, short of the spike tick at +50%. With the spike
+    # slider at +30% it is past the tick, and the tick moves to 65%.
     up = p30["Above the expected range"]
-    assert up["side"] == "right" and up["width"] == "20%" and up["over"]
-    assert p60["Above the expected range"]["over"] is False
+    assert up["side"] == "right" and up["width"] == "20%" and up["over"] is False
+    up30 = got["spike30"]["Above the expected range"]
+    assert up30["over"] is True and up30["ticks"] == ["20%", "65%"]
+    assert up30["text"] == "▲ +40%"
 
 
 # Scrolls the page, or the table's own box on a narrow screen, to the middle of the longest
@@ -1339,14 +1379,15 @@ def test_earlier_runs_follow_the_slider(chrome, showcase, tmp_path):
     rows = got["30"]["rows"]
     assert [r[0] for r in rows] == ["Run 7 (this run)"] + [f"Run {n}" for n in range(6, 0, -1)]
     assert [r[1] for r in rows[:2]] == ["Fri, Nov 6, 2026", "Thu, Nov 5, 2026"]
-    # This run's row is the same as the tiles: 49 checked, 2 above, 3 below, 5 in all.
-    assert rows[0][2:] == ["49", "2", "3", "0", "0", "5", "0"]
+    # This run's row is the same as the tiles: 49 checked, 2 above, 3 below, no large drop or
+    # spike, 5 in all.
+    assert rows[0][2:] == ["49", "2", "3", "0", "0", "0", "5", "0"]
     assert got["30"]["bars"][:3] == ["100%", "20%", "20%"]
     # At 10 percent, the run for Nov 5 has 3 large drops. One is Video Completes, which falls
     # a little each week.
     nov5 = view["history"][1]
     assert len(nov5["drops"]) == 3 and all(-0.3 < p < -0.1 for p in nov5["drops"])
-    assert got["10"]["rows"][1][5] == "3" and got["10"]["rows"][1][7] == "4"
+    assert got["10"]["rows"][1][5] == "3" and got["10"]["rows"][1][8] == "4"
     assert got["30"]["empty"] is None
     assert got["boxed"] is False
 

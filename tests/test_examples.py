@@ -130,6 +130,26 @@ def test_send_alerts_with_runs_with_and_without_a_segment(tmp_path, monkeypatch,
     assert "with the segment s300_other" in capsys.readouterr().err
 
 
+def test_send_alerts_lists_a_large_spike(tmp_path, monkeypatch):
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    # 40 million against a weekday average of 25 million is a spike of 60 percent.
+    db = str(_db(tmp_path, 40_000_000.0))
+    assert mod.main([db, "rs1"]) == 0
+    mail = email.message_from_bytes(
+        (tmp_path / "alerts.eml").read_bytes(), policy=email.policy.default
+    )
+    text = mail.get_body(("plain",)).get_content()
+    page = mail.get_body(("html",)).get_content()
+    assert "large spike" in text and "+60.0" in text
+    assert "a large spike is more than 50% above it" in page
+    # A spike setting of 0.7 leaves it out, so there is nothing to send: exit code 2.
+    (tmp_path / "alerts.eml").unlink()
+    assert mod.main([db, "rs1", "--spike-threshold", "0.7"]) == 2
+    assert not (tmp_path / "alerts.eml").exists()
+
+
 def test_send_alerts_unknown_suite_is_an_error_not_a_quiet_day(tmp_path, capsys):
     mod = _load("send_alerts")
     assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs_typo"]) == 1
@@ -141,6 +161,7 @@ def test_send_alerts_unknown_suite_is_an_error_not_a_quiet_day(tmp_path, capsys)
     [
         ["db", "rs1", "--threshold", "30"],
         ["db", "rs1", "--threshold", "zero"],
+        ["db", "rs1", "--spike-threshold", "3"],
         ["db"],
         ["db", "rs1", "--all"],
         [],

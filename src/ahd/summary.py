@@ -25,6 +25,9 @@ DEFAULT_CHANGE_ALERT = 0.30
 # The slider's lowest setting. Alerts hold every row this far below usual, so the page can
 # filter them for any setting.
 MIN_CHANGE_ALERT = 0.10
+# The same two settings for the large spike slider. ahd run --spike-alert sets the default.
+DEFAULT_SPIKE_ALERT = 0.50
+MIN_SPIKE_ALERT = 0.10
 # A percent drop alert needs a usual value of at least this much. Small numbers swing a lot.
 MIN_USUAL = 10
 # The earlier runs that a report lists, newest first.
@@ -150,13 +153,14 @@ ORDER BY component_id, day
 """
 
 # Rows that may be an alert, for each day the reader can pick: Adobe flagged them, the value
-# is 0, or the value is more than MIN_CHANGE_ALERT below the usual value for that weekday.
-# The page picks from these with its day picker and slider.
+# is 0, or the value is more than MIN_CHANGE_ALERT below or more than MIN_SPIKE_ALERT above the
+# usual value for that weekday. The page picks from these with its day picker and sliders.
 #
 # days_in_row counts the days, up to the row's day, that had the same alert: the same Adobe
-# flag direction, a 0, or a drop. Only the days the reader can pick count, so streak_open says
-# that the row reaches the first of them and may be longer. For a drop, drop_run lets the page
-# count the days for the slider's setting.
+# flag direction, a 0, a drop or a spike. Only the days the reader can pick count, so
+# streak_open says that the row reaches the first of them and may be longer. For a drop,
+# drop_run lets the page count the days for the slider's setting, and spike_run does the same
+# for a spike.
 _ALERTS_SQL = f"""
 WITH {_DV}, {_COMPS},
 sel AS (SELECT unnest($days::DATE[]) AS sel_day),
@@ -178,12 +182,13 @@ r AS (
     JOIN dv d ON d.component_id = c.component_id AND d.day = u.sel_day
 ),
 -- The alert of each day, to count days in a row: the direction of Adobe's flag, a value of 0,
--- or a drop of more than the slider's lowest setting. A day without an alert ends a row.
+-- or a drop or spike past the slider's lowest setting. A day without an alert ends a row.
 k AS (
     SELECT sel_day, component_id, pct_vs_usual,
         CASE WHEN anomaly IS NOT NULL THEN anomaly
             WHEN zero THEN 'zero'
             WHEN usual >= {MIN_USUAL} AND pct_vs_usual < -{MIN_CHANGE_ALERT} THEN 'drop'
+            WHEN usual >= {MIN_USUAL} AND pct_vs_usual > {MIN_SPIKE_ALERT} THEN 'spike'
         END AS kind
     FROM r
 ),
@@ -197,29 +202,34 @@ g AS (
 streaks AS (
     SELECT *, min(sel_day) OVER (PARTITION BY component_id, kind, grp) AS first_day FROM g
 ),
--- A large drop depends on the slider. For each day back from a drop, this keeps the smallest
--- drop so far. The page counts the entries that are past the slider.
+-- A large drop or spike depends on its slider. For each day back from one, this keeps the
+-- smallest change so far: the drop closest to 0, or the smallest spike. The page counts the
+-- entries that are past the slider.
 back AS (
-    SELECT a.sel_day, a.component_id, b.sel_day AS back_day,
-        max(b.pct_vs_usual) OVER (
-            PARTITION BY a.sel_day, a.component_id ORDER BY b.sel_day DESC) AS smallest
+    SELECT a.sel_day, a.component_id, a.kind, b.sel_day AS back_day,
+        CASE a.kind WHEN 'drop' THEN max(b.pct_vs_usual) OVER w
+            ELSE min(b.pct_vs_usual) OVER w END AS smallest
     FROM streaks a JOIN streaks b ON b.component_id = a.component_id AND b.kind = a.kind
         AND b.grp = a.grp AND b.sel_day <= a.sel_day
-    WHERE a.kind = 'drop'
+    WHERE a.kind IN ('drop', 'spike')
+    WINDOW w AS (PARTITION BY a.sel_day, a.component_id ORDER BY b.sel_day DESC)
 ),
-drop_runs AS (
-    SELECT sel_day, component_id, list(smallest ORDER BY back_day DESC) AS drop_run
+change_runs AS (
+    SELECT sel_day, component_id, kind, list(smallest ORDER BY back_day DESC) AS change_run
     FROM back GROUP BY ALL
 )
 SELECT CAST(r.sel_day AS VARCHAR) AS day, name, r.component_id, metric_type, expected, actual,
     usual, pct_vs_expected, r.pct_vs_usual, anomaly, zero, unused,
-    s.sel_day - s.first_day + 1 AS days_in_row, dr.drop_run,
+    s.sel_day - s.first_day + 1 AS days_in_row,
+    CASE WHEN cr.kind = 'drop' THEN cr.change_run END AS drop_run,
+    CASE WHEN cr.kind = 'spike' THEN cr.change_run END AS spike_run,
     s.first_day = $first_day AS streak_open
 FROM r
 LEFT JOIN streaks s ON s.sel_day = r.sel_day AND s.component_id = r.component_id
-LEFT JOIN drop_runs dr ON dr.sel_day = r.sel_day AND dr.component_id = r.component_id
+LEFT JOIN change_runs cr ON cr.sel_day = r.sel_day AND cr.component_id = r.component_id
 WHERE anomaly IS NOT NULL OR zero
     OR (usual >= {MIN_USUAL} AND r.pct_vs_usual < -{MIN_CHANGE_ALERT})
+    OR (usual >= {MIN_USUAL} AND r.pct_vs_usual > {MIN_SPIKE_ALERT})
 ORDER BY r.sel_day DESC, {_ORDER}
 """
 
@@ -317,6 +327,8 @@ SELECT r.run_id, CAST(r.today AS VARCHAR) AS today, CAST(r.today - 1 AS VARCHAR)
     count(*) FILTER (WHERE l.zero AND l.unused) AS unused,
     coalesce(list(l.pct ORDER BY l.pct) FILTER (WHERE l.anomaly IS NULL AND NOT l.zero
         AND l.usual >= {MIN_USUAL} AND l.pct < -{MIN_CHANGE_ALERT}), []) AS drops,
+    coalesce(list(l.pct ORDER BY l.pct) FILTER (WHERE l.anomaly IS NULL AND NOT l.zero
+        AND l.usual >= {MIN_USUAL} AND l.pct > {MIN_SPIKE_ALERT}), []) AS spikes,
     (SELECT count(*) FROM issues i WHERE i.run_id = r.run_id) AS problems
 FROM r LEFT JOIN last l ON l.run_id = r.run_id
 GROUP BY r.run_id, r.today, r.status
@@ -561,7 +573,10 @@ def component_drops(store: Store, run_id: int) -> list[dict[str, Any]]:
 
 
 def build_view(
-    store: Store, run_id: int, change_alert: float = DEFAULT_CHANGE_ALERT
+    store: Store,
+    run_id: int,
+    change_alert: float = DEFAULT_CHANGE_ALERT,
+    spike_alert: float = DEFAULT_SPIKE_ALERT,
 ) -> dict[str, Any]:
     run = _run_block(store, run_id)
     w = RunWindow.for_today(date.fromisoformat(run["today"]))
@@ -601,6 +616,7 @@ def build_view(
         "issues": _rows(store, _ISSUES_SQL, p),
         "component_drops": component_drops(store, run_id),
         "change_alert": change_alert,
+        "spike_alert": spike_alert,
         "min_usual": MIN_USUAL,
         "component_drop_cause": DROP_CAUSE,
     }

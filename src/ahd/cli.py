@@ -36,6 +36,7 @@ from ahd.render.html import write_report
 from ahd.store import SchemaVersionError, Store, StoreError
 from ahd.summary import (
     DEFAULT_CHANGE_ALERT,
+    DEFAULT_SPIKE_ALERT,
     DROP_CAUSE,
     build_view,
     component_drops,
@@ -131,9 +132,19 @@ def _parser() -> argparse.ArgumentParser:
             default=round(DEFAULT_CHANGE_ALERT * 100),
             choices=range(10, 101, 5),
             metavar="PERCENT",
-            help="Start the report's slider here: flag drops larger than this percent below "
-            "the usual value, and show arrows for changes larger than it. 10 to 100, in "
-            "steps of 5 (default 30).",
+            help="Start the report's drop slider here: flag drops larger than this percent "
+            "below the usual value, and show down arrows for them. 10 to 100, in steps of 5 "
+            "(default 30).",
+        )
+        sp.add_argument(
+            "--spike-alert",
+            type=int,
+            default=round(DEFAULT_SPIKE_ALERT * 100),
+            choices=range(10, 201, 10),
+            metavar="PERCENT",
+            help="Start the report's spike slider here: flag rises larger than this percent "
+            "above the usual value, and show up arrows for them. 10 to 200, in steps of 10 "
+            "(default 50).",
         )
 
     check = sub.add_parser("check", help="Sign in and check what this credential can see.")
@@ -369,6 +380,7 @@ WORST_LAST = ("ok", "partial", "failed")
 ALERT_NAMES = (
     ("unusual", "unusual value", "unusual values"),
     ("large drop", "large drop", "large drops"),
+    ("large spike", "large spike", "large spikes"),
     ("dropped to zero", "drop to zero", "drops to zero"),
 )
 
@@ -395,12 +407,14 @@ def _error_text(e: BaseException) -> str:
     return str(e)
 
 
-def _alert_line(store: Store, run_id: int, threshold: float) -> str:
-    """For example "Alerts for 2026-11-07: 2 unusual values, 1 large drop, 0 drops to zero"."""
+def _alert_line(store: Store, run_id: int, threshold: float, spike: float) -> str:
+    """For example "Alerts for 2026-11-07: 2 unusual values, 1 large drop, 0 large spikes,
+    0 drops to zero"."""
     counts = dict(
         store.con.execute(
-            "SELECT alert, count(*) FROM alerts(?, threshold := ?) GROUP BY alert",
-            [run_id, threshold],
+            "SELECT alert, count(*) FROM alerts(?, threshold := ?, spike_threshold := ?) "
+            "GROUP BY alert",
+            [run_id, threshold, spike],
         ).fetchall()
     )
     day = date.fromisoformat(str(store.get_run(run_id)["today"])) - timedelta(days=1)
@@ -435,11 +449,12 @@ def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -
         progress.done()
     status = store.get_run(run_id)["status"]
     threshold = args.change_alert / 100
-    path = write_report(build_view(store, run_id, threshold), args.out)
+    spike = args.spike_alert / 100
+    path = write_report(build_view(store, run_id, threshold, spike), args.out)
     print(path)
     print(f"Run {run_id} for {rsid} finished with status: {status}")
     if status != "failed":
-        print(_alert_line(store, run_id, threshold))
+        print(_alert_line(store, run_id, threshold, spike))
     drops = component_drops(store, run_id)
     if drops:
         print("Warning: this run sees fewer components than the run before it.")
@@ -506,7 +521,12 @@ def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
         )
     finally:
         progress.done()
-    print(write_report(build_view(store, args.run, args.change_alert / 100), args.out))
+    print(
+        write_report(
+            build_view(store, args.run, args.change_alert / 100, args.spike_alert / 100),
+            args.out,
+        )
+    )
     print(f"Added {dim['name']} by {met['name']} to run {args.run}.")
     if problems:
         print(f"{problems} of its requests had problems. The report's status section lists them.")
@@ -520,7 +540,12 @@ def _render(args: argparse.Namespace) -> int:
         store.get_run(args.run)
     except KeyError:
         raise ConfigError(f"There is no stored run {args.run}.") from None
-    print(write_report(build_view(store, args.run, args.change_alert / 100), args.out))
+    print(
+        write_report(
+            build_view(store, args.run, args.change_alert / 100, args.spike_alert / 100),
+            args.out,
+        )
+    )
     return 0
 
 

@@ -151,10 +151,25 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .change-alert input[type="range"]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--range-line); }
 .change-alert input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; margin-top: -6px; border-radius: 50%; background: var(--range-handle); border: 2px solid var(--text-2); }
 .change-alert input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--range-handle); border: 2px solid var(--text-2); }
+/* The spike slider flags the part right of the handle, and its orange is strongest at the right. */
+.change-alert input#spike-alert {
+  --range-line: linear-gradient(to right, var(--grid) var(--pos), transparent var(--pos)),
+    linear-gradient(to right, color-mix(in srgb, var(--flag) 20%, var(--surface)), var(--flag));
+}
 .change-alert input[type="range"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 .change-alert output { font-weight: 600; min-width: 3.5em; }
+/* The two sliders line up in a grid: label, slider, value, then the words after the value. On a
+   phone the label and the words take their own rows. */
+.sliders { flex-basis: 100%; display: grid; grid-template-columns: max-content minmax(160px, 320px) 4em max-content; align-items: center; gap: 6px 12px; }
+.sliders input[type="range"] { max-width: none; width: 100%; }
+@media (max-width: 600px) {
+  .sliders { grid-template-columns: 1fr auto; gap: 2px 12px; }
+  .sliders label, .sliders span { grid-column: 1 / -1; }
+  .sliders span { margin-bottom: 8px; color: var(--text-2); }
+}
 .change-alert .hint { flex-basis: 100%; margin: 0; }
 .change-alert-result { flex-basis: 100%; margin: 4px 0 0; font-weight: 600; }
+.change-alert-result + .change-alert-result { margin-top: 0; }
 .change-alert .rule { flex-basis: 100%; }
 .rule ul { margin: 4px 0 0; padding-left: 20px; font-size: 0.9rem; color: var(--text-2); }
 .unused-badge { margin-left: 6px; font-size: 0.8rem; }
