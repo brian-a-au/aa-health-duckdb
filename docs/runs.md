@@ -48,7 +48,7 @@ Every row carries its run number, `run_id`. The tables are:
 
 | Table | What it holds, for each run |
 |---|---|
-| `runs` | Report suite, segment, run date, time zone, currency, status, and start and end times |
+| `runs` | Report suite ID and name, segment, run date, time zone, currency, the version of `ahd`, status, and start and end times |
 | `components` | The events, eVars, props and solution components that were checked, with their names, groups and Adobe's metric types |
 | `daily_values` | One row per component per day: the value, Adobe's expected value and range, and whether Adobe flagged it |
 | `pairs` | The Individual Component Summary pairs: one dimension by one metric each. Pair 1 comes from `ahd run`, and `ahd individual` adds more |
