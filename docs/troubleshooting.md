@@ -1,6 +1,6 @@
 # Troubleshooting
 
-[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · **Troubleshooting**
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · **Troubleshooting**
 
 Start with `ahd check --rsid <suite>`. It signs in, counts what the credential can see, tests anomaly detection, and explains any fix in plain words. The sections below cover each message in more detail.
 

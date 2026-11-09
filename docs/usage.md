@@ -1,6 +1,6 @@
 # Usage
 
-[README](../README.md) · **Usage** · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Troubleshooting](troubleshooting.md)
+[README](../README.md) · **Usage** · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md)
 
 This page describes every `ahd` command, with its options and exit codes. Run every command with `uv run ahd` from the project folder, or add `--help` to any command to see its options.
 
@@ -100,7 +100,7 @@ Alerts for 2026-11-07: 2 unusual values, 1 large drop, 0 drops to zero
 
 The alerts line uses the `--change-alert` percent for large drops. It is left out after a failed run. If the run sees far fewer components than the run before it, it prints a warning.
 
-With several suites, the command signs in once and checks the suites one after another. Each suite gets its own run and its own report. A suite that fails does not stop the others. At the end, the command prints one line with the number of suites that ended "ok", "partial" and "failed". The exit code is the one of the worst suite, e.g., 1 when one suite failed. A wrong suite name stops the command before it checks any suite. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
+With several suites, the command signs in once and checks the suites one after another. Each suite gets its own run and its own report. A suite that fails does not stop the others. At the end, the command prints one line with the number of suites that ended "ok", "partial" and "failed". The exit code is the one of the worst suite, e.g., 1 when one suite failed. A wrong suite name stops the command before it checks any suite. To run it every day, see [Run it every day](scheduling.md). See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 
 A run of a suite with about 400 components takes about 2 minutes.
 
