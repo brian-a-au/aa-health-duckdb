@@ -88,7 +88,7 @@ This tab shows every custom event, eVar and prop, then the solution components, 
 
 ### Controls
 
-- **Show:** daily or weekly. Weekly shows the 7 days ending yesterday, against the average week of the 12 weeks before.
+- **Show:** daily or weekly. Weekly shows the 7 days ending yesterday, against the average week of the 12 weeks before. In the weekly view a Week box takes the Day picker's place and names the week, e.g., "Nov 2 to Nov 8, 2026". The report has 13 weeks of data, so only the last week has a full 12-week average, and the Week box cannot be changed.
 - **Day:** any of the last 7 days. Yesterday comes first.
 - **Custom components:** shows one custom type or one range of its numbers, e.g., "All custom eVars" or "eVar101 to eVar200". The list holds only the types and ranges that have components, with how many each has. A type that fits in one range of 100 has no range options. While a type or range is chosen, the solution components are hidden, and a note above the tables says what is shown.
 - **Show only flagged:** hides everything that is not an Adobe flag, a large drop, a large spike or a drop to zero.
@@ -106,7 +106,7 @@ A release that breaks tracking usually breaks many components on the same day, s
 
 "Days with the most alerts" lists the 5 days with the most alerts, with the count of each kind.
 
-The calendar follows the Day picker. DuckDB finds the alerts for every day and component in one query. In a test with 410 components and 92 days, the query took about 10 milliseconds.
+The calendar follows the Day picker. In the weekly view it outlines the week's 7 days, and the text beside it sums up the week, e.g., "Nov 2 to Nov 8, 2026: 6 components had an alert on at least one day." Its lists then hold every component with an alert on any of the 7 days. Choose a square to see one day. DuckDB finds the alerts for every day and component in one query. In a test with 410 components and 92 days, the query took about 10 milliseconds.
 
 ### Charts
 
@@ -117,7 +117,10 @@ The charts follow the Day picker:
 - A thin vertical line and a dot mark the chosen day.
 - A short bar marks the weekday average for that day. The weekday average is the average of the same weekday in the 12 weeks before the day.
 - The line under the chart describes the chosen day until you move over the chart.
-- The weekly view marks no day.
+
+In the weekly view, a light band covers the week's 7 days, and the line under the chart gives the week's total and the average week, e.g., "Nov 2 to Nov 8, 2026: 9,853 in total, average week 10,465." The key then shows "Chosen week".
+
+The key under each chart has up to three rows: the lines and the band, then Adobe's flags, then the chosen day and its weekday average.
 
 - **The Metric chart** starts on Occurrences. Its Type filter lists the metric groups that have data, e.g., custom events or reserved purchase events.
 - **The Dimension chart** starts on Page. Its Type filter chooses eVars, props or other dimensions.
@@ -134,13 +137,13 @@ Each row shows:
 
 The bar goes left of a gray center line for a drop and right of it for a rise. Half the bar is a change of 100 percent. A tick on the left marks the drop slider and a tick on the right marks the spike slider, with a light band between them. A bar that passes a tick is orange.
 
-A small line in each row shows the component's last 13 weeks, on a scale from 0 to its largest value, with a dot on the chosen day. A drop to zero or a break in tracking shows as a dip at the right end. Choose the line to see the component on the metric or dimension chart above.
+A small line in each row shows the component's last 13 weeks, on a scale from 0 to its largest value, with a dot on the chosen day. In the weekly view the week's 7 days are drawn in blue instead. A drop to zero or a break in tracking shows as a dip at the right end. Choose the line to see the component on the metric or dimension chart above.
 
 The "Find a component" box above the tables keeps only the components whose name, number or ID contains the text, e.g., "evar5". It works with the number range and with "Show only flagged".
 
 The table headings stay in view while you scroll. A table that is too wide for the window, e.g., on a phone, scrolls in its own box, and its headings stay at the top of that box. The links under "Jump to" above the tables go to each group, and show how many components each group has. After each table, the link "Back to the top of the tables" goes back to these links.
 
-The flag is Adobe's "Above range" or "Below range", or "Large drop" or "Large spike" when a slider flags it. A red "Zero data" badge marks a value of 0 on a component that has data on other days. A gray "never collected data" note marks a component that was 0 on every day.
+The flag is Adobe's "Above range" or "Below range", or "Large drop" or "Large spike" when a slider flags it. A red "Zero data" badge marks a value of 0 on a component that has data on other days. A gray "never collected data" note marks a component that was 0 on every day. In the weekly view, Adobe's flags are counted by day, e.g., "Below range on 2 days", and "Show only flagged" keeps those components.
 
 ## Individual Component Summary
 

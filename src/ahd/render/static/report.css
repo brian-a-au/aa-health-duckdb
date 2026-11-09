@@ -256,6 +256,11 @@ textarea { width: 100%; font-family: var(--mono); font-size: 0.85rem; }
 .legend li { display: flex; align-items: center; gap: 6px; }
 .legend svg { flex: none; overflow: visible; width: 18px; height: 12px; }
 .legend svg.key-mark { width: 12px; }
+/* The chosen week on a chart, behind the data. */
+.week-band { fill: var(--text); opacity: 0.07; }
+.week-flags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.spark-week { fill: none; stroke: var(--accent); stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; }
+#week:disabled { opacity: 1; color: var(--text); cursor: default; }
 /* On the chart a mark has a ring in the surface color. The key needs no ring. */
 .legend .mark-high, .legend .mark-low { stroke: none; }
 .chart-empty { color: var(--muted); font-size: 0.9rem; padding: 24px 0; text-align: center; }
@@ -421,6 +426,7 @@ td.shade { background: rgba(var(--shade), var(--a, 0)); }
 .cal-cell.l4, .calendar-legend .l4 { fill: rgba(var(--shade), 1); background: rgba(var(--shade), 1); }
 .cal-cell.missing { fill: none; stroke: var(--grid); stroke-width: 1; }
 .cal-ring { fill: none; stroke: var(--text); stroke-width: 2; pointer-events: none; }
+.cal-week { fill: none; stroke: var(--accent); stroke-width: 1.5; pointer-events: none; }
 .calendar-svg:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: 4px; }
 .calendar-legend { display: flex; align-items: center; gap: 3px; font-size: 0.8rem; color: var(--text-2); margin: 8px 0 0; }
 .calendar-legend span:first-child { margin-right: 4px; }
