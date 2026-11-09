@@ -1950,11 +1950,25 @@
     renderAlerts();
   });
 
+  // The slider shows the drop as a negative change, from -100% on the left to -10% on the right,
+  // so moving it left flags only deeper drops. state.t keeps the size of the drop, e.g., 0.3.
+  // Colors the slider: the handle gets as much orange as the line under it, from 100 percent at
+  // the left end to 20 percent at the right end. strongEnd says which end is furthest from zero.
+  function paintSlider(input, strongEnd) {
+    var min = Number(input.min), max = Number(input.max);
+    var pos = (Number(input.value) - min) / (max - min);
+    var far = strongEnd === "left" ? 1 - pos : pos;
+    input.style.setProperty("--pos", Math.round(pos * 1000) / 10 + "%");
+    input.style.setProperty("--strength", Math.round(20 + far * 80) + "%");
+  }
   var slider = byId("change-alert");
-  slider.value = String(Math.round(state.t * 100));
+  slider.value = String(-Math.round(state.t * 100));
+  paintSlider(slider, "left");
   slider.addEventListener("input", function () {
-    state.t = Number(slider.value) / 100;
+    state.t = -Number(slider.value) / 100;
+    paintSlider(slider, "left");
     byId("change-alert-value").textContent = slider.value + "%";
+    slider.setAttribute("aria-valuetext", slider.value + "%");
     renderTiles();
     renderTables();
     renderAlerts();

@@ -135,7 +135,23 @@ code { font-family: var(--mono); font-size: 0.9em; }
   gap: 4px 12px;
   margin: 16px 0 0;
 }
-.change-alert input[type="range"] { flex: 1 1 160px; max-width: 320px; accent-color: var(--flag); }
+/* The slider is a number line. The part that gets flagged is orange, and the orange is stronger
+   further from zero. The page sets --pos (where the handle is, from the left) and --strength (how
+   much orange the handle has, the same as the line under it). */
+.change-alert input[type="range"] {
+  --pos: 78%;
+  --strength: 38%;
+  --range-line: linear-gradient(to right, transparent var(--pos), var(--grid) var(--pos)),
+    linear-gradient(to right, var(--flag), color-mix(in srgb, var(--flag) 20%, var(--surface)));
+  --range-handle: color-mix(in srgb, var(--flag) var(--strength), var(--surface));
+  flex: 1 1 160px; max-width: 320px; height: 22px; margin: 0;
+  -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer;
+}
+.change-alert input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--range-line); }
+.change-alert input[type="range"]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--range-line); }
+.change-alert input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; margin-top: -6px; border-radius: 50%; background: var(--range-handle); border: 2px solid var(--text-2); }
+.change-alert input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--range-handle); border: 2px solid var(--text-2); }
+.change-alert input[type="range"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 .change-alert output { font-weight: 600; min-width: 3.5em; }
 .change-alert .hint { flex-basis: 100%; margin: 0; }
 .change-alert-result { flex-basis: 100%; margin: 4px 0 0; font-weight: 600; }

@@ -520,9 +520,12 @@ def test_metric_type_filter_and_currency_data():
 def test_change_alert_slider():
     v = sample_view()
     html = render_html(v)
-    assert '<input type="range" id="change-alert" min="10" max="100" step="5" value="30"' in html
-    assert '<output for="change-alert" id="change-alert-value">30%</output>' in html
-    assert "flag values more than" in html and "below their weekday average</span>" in html
+    assert (
+        '<input type="range" id="change-alert" min="-100" max="-10" step="5" value="-30" '
+        'aria-valuetext="-30%"'
+    ) in html
+    assert '<output for="change-alert" id="change-alert-value">-30%</output>' in html
+    assert "flag changes below</label>" in html and "from the weekday average</span>" in html
     # One line under the slider, and the full rule in a section that opens.
     assert (
         '<p class="hint" id="change-alert-hint">The weekday average is the average of the same '
@@ -533,7 +536,7 @@ def test_change_alert_slider():
     assert "weekday average under 10 are skipped" in rule
     v["change_alert"] = 0.45
     html = render_html(v)
-    assert 'value="45"' in html and ">45%</output>" in html
+    assert 'value="-45"' in html and ">-45%</output>" in html
     data = _data_json(html)
     assert data["change_alert"] == 0.45 and data["min_usual"] == 10
 

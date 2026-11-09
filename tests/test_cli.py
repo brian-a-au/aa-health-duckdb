@@ -645,10 +645,10 @@ def test_change_alert_option(tmp_path, cfg):
         client_factory=lambda creds, company_id=None: fake,
     )
     assert code == 0
-    assert 'value="45"' in next(out.glob("*.html")).read_text(encoding="utf-8")
+    assert 'value="-45"' in next(out.glob("*.html")).read_text(encoding="utf-8")
     out2 = tmp_path / "o2"
     main(["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--out", str(out2)])
-    assert 'value="30"' in next(out2.glob("*.html")).read_text(encoding="utf-8")
+    assert 'value="-30"' in next(out2.glob("*.html")).read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("bad", ["5", "33", "105"])

@@ -47,7 +47,7 @@ A run made with `ahd run --date` is about an earlier day. A line under the heade
 
 ## The large drop slider
 
-The slider above the tiles sets how far a value must fall below its weekday average to count as a large drop. It goes from 10 to 100 percent, and it starts at 30 percent, or at the value you chose with `--change-alert`.
+The slider above the tiles sets how far a value must fall below its weekday average to count as a large drop. It shows the drop as a negative change, from -100% on the left to -10% on the right. Move it left to flag only deeper drops. It starts at -30%, or at the value you chose with `--change-alert`, e.g., `--change-alert 45` starts it at -45%. The part of the line left of the handle is the range that gets flagged. Its orange is stronger further from zero, and the handle takes the color of the line under it.
 
 Under the slider, one line says what the weekday average is. Open "How a large drop is found" to read the full rule:
 

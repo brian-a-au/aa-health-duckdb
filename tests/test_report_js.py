@@ -135,6 +135,9 @@ function snapshot() {
   });
   return {
     shown: document.getElementById("change-alert-value").textContent,
+    valuetext: document.getElementById("change-alert").getAttribute("aria-valuetext"),
+    pos: document.getElementById("change-alert").style.getPropertyValue("--pos"),
+    strength: document.getElementById("change-alert").style.getPropertyValue("--strength"),
     unusual: ids("#alerts section[aria-labelledby=unusual-title]"),
     drops: ids("#alerts section[aria-labelledby=drops-title]"),
     zero: ids("#alerts section[aria-labelledby=zero-title]"),
@@ -146,7 +149,7 @@ function snapshot() {
 var out = { "30": snapshot() };
 var slider = document.getElementById("change-alert");
 SLIDER.forEach(function (p) {
-  slider.value = String(p);
+  slider.value = String(-p);
   slider.dispatchEvent(new Event("input"));
   out[String(p)] = snapshot();
 });
@@ -187,7 +190,13 @@ def test_alert_lists_match_the_alerts_macro(alert_pages, edges, pct):
     def where(kind):
         return sorted(cid for cid, (alert, _) in macro.items() if alert == kind)
 
-    assert page["shown"] == f"{pct}%"
+    assert page["shown"] == f"-{pct}%"
+    assert page["valuetext"] == f"-{pct}%"
+    # The handle is pct from the right end of -100 to -10, and gets more orange further left:
+    # 20 percent at -10 and 100 percent at -100.
+    far = (pct - 10) / 90
+    assert page["pos"] == f"{round((1 - far) * 1000) / 10:g}%"
+    assert page["strength"] == f"{round(20 + far * 80)}%"
     assert page["unusual"] == where("unusual")
     assert page["drops"] == where("large drop")
     assert page["zero"] == where("dropped to zero")
@@ -871,7 +880,7 @@ function days(section) {
 var slider = document.getElementById("change-alert");
 var out = {};
 [30, 15, 10].forEach(function (p) {
-  slider.value = String(p);
+  slider.value = String(-p);
   slider.dispatchEvent(new Event("input"));
   out[p] = { unusual: days("unusual-title"), drops: days("drops-title"),
     zero: days("zero-title"), text: document.getElementById("alert-text").value };
@@ -944,7 +953,7 @@ function bars() {
 }
 var out = { "30": bars() };
 var slider = document.getElementById("change-alert");
-slider.value = "60";
+slider.value = "-60";
 slider.dispatchEvent(new Event("input"));
 out["60"] = bars();
 return out;
@@ -1315,7 +1324,7 @@ function read() {
 document.getElementById("tab-alerts").click();
 var out = { "30": read() };
 var slider = document.getElementById("change-alert");
-slider.value = "10";
+slider.value = "-10";
 slider.dispatchEvent(new Event("input"));
 out["10"] = read();
 var wrap = document.querySelector("#history .table-wrap");
