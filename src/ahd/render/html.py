@@ -19,7 +19,7 @@ from typing import Any
 from jinja2 import Environment, PackageLoader
 from markupsafe import Markup
 
-from ahd.summary import HISTORY_RUNS
+from ahd.summary import DECLINE_MIN_FIT, DECLINE_PER_WEEK, DECLINE_WEEKS, HISTORY_RUNS
 
 NO_BANDS_NOTE = "Anomaly bands are not available. See the status section."
 WEEK_NOTE = "This week is the 7 days ending yesterday. The Excel version used 8 to 2 days ago."
@@ -272,6 +272,9 @@ def render_html(view: dict[str, Any]) -> str:
         change_alert_pct=round(view.get("change_alert", 0.3) * 100),
         min_usual=view.get("min_usual", 10),
         history_runs=HISTORY_RUNS,
+        decline_weeks=DECLINE_WEEKS,
+        decline_pct=round(-DECLINE_PER_WEEK * 100),
+        decline_fit=DECLINE_MIN_FIT,
         component_drop_cause=view.get("component_drop_cause", ""),
         ranges=RANGES,
         no_bands_note=NO_BANDS_NOTE,

@@ -1333,10 +1333,11 @@ def test_earlier_runs_follow_the_slider(chrome, showcase, tmp_path):
     # This run's row is the same as the tiles: 49 checked, 2 above, 3 below, 5 in all.
     assert rows[0][2:] == ["49", "2", "3", "0", "0", "5", "0"]
     assert got["30"]["bars"][:3] == ["100%", "20%", "20%"]
-    # At 10 percent, the run for Nov 5 has 2 large drops.
+    # At 10 percent, the run for Nov 5 has 3 large drops. One is Video Completes, which falls
+    # a little each week.
     nov5 = view["history"][1]
-    assert len(nov5["drops"]) == 2 and all(-0.3 < p < -0.1 for p in nov5["drops"])
-    assert got["10"]["rows"][1][5] == "2" and got["10"]["rows"][1][7] == "3"
+    assert len(nov5["drops"]) == 3 and all(-0.3 < p < -0.1 for p in nov5["drops"])
+    assert got["10"]["rows"][1][5] == "3" and got["10"]["rows"][1][7] == "4"
     assert got["30"]["empty"] is None
     assert got["boxed"] is False
 
@@ -1354,6 +1355,51 @@ def test_a_single_run_says_it_is_the_only_one(chrome, edges, tmp_path):
     assert got["30"]["empty"] == (
         "This is the only run of this report suite in the database. Later runs will show here."
     )
+
+
+# ---- slow declines ---------------------------------------------------------------------
+
+DECLINE_PROBE = """
+document.getElementById("tab-alerts").click();
+var host = document.getElementById("declines");
+return {
+  hints: [].map.call(document.querySelectorAll(".declines .hint"), function (h) {
+    return h.textContent;
+  }),
+  rows: [].map.call(host.querySelectorAll("tbody tr"), function (tr) {
+    return [].map.call(tr.cells, function (c) { return c.textContent; });
+  }),
+  bars: [].map.call(host.querySelectorAll("rect.week-bar"), function (r) {
+    return Number(r.getAttribute("height"));
+  }),
+  label: (host.querySelector("svg") || { getAttribute: function () { return null; } })
+    .getAttribute("aria-label"),
+  empty: (host.querySelector(".empty") || {}).textContent || null
+};
+"""
+
+
+def test_slow_declines_list_the_falling_metric(chrome, showcase, tmp_path):
+    view = build_view(*showcase)
+    got = run_probe(chrome, render_html(view), DECLINE_PROBE, tmp_path)
+    assert got["hints"][0].startswith(
+        "Components whose weekly totals fell by 3 percent or more a week for the last 12 weeks."
+    )
+    assert "below 0.7." in got["hints"][1]
+    # Video Completes falls about 4 percent a week in the showcase.
+    assert got["rows"] == [["event12: Video Completes", "", "-3.4%", "-29.4%", "0.95"]]
+    # One bar per week, oldest first. The tallest is 20 pixels high.
+    totals = view["declines"][0]["totals"]
+    assert len(got["bars"]) == 12 and max(got["bars"]) == 20
+    assert got["bars"][0] > got["bars"][-1]
+    assert got["label"] == "Weekly totals, oldest first: " + ", ".join(f"{t:,.0f}" for t in totals)
+    assert got["empty"] is None
+
+
+def test_no_slow_declines_says_so(chrome, edges, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*edges)), DECLINE_PROBE, tmp_path)
+    assert got["rows"] == [] and got["bars"] == []
+    assert got["empty"] == "No component fell steadily in the last 12 weeks."
 
 
 # Reads which tables scroll in their own box, and whether the page scrolls sideways.

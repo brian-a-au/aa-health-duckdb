@@ -1560,6 +1560,48 @@
   // same rules as the tiles. Large drops follow the slider: the SQL lists each candidate's
   // change, and the page counts the ones past the slider.
   var RUN_NOTES = { partial: " (some gaps)", failed: " (failed)", running: " (not finished)" };
+  // ---- slow declines ------------------------------------------------------------------
+  // The SQL finds the components and fits the line. The page shows one bar per week, oldest
+  // first, from 0 to the largest week.
+  var weekRows = {};
+  (data.views.week || []).forEach(function (r) { weekRows[r.component_id] = r; });
+  function weekBars(d) {
+    var n = d.totals.length, gap = 2, w = (SPARK_W - gap * (n - 1)) / n;
+    var max = Math.max.apply(null, d.totals);
+    var svg = sv("svg", { viewBox: "0 0 " + SPARK_W + " " + SPARK_H, width: SPARK_W,
+      height: SPARK_H, role: "img", "aria-label": "Weekly totals, oldest first: " +
+        d.totals.map(function (t) { return numFmt.format(t); }).join(", ") });
+    d.totals.forEach(function (t, i) {
+      var h = max > 0 ? Math.max(1, t / max * (SPARK_H - 2)) : 1;
+      svg.appendChild(sv("rect", { x: Math.round(i * (w + gap) * 10) / 10,
+        y: Math.round((SPARK_H - h) * 10) / 10, width: Math.round(w * 10) / 10,
+        height: Math.round(h * 10) / 10, rx: 1, "class": "week-bar" }));
+    });
+    return { c: svg, k: null };
+  }
+  function renderDeclines() {
+    var host = byId("declines");
+    if (!host) return;
+    clear(host);
+    var rows = (data.declines || []).filter(function (d) { return weekRows[d.component_id]; });
+    if (!rows.length) {
+      host.appendChild(el("p", { "class": "empty" }, "No component fell steadily in the last " +
+        host.getAttribute("data-weeks") + " weeks."));
+      return;
+    }
+    function pct(v) { return { c: fmtPct(v), k: v }; }
+    host.appendChild(table(
+      [{ label: "Name", cls: "name" }, { label: "Weekly totals", sort: false, cls: "spark-col" },
+       { label: "Change per week", num: true }, { label: "Change over the weeks", num: true },
+       { label: "Steady (0 to 1)", num: true }],
+      rows.map(function (d) {
+        var r = weekRows[d.component_id], name = componentLabel(r);
+        return [{ c: name, k: name }, weekBars(d), pct(d.per_week), pct(d.overall),
+          { c: d.fit.toFixed(2), k: d.fit }];
+      }), null, "declines", { labelledby: "declines-title" }));
+    fitTables();
+  }
+
   function renderHistory() {
     var host = byId("history");
     if (!host) return;
@@ -1885,5 +1927,6 @@
   renderCalendar();
   renderIndividual();
   renderAlerts();
+  renderDeclines();
   renderHistory();
 })();
