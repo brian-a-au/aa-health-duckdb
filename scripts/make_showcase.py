@@ -280,9 +280,9 @@ SCENES = [
         "Components",
         "Every event,<br>eVar and prop.",
         "Compare each component with its weekday average. Show only the flagged ones.",
-        "Daily or weekly view<br>Sortable tables",
+        "13 weeks in each row<br>Find any component",
         "document.getElementById('flagged-only').click();",
-        ["#panel-components .controls", "#tables"],
+        ["#panel-components .controls", ".table-tools", "#tables"],
         "light",
     ),
     (

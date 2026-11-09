@@ -203,6 +203,7 @@
   // The weekday average is the average of the same weekday over 12 weeks. The data and the SQL
   // call it "usual"; the page always calls it the weekday average.
   var state = { gran: "day", day: yesterday, alertDay: yesterday, range: "", flagged: false,
+    find: "",
     t: typeof data.change_alert === "number" ? data.change_alert : 0.3 };
   var MIN_USUAL = typeof data.min_usual === "number" ? data.min_usual : 10;
   var sortState = {};
@@ -485,6 +486,66 @@
       isLargeDrop(row.value, row.baseline, row.pct));
   }
 
+  // The find box matches a component's name, number, e.g., "eVar5", or id, in any case.
+  function matchesFind(row) {
+    if (!state.find) return true;
+    var q = state.find.toLowerCase();
+    return [row.name, numberLabel(row), row.component_id].some(function (t) {
+      return t && String(t).toLowerCase().indexOf(q) >= 0;
+    });
+  }
+
+  // ---- 13-week trend lines in the tables -------------------------------------
+  // One small line per row, from the same daily values as the charts, on a scale from 0 to the
+  // row's largest value. A dot marks the chosen day. The line is a button that shows the
+  // component on its chart.
+  var SPARK_W = 88, SPARK_H = 22;
+  var sparkCache = {};
+  function sparkShape(cid) {
+    if (cid in sparkCache) return sparkCache[cid];
+    var pts = (data.series[cid] || []).filter(function (p) { return p[1] !== null; });
+    var shape = null;
+    if (pts.length && yesterday) {
+      var end = parseDay(yesterday).getTime(), span = 90;
+      var max = 0;
+      pts.forEach(function (p) { if (p[1] > max) max = p[1]; });
+      var at = {};
+      var d = "", prev = null;
+      pts.forEach(function (p) {
+        var back = (end - parseDay(p[0]).getTime()) / 864e5;
+        if (back < 0 || back > span) return;
+        var x = 2 + (span - back) / span * (SPARK_W - 4);
+        var y = SPARK_H - 3 - (max > 0 ? Math.max(0, p[1]) / max : 0) * (SPARK_H - 6);
+        x = Math.round(x * 10) / 10;
+        y = Math.round(y * 10) / 10;
+        // A day without a value breaks the line.
+        d += (prev !== null && back === prev - 1 ? "L" : "M") + x + " " + y;
+        prev = back;
+        at[p[0]] = [x, y];
+      });
+      shape = d ? { d: d, at: at } : null;
+    }
+    sparkCache[cid] = shape;
+    return shape;
+  }
+  function sparkCell(r) {
+    var shape = sparkShape(r.component_id);
+    if (!shape) return { c: "", k: null };
+    var label = "Show " + componentLabel(r) + " on the chart";
+    var b = el("button", { type: "button", "class": "spark", title: label, "aria-label": label });
+    var svg = sv("svg", { viewBox: "0 0 " + SPARK_W + " " + SPARK_H, width: SPARK_W,
+      height: SPARK_H, "aria-hidden": "true" });
+    svg.appendChild(sv("path", { d: shape.d, "class": "spark-line" }));
+    var day = chosenDay();
+    if (day && shape.at[day]) {
+      svg.appendChild(sv("circle", { cx: shape.at[day][0], cy: shape.at[day][1], r: 2.5,
+        "class": "spark-dot" }));
+    }
+    b.appendChild(svg);
+    b.addEventListener("click", function () { showOnChart(r.component_id, chosenDay()); });
+    return { c: b, k: null };
+  }
+
   function inRange(row) {
     if (!state.range || CUSTOM.indexOf(row.group) < 0) return true;
     var p = state.range.split("-");
@@ -496,6 +557,7 @@
     var headers = [];
     if (custom) headers.push({ label: "Number" });
     headers.push({ label: "Name", cls: "name" });
+    headers.push({ label: "Last 13 weeks", sort: false, cls: "spark-col" });
     headers.push({ label: daily ? "Total for the day" : "Total for the week", num: true });
     headers.push({
       label: daily ? "Weekday average (12 weeks)" : "Average week (12 weeks)",
@@ -508,6 +570,7 @@
       var cells = [];
       if (custom) cells.push({ c: numberLabel(r), k: r.number });
       cells.push(nameCell(r));
+      cells.push(sparkCell(r));
       cells.push({ c: fmtNum(r.value, r.metric_type), k: r.value });
       cells.push({ c: fmtRound(r.baseline, r.metric_type), k: r.baseline });
       cells.push(devCell(arrowFor(r.pct), r.pct));
@@ -545,6 +608,7 @@
     clear(host);
     var rows = currentRows();
     if (state.flagged) rows = rows.filter(isFlagged);
+    rows = rows.filter(matchesFind);
     var byGroup = {};
     rows.forEach(function (r) { (byGroup[r.group] = byGroup[r.group] || []).push(r); });
     var allRows = currentRows();
@@ -574,6 +638,10 @@
       var shown = all.filter(inRange);
       var empty;
       if (!hasGroup[g]) empty = "None were found. See the status section if you expected some.";
+      else if (state.find && !all.length) {
+        empty = "No component in this group matches \u201c" + state.find + "\u201d" +
+          (state.flagged ? " among the flagged ones." : ".");
+      }
       else if (state.flagged && !all.length) empty = "Nothing flagged in this group.";
       else empty = "None in this number range.";
       host.appendChild(block(CUSTOM_TITLES[g], shown, true, empty));
@@ -591,6 +659,7 @@
       host.appendChild(block(g, byGroup[g], false, ""));
     });
     if (!any) host.appendChild(el("p", { "class": "empty" },
+      state.find ? "No solution component matches \u201c" + state.find + "\u201d." :
       state.flagged ? "Nothing flagged in the solution components." : "None were found."));
     fitTables();
   }
@@ -1730,6 +1799,10 @@
   });
   byId("flagged-only").addEventListener("change", function (e) {
     state.flagged = e.target.checked;
+    renderTables();
+  });
+  byId("find").addEventListener("input", function (e) {
+    state.find = e.target.value.trim();
     renderTables();
   });
 
