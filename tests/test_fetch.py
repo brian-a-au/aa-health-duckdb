@@ -675,6 +675,51 @@ def test_add_pair_without_data_keeps_a_failed_run_failed(store):
     assert problems == 5 and store.get_run(rid)["status"] == "failed"
 
 
+def test_add_pair_can_try_again_a_pair_that_stored_nothing(store):
+    # A run stores its first pair before any data comes back. When the run fails, the same
+    # dimension and metric can be tried again, and the empty pair makes way for the new one.
+    from ahd.fetch import add_pair
+
+    down = fake_for("rs1", events(1), custom_dims(), default_post=ApiError(500, "down"))
+    rid = run_fetch(down, store, opts())
+    assert store.get_run(rid)["status"] == "failed"
+    assert any(r[1] == "individual/1" for r in issues(store, rid))
+    fake = fake_for("rs1", events(1), custom_dims())
+    assert add_pair(
+        fake, store, rid, "variables/page", "metrics/occurrences", "Page", "Occurrences"
+    ) == (2, 0)
+    pairs = [(p["pair"], p["dimension"], p["metric"]) for p in store.list_pairs(rid)]
+    assert pairs == [(2, "variables/page", "metrics/occurrences")]
+    assert not any(r[1] == "individual/1" for r in issues(store, rid))
+    assert values_for(store, rid, "individual/2") == 92
+    assert store.get_run(rid)["status"] == "partial"
+    # Now the pair holds data, so it is refused like any other pair that is there.
+    with pytest.raises(ConfigError, match="already holds Page by Occurrences"):
+        add_pair(fake, store, rid, "variables/page", "metrics/occurrences")
+
+
+def test_add_pair_keeps_the_empty_pair_when_the_new_try_stops(store):
+    from ahd.api.auth import SignInError
+    from ahd.fetch import add_pair
+
+    down = fake_for("rs1", events(1), custom_dims(), default_post=ApiError(500, "down"))
+    rid = run_fetch(down, store, opts())
+
+    def stop(body):
+        raise SignInError("Sign-in failed: the client secret is wrong.")
+
+    with pytest.raises(SignInError):
+        add_pair(
+            fake_for("rs1", events(1), custom_dims(), default_post=stop),
+            store,
+            rid,
+            "variables/page",
+            "metrics/occurrences",
+        )
+    assert [p["pair"] for p in store.list_pairs(rid)] == [1]
+    assert any(r[1] == "individual/1" for r in issues(store, rid))
+
+
 def test_add_pair_refuses_duplicates_and_running_runs(store):
     from ahd.config import ConfigError
     from ahd.fetch import add_pair

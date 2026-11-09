@@ -370,11 +370,22 @@ class Store:
         # Write the change to the file now, so the space can be reused.
         self.con.execute("CHECKPOINT")
 
+    def pair_has_data(self, run_id: int, pair: int, series_id: str) -> bool:
+        """Whether the pair stored any row: a top 100 item, a breakdown or a daily value."""
+        row = self.con.execute(
+            "SELECT EXISTS (FROM top_items WHERE run_id = $r AND pair = $p)"
+            " OR EXISTS (FROM breakdowns WHERE run_id = $r AND pair = $p)"
+            " OR EXISTS (FROM breakdown_totals WHERE run_id = $r AND pair = $p)"
+            " OR EXISTS (FROM daily_values WHERE run_id = $r AND component_id = $s)",
+            {"r": run_id, "p": pair, "s": series_id},
+        ).fetchone()
+        return bool(row[0])
+
     def delete_pair(self, run_id: int, pair: int, series_id: str) -> None:
         """Remove one pair and every row stored for it, all or nothing.
 
-        Used only when ahd individual stops part way, so that the same pair can be tried again.
-        series_id is the component_id of the pair's daily trend, e.g. "individual/2".
+        Used when ahd individual stops part way, so that the same pair can be tried again, and
+        when it replaces a pair that stored nothing. series_id is the component_id of the pair's daily trend, e.g. "individual/2".
         """
         self.con.execute("BEGIN TRANSACTION")
         try:

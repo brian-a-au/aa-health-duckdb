@@ -440,8 +440,14 @@ def add_pair(
     run = store.get_run(run_id)
     if run["status"] == "running":
         raise ConfigError(f'Run {run_id} is still marked "running". Choose a finished run.')
+    # A pair with the same dimension and metric that stored nothing, e.g., the first pair of a
+    # failed run, is tried again. It is removed once the new pair is stored.
+    empty: int | None = None
     for p in store.list_pairs(run_id):
         if p["dimension"] == dimension and p["metric"] == metric:
+            if not store.pair_has_data(run_id, p["pair"], pair_series_id(p["pair"])):
+                empty = p["pair"]
+                continue
             raise ConfigError(
                 f"Run {run_id} already holds {_pair_label(p['dimension_name'] or dimension, p['metric_name'] or metric)}."
             )
@@ -481,6 +487,8 @@ def add_pair(
         # of the same dimension and metric. Remove it, so the run looks as it did before.
         store.delete_pair(run_id, pair, pair_series_id(pair))
         raise
+    if empty is not None:
+        store.delete_pair(run_id, empty, pair_series_id(empty))
     if problems and run["status"] == "ok":
         store.set_status(run_id, "partial")
     elif stored and run["status"] == "failed":

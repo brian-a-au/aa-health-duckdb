@@ -170,7 +170,7 @@ ahd individual --run 3 --dimension "Internal Search Term" --metric "Cart Additio
 
 It stops with an error in these cases:
 
-- The run already holds the same pair.
+- The run already holds the same pair, and the pair stored some data. A pair that stored nothing, e.g., the first pair of a failed run, is tried again.
 - The run is still marked "running".
 - There is no stored run with that number, or no database at the path.
 
