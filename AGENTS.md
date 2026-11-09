@@ -102,7 +102,7 @@ All prose in this repository uses a plain style. This covers the README, docs, m
 
 ### Git
 
-- Make each change on its own branch, not on `main`. Merge with `git merge --no-ff`.
+- Make each change on its own branch, not on `main`. `main` accepts changes only through a pull request whose checks pass, and nobody can push to it directly. Merge with a merge commit, e.g., `gh pr merge --merge`.
 - Do not merge or push unless the maintainer asks.
 - Never add AI attribution of any kind to commits, tags or pull requests, e.g., no `Co-Authored-By` trailer for an AI tool and no "Generated with" line.
 - Never commit credentials, database files, reports or the Adobe workbooks. `.gitignore` covers them.

@@ -1,35 +1,37 @@
 name: release
 
-# Publishes aa-health-duckdb to PyPI with trusted publishing. No PyPI token is stored in the
-# repository. PyPI gives the job a short-lived upload credential because it trusts this
-# publisher:
+# Publishes aa-health-duckdb to PyPI, then creates the GitHub release. It works like the release
+# workflow of sdr-visualizer:
 #
-#   owner=brian-a-au  repository=aa-health-duckdb  workflow=release.yml  environment=pypi
+# 1. build: lint, tests, the tag and changelog checks, the build, a check of the README links,
+#    an install of the built wheel, and SHA-256 sums. It keeps the files as an artifact.
+# 2. publish: uploads the same files to PyPI. It runs in the "pypi" environment, which waits for
+#    the maintainer's approval and accepts only v*.*.* tags.
+# 3. github-release: creates the GitHub release with the files, the sums and the changelog
+#    section as notes.
 #
-# Keep those four values in step with this file. The file name must stay release.yml, and the
-# job must run in the "pypi" environment, or PyPI rejects the upload.
+# PyPI trusted publishing gives the upload a short-lived credential, so no PyPI token is stored.
+# PyPI trusts: owner=brian-a-au repository=aa-health-duckdb workflow=release.yml
+# environment=pypi. Keep the file name and the environment name, or PyPI rejects the upload.
 #
-# It runs when a GitHub release is published. A draft release starts nothing, and a tag alone
-# starts nothing, so the upload happens only when you publish the release. See "Release a new
-# version" in docs/development.md.
+# A pushed tag v*.*.* starts a release. "Run workflow" runs only the build job, as a dry run.
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # The "pypi" environment, under Settings > Environments. Add a required reviewer there to
-    # approve each upload by hand.
-    environment: pypi
+    timeout-minutes: 20
+    env:
+      UV_PYTHON: "3.14"
     permissions:
       contents: read
-      # Lets the job ask GitHub for the token that PyPI trusts.
-      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -39,44 +41,80 @@ jobs:
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: 0.13.6
-          python-version: "3.14"
+          enable-cache: true
+          prune-cache: false
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Sync dependencies
+        run: uv sync --locked --dev
+
+      - name: Lint
+        run: |
+          uv run --locked ruff check
+          uv run --locked ruff format --check
+
+      - name: Test
+        run: uv run --locked pytest --cov=ahd --cov-branch --cov-fail-under=95
 
       # A mistyped tag must not publish a package with the wrong version.
-      - name: Check that the tag matches the version
-        env:
-          TAG: ${{ github.event.release.tag_name }}
+      - name: Check that the tag matches the version and the changelog
+        if: github.event_name == 'push'
         run: |
           set -euo pipefail
-          VERSION="$(uv run --no-project python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          if [ "$TAG" != "v$VERSION" ]; then
-            echo "::error::The release tag $TAG does not match the version v$VERSION in pyproject.toml."
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(uv run --locked python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::The tag v$TAG_VERSION does not match the version $PKG_VERSION in pyproject.toml."
             exit 1
           fi
-          if ! grep -q "^## $VERSION " CHANGELOG.md; then
-            echo "::error::CHANGELOG.md has no section for $VERSION."
+          if ! grep -q "^## $PKG_VERSION " CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no section for $PKG_VERSION."
             exit 1
           fi
-          echo "Releasing $VERSION"
+
+      # The release notes: the changelog section of the version in pyproject.toml.
+      - name: Write the release notes
+        run: |
+          uv run --locked python - <<'PYTHON'
+          import re
+          import tomllib
+          from pathlib import Path
+
+          version = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+          text = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          found = re.search(rf"^## {re.escape(version)} .*?\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+          if not found:
+              raise SystemExit(f"CHANGELOG.md has no section for {version}")
+          notes = found.group(1).strip() + (
+              "\n\nInstall with `uv tool install aa-health-duckdb` or `pipx install aa-health-duckdb`."
+          )
+          Path("dist").mkdir(exist_ok=True)
+          Path("dist/NOTES.md").write_text(notes + "\n", encoding="utf-8")
+          print(notes)
+          PYTHON
 
       - name: Build the wheel and the source package
-        run: uv build
+        run: uv build --out-dir dist/packages
 
       # PyPI shows the README outside the repository, so a relative link would point at pypi.org.
       - name: Check the README links in the package
         run: |
-          uv run --no-project python - <<'PYTHON'
+          uv run --locked python - <<'PYTHON'
           import re
           import zipfile
           from email import policy
           from email.parser import BytesParser
           from pathlib import Path
 
-          wheel = next(Path("dist").glob("*.whl"))
+          wheel = next(Path("dist/packages").glob("*.whl"))
           with zipfile.ZipFile(wheel) as z:
               name = next(n for n in z.namelist() if n.endswith(".dist-info/METADATA"))
               meta = BytesParser(policy=policy.default).parsebytes(z.read(name))
           text = meta.get_payload(decode=True).decode("utf-8")
-          bad = [t for t in re.findall(r"\]\(([^)\s]+)\)", text) if not re.match(r"(https?:|mailto:|#)", t)]
+          links = re.findall(r"\]\(([^)\s]+)\)", text)
+          bad = [t for t in links if not re.match(r"(https?:|mailto:|#)", t)]
           if bad:
               raise SystemExit(f"Relative links in the package README: {bad}")
           print("README links are absolute")
@@ -87,10 +125,72 @@ jobs:
         run: |
           set -euo pipefail
           uv venv --python 3.14 "$RUNNER_TEMP/try"
-          uv pip install --python "$RUNNER_TEMP/try" dist/*.whl
+          uv pip install --python "$RUNNER_TEMP/try" dist/packages/*.whl
           "$RUNNER_TEMP/try/bin/ahd" --help
           "$RUNNER_TEMP/try/bin/python" -c 'from importlib.metadata import version; print(version("aa-health-duckdb"))'
 
+      - name: Write SHA256SUMS
+        run: cd dist/packages && sha256sum -- *.whl *.tar.gz > ../SHA256SUMS
+
+      - name: Keep the checked files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: dist
+          path: |
+            dist/packages/*.whl
+            dist/packages/*.tar.gz
+            dist/SHA256SUMS
+            dist/NOTES.md
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Waits for the maintainer's approval, and accepts only v*.*.* tags.
+    environment: pypi
+    permissions:
+      # Lets the job ask GitHub for the token that PyPI trusts.
+      id-token: write
+    steps:
+      - name: Fetch the checked files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: dist
+          path: dist
+
+      - name: Check the SHA-256 sums
+        run: cd dist/packages && sha256sum -c ../SHA256SUMS
+
       # Pinned by commit because this job can publish.
-      - name: Publish to PyPI
+      - name: Upload to PyPI
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: dist/packages/
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Fetch the checked files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: dist
+          path: dist
+
+      - name: Check the SHA-256 sums
+        run: cd dist/packages && sha256sum -c ../SHA256SUMS
+
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        with:
+          name: ${{ github.ref_name }}
+          body_path: dist/NOTES.md
+          files: |
+            dist/packages/*.whl
+            dist/packages/*.tar.gz
+            dist/SHA256SUMS

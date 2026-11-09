@@ -3,12 +3,9 @@ name: tests
 on:
   push:
     branches: [main]
-  # A pull request that changes only Markdown files or the slideshow images skips the tests.
+  # Every pull request runs the tests, even one that changes only docs. main requires these
+  # checks, and a skipped run never reports them.
   pull_request:
-    paths-ignore:
-      - "**/*.md"
-      - "docs/*.gif"
-      - "docs/*.png"
   workflow_dispatch:
 
 concurrency:
