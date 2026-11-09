@@ -24,6 +24,14 @@ Working offline does not mean the report is cleared for sharing. It holds your c
 
 A switch at the top right chooses light mode, dark mode or your computer's setting. Your browser remembers the choice. Every table can be sorted by clicking a column heading. Every table also has a name that a screen reader reads out, e.g., "Custom events" or "Top 100 values yesterday".
 
+You can fold some sections to make the page shorter. Click the heading of the section, or the arrow next to it. These sections fold:
+
+- on Components Summary, "Alerts by day" and the charts
+- on Individual Component Summary, the top 100 values and the browser and device tables
+- on Alerts Summary, "Slow declines" and "Earlier runs"
+
+Every section is open when the page opens. The page does not remember which sections you folded. The component tables and the alert lists do not fold. Choosing a component in the calendar or a table opens the charts again. When you print the page, every folded section opens for the print and folds again after it.
+
 ## The top of the page
 
 The header names the report suite, the Individual Component Summary pairs, the segment, the run date in the report suite's time zone, when the run was made, how long it took, and its status:
@@ -125,7 +133,7 @@ A small line in each row shows the component's last 13 weeks, on a scale from 0 
 
 The "Find a component" box above the tables keeps only the components whose name, number or ID contains the text, e.g., "evar5". It works with the number range and with "Show only flagged".
 
-The table headings stay in view while you scroll. A table that is too wide for the window, e.g., on a phone, scrolls in its own box, and its headings stay at the top of that box. The links under "Jump to" above the tables go to each group, and show how many components each group has.
+The table headings stay in view while you scroll. A table that is too wide for the window, e.g., on a phone, scrolls in its own box, and its headings stay at the top of that box. The links under "Jump to" above the tables go to each group, and show how many components each group has. After each table, the link "Back to the top of the tables" goes back to these links.
 
 The flag is Adobe's "Above range" or "Below range", or "Large drop" when the slider flags it. A red "Zero data" badge marks a value of 0 on a component that has data on other days. A gray "never collected data" note marks a component that was 0 on every day.
 

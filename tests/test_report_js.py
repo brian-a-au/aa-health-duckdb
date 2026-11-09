@@ -1402,6 +1402,92 @@ def test_no_slow_declines_says_so(chrome, edges, tmp_path):
     assert got["empty"] == "No component fell steadily in the last 12 weeks."
 
 
+# ---- sections the reader can fold ---------------------------------------------------------
+
+FOLD_PROBE = """
+var folds = [].slice.call(document.querySelectorAll("details.fold"));
+var charts = document.querySelector(".charts-fold");
+var out = {
+  titles: folds.map(function (d) { return d.querySelector("summary").textContent.trim(); }),
+  open: folds.map(function (d) { return d.open; })
+};
+function width() {
+  return Number(document.querySelector("#metric-chart svg").getAttribute("viewBox").split(" ")[2]);
+}
+// Waits for the page's own toggle handler, which runs first because it listens in the capture
+// phase.
+function toggled(d) {
+  return new Promise(function (done) { d.addEventListener("toggle", done, { once: true }); });
+}
+out.before = width();
+charts.open = false;
+return toggled(charts).then(function () {
+  // The Day picker draws the charts again while they are folded.
+  var day = document.getElementById("day");
+  day.selectedIndex = 2;
+  day.dispatchEvent(new Event("change"));
+  out.folded = width();
+  var drawn = document.querySelector("#metric-chart svg");
+  charts.open = true;
+  return toggled(charts).then(function () { return drawn; });
+}).then(function (drawn) {
+  out.after = width();
+  out.redrawn = document.querySelector("#metric-chart svg") !== drawn;
+  charts.open = false;
+  return toggled(charts);
+}).then(function () {
+  // A component chosen in the calendar opens the charts again.
+  var cell = document.querySelector('#calendar rect[data-day="2026-10-15"]');
+  cell.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  var b = document.querySelector("#calendar .calendar-list button");
+  out.picked = b.textContent;
+  b.click();
+  out.reopened = charts.open;
+  var dim = document.getElementById("dimension-pick");
+  out.shown = dim.options[dim.selectedIndex].textContent;
+  // Every section opens to print, and the folded ones fold again after.
+  folds[0].open = false;
+  folds[5].open = false;
+  window.dispatchEvent(new Event("beforeprint"));
+  out.printing = folds.map(function (d) { return d.open; });
+  window.dispatchEvent(new Event("afterprint"));
+  out.printed = folds.map(function (d) { return d.open; });
+  out.back = [].map.call(document.querySelectorAll("#tables .back-top a"), function (a) {
+    return a.getAttribute("href");
+  });
+  out.tables = document.querySelectorAll("#tables table").length;
+  out.jump = document.getElementById("jump") ? document.getElementById("jump").tagName : null;
+  return out;
+});
+"""
+
+
+def test_sections_fold_and_open_again(chrome, showcase, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*showcase)), FOLD_PROBE, tmp_path)
+    assert got["titles"] == [
+        "Alerts by day, last 13 weeks",
+        "Charts",
+        "Top 100 values yesterday",
+        "Browser analysis",
+        "Device analysis",
+        "Slow declines",
+        "Earlier runs",
+    ]
+    # Every section starts open.
+    assert got["open"] == [True] * 7
+    # Chrome lays out a folded section, so a chart drawn there keeps its width. A browser that
+    # does not gets 0 and falls back to 640 pixels, so the page draws the charts again when
+    # their section opens.
+    assert got["folded"] == got["after"] == got["before"] == 550
+    assert got["redrawn"] is True
+    assert got["reopened"] is True and got["shown"] == got["picked"]
+    assert got["printing"] == [True] * 7
+    assert got["printed"] == [False, True, True, True, True, False, True]
+    # One link back to the jump links after each table.
+    assert got["back"] == ["#jump"] * got["tables"] and got["tables"] == 4
+    assert got["jump"] == "NAV"
+
+
 # Reads which tables scroll in their own box, and whether the page scrolls sideways.
 FIT_PROBE = """
 document.getElementById("tab-alerts").click();
