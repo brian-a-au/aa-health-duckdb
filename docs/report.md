@@ -89,11 +89,11 @@ A calendar shows the last 13 weeks. Each square is one day, and a darker square 
 
 Large drops are not counted, because only the last 7 days have a weekday average. A day with no data at all is an outline.
 
-A release that breaks tracking usually breaks many components on the same day, so it shows as one dark square. Choose a square, or move with the arrow keys, to list that day's components. The left and right keys move a week, and the up and down keys move a day. Choose a component in the list to see it on the metric or dimension chart, with the chart's line under it describing that day.
+A release that breaks tracking usually breaks many components on the same day, so it shows as one dark square. Choose a square, or move with the arrow keys, to list that day's components. The left and right keys move a week, and the up and down keys move a day. Choose a component in the list to see it on the metric or dimension chart. The text under the chart is then about that day.
 
 "Days with the most alerts" lists the 5 days with the most alerts, with the count of each kind.
 
-The calendar follows the Day picker. DuckDB finds the alerts for every day and component in one query. For a suite with 410 components, the query takes about 10 milliseconds.
+The calendar follows the Day picker. DuckDB finds the alerts for every day and component in one query. In a test with 410 components and 92 days, the query took about 10 milliseconds.
 
 ### Charts
 
