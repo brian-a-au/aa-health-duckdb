@@ -523,7 +523,28 @@
   }
 
   // The Flag column: Adobe's anomaly flag (daily only), else a large drop from the slider.
+  function weekFlagBadges(row) {
+    var f = weekFlags(row), span = el("span", { "class": "week-flags" });
+    function one(kind, n, icon, words) {
+      if (!n) return;
+      span.appendChild(badge("flag", icon, words + " on " + n + (n === 1 ? " day" : " days"),
+        "Adobe flagged this value " + words.toLowerCase() + " on " + n + " of the 7 days."));
+    }
+    one("high", f.high, "▲", "Above range");
+    one("low", f.low, "▼", "Below range");
+    return span.firstChild ? span : null;
+  }
   function flagCell(row, daily) {
+    if (!daily) {
+      var wf = weekFlags(row), flags = weekFlagBadges(row);
+      var extra = isLargeDrop(row.value, row.baseline, row.pct) ? dropBadge() :
+        isLargeSpike(row.value, row.baseline, row.pct) ? spikeBadge() : null;
+      if (!flags && !extra) return { c: "", k: null };
+      var cell = el("span", { "class": "week-flags" });
+      if (flags) cell.appendChild(flags);
+      if (extra) cell.appendChild(extra);
+      return { c: cell, k: wf.high * 2 + wf.low + (extra ? 0.5 : 0) };
+    }
     var a = daily ? anomalyCell(row.anomaly) : { c: "", k: null };
     if (row.anomaly) return a;
     if (isLargeDrop(row.value, row.baseline, row.pct)) return { c: dropBadge(), k: 0.5 };
@@ -532,6 +553,10 @@
   }
 
   function isFlagged(row) {
+    if (state.gran === "week") {
+      var wf = weekFlags(row);
+      if (wf.high || wf.low) return true;
+    }
     return !!(row.anomaly || (row.zero && !row.unused) ||
       isLargeDrop(row.value, row.baseline, row.pct) ||
       isLargeSpike(row.value, row.baseline, row.pct));
@@ -591,6 +616,17 @@
     if (day && shape.at[day]) {
       svg.appendChild(sv("circle", { cx: shape.at[day][0], cy: shape.at[day][1], r: 2.5,
         "class": "spark-dot" }));
+    }
+    // In the weekly view, the week's 7 days are drawn again in the dot's color.
+    if (!day) {
+      var wd = "", prev = false;
+      weekDays.forEach(function (d) {
+        var at = shape.at[d];
+        if (!at) { prev = false; return; }
+        wd += (prev ? "L" : "M") + at[0] + " " + at[1];
+        prev = true;
+      });
+      if (wd) svg.appendChild(sv("path", { d: wd, "class": "spark-week" }));
     }
     b.appendChild(svg);
     b.addEventListener("click", function () { showOnChart(r.component_id, chosenDay()); });
@@ -823,6 +859,7 @@
     if (kind === "actual") s.appendChild(sv("line", { x1: 1, y1: 6, x2: 17, y2: 6, "class": "actual" }));
     if (kind === "expected") s.appendChild(sv("line", { x1: 1, y1: 6, x2: 17, y2: 6, "class": "expected" }));
     if (kind === "band") s.appendChild(sv("rect", { x: 1, y: 2, width: 16, height: 8, "class": "band" }));
+    if (kind === "week") s.appendChild(sv("rect", { x: 1, y: 0, width: 16, height: 12, "class": "week-band" }));
     if (kind === "high") s.appendChild(sv("path", { d: "M6 0 L12 12 L0 12 Z", "class": "mark-high" }));
     if (kind === "low") s.appendChild(sv("path", { d: "M6 12 L12 0 L0 0 Z", "class": "mark-low" }));
     if (kind === "chosen") {
@@ -836,6 +873,14 @@
   }
 
   // average: the weekday average, given only for the chosen day.
+  // The readout of the weekly view: the week's total and the average week.
+  function describeWeek(week, type) {
+    var text = weekText() + ": " + fmtNum(week.total, type) + " in total";
+    if (week.average !== null && week.average !== undefined) {
+      text += ", average week " + fmtRound(week.average, type);
+    }
+    return text + ".";
+  }
   function describe(p, type, average) {
     var parts = [fmtDay(p[0], true) + ": " + fmtNum(p[1], type)];
     if (average !== null && average !== undefined) {
@@ -876,6 +921,13 @@
       points.forEach(function (p, k) { if (p[0] === mark.day) chosen = k; });
     }
     var average = chosen >= 0 && typeof mark.average === "number" ? mark.average : null;
+    // In the weekly view, mark.week gives the week's days, its total and the average week.
+    var week = mark && mark.week ? mark.week : null;
+    var weekAt = [];
+    if (week) {
+      points.forEach(function (p, k) { if (week.days.indexOf(p[0]) >= 0) weekAt.push(k); });
+      if (!weekAt.length) week = null;
+    }
     var max = average !== null && average > 0 ? average : 0;
     points.forEach(function (p) {
       [p[1], p[2], p[3]].forEach(function (v) { if (v !== null && v > max) max = v; });
@@ -894,6 +946,7 @@
       viewBox: "0 0 " + W + " " + H, role: "img", tabindex: 0,
       "aria-label": "Trend chart for " + title + ", " + points.length + " days. " +
         (chosen >= 0 ? "A line marks the chosen day, " + fmtDay(points[chosen][0], false) + ". " : "") +
+        (week ? "A band marks the chosen week, " + weekText() + ". " : "") +
         "Use the left and right arrow keys to read each day."
     });
 
@@ -916,6 +969,12 @@
       svg.appendChild(tx);
     }
 
+    // The chosen week's band sits behind the data, half a day wider on each side.
+    if (week) {
+      var half = pw / span / 2;
+      var wx0 = x(points[weekAt[0]]) - half, wx1 = Math.min(W - R, x(points[weekAt[weekAt.length - 1]]) + half);
+      svg.appendChild(sv("rect", { x: wx0, y: T, width: wx1 - wx0, height: ph, "class": "week-band" }));
+    }
     // The chosen day's line sits behind the data.
     if (chosen >= 0) {
       svg.appendChild(sv("line", { x1: x(points[chosen]), x2: x(points[chosen]), y1: T, y2: T + ph,
@@ -990,7 +1049,8 @@
     function show(k, visible) {
       active = Math.max(0, Math.min(last, k));
       var p = points[active];
-      readout.textContent = describe(p, type, active === chosen ? average : null);
+      readout.textContent = !visible && week && look < 0 ? describeWeek(week, type) :
+        describe(p, type, active === chosen ? average : null);
       var cx = x(p);
       cross.setAttribute("x1", cx);
       cross.setAttribute("x2", cx);
@@ -1034,7 +1094,7 @@
     }
     row([[true, "actual", "Actual"], [hasExpected, "expected", "Expected"],
       [hasBands, "band", "Expected range"], [chosen >= 0, "chosen", "Chosen day"],
-      [average !== null, "average", "Weekday average"]]);
+      [average !== null, "average", "Weekday average"], [!!week, "week", "Chosen week"]]);
     row([[anyHigh, "high", "Flagged above range"], [anyLow, "low", "Flagged below range"]]);
     host.appendChild(legend);
     if (!hasBands) {
@@ -1044,6 +1104,35 @@
 
   // The day the Day picker chose, or null in the weekly view, which marks no day.
   function chosenDay() { return state.gran === "day" ? state.day : null; }
+  // The week of the weekly view: the 7 days ending yesterday, oldest first.
+  var weekDays = [];
+  if (yesterday) {
+    for (var wd = 6; wd >= 0; wd--) {
+      weekDays.push(new Date(parseDay(yesterday).getTime() - wd * 864e5).toISOString().slice(0, 10));
+    }
+  }
+  function weekText() {
+    return fmtShortDay(weekDays[0]) + " to " + fmtShortDay(weekDays[6]) + ", " +
+      weekDays[6].slice(0, 4);
+  }
+  // How many of the week's days Adobe flagged above and below the expected range. A component
+  // that never collected data has no flags, as in the daily view.
+  var weekFlagCache = {};
+  function weekFlags(row) {
+    var cid = row.component_id;
+    if (!(cid in weekFlagCache)) {
+      var f = { high: 0, low: 0 };
+      if (!row.unused) {
+        (data.series[cid] || []).forEach(function (p) {
+          if (weekDays.indexOf(p[0]) < 0) return;
+          if (p[5] === "high") f.high++;
+          if (p[5] === "low") f.low++;
+        });
+      }
+      weekFlagCache[cid] = f;
+    }
+    return weekFlagCache[cid];
+  }
   var averageByDay = {};
   function weekdayAverage(cid, day) {
     if (!averageByDay[day]) {
@@ -1120,7 +1209,8 @@
         return;
       }
       var day = chosenDay();
-      var mark = day ? { day: day, average: weekdayAverage(r.component_id, day) } : {};
+      var mark = day ? { day: day, average: weekdayAverage(r.component_id, day) } :
+        { week: { days: weekDays, total: r.value, average: r.baseline } };
       if (look && look.cid === r.component_id) mark.look = look.day;
       drawChart(host, data.series[r.component_id], componentLabel(r), r.metric_type, mark);
     }
@@ -1160,7 +1250,7 @@
   // Each square is a day, darker for more components with an alert that day. The SQL lists the
   // components for each day. The page only places the squares and shows the lists.
   var pickers = {};
-  var calendar = { select: function () {} };
+  var calendar = { select: function () {}, sync: function () {} };
   var LEVELS = 4;
   var CAL_KINDS = [
     { key: "low", label: "Below the expected range" },
@@ -1191,6 +1281,8 @@
     var offset = (parseDay(days[0]).getUTCDay() + 6) % 7;
     var cols = Math.ceil((days.length + offset) / 7);
     var selected = days.length - 1;
+    // In the weekly view the calendar first sums up the week. Choosing a day shows that day.
+    var weekShown = false;
 
     function level(d) {
       var c = byDay[d];
@@ -1245,11 +1337,20 @@
         svg.appendChild(rect);
         return { x: x, y: y };
       });
+      // The weekly view outlines each of the week's 7 days.
+      if (state.gran === "week") {
+        weekDays.forEach(function (d) {
+          var c = cells[days.indexOf(d)];
+          if (c) svg.appendChild(sv("rect", { x: c.x - 1.5, y: c.y - 1.5, width: size + 3,
+            height: size + 3, rx: 4, "class": "cal-week" }));
+        });
+      }
       var ring = sv("rect", { width: size + 4, height: size + 4, rx: 5, "class": "cal-ring" });
       svg.appendChild(ring);
       function place() {
         ring.setAttribute("x", cells[selected].x - 2);
         ring.setAttribute("y", cells[selected].y - 2);
+        ring.setAttribute("visibility", weekShown ? "hidden" : "visible");
       }
       place();
       svg.addEventListener("click", function (e) {
@@ -1272,7 +1373,8 @@
       function item(cid) {
         var row = rowsById[cid];
         var b = el("button", { type: "button", "class": "link",
-          title: "Show this component on the chart for " + fmtDay(d, false) },
+          title: d ? "Show this component on the chart for " + fmtDay(d, false) :
+            "Show this component on the chart" },
           row ? componentLabel(row) : cid);
         b.addEventListener("click", function () { showOnChart(cid, d); });
         return el("li", null).appendChild(b).parentNode;
@@ -1291,8 +1393,37 @@
       return box;
     }
 
+    // The week's alerts: each kind lists the components that had it on at least one of the 7
+    // days, and the count is of the different components in all the lists.
+    function showWeek() {
+      weekShown = true;
+      if (drawGrid.place) drawGrid.place();
+      clear(lists);
+      var any = false, seen = {}, count = 0;
+      var byKind = {};
+      CAL_KINDS.forEach(function (k) { byKind[k.key] = []; });
+      weekDays.forEach(function (d) {
+        var c = byDay[d];
+        if (!c) return;
+        any = true;
+        CAL_KINDS.forEach(function (k) {
+          (c[k.key] || []).forEach(function (cid) {
+            if (byKind[k.key].indexOf(cid) < 0) byKind[k.key].push(cid);
+            if (!seen[cid]) { seen[cid] = true; count++; }
+          });
+        });
+      });
+      readout.textContent = weekText() + ": " + (!any ? "no data was read." :
+        (count === 1 ? "1 component had" : count + " components had") +
+        " an alert on at least one day.");
+      CAL_KINDS.forEach(function (k) {
+        if (byKind[k.key].length) lists.appendChild(listBlock(k, byKind[k.key], null));
+      });
+    }
+
     function select(i) {
       if (i < 0) return;
+      weekShown = false;
       selected = i;
       if (drawGrid.place) drawGrid.place();
       var d = days[i], c = byDay[d];
@@ -1304,6 +1435,10 @@
       });
     }
     calendar.select = function (d) { select(days.indexOf(d)); };
+    calendar.sync = function () {
+      if (state.gran === "week") showWeek();
+      else select(days.indexOf(state.day) >= 0 ? days.indexOf(state.day) : days.length - 1);
+    };
 
     var legend = el("div", { "class": "calendar-legend", "aria-hidden": "true" });
     legend.appendChild(el("span", null, "None"));
@@ -1372,9 +1507,19 @@
     var p = pairs[pairIndex];
     var day = chosenDay();
     var averages = (p && p.weekday_average) || {};
+    var mark = null;
+    if (day) mark = { day: day, average: day in averages ? averages[day] : null };
+    else if (p) {
+      // The week's total, and the average week: the sum of the 7 weekday averages.
+      var total = 0, avg = 0, full = true;
+      (data.series[p.series_id] || []).forEach(function (pt) {
+        if (weekDays.indexOf(pt[0]) >= 0 && pt[1] !== null) total += pt[1];
+      });
+      weekDays.forEach(function (d) { if (d in averages) avg += averages[d]; else full = false; });
+      mark = { week: { days: weekDays, total: total, average: full ? avg : null } };
+    }
     drawChart(byId("individual-chart"), p ? data.series[p.series_id] : [], pairLabel(p),
-      p ? p.metric_type : null,
-      day ? { day: day, average: day in averages ? averages[day] : null } : null);
+      p ? p.metric_type : null, mark);
   }
 
   function fillPairPickers() {
@@ -2094,13 +2239,19 @@
     redrawAll();
     calendar.select(state.day);
   });
+  // The Week box takes the Day picker's place in the weekly view. It names the one week the
+  // report compares, so it cannot be changed.
+  var weekSel = byId("week");
+  if (weekSel && weekDays.length) weekSel.appendChild(el("option", null, weekText()));
   byId("granularity").addEventListener("change", function (e) {
     state.gran = e.target.value;
     byId("week-note").hidden = state.gran !== "week";
     byId("day-label").hidden = state.gran === "week";
+    byId("week-label").hidden = state.gran !== "week";
     forgetLook();
     renderTables();
     redrawAll();
+    calendar.sync();
   });
   fillRangePicker(byId("range"));
   byId("range").addEventListener("change", function (e) {

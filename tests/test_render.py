@@ -331,9 +331,7 @@ def test_missing_bands_note():
 
 def test_week_note_and_controls():
     html = render_html(sample_view())
-    assert WEEK_NOTE == (
-        "This week is the 7 days ending yesterday. The Excel version used 8 to 2 days ago."
-    )
+    assert WEEK_NOTE == "This week is the 7 days ending yesterday."
     assert WEEK_NOTE in html
     for label in ("Daily", "Weekly", "Custom components", "Metric chart", "Dimension chart"):
         assert label in html

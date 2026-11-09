@@ -876,11 +876,17 @@ def test_the_charts_mark_the_chosen_day_and_its_weekday_average(chrome, showcase
     page = f"{view['pairs'][0]['weekday_average']['2026-11-04']:,.0f}"
     assert got["individual"]["readout"].startswith("Wed, Nov 4, 2026: ")
     assert f"weekday average {page}," in got["individual"]["readout"]
-    # The weekly view marks no day, and the readout goes back to the last day.
+    # The weekly view marks no day. A band marks the week, and the readout gives the week's total
+    # and the average week.
     week = got["week"]
     assert week["line"] is None and week["dot"] is None and week["average"] is None
-    assert "Chosen day" not in week["legend"] and "weekday average" not in week["readout"]
-    assert week["readout"].startswith("Fri, Nov 6, 2026: ")
+    assert "Chosen day" not in week["legend"] and "Chosen week" in week["legend"]
+    assert week["rows"][0] == ["Actual", "Expected", "Expected range", "Chosen week"]
+    row = next(r for r in view["views"]["week"] if r["component_id"] == "metrics/event5")
+    assert week["readout"] == (
+        f"Oct 31 to Nov 6, 2026: {row['value']:,.0f} in total, average week {row['baseline']:,.0f}."
+    )
+    assert "A band marks the chosen week, Oct 31 to Nov 6, 2026." in week["label"]
 
 
 @pytest.fixture(scope="module")
@@ -1471,6 +1477,93 @@ def test_no_slow_declines_says_so(chrome, edges, tmp_path):
     got = run_probe(chrome, render_html(build_view(*edges)), DECLINE_PROBE, tmp_path)
     assert got["rows"] == [] and got["bars"] == []
     assert got["empty"] == "No component fell steadily in the last 12 weeks."
+
+
+# ---- the weekly view -----------------------------------------------------------------------
+
+WEEK_PROBE = """
+function flags() {
+  var out = {};
+  [].forEach.call(document.querySelectorAll("#tables table"), function (table) {
+    var heads = [].map.call(table.tHead.rows[0].cells, function (th) {
+      return th.textContent.replace(/[↕▲▼]/g, "").trim();
+    });
+    var col = heads.indexOf("Flag"), name = heads.indexOf("Name");
+    [].forEach.call(table.tBodies[0].rows, function (r) {
+      var t = r.cells[col].textContent;
+      if (t) out[r.cells[name].firstChild.textContent] = t;
+    });
+  });
+  return out;
+}
+function cal() {
+  var host = document.getElementById("calendar");
+  return {
+    outlined: [].map.call(host.querySelectorAll("rect.cal-week"), function (r) { return 1; }).length,
+    ring: host.querySelector("rect.cal-ring").getAttribute("visibility"),
+    readout: host.querySelector(".calendar-readout").textContent,
+    lists: [].map.call(host.querySelectorAll(".calendar-list-title"), function (t) { return t.textContent; })
+  };
+}
+var gran = document.getElementById("granularity");
+gran.value = "week";
+gran.dispatchEvent(new Event("change"));
+var week = document.getElementById("week");
+var out = {
+  dayHidden: document.getElementById("day-label").hidden,
+  weekHidden: document.getElementById("week-label").hidden,
+  weekText: week.options[0].textContent, weekDisabled: week.disabled,
+  flags: flags(),
+  sparkWeek: (document.querySelector("#tables path.spark-week") || { getAttribute: function () { return ""; } })
+    .getAttribute("d"),
+  cal: cal()
+};
+var only = document.getElementById("flagged-only");
+only.checked = true;
+only.dispatchEvent(new Event("change"));
+out.flaggedNames = Object.keys(flags()).sort();
+out.flaggedRows = document.querySelectorAll("#tables tbody tr").length;
+only.checked = false;
+only.dispatchEvent(new Event("change"));
+var cell = document.querySelector('#calendar rect[data-day="2026-11-04"]');
+cell.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+out.picked = cal();
+gran.value = "day";
+gran.dispatchEvent(new Event("change"));
+out.daily = cal();
+out.dailyWeekHidden = document.getElementById("week-label").hidden;
+return out;
+"""
+
+
+def test_the_weekly_view_matches_the_daily_one(chrome, showcase, tmp_path):
+    view = build_view(*showcase)
+    got = run_probe(chrome, render_html(view), WEEK_PROBE, tmp_path)
+    # The Week box takes the Day picker's place, and names the one week.
+    assert got["dayHidden"] is True and got["weekHidden"] is False
+    assert got["weekText"] == "Oct 31 to Nov 6, 2026" and got["weekDisabled"] is True
+    # Adobe's flags count by day over the week, as in the daily view's Flag column.
+    assert got["flags"]["Cart Adds"] == "▲Above range on 1 day"
+    assert got["flags"]["Orders"] == "▼Below range on 1 day"
+    # "Show only flagged" keeps them, and only flagged rows.
+    assert {"Cart Adds", "Orders"} <= set(got["flaggedNames"])
+    assert got["flaggedRows"] == len(got["flaggedNames"])
+    # The 13-week line draws the week's 7 days again.
+    assert got["sparkWeek"].count("M") == 1 and got["sparkWeek"].count("L") == 6
+    # The calendar outlines the 7 days and sums up the week.
+    days = [d for d in view["calendar"] if "2026-10-31" <= d["day"] <= "2026-11-06"]
+    distinct = {c for d in days for k in ("high", "low", "zero") for c in d[k]}
+    assert got["cal"]["outlined"] == 7 and got["cal"]["ring"] == "hidden"
+    assert got["cal"]["readout"] == (
+        f"Oct 31 to Nov 6, 2026: {len(distinct)} components had an alert on at least one day."
+    )
+    assert got["cal"]["lists"][0].startswith("Below the expected range")
+    # Choosing a day shows that day. The outline stays.
+    assert got["picked"]["ring"] == "visible" and got["picked"]["outlined"] == 7
+    assert got["picked"]["readout"].startswith("Wed, Nov 4, 2026: ")
+    # Back in the daily view there is no outline, and the Week box is hidden.
+    assert got["daily"]["outlined"] == 0 and got["daily"]["ring"] == "visible"
+    assert got["dailyWeekHidden"] is True
 
 
 # ---- the Custom components filter ----------------------------------------------------------

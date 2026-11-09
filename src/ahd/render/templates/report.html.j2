@@ -132,6 +132,9 @@
     <label id="day-label">Day
       <select id="day"></select>
     </label>
+    <label id="week-label" hidden>Week
+      <select id="week" disabled title="The report compares one week: the 7 days ending yesterday."></select>
+    </label>
     <label>Custom components
       <select id="range">
         <option value="">All</option>
@@ -182,7 +185,7 @@
     <label>Find a component
       <input type="search" id="find" placeholder="Name, number or ID" autocomplete="off" spellcheck="false">
     </label>
-    <p class="hint">The line in each row shows the last 13 weeks, with a dot on the chosen day. Choose a line to see the component on its chart above.</p>
+    <p class="hint">The line in each row shows the last 13 weeks. A dot marks the chosen day, or in the weekly view the week is drawn in blue. Choose a line to see the component on its chart above.</p>
   </div>
   <div id="tables"></div>
 </section>
