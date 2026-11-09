@@ -26,7 +26,7 @@ The script with the commands holds your mail password when your server needs a l
 
 `ahd run` checks the other suites when one fails. Its exit code is then 1. The schedule below sends the email anyway, so the alerts of the other suites still reach you. The run's output, which the schedule keeps in a log file, names the suite that failed.
 
-The email uses the latest finished run of each suite. For a suite whose run failed today, that is an older run. Each section of the email gives the date of its alerts, so you can see this.
+The email uses the latest run of each suite that ended "ok" or "partial". For a suite whose run failed today, that is an older run. Each section of the email gives the date of its alerts, so you can see this.
 
 ## macOS and Linux
 
@@ -130,6 +130,6 @@ schtasks /Create /TN "ahd daily" /SC DAILY /ST 07:30 /TR "%USERPROFILE%\aa-healt
 
 ## Check that it works
 
-- Read the log file after the first scheduled run. Each suite has a line such as "Run 12 for my_suite finished with status: ok", and the last line counts the suites that ended "ok", "partial" and "failed".
+- Read the log file after the first scheduled run. Each suite has a line such as "Run 12 for my_suite finished with status: ok". The last line from `ahd run` counts the suites that ended "ok", "partial" and "failed". The lines from `send_alerts.py` come after it. When the credential sees only one suite, `ahd run` does not print the count line.
 - Run `uv run ahd runs --profile prod` to list the stored runs.
-- The database grows by one run for each suite each day. To delete old runs, see [Deleting runs](runs.md#deleting-runs).
+- The database grows by one run for each suite each day. To delete old runs, see [Deleting runs](runs.md#deleting-runs). In a schedule, add `--yes` to `ahd prune`, because there is no input to read the answer from.
