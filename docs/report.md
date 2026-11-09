@@ -172,6 +172,19 @@ The copy follows the chosen day and the slider. It includes the days in a row fo
 
 To send alerts on a schedule, or only when something is new, see the [DuckDB guide](duckdb.md#email-recipes).
 
+### Slow declines
+
+This table lists components that fell a little each week for the last 12 weeks. No single day falls far enough below its weekday average for an alert, so the alert lists miss a fall like this until it is large. The table is not an alert list. It does not count in the tiles, the copied alerts or the `alerts` macro.
+
+DuckDB adds up each component's values by week. Each week is 7 days and ends on the weekday of the last day checked, so each week has every weekday once. The `regr_slope()` function then fits a straight line through the weekly totals and gives the change per week. A component is listed when:
+
+- its weekly totals fell by 3 percent or more a week
+- the weeks are close to a straight line, with a "Steady" score of 0.7 or more
+- it has a value on every day of the 12 weeks
+- it averaged at least 10 a day in the first week
+
+Steady is 1 when the weekly totals fall in a straight line, and 0 when they jump around. Each row has a small bar for each week, oldest first, and the change over the 12 weeks, e.g., -29.4% from the first week to the last.
+
 ### Earlier runs
 
 At the end of the tab, a table lists the runs of the same report suite and segment in the database, newest run date first, up to 30 runs. Each row counts the alerts on the last day of that run:

@@ -323,6 +323,44 @@ GROUP BY r.run_id, r.today, r.status
 ORDER BY r.today DESC, r.run_id DESC
 """
 
+# Slow declines: components whose weekly totals fell a little each week for DECLINE_WEEKS weeks.
+# No single day falls far enough for an alert, so the alert lists miss them. This list is not an
+# alert and does not count in the tiles or the alerts macro.
+# Each week is 7 days and ends on yesterday's weekday, so each week has every weekday once. A
+# week with a day without a value is left out, and a component needs all its weeks.
+# regr_slope() fits a straight line through the log of the weekly totals, so exp(slope) - 1 is
+# the change per week. regr_r2() says how close the weeks are to that line, from 0 to 1.
+DECLINE_WEEKS = 12
+DECLINE_PER_WEEK = -0.03
+DECLINE_MIN_FIT = 0.7
+_DECLINE_SQL = f"""
+WITH {_DV}, {_COMPS},
+w AS (
+    SELECT d.component_id, ($yesterday - d.day) // 7 AS back, sum(d.value) AS total
+    FROM dv d JOIN comps c ON c.component_id = d.component_id
+    WHERE d.day BETWEEN $yesterday - {DECLINE_WEEKS * 7 - 1} AND $yesterday AND NOT c.unused
+    GROUP BY ALL
+    HAVING count(d.value) = 7 AND sum(d.value) > 0
+),
+f AS (
+    SELECT component_id, count(*) AS weeks,
+        regr_slope(ln(total), -back) AS slope, regr_r2(ln(total), -back) AS fit,
+        arg_max(total, back) AS first_week, arg_min(total, back) AS last_week,
+        list(total ORDER BY back DESC) AS totals
+    FROM w GROUP BY component_id
+)
+SELECT f.component_id,
+    round(exp(slope) - 1, 4) AS per_week,
+    round(last_week / first_week - 1, 4) AS overall,
+    round(fit, 2) AS fit,
+    totals
+FROM f JOIN comps c ON c.component_id = f.component_id
+WHERE weeks = {DECLINE_WEEKS} AND isfinite(slope) AND isfinite(fit)
+    AND exp(slope) - 1 <= {DECLINE_PER_WEEK} AND fit >= {DECLINE_MIN_FIT}
+    AND first_week >= 7 * {MIN_USUAL}
+ORDER BY per_week, {_ORDER}
+"""
+
 _TOP_SQL = """
 WITH hist AS (
     SELECT item, min(rank) AS rank FROM top_items
@@ -558,6 +596,7 @@ def build_view(
         "alerts": _rows(store, _ALERTS_SQL, p),
         "calendar": _rows(store, _CALENDAR_SQL, p),
         "history": _rows(store, _HISTORY_SQL, p),
+        "declines": _rows(store, _DECLINE_SQL, p),
         "pairs": _pairs(store, run_id, p),
         "issues": _rows(store, _ISSUES_SQL, p),
         "component_drops": component_drops(store, run_id),

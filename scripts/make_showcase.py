@@ -124,6 +124,9 @@ ALWAYS_ZERO = {"metrics/event22", "metrics/evar16instances"}
 # A site release on Oct 15 broke 6 eVars for 2 days. The calendar shows it as one dark week.
 RELEASE_DAYS = (68, 69)
 RELEASE_BROKE = {f"metrics/evar{n}instances" for n in range(5, 11)}
+# A metric that falls a little each week. No single day stands out, so only the Slow declines
+# list shows it.
+SLOW_DECLINE = {"metrics/event12": 0.96}  # Video Completes
 
 
 def components() -> list[Component]:
@@ -166,7 +169,7 @@ def series(rng: random.Random, cid: str, base: float) -> list[DailyValue]:
     for i, day in enumerate(DAYS):
         weekly = 1.0 + 0.18 * math.sin(2 * math.pi * (day.weekday() + 1) / 7)
         trend = 1.0 + 0.10 * i / len(DAYS)
-        expected = base * weekly * trend
+        expected = base * weekly * trend * SLOW_DECLINE.get(cid, 1.0) ** (i / 7)
         if cid in ALWAYS_ZERO:
             out.append(DailyValue(cid, day, 0.0, 0.0, 0.0, 0.0, False))
             continue

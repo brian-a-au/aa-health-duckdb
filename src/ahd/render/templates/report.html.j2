@@ -228,6 +228,12 @@
     <summary>Show the alert summary as text</summary>
     <textarea id="alert-text" readonly rows="8" aria-label="Alert summary as text"></textarea>
   </details>
+  <section class="declines" aria-labelledby="declines-title">
+    <h2 id="declines-title">Slow declines</h2>
+    <p class="hint">Components whose weekly totals fell by {{ decline_pct }} percent or more a week for the last {{ decline_weeks }} weeks. No single day falls far enough for an alert, so the lists above miss them. This list does not count as alerts. Each week ends on the weekday of the last day checked, so each week has every weekday once.</p>
+    <p class="hint">Steady is 1 when the weekly totals fall in a straight line, and 0 when they jump around. The list leaves out components below {{ decline_fit }}.</p>
+    <div id="declines" data-weeks="{{ decline_weeks }}"></div>
+  </section>
   <section class="history" aria-labelledby="history-title">
     <h2 id="history-title">Earlier runs</h2>
     <p class="hint">The alerts on the last day of each run of this report suite{% if run.segment_id %} and segment{% endif %} in the database, newest first, up to {{ history_runs }} runs. Every run is counted by the rules of this report, and large drops follow the slider. Runs for later dates are not listed.</p>

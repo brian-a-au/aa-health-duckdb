@@ -825,6 +825,48 @@ def test_calendar_leaves_out_a_day_without_data(tmp_path):
     assert len(days) == 90 and gap.isoformat() not in days
 
 
+def _falling(cid, per_week, base=1000.0, factor=None, skip=None):
+    """A value that changes by per_week each week, the same on every day of a week."""
+    out = []
+    for d in _days(START, YESTERDAY):
+        if d == skip:
+            continue
+        weeks = (d - START).days / 7
+        out.append(_dv(cid, d, base * (1 + per_week) ** weeks * (factor(d) if factor else 1)))
+    return out
+
+
+def test_slow_declines_lists_a_steady_fall(tmp_path):
+    cids = [f"metrics/event{i}" for i in range(1, 8)]
+    vals = (
+        _falling(cids[0], -0.04)
+        + _falling(cids[1], -0.06)
+        # Flat, and a fall of 2 percent a week: too slow.
+        + _falling(cids[2], 0.0)
+        + _falling(cids[3], -0.02)
+        # A fall of 4 percent a week, but the weeks jump up and down by 30 percent.
+        + _falling(cids[4], -0.04, factor=lambda d: 1.3 if (YESTERDAY - d).days // 7 % 2 else 0.7)
+        # A day without a value leaves out its week, so the component has 11 weeks.
+        + _falling(cids[5], -0.04, skip=date(2026, 10, 1))
+        # Fewer than MIN_USUAL a day in the first week.
+        + _falling(cids[6], -0.04, base=5.0)
+    )
+    comps = [_comp(c, c, number=i) for i, c in enumerate(cids, start=1)]
+    store, rid = _build(tmp_path, comps, vals)
+    declines = build_view(store, rid)["declines"]
+    # The steepest first.
+    assert [d["component_id"] for d in declines] == [cids[1], cids[0]]
+    d = declines[1]
+    assert d["per_week"] == pytest.approx(-0.04, abs=1e-4)
+    assert d["overall"] == pytest.approx(0.96**11 - 1, abs=1e-4)
+    assert d["fit"] == 1.0
+    # 12 weeks of 7 days, oldest first. The last week ends yesterday.
+    assert len(d["totals"]) == 12
+    assert all(a > b for a, b in zip(d["totals"], d["totals"][1:]))
+    last = sum(v.value for v in _falling(cids[0], -0.04) if v.day > YESTERDAY - timedelta(days=7))
+    assert d["totals"][-1] == pytest.approx(last)
+
+
 def _run(store, today, rsid="rs1", segment=None, last=None, status="ok", issues=0):
     """A run with 4 components. last maps a component to its value on the run's last day."""
     rid = store.create_run(rsid, "Suite", segment, today, "UTC", "0.1")

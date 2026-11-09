@@ -402,7 +402,8 @@ button.spark:focus-visible { outline: 2px solid var(--focus); outline-offset: 1p
 @media (max-width: 520px) { input[type="search"] { min-width: 0; width: 100%; } }
 
 /* ---- earlier runs: one bar per run for all its alerts ---- */
-.history { margin-top: 32px; }
+.history, .declines { margin-top: 32px; }
+.week-bar { fill: var(--axis); }
 .runbar { position: relative; width: 56px; height: 8px; flex: none; background: var(--surface-2); border-radius: 4px; }
 .runbar span { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(var(--shade), 0.85); border-radius: 4px; }
 .this-run { font-weight: 600; }
