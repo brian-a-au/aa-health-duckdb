@@ -5,10 +5,14 @@
 -- every statement must replace what it creates. To remove a view or a macro, add a
 -- DROP ... IF EXISTS statement for it. The views may only use columns the tables already have.
 
+-- The latest run is the one with the newest run date. A run number does not say which run is
+-- newer: a run made later with --date for an old date has a higher number, and so does an old
+-- run that ahd import gave a new number. For runs of the same date, the one made last wins.
 CREATE OR REPLACE VIEW latest_runs AS
 FROM runs
 WHERE status IN ('ok', 'partial')
-QUALIFY row_number() OVER (PARTITION BY rsid, coalesce(segment_id, '') ORDER BY run_id DESC) = 1;
+QUALIFY row_number() OVER (PARTITION BY rsid, coalesce(segment_id, '')
+    ORDER BY today DESC, started_at DESC, run_id DESC) = 1;
 
 CREATE OR REPLACE VIEW component_days AS
 WITH dv AS (

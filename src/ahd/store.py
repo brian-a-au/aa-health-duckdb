@@ -25,7 +25,7 @@ IMPORT_FROM_VERSION = 7
 # the macro of a file with another views version, or with none. The views in a file then follow
 # the same rules as the ahd that last wrote to it, so the alert line of ahd run agrees with its
 # report, also after going back to an older ahd.
-VIEWS_VERSION = 1
+VIEWS_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE schema_version (version INTEGER);
@@ -485,11 +485,19 @@ class Store:
         return {g: found.get(g, 0) for g in groups}
 
     def previous_run(self, run_id: int) -> int | None:
-        """The latest earlier run of the same report suite that stored components."""
+        """The run of the same report suite that was made last before this one and stored
+        components.
+
+        "Before" goes by the time a run started, not by its number. An old run that ahd import
+        gave a new number has a higher number than the runs made after it. Runs that started
+        at the same time go by their number.
+        """
         row = self.con.execute(
-            "SELECT max(p.run_id) FROM runs p JOIN runs r ON r.run_id = ? AND p.rsid = r.rsid"
-            " WHERE p.run_id < r.run_id"
-            " AND EXISTS (SELECT 1 FROM components c WHERE c.run_id = p.run_id)",
+            "SELECT p.run_id FROM runs p JOIN runs r ON r.run_id = ? AND p.rsid = r.rsid"
+            " WHERE (p.started_at < r.started_at"
+            " OR (p.started_at IS NOT DISTINCT FROM r.started_at AND p.run_id < r.run_id))"
+            " AND EXISTS (SELECT 1 FROM components c WHERE c.run_id = p.run_id)"
+            " ORDER BY p.started_at DESC, p.run_id DESC LIMIT 1",
             [run_id],
         ).fetchone()
         return row[0] if row else None

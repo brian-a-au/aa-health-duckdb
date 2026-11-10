@@ -269,3 +269,22 @@ def test_send_alerts_missing_or_locked_database(tmp_path, capsys):
 def test_number_format(value):
     mod = _load("send_alerts")
     assert mod._number(value) == ("No data" if value is None else "12")
+
+
+def test_send_alerts_reads_the_newest_run_date_not_the_highest_run_number(
+    tmp_path, monkeypatch, capsys
+):
+    """A run made later with ahd run --date for an old date is not the latest run."""
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    db = tmp_path / "ahd.duckdb"
+    s = Store.open(db)
+    _add_run(s, 24_000_000.0, None)  # the newest run date, without alerts
+    _add_run(s, 5_000_000.0, None)  # a large drop
+    s.con.execute("UPDATE runs SET today = today - 30 WHERE run_id = 2")
+    s.con.execute("UPDATE daily_values SET day = day - 30 WHERE run_id = 2")
+    s.con.close()
+    assert mod.main([str(db), "rs1"]) == 2
+    assert "No alerts for rs1." in capsys.readouterr().out
+    assert not (tmp_path / "alerts.eml").exists()
