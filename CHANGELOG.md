@@ -2,6 +2,15 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+A bug-fix release. The database layout stays at version 7, so files made by 0.1.2 to 0.1.5 keep working. The `latest_runs` view changes. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces it in your file.
+
+- `latest_runs` now gives the run with the newest run date. Before, it gave the run with the highest number. That was the wrong run in two cases. The first is a run made later with `ahd run --date` for an old date. The second is an `ahd import` into a file that already held runs, because the imported old runs get higher numbers. The alert email script `send_alerts.py` then read the old run. If your own SQL uses `latest_runs`, it may now get another run than before. When two runs have the same run date, the one that was made last is the latest.
+- The warning "this run sees fewer components than the run before it" now compares with the run that was made last before this one. Before, it compared with the run that had the next lower number. After an `ahd import` that gave old runs new numbers, the next run could be compared with an old run and warn for no reason.
+- Two recipes in the DuckDB guide ordered runs by their number. They now order by run date: "Send only what is new since the last run" and "A history longer than 92 days". If you copied them, copy them again.
+- An answer from Adobe that is valid JSON but not in the usual form no longer ends a command with an error trace. This covers the lists of report suites, segments, metrics and dimensions, the details of a report suite and the list of login companies. An entry of a list that cannot be read, e.g., a metric without an ID, is left out. A whole answer that cannot be read, e.g., a list where one report suite belongs, ends the command with one line. In a run of several suites, the other suites go on. 0.1.4 already covered the report answers.
+
 ## 0.1.5 (2026-11-10)
 
 This release adds two commands and changes nothing that exists. The database layout stays at version 7, so files made by 0.1.2 to 0.1.4 keep working.
