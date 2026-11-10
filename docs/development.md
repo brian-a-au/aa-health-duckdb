@@ -53,6 +53,14 @@ Merge with a merge commit, e.g., `gh pr merge --merge`.
 
 CodeQL scans the code for every push to `main`, every pull request and once a week, with GitHub's security and quality queries. It checks the Python code, the report's page script `report.js` and the workflow files. Its results are under Security, Code scanning on GitHub.
 
+Dependabot keeps the dependencies up to date. `.github/dependabot.yml` sets it up:
+
+- Once a week it opens pull requests that update the Python packages in `uv.lock` and the actions in `.github/workflows/`.
+- The minor and patch updates of each kind come in one pull request. Each major update comes in its own pull request.
+- It also opens a pull request soon after GitHub learns of a security problem in a dependency. Its alerts are under Security, Dependabot on GitHub.
+
+These pull requests run the same checks as any other. Review each one and merge it with a merge commit when its checks pass.
+
 ## Release a new version
 
 The tool is on PyPI as [aa-health-duckdb](https://pypi.org/project/aa-health-duckdb/). Pushing a tag `vX.Y.Z` starts `.github/workflows/release.yml`. It works like the release workflow of sdr-visualizer, and has three jobs:
