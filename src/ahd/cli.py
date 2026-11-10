@@ -11,6 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import duckdb
 import requests
 
 from ahd.api.auth import NO_REPORT_SUITES, SignInError, SignInUnavailable
@@ -428,6 +429,10 @@ def _error_text(e: BaseException) -> str:
     """The one line that ahd prints for an error. A network error shows only its type."""
     if isinstance(e, requests.RequestException):
         return f"the request failed with a network error ({type(e).__name__})."
+    if isinstance(e, duckdb.Error):
+        # DuckDB's own first line says what went wrong, e.g., that the disk is full.
+        first = (str(e).splitlines() or [""])[0]
+        return f"the database could not be read or written ({type(e).__name__}). {first}".strip()
     return str(e)
 
 
@@ -522,7 +527,13 @@ def _run_suites(args: argparse.Namespace, factory: Callable[..., Any], store: St
         try:
             status = _run_suite(args, client, store, rsid)
             statuses[rsid] = status if status in WORST_LAST else "failed"
-        except (ConfigError, ApiError, SignInUnavailable, requests.RequestException) as e:
+        except (
+            ConfigError,
+            ApiError,
+            SignInUnavailable,
+            requests.RequestException,
+            duckdb.Error,
+        ) as e:
             # A wrong credential (any other SignInError) stops every suite, as each would fail.
             print(f"Error for {rsid}: {_error_text(e)}", file=sys.stderr)
             statuses[rsid] = "failed"
@@ -679,7 +690,7 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
         return _runs(args)
     except (ConfigError, ApiError, SignInError, SchemaVersionError, StoreError) as e:
         print(f"Error: {e}", file=sys.stderr)
-    except requests.RequestException as e:
+    except (requests.RequestException, duckdb.Error) as e:
         print(f"Error: {_error_text(e)}", file=sys.stderr)
     except KeyboardInterrupt:
         print(STOPPED, file=sys.stderr)

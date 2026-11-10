@@ -1903,7 +1903,7 @@ def _halved_last_week(usual):
     ]
 
 
-WEEK_PROBE = """
+SMALL_WEEK_PROBE = """
 var g = document.getElementById("granularity");
 g.value = "week";
 g.dispatchEvent(new Event("change"));
@@ -1924,7 +1924,7 @@ def test_the_weekly_view_skips_a_component_with_a_small_average_week(chrome, tmp
     # Event 1 has 2 a day, so its average week is 14. Every daily view skips it, because its
     # weekday average is under 10, and the weekly view must skip it too. Event 2 has 20 a day.
     page = _page_of(tmp_path, [_halved_last_week(2.0), _halved_last_week(20.0)])
-    got = run_probe(chrome, page, WEEK_PROBE, tmp_path)
+    got = run_probe(chrome, page, SMALL_WEEK_PROBE, tmp_path)
     assert "Large drop" not in got["rows"]["Event 1"]
     assert "Large drop" in got["rows"]["Event 2"]
     assert got["flagged"] == ["Event 2"]

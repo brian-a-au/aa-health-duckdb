@@ -95,7 +95,7 @@ def _build(values: dict[str, str | None], source: str) -> Credentials:
     missing = [k for k in _KEYS if not values.get(k)]
     if missing:
         raise ConfigError(f"Missing credential keys in {source}: " + ", ".join(missing))
-    return Credentials(**{k: values[k] for k in _KEYS}, source=source)
+    return Credentials(**{k: values[k] or "" for k in _KEYS}, source=source)
 
 
 def load_profile(name: str) -> Credentials:

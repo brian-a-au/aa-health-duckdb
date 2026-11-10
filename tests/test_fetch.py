@@ -790,6 +790,23 @@ def test_ctrl_c_drops_the_requests_that_have_not_started(store):
     assert store.list_runs()[0]["status"] == "failed"
 
 
+def test_ctrl_c_stops_the_client_and_an_ordinary_error_does_not(store):
+    """After Ctrl-C the workers must not keep trying. After an ordinary error the client stays
+    usable, e.g., for the next suite of the same run."""
+    stops = []
+    for error in (KeyboardInterrupt, RuntimeError):
+        fake = fake_for("rs1", events(1), custom_dims())
+        fake.stop = lambda: stops.append(1)
+
+        def stop(message, error=error):
+            if message.startswith("Daily trends"):
+                raise error
+
+        with pytest.raises(error):
+            run_fetch(fake, store, opts(), progress=stop)
+    assert stops == [1]
+
+
 def test_a_batch_that_is_not_json_becomes_issues(store):
     from ahd.api.client import NOT_JSON
 

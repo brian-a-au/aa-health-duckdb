@@ -26,9 +26,9 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    "requests",
+    "requests>=2.31",
     "duckdb>=2.0",
-    "jinja2",
+    "jinja2>=3.1",
     # Windows has no time zone files of its own. zoneinfo reads them from this package.
     "tzdata",
 ]
@@ -45,9 +45,11 @@ ahd = "ahd.cli:main"
 
 [dependency-groups]
 dev = [
+    "mypy>=2.4.1",
     "pytest",
     "pytest-cov>=7.1.0",
     "ruff",
+    "types-requests>=2.33.0.20261030",
 ]
 
 [build-system]
@@ -84,3 +86,10 @@ source = ["ahd"]
 show_missing = true
 precision = 2
 fail_under = 95.00
+
+# The type check covers the tool itself. The tests use fakes in place of typed objects.
+[tool.mypy]
+files = ["src/ahd"]
+python_version = "3.12"
+warn_unused_ignores = true
+warn_redundant_casts = true

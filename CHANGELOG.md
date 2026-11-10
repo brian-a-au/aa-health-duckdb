@@ -15,6 +15,9 @@ The database layout stays at version 7.
 - A chart of very small values, e.g., up to 0.2, now gives each line its own label. Before, two lines could both read "0.1".
 - The report no longer scrolls sideways in a window between about 600 and 690 px wide.
 - The report's Content Security Policy now also blocks a changed base address and any form target.
+- After Ctrl-C, a request that was waiting to try again, e.g., after a rate limit, is no longer tried. Before, the command could take a minute or more to end.
+- A database error in the middle of a run, e.g., a full disk, is now one line. In a run of several suites, the other suites go on. Before, the command ended with an error trace.
+- The tool now asks for `requests` 2.31 or newer and `jinja2` 3.1 or newer.
 - An answer from Adobe that is valid JSON but not a report, e.g., one with an empty value where a number belongs, no longer ends the run with an error trace. The requests that got such an answer are listed in the report's status section under "Adobe sent an answer that could not be read", and the run ends "partial" with the rest of its data.
 - When Adobe sends a day in a form the tool does not know, the tool reads the day from Adobe's own number for it. That reading was wrong by one month, and it failed for every day in January. It is now correct. Adobe's usual answers were not affected.
 - `ahd check` without `--rsid` now counts every report suite. Before, it stopped counting at 1,000.
