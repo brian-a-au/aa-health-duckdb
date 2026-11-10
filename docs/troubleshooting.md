@@ -108,7 +108,7 @@ The database data/ahd.duckdb is in use by another program
 
 Only one program can write to a DuckDB file at a time. While a program writes to it, no other program can open it. While a program reads it, nothing can write to it. Some examples:
 
-- While `ahd run`, `ahd individual` or `ahd prune` works on the file, wait for it to finish.
+- While `ahd run`, `ahd individual`, `ahd prune` or `ahd import` works on the file, wait for it to finish.
 - A `duckdb` session that is still open on the file also blocks `ahd run`. Close it, then try again. `ahd runs` and `ahd render` only read, so they work while a `duckdb -readonly` session is open.
 
 DuckDB's own message for this is "Could not set lock on file".

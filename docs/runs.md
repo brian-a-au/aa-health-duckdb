@@ -78,7 +78,7 @@ On Windows, use `ren data\ahd.duckdb ahd-old.duckdb` for the first line. The old
 
 See [Usage](usage.md#export-and-import) for both commands, and [Troubleshooting](troubleshooting.md#the-database-was-made-by-a-different-version) for the message.
 
-When a new version of the tool changes only the views or the `alerts()` macro, e.g., to fix an alert rule, you keep your file. The next `ahd run`, `ahd individual` or `ahd prune` replaces the views and the macro, and your stored runs then follow the new rules. `ahd render` and `ahd runs` open the file read-only, so they do not replace them. If you go back to an older version of the tool, from 0.1.3 on, its next write puts back its own views and macro. 0.1.2 and earlier leave the views as they find them.
+When a new version of the tool changes only the views or the `alerts()` macro, e.g., to fix an alert rule, you keep your file. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces the views and the macro, and your stored runs then follow the new rules. `ahd render` and `ahd runs` open the file read-only, so they do not replace them. If you go back to an older version of the tool, from 0.1.3 on, its next write puts back its own views and macro. 0.1.2 and earlier leave the views as they find them.
 
 ## Looking inside
 

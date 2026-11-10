@@ -65,7 +65,7 @@ duckdb -readonly data/ahd.duckdb
 
 `-readonly` means your queries can never change or delete data. Use it for everything in this guide.
 
-While `ahd run`, `ahd individual` or `ahd prune` writes to a file, no other program can open it. DuckDB stops with "Could not set lock on file". Wait for the command to finish, then try again. In the same way, an open `duckdb` session blocks `ahd run` until you close it.
+While `ahd run`, `ahd individual`, `ahd prune` or `ahd import` writes to a file, no other program can open it. DuckDB stops with "Could not set lock on file". Wait for the command to finish, then try again. In the same way, an open `duckdb` session blocks `ahd run` until you close it.
 
 ### Pick an output format
 
@@ -84,10 +84,15 @@ The `duckdb` command can print a result in the format you need:
 ### Or use the notebook in your browser
 
 ```
-duckdb -readonly -ui data/ahd.duckdb
+duckdb -ui -cmd "ATTACH 'data/ahd.duckdb' AS ahd (READ_ONLY); USE ahd;"
 ```
 
 This opens DuckDB's notebook interface in your browser, with a list of tables and a cell for each query. It installs DuckDB's `ui` extension the first time, and it loads the interface from DuckDB's website. The data stays on your computer.
+
+- **The file must exist.** Make a run first, and put the path of your own file in the command. See [Find your file](#find-your-file). With a path that has no file, DuckDB stops with "database does not exist".
+- **Do not add `-readonly` here.** The notebook saves its own notebooks in a small database in your home folder, and `-readonly` stops it from doing that. The page then shows "Initialization Error". The command above opens only your `ahd` file read-only, with `ATTACH ... (READ_ONLY)`, so your queries still cannot change it.
+- **The terminal stays open.** The notebook works as long as the `duckdb` prompt in the terminal is open. Type `.quit` or press Ctrl-D there to stop it. While it is open, `ahd run` cannot write to the file.
+- **The file is named `ahd` in the notebook.** It is in the list of attached databases on the left, and `USE ahd` makes it the default, so the queries in this guide work as written.
 
 ## What is in the file
 
@@ -111,7 +116,7 @@ To see every column of a table, run `DESCRIBE daily_values`. To see a quick prof
 
 Every file comes with two views and one table macro. A view is a saved query that you use like a table. A table macro is a saved query that takes options. They use the same rules as the report, and the tests check that they agree.
 
-When a new version of `ahd` changes these rules, the next `ahd run`, `ahd individual` or `ahd prune` replaces the views and the macro in your file. Until then, your own SQL and the [alert email script](#email-recipes) use the old rules. If you built your own views on top of `component_days`, they follow the new rules after the update.
+When a new version of `ahd` changes these rules, the next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces the views and the macro in your file. Until then, your own SQL and the [alert email script](#email-recipes) use the old rules. If you built your own views on top of `component_days`, they follow the new rules after the update.
 
 ### `latest_runs`
 
@@ -141,7 +146,7 @@ One row per run, component and full day, with everything the report computes. Th
 - `usual`: the weekday average, which is the average of the same weekday in the 12 weeks before the day. Only the last 7 days of the run have one, as in the report. An older day falls inside those 12 weeks, so its `usual` is empty.
 - `pct_vs_usual`: the change from the weekday average, e.g., -0.25 for 25 percent below. It is empty when `usual` is empty or 0.
 - `zero`: the value was 0
-- `unused`: the value was 0 on every day of the run, so the component never collected data
+- `unused`: the value was 0 or empty on every day of the run, so the component never collected data
 - `is_yesterday`: the row is for the last full day of the run
 
 ### `alerts(run, threshold := 0.30, spike_threshold := 0.50, min_usual := 10, for_day := NULL)`
@@ -440,28 +445,30 @@ With one run, it covers 91 full days. With a run each month for a year, it cover
 
 ### Values that dropped out of the top 100
 
-This query finds, for each Individual Component Summary pair, the values in the top 20 of the previous 90 days that are not in yesterday's top 100. A value that vanishes like this often points to a broken page or a changed tracking value.
+This query finds, for each Individual Component Summary pair, the values in the top 20 of the previous 90 days that are not in yesterday's top 100. A value that vanishes like this often points to a broken page or a changed tracking value. It reads the latest run of each suite, so a value is listed once and not once for every stored run.
 
 ```sql
-SELECT p.dimension_name || ' by ' || p.metric_name AS pair,
+SELECT r.rsid_name AS suite, p.dimension_name || ' by ' || p.metric_name AS pair,
     h.rank AS rank_before, h.item, h.value AS value_before
-FROM top_items h JOIN pairs p USING (run_id, pair)
-WHERE h.period = 'historical' AND h.rank <= 20
+FROM latest_runs r
+JOIN top_items h USING (run_id)
+JOIN pairs p USING (run_id, pair)
+WHERE r.segment_id IS NULL AND h.period = 'historical' AND h.rank <= 20
   AND NOT EXISTS (
       FROM top_items c
       WHERE c.run_id = h.run_id AND c.pair = h.pair
         AND c.period = 'current' AND c.item = h.item
   )
-ORDER BY pair, h.rank;
+ORDER BY suite, pair, h.rank;
 ```
 
 ```
-┌─────────────────────┬─────────────┬──────────────────────────────────────────────────────────┬──────────────┐
-│        pair         │ rank_before │                           item                           │ value_before │
-├─────────────────────┼─────────────┼──────────────────────────────────────────────────────────┼──────────────┤
-│ Page by Occurrences │          12 │ https://www.adobestore.com/products/adobe-staff-event-h… │       3035.0 │
-│ Page by Occurrences │          13 │ https://www.adobestore.com/products/p-adb328/adb328      │       3017.0 │
-└─────────────────────┴─────────────┴──────────────────────────────────────────────────────────┴──────────────┘
+┌─────────────┬─────────────────────┬─────────────┬──────────────────────────────────────────────────────────┬──────────────┐
+│    suite    │        pair         │ rank_before │                           item                           │ value_before │
+├─────────────┼─────────────────────┼─────────────┼──────────────────────────────────────────────────────────┼──────────────┤
+│ Adobe Store │ Page by Occurrences │          12 │ https://www.adobestore.com/products/adobe-staff-event-h… │       3035.0 │
+│ Adobe Store │ Page by Occurrences │          13 │ https://www.adobestore.com/products/p-adb328/adb328      │       3017.0 │
+└─────────────┴─────────────────────┴─────────────┴──────────────────────────────────────────────────────────┴──────────────┘
 ```
 
 ## Export and share
@@ -526,3 +533,4 @@ with duckdb.connect("data/ahd.duckdb", read_only=True) as con:
 | `regexp_matches` | matches components to owners by pattern |
 | `-markdown`, `-html`, `-json`, `-csv` | prints results ready for Slack, email or scripts |
 | `-ui` | a notebook in your browser |
+| `-cmd "..."` | runs SQL before the prompt or the notebook starts |
