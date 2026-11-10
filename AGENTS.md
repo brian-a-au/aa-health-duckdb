@@ -32,7 +32,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 
 | Path | What it does |
 |---|---|
-| `src/ahd/cli.py` | The `ahd` command: `check`, `suites`, `segments`, `run`, `individual`, `render`, `runs`, `prune` |
+| `src/ahd/cli.py` | The `ahd` command: `check`, `suites`, `segments`, `run`, `individual`, `render`, `runs`, `prune`, `export`, `import` |
 | `src/ahd/config.py` | Reads credentials from a profile, the `AHD_*` variables or a config file |
 | `src/ahd/api/auth.py` | OAuth Server-to-Server sign-in, with a plain message for each way it can fail |
 | `src/ahd/api/client.py` | The only HTTP client for Adobe: retries, backoff, and one sign-in renewal across threads |
@@ -42,6 +42,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 | `src/ahd/fetch.py` | One run: catalog, anomaly probe, batched trends, and Individual Component Summary pairs |
 | `src/ahd/lookup.py` | Lists suites and segments, and turns names into IDs |
 | `src/ahd/store.py`, `src/ahd/sql/views.sql` | The DuckDB tables, views and the `alerts` table macro |
+| `src/ahd/transfer.py` | `ahd export` and `ahd import`: copies runs between files by column name, also from an older layout |
 | `src/ahd/summary.py` | Turns a stored run into the data the page shows. Every number is computed in SQL |
 | `src/ahd/render/` | The Jinja template, CSS and JavaScript of the HTML report |
 | `tests/fakes.py` | A fake Adobe client. Tests use it instead of the network |
@@ -71,7 +72,8 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 
 ### The database
 
-- The tables are in `store.py`. When you change a table, raise `SCHEMA_VERSION`. The tool refuses a file with another version and tells the user to start a new file. There is no upgrade code for tables, on purpose.
+- The tables are in `store.py`. When you change a table, raise `SCHEMA_VERSION`. The tool refuses a file with another version and tells the user to start a new file. There is no upgrade code for tables, on purpose. Users keep their runs with `ahd import`, which copies the runs of the old file into the new one by column name.
+- A table change that only adds or removes columns needs no change to `ahd import`. Any other change, e.g., a renamed column or a column whose meaning changed, needs a conversion in `transfer.py` with a test. If the old runs cannot be converted, raise `IMPORT_FROM_VERSION` in `store.py` and say so in `CHANGELOG.md`. Add a test like `test_runs_of_an_older_layout_are_imported_by_column_name` in `tests/test_transfer.py` for every new layout.
 - The views and the `alerts` macro are in `sql/views.sql`. When you change them, raise `VIEWS_VERSION` in `store.py` and put the new version and hash in `test_views_version_is_raised_when_views_sql_changes` in `tests/test_store.py`. The test fails until you do. When the tool opens a file for writing, it replaces the views and the macro of a file with another views version. The views in a file then follow the same rules as the version of the tool that last wrote to it, also after going back to an older version.
 - Every statement in `views.sql` must use `CREATE OR REPLACE`. To remove a view or the macro, add a `DROP ... IF EXISTS` statement for it.
 - A view must only use columns the tables already have. If it needs a new column, that is a table change and needs a new `SCHEMA_VERSION`.

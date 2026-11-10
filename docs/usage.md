@@ -16,6 +16,7 @@ This page describes every `ahd` command, with its options and exit codes. Add `-
 - [render](#render): rebuild a report with no API calls
 - [runs](#runs): list stored runs
 - [prune](#prune): delete stored runs
+- [export and import](#export-and-import): back up stored runs, or copy them into another file
 - [Exit codes](#exit-codes)
 - [Defaults](#defaults)
 
@@ -40,7 +41,7 @@ ahd runs                           # list what is stored
 | `--db PATH` | Uses this database file. For the commands that read or write a database. |
 | `--verbose` | Writes debug detail to stderr. Put it before the command, e.g., `ahd --verbose run ...`. |
 
-The commands that sign in are `check`, `suites`, `segments`, `run` and `individual`. Each of them first prints where the credential came from, e.g., "Signed in using profile prod". The others never call Adobe. `runs` and `render` only read the database. `prune` deletes runs from it. Only `run` creates a new database. The other commands stop when the file does not exist.
+The commands that sign in are `check`, `suites`, `segments`, `run` and `individual`. Each of them first prints where the credential came from, e.g., "Signed in using profile prod". The others never call Adobe. `runs`, `render` and `export` only read the database. `prune` deletes runs from it, and `import` adds runs to it. Only `run` and `import` create a new database. The other commands stop when the file does not exist.
 
 Where a command takes a report suite, segment, dimension or metric, it accepts an ID or a name. See [How IDs and names are matched](#how-ids-and-names-are-matched).
 
@@ -204,6 +205,28 @@ ahd prune --before 2026-10-01 --yes
 ```
 
 It lists the runs it will delete and asks you to type y first. `--yes` skips the question. When there is no input to read the answer from, e.g., in a scheduled job, it deletes nothing and exits with 1, so add `--yes` there. A run that is still marked "running" is kept unless you add `--force`. Reports that are already written stay in the reports folder. See [How runs are stored](runs.md#deleting-runs).
+
+## export and import
+
+`export` writes every stored run to a folder, as one Parquet file for each table and a `manifest.json` file. Parquet is a file format for tables that DuckDB, Python and most data tools read. The folder must be new or empty.
+
+```
+ahd export --out backup/2026-11
+```
+
+`import` copies the runs of another ahd database, or of a folder that `export` wrote, into the database that `--db` names. It makes that database when it does not exist.
+
+```
+ahd import data/ahd-old.duckdb
+ahd import backup/2026-11 --db data/other.duckdb
+```
+
+- A run that the database already holds is left out, so you can import the same source again.
+- The runs keep their numbers when those numbers are free. If one is taken, each imported run gets the next free number, and the command lists the changes.
+- If any part fails, nothing is imported.
+- Neither command changes the source, and neither calls Adobe.
+
+`export` also reads a file that this version of the tool refuses because of its layout. `import` is how you keep your runs when a new version changes the layout. See [How runs are stored](runs.md#layout-versions).
 
 ## Exit codes
 

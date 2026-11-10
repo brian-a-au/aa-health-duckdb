@@ -2,6 +2,15 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+This release adds two commands. The database layout stays at version 7.
+
+- `ahd export --out FOLDER` writes every stored run to a folder of Parquet files, e.g., as a backup or for other tools. It also reads a file that the tool refuses because of its layout.
+- `ahd import SOURCE` copies the runs of another ahd database, or of a folder that `ahd export` wrote, into your database. It leaves out the runs that your database already holds. The runs keep their numbers when those are free.
+- A change to the tables no longer costs you your stored runs. The tool still refuses a file with an older layout, and it still never changes such a file. Its message now says how to keep the runs: rename the file, then run `ahd import` with it. This works for layout 7 and newer, which means files from 0.1.2 on.
+- The message for a file from a newer version of the tool now says to update the tool.
+
 ## 0.1.4 (2026-11-10)
 
 A bug-fix release. The database layout stays at version 7, so files made by 0.1.2 and 0.1.3 keep working. The views and the `alerts()` macro do not change.

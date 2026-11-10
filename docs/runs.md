@@ -41,7 +41,7 @@ With profiles, data from different organizations never shares a file. Runs for d
 - Run numbers are never reused, so a new run never gets the number of a deleted one.
 - Reports that are already written stay in the reports folder.
 
-To start over, delete the file.
+To start over, delete the file. To keep a copy of the runs first, run `ahd export --out FOLDER`. See [Usage](usage.md#export-and-import).
 
 ## What is inside
 
@@ -63,7 +63,20 @@ The file also holds two views and a table macro for your own SQL: `latest_runs`,
 
 ## Layout versions
 
-When a new version of the tool changes the tables, it refuses a file made with the old tables and asks you to start a new file. It does not upgrade the tables of old files. See [Troubleshooting](troubleshooting.md#the-database-was-made-by-a-different-version).
+When a new version of the tool changes the tables, it refuses a file made with the old tables. It never changes the tables of an old file. You start a new file and copy the old runs into it with `ahd import`:
+
+```
+mv data/ahd.duckdb data/ahd-old.duckdb
+ahd import data/ahd-old.duckdb
+```
+
+On Windows, use `ren data\ahd.duckdb ahd-old.duckdb` for the first line. The old file stays as it was, so you can keep it as a backup or delete it.
+
+- `ahd import` copies each table by column name. A column that only the new layout has stays empty for the old runs.
+- It reads layout 7 and newer. Layout 7 came with version 0.1.2. A file from 0.1.0 or 0.1.1 cannot be imported.
+- If a later layout cannot take the runs of an older one, the changelog for that release says so.
+
+See [Usage](usage.md#export-and-import) for both commands, and [Troubleshooting](troubleshooting.md#the-database-was-made-by-a-different-version) for the message.
 
 When a new version of the tool changes only the views or the `alerts()` macro, e.g., to fix an alert rule, you keep your file. The next `ahd run`, `ahd individual` or `ahd prune` replaces the views and the macro, and your stored runs then follow the new rules. `ahd render` and `ahd runs` open the file read-only, so they do not replace them. If you go back to an older version of the tool, from 0.1.3 on, its next write puts back its own views and macro. 0.1.2 and earlier leave the views as they find them.
 

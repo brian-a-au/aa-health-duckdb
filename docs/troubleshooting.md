@@ -94,7 +94,11 @@ When Adobe asks for a longer wait with a Retry-After header, the tool waits that
 The database data/ahd.duckdb was made by a different version of ahd.
 ```
 
-A newer version of the tool changed the tables of the file. The tool does not upgrade the tables of old files. Delete the file, or choose another one with `--db`, and run again.
+The rest of the message says what to do. There are three cases:
+
+- **The file is from an older version, and its runs can be kept.** The message names two steps: rename the file, then run `ahd import` with the renamed file. The tool then makes a new file and copies the old runs into it. See [How runs are stored](runs.md#layout-versions).
+- **The file is from a newer version.** Update the tool, or choose another file with `--db`.
+- **The file is too old to import.** This holds for files from 0.1.0 and 0.1.1. Delete the file, or choose another one with `--db`, and run again.
 
 ### The database is in use by another program
 
