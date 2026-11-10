@@ -288,3 +288,71 @@ def test_send_alerts_reads_the_newest_run_date_not_the_highest_run_number(
     assert mod.main([str(db), "rs1"]) == 2
     assert "No alerts for rs1." in capsys.readouterr().out
     assert not (tmp_path / "alerts.eml").exists()
+
+
+GUIDE = EXAMPLES.parent / "duckdb.md"
+
+
+def _guide_blocks(language):
+    """The code blocks of the DuckDB guide in this language, with the line each starts on.
+
+    The language "" gives the blocks without one, e.g., the commands.
+    """
+    blocks = []
+    opened = None
+    for number, line in enumerate(GUIDE.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.startswith("```"):
+            if opened is not None:
+                opened[2].append(line)
+        elif opened is None:
+            opened = (number, line[3:].strip(), [])
+        else:
+            if opened[1] == language:
+                blocks.append((opened[0], "\n".join(opened[2]) + "\n"))
+            opened = None
+    assert opened is None, "a code block in docs/duckdb.md is not closed"
+    return blocks
+
+
+def test_every_sql_example_in_the_duckdb_guide_runs(tmp_path, monkeypatch):
+    """Each SQL block of the guide runs on a read-only file, as the guide tells the reader to.
+
+    Two kinds of block are left out. A block with INSTALL needs the network, and a block with
+    ATTACH needs the files of other profiles.
+    """
+    import duckdb
+
+    monkeypatch.chdir(tmp_path)
+    db = tmp_path / "ahd.duckdb"
+    s = Store.open(db)
+    _add_run(s, 5_000_000.0, None, rsid="my_suite")
+    _add_run(s, 24_000_000.0, None, rsid="my_suite")
+    s.con.close()
+    [owners] = [b for _, b in _guide_blocks("") if b.startswith("pattern,owner")]
+    (tmp_path / "owners.csv").write_text(owners, encoding="utf-8")
+    ran = 0
+    for line, sql in _guide_blocks("sql"):
+        if "INSTALL" in sql or "ATTACH" in sql:
+            continue
+        with duckdb.connect(str(db), read_only=True) as con:
+            try:
+                con.execute(sql)
+            except duckdb.Error as e:
+                pytest.fail(f"The SQL example on line {line} of docs/duckdb.md fails: {e}")
+        ran += 1
+    assert ran >= 10
+    assert (tmp_path / "days.parquet").is_file() and (tmp_path / "alerts.csv").is_file()
+
+
+def test_the_notebook_command_in_the_guide_does_not_open_the_session_read_only():
+    """duckdb -readonly -ui shows "Initialization Error", because the notebook cannot save its
+    own state. The guide attaches the ahd file read-only instead."""
+    commands = [
+        line
+        for _, block in _guide_blocks("")
+        for line in block.splitlines()
+        if line.startswith("duckdb") and " -ui" in line
+    ]
+    assert commands, "the guide should show how to start the notebook"
+    for command in commands:
+        assert "-readonly" not in command and "(READ_ONLY)" in command

@@ -2,6 +2,15 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+Fixes to the docs. The tool works the same as in 0.1.6.
+
+- The DuckDB guide's command for the notebook in your browser did not work. `duckdb -readonly -ui` opens a page that shows "Initialization Error", because the notebook cannot save its own notebooks in a read-only session. The guide now starts the notebook with `duckdb -ui -cmd "ATTACH 'data/ahd.duckdb' AS ahd (READ_ONLY); USE ahd;"`, which still keeps your file read-only. It also says that the file must exist, where to find your file, and that the terminal stays open while you use the notebook.
+- The recipe "Values that dropped out of the top 100" listed each value once for every stored run. It now reads the latest run of each suite and names the suite.
+- The docs now name `ahd import` among the commands that write to the file and that replace the views and the macro.
+- The guide said that `unused` means a value of 0 on every day. It means a value of 0 or no value on every day.
+
 ## 0.1.6 (2026-11-10)
 
 A bug-fix release. The database layout stays at version 7, so files made by 0.1.2 to 0.1.5 keep working. The `latest_runs` view changes. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces it in your file.
