@@ -6,7 +6,7 @@ This file tells coding agents how to work on this repository. People can read it
 
 `ahd` checks the health of an Adobe Analytics report suite. It reads data from the Adobe Analytics 2.0 API, stores each run in a local DuckDB file, and writes one self-contained HTML report. It is an unofficial alternative to Adobe's Excel workbook "Analytics Health Dashboard". It may differ from the workbook when that gives a better design, but the counts must stay correct.
 
-The repository is public, and the tool is on PyPI as `aa-health-duckdb`. The command and the Python package are both `ahd`. Until version 1.0.0, a minor release may change the database layout or the command options. Record each change for users in `CHANGELOG.md`. Do not change the version, tag or publish a release unless the maintainer asks. "Release a new version" in `docs/development.md` gives the steps.
+The repository is public, and the tool is on PyPI as `aa-health-duckdb`. The command and the Python package are both `ahd`. Until version 1.0.0, a minor release may change the database layout or the command options. A patch release holds fixes and additions that break nothing, e.g., a new command. Record each change for users in `CHANGELOG.md`. Do not change the version, tag or publish a release unless the maintainer asks. "Release a new version" in `docs/development.md` gives the steps.
 
 ## Commands
 

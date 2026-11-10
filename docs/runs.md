@@ -38,7 +38,7 @@ With profiles, data from different organizations never shares a file. Runs for d
 
 - It deletes each run from every table at once. If any part fails, nothing is deleted.
 - The file does not get smaller afterwards, but DuckDB reuses the freed space for new runs.
-- Run numbers are never reused, so a new run never gets the number of a deleted one.
+- Run numbers are never reused, so a new run never gets the number of a deleted one. Only `ahd import` can bring a run with such a number back into the file.
 - Reports that are already written stay in the reports folder.
 
 To start over, delete the file. To keep a copy of the runs first, run `ahd export --out FOLDER`. See [Usage](usage.md#export-and-import).

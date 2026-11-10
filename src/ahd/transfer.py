@@ -68,10 +68,17 @@ def _columns(con: duckdb.DuckDBPyConnection, relation: str) -> list[str]:
 
 def _open_error(path: Path, e: duckdb.Error) -> StoreError:
     text = str(e).lower()
-    if any(words in text for words in LOCKED_WORDS) or "file handle conflict" in text:
+    if "file handle conflict" in text:
+        # DuckDB's words for a file that this same program already has open.
         return StoreError(
-            f"The database {path} is in use by another program, or it is the file that --db "
-            "names. Close that program, or choose another file, then try again."
+            f"{path} is the database that the runs would go into. Choose another file to "
+            "import, or another database with --db."
+        )
+    if any(words in text for words in LOCKED_WORDS):
+        return StoreError(
+            f"The database {path} is in use by another program, e.g., a DuckDB session or "
+            "another ahd command that writes to it. Close that program or wait for it to "
+            "finish, then try again."
         )
     return StoreError(f"The file {path} could not be read as an ahd database.")
 

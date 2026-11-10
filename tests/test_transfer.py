@@ -212,7 +212,7 @@ def test_sources_that_cannot_be_imported_get_a_plain_error(tmp_path, source):
     new = Store.open(target)
     with pytest.raises(StoreError, match="nothing at"):
         import_runs(new, tmp_path / "missing.duckdb")
-    with pytest.raises(StoreError, match="in use by another program, or it is the file"):
+    with pytest.raises(StoreError, match="is the database that the runs would go into"):
         import_runs(new, target)
     (tmp_path / "empty").mkdir()
     with pytest.raises(StoreError, match="not a folder that ahd export wrote"):
@@ -281,6 +281,38 @@ def test_the_commands_say_what_they_did(tmp_path, source, capsys):
     assert main(["render", "--run", "3", "--db", str(target), "--out", str(tmp_path / "r")]) == 0
     assert main(["export", "--db", str(path), "--out", str(out)]) == 1
     assert "already holds files" in capsys.readouterr().err
+
+
+def test_a_failed_import_leaves_no_new_database_behind(tmp_path, source, capsys):
+    path, _ = source
+    target = tmp_path / "sub" / "new.duckdb"
+    assert main(["import", str(tmp_path / "missing.duckdb"), "--db", str(target)]) == 1
+    assert "There is nothing at" in capsys.readouterr().err and not target.exists()
+    (tmp_path / "empty").mkdir()
+    assert main(["import", str(tmp_path / "empty"), "--db", str(target)]) == 1
+    assert "not a folder that ahd export wrote" in capsys.readouterr().err
+    assert not target.exists()
+    # A database that was there before a failed import is kept.
+    assert main(["import", str(path), "--db", str(target)]) == 0
+    assert main(["import", str(tmp_path / "empty"), "--db", str(target)]) == 1
+    capsys.readouterr()
+    assert main(["runs", "--db", str(target)]) == 0
+    assert "rs3" in capsys.readouterr().out
+
+
+def test_a_source_that_another_program_holds_open_is_named(tmp_path, source):
+    path, _ = source
+    new = Store.open(tmp_path / "new.duckdb")
+
+    def locked(*a, **kw):
+        raise duckdb.IOException("IO Error: Could not set lock on file")
+
+    class Con:
+        execute = staticmethod(locked)
+
+    with pytest.raises(StoreError, match="in use by another program"):
+        transfer._file_source(Con(), path)
+    new.con.close()
 
 
 def test_import_names_the_columns_it_left_out(tmp_path, source, capsys):

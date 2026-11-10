@@ -675,11 +675,21 @@ def _export(args: argparse.Namespace) -> int:
 
 
 def _import(args: argparse.Namespace) -> int:
-    store = Store.open(_db_path(args))
+    path = _db_path(args)
+    if not args.source.exists():
+        # Checked before the database is opened, so a wrong name leaves no new empty file.
+        raise StoreError(f"There is nothing at {args.source} to import.")
+    is_new = not path.exists()
+    store = Store.open(path)
     try:
         result = import_runs(store, args.source)
-    finally:
+    except BaseException:
         store.con.close()
+        if is_new:
+            # The import made this file and put nothing into it. Do not leave it behind.
+            path.unlink(missing_ok=True)
+        raise
+    store.con.close()
     print(f"Imported {_count(len(result.numbers), 'run')} from {args.source}.")
     if result.already_there:
         print(f"Left out {_count(result.already_there, 'run')} that this database already holds.")
