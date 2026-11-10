@@ -354,8 +354,8 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     if args.rsid:
         args.rsid = resolve_suite(client, args.rsid)
     if not args.rsid:
-        suites = client.get("/reportsuites/collections/suites", {"limit": 1000}) or {}
-        count = len(suites.get("content") or [])
+        # list_suites reads every page, so a company with over 1,000 suites is counted in full.
+        count = len(list_suites(client))
         print(f"Company ID: {client.company_id}")
         print(f"Report suites visible: {count}")
         if count == 0:

@@ -154,7 +154,13 @@ class Store:
         if not (read_only or create) and not path.exists():
             raise StoreError(f"There is no database at {path}. Choose the file with --db.")
         if not read_only:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                raise StoreError(
+                    f"The folder {path.parent} for the database could not be made "
+                    f"({e.strerror or type(e).__name__}). Choose another file with --db."
+                ) from None
         con = _connect(path, read_only)
         try:
             tables = {
@@ -420,7 +426,8 @@ class Store:
         """Remove one pair and every row stored for it, all or nothing.
 
         Used when ahd individual stops part way, so that the same pair can be tried again, and
-        when it replaces a pair that stored nothing. series_id is the component_id of the pair's daily trend, e.g. "individual/2".
+        when it replaces a pair that stored nothing. series_id is the component_id of the pair's
+        daily trend, e.g. "individual/2".
         """
         self.con.execute("BEGIN TRANSACTION")
         try:

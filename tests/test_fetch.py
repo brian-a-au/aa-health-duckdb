@@ -16,7 +16,7 @@ from fakes import (
 )
 
 from ahd.api.client import ApiError
-from ahd.api.reports import Column
+from ahd.api.reports import MALFORMED, Column
 from ahd.config import ConfigError
 from ahd.dates import RunWindow
 from ahd.fetch import RunOptions, fetch_catalog, probe_anomaly, run_fetch
@@ -801,6 +801,43 @@ def test_a_batch_that_is_not_json_becomes_issues(store):
     )
     rid = run_fetch(fake, store, opts())
     assert "invalid_response" in issue_codes(store, rid)
+
+
+def test_a_batch_of_the_wrong_shape_becomes_issues_and_the_run_goes_on(store):
+    """A 200 answer that is JSON but not a report must not end the run with an error trace."""
+    bad = {"rows": [{"itemId": "1260708", "value": "Aug 8, 2026", "data": [None]}]}
+    first_batch = after_probe(lambda b: is_trend(b) and "metrics/event1" in metric_ids(b))
+    fake = fake_for("rs1", events(3), custom_dims(), posts=[(first_batch, bad)])
+    rid = run_fetch(fake, store, opts(batch_size=2))
+    assert store.get_run(rid)["status"] == "partial"
+    rows = store.con.execute(
+        "SELECT component_id, message FROM issues WHERE run_id = ? AND code = 'invalid_response'",
+        [rid],
+    ).fetchall()
+    assert rows and all(m == MALFORMED for _, m in rows)
+    # The other batches were still stored.
+    assert store.con.execute(
+        "SELECT count(*) FROM daily_values WHERE run_id = ?", [rid]
+    ).fetchone()[0]
+
+
+@pytest.mark.parametrize("kind", ["ranked", "breakdown"])
+def test_a_pair_answer_of_the_wrong_shape_becomes_an_issue(store, kind):
+    def match(body):
+        if is_trend(body):
+            return False
+        return bool(body["metricContainer"].get("metricFilters")) == (kind == "breakdown")
+
+    fake = fake_for("rs1", events(1), custom_dims(), posts=[(match, {"rows": [{"data": []}]})])
+    rid = run_fetch(fake, store, opts())
+    assert store.get_run(rid)["status"] == "partial"
+    messages = [
+        m
+        for (m,) in store.con.execute(
+            "SELECT message FROM issues WHERE run_id = ? AND code = 'invalid_response'", [rid]
+        ).fetchall()
+    ]
+    assert messages and all(m.endswith(MALFORMED) for m in messages)
 
 
 def test_a_run_records_whether_date_was_given(store):

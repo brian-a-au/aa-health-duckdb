@@ -2,6 +2,15 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+The database layout stays at version 7.
+
+- An answer from Adobe that is valid JSON but not a report, e.g., one with an empty value where a number belongs, no longer ends the run with an error trace. The requests that got such an answer are listed in the report's status section under "Adobe sent an answer that could not be read", and the run ends "partial" with the rest of its data.
+- When Adobe sends a day in a form the tool does not know, the tool reads the day from Adobe's own number for it. That reading was wrong by one month, and it failed for every day in January. It is now correct. Adobe's usual answers were not affected.
+- `ahd check` without `--rsid` now counts every report suite. Before, it stopped counting at 1,000.
+- When the folder for the database cannot be made, e.g., because `--db` names a path through a file, the tool now says so in one line. Before, it ended with an error trace.
+
 ## 0.1.3 (2026-11-10)
 
 A bug-fix release. The database layout stays at version 7, so files made by 0.1.2 keep working.

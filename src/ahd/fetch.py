@@ -20,7 +20,9 @@ import requests
 from ahd.api.auth import SignInUnavailable
 from ahd.api.client import ApiError
 from ahd.api.reports import (
+    MALFORMED,
     Column,
+    MalformedResponse,
     breakdown_body,
     parse_breakdown,
     parse_ranked,
@@ -56,6 +58,7 @@ INDIVIDUAL_PREFIX = "individual/"
 NO_ANOMALY_CODES = ("anomaly_not_allowed", "anomaly_probe_failed")
 NETWORK_ERROR = "network_error"
 SIGN_IN_UNAVAILABLE = "sign_in_unavailable"
+INVALID_RESPONSE = "invalid_response"
 
 # Plain names for the Individual requests, used in issue messages.
 INDIVIDUAL_LABELS = {
@@ -287,11 +290,15 @@ def _run(
             wait([fut])
             progress(f"Daily trends: {done} of {total} requests done.")
             try:
-                resp = fut.result()
+                values, errors = parse_trend(fut.result(), batch)
             except ApiError as e:
                 code = e.error_code or f"http_{e.status}"
                 for col in batch:
                     issue("column", col.component_id, code, e.message)
+                continue
+            except MalformedResponse:
+                for col in batch:
+                    issue("column", col.component_id, INVALID_RESPONSE, MALFORMED)
                 continue
             except SignInUnavailable as e:
                 # Signing in again failed for a while. Later requests may still work.
@@ -302,7 +309,6 @@ def _run(
                 for col in batch:
                     issue("column", col.component_id, NETWORK_ERROR, _network_message(e))
                 continue
-            values, errors = parse_trend(resp, batch)
             store.add_daily_values(run_id, values)
             value_count += len(values)
             for err in errors:
@@ -394,19 +400,26 @@ def _store_pair(
         except requests.RequestException as e:
             issue("individual", cid, NETWORK_ERROR, f"{what}: {_network_message(e)}")
             continue
+        try:
+            if kind in ("current", "historical"):
+                ranked, _total = parse_ranked(resp)
+            elif kind in ("browser", "device"):
+                table, totals = parse_breakdown(resp)
+            else:
+                values, errors = parse_trend(resp, [trend_col])
+        except MalformedResponse:
+            issue("individual", cid, INVALID_RESPONSE, f"{what}: {MALFORMED}")
+            continue
         if kind in ("current", "historical"):
-            rows, _total = parse_ranked(resp)
-            store.add_top_items(run_id, kind, rows, pair=pair)
-            empty = not rows
-            got_rows = bool(rows)
+            store.add_top_items(run_id, kind, ranked, pair=pair)
+            empty = not ranked
+            got_rows = bool(ranked)
         elif kind in ("browser", "device"):
-            rows, totals = parse_breakdown(resp)
             labels = BROWSER_LABELS if kind == "browser" else DEVICE_LABELS
-            store.add_breakdown(run_id, kind, labels, rows, totals, pair=pair)
-            empty = not rows
-            got_rows = bool(rows)
+            store.add_breakdown(run_id, kind, labels, table, totals, pair=pair)
+            empty = not table
+            got_rows = bool(table)
         else:
-            values, errors = parse_trend(resp, [trend_col])
             store.add_daily_values(run_id, values)
             value_count += len(values)
             for err in errors:

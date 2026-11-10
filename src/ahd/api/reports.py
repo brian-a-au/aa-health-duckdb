@@ -2,8 +2,33 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
+from functools import wraps
+
+MALFORMED = "Adobe sent an answer in a form that the tool could not read."
+
+
+class MalformedResponse(Exception):
+    """A report answer was valid JSON but did not have the parts a report has."""
+
+
+def _checked[**P, T](parse: Callable[P, T]) -> Callable[P, T]:
+    """Make a parser raise MalformedResponse for an answer of the wrong shape.
+
+    Without it, e.g., a list in place of an object or a missing value would end the whole run
+    with an error trace. The caller records the problem for that one request and goes on.
+    """
+
+    @wraps(parse)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        try:
+            return parse(*args, **kwargs)
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+            raise MalformedResponse(MALFORMED) from None
+
+    return wrapper
 
 
 @dataclass(frozen=True)
@@ -135,8 +160,10 @@ def _parse_day(row: dict) -> date:
     try:
         return datetime.strptime(row["value"], "%b %d, %Y").date()
     except (KeyError, TypeError, ValueError):
-        s = str(row["itemId"])  # 1YYMMDD
-        return date(2000 + int(s[1:3]), int(s[3:5]), int(s[5:7]))
+        # The itemId is the years since 1900, the month counted from 0, and the day, e.g.,
+        # 1260708 for August 8, 2026.
+        s = str(row["itemId"])
+        return date(1900 + int(s[:3]), int(s[3:5]) + 1, int(s[5:7]))
 
 
 def _at(arr: list | None, i: int):
@@ -145,6 +172,7 @@ def _at(arr: list | None, i: int):
     return arr[i]
 
 
+@_checked
 def parse_trend(resp: dict, columns: list[Column]) -> tuple[list[DailyValue], list[ColumnError]]:
     col_meta = resp.get("columns") or {}
     errors: list[ColumnError] = []
@@ -186,6 +214,7 @@ def parse_trend(resp: dict, columns: list[Column]) -> tuple[list[DailyValue], li
     return values, errors
 
 
+@_checked
 def parse_ranked(resp: dict) -> tuple[list[tuple[int, str, float]], int]:
     rows = [
         (n, r["value"], float(r["data"][0])) for n, r in enumerate(resp.get("rows") or [], start=1)
@@ -193,6 +222,7 @@ def parse_ranked(resp: dict) -> tuple[list[tuple[int, str, float]], int]:
     return rows, int(resp.get("totalElements", len(rows)))
 
 
+@_checked
 def parse_breakdown(resp: dict) -> tuple[list[tuple[str, list[float]]], list[float]]:
     rows = [(r["value"], [float(x) for x in r["data"]]) for r in resp.get("rows") or []]
     totals = [float(x) for x in (resp.get("summaryData") or {}).get("totals") or []]
