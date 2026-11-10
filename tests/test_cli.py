@@ -1026,3 +1026,37 @@ def test_individual_unknown_run(tmp_path, cfg, capsys):
         client_factory=boom,
     )
     assert code == 1 and "There is no stored run 9." in capsys.readouterr().err
+
+
+def test_an_answer_in_another_form_is_one_line_for_each_command(tmp_path, cfg, capsys):
+    """No command ends with an error trace when Adobe sends a list where an object belongs."""
+    for command, path, answer in (
+        (["suites"], "/reportsuites/collections/suites", [{"rsid": "rs1"}]),
+        (["segments", "--rsid", "rs1"], "/segments", [{"id": "s1"}]),
+        (["check"], "/reportsuites/collections/suites", {"content": 5}),
+        (["check", "--rsid", "rs1"], "/metrics", {"content": []}),
+        (["check", "--rsid", "rs1"], "/reportsuites/collections/suites/rs1", [1]),
+    ):
+        fake = fake_for("rs1", events(1), custom_dims())
+        fake.gets[path] = answer
+        code = main(
+            [command[0], "--config", str(cfg), *command[1:]],
+            client_factory=lambda creds, company_id=None, fake=fake: fake,
+        )
+        err = capsys.readouterr().err
+        assert code == 1, command
+        assert err.startswith("Error: ") and len(err.splitlines()) == 1, command
+        assert "invalid_response" in err and "could not read" in err
+
+
+def test_ids_and_names_of_another_type_do_not_stop_the_lists(cfg, capsys):
+    fake = fake_for("rs1", events(1), custom_dims())
+    fake.gets["/reportsuites/collections/suites"] = {
+        "content": [{"rsid": 5, "name": "a"}, {"rsid": "rs1", "name": 7}]
+    }
+    fake.gets["/segments"] = {"content": [{"id": 5, "name": "a"}, {"id": "s1", "name": "Seg"}]}
+    factory = lambda creds, company_id=None: fake
+    assert main(["suites", "--config", str(cfg)], client_factory=factory) == 0
+    assert capsys.readouterr().out.splitlines()[-1].split() == ["rs1"]
+    assert main(["segments", "--config", str(cfg), "--rsid", "rs1"], client_factory=factory) == 0
+    assert capsys.readouterr().out.splitlines()[-1].split() == ["s1", "Seg"]

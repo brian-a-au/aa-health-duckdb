@@ -863,3 +863,39 @@ def test_a_run_records_whether_date_was_given(store):
     given = run_fetch(fake, store, RunOptions(rsid="rs1", today=date(2026, 9, 16)))
     assert store.get_run(plain)["date_given"] is False
     assert store.get_run(given)["date_given"] is True
+
+
+@pytest.mark.parametrize(
+    ("path", "answer", "what"),
+    [
+        ("/metrics", {"content": []}, "the list of metrics"),
+        ("/dimensions", "text", "the list of dimensions"),
+        ("/reportsuites/collections/suites/rs1", [1], "the report suite"),
+        (
+            "/reportsuites/collections/suites/rs1",
+            {"name": "x", "timezoneZoneinfo": 5},
+            "the report suite's time zone",
+        ),
+        (
+            "/reportsuites/collections/suites/rs1",
+            {"name": "x", "timezoneZoneinfo": ["UTC"]},
+            "the report suite's time zone",
+        ),
+    ],
+)
+def test_an_answer_in_another_form_is_a_plain_error_and_stores_no_run(store, path, answer, what):
+    client = fake_for("rs1", events(2), custom_dims())
+    client.gets[path] = answer
+    with pytest.raises(ApiError) as e:
+        run_fetch(client, store, opts())
+    assert e.value.error_code == "invalid_response" and what in e.value.message
+    assert store.list_runs() == []
+
+
+def test_a_suite_name_of_another_type_and_bad_entries_do_not_stop_a_run(store):
+    bad = [{"name": "no id"}, "text", {"id": 5}]
+    client = fake_for("rs1", events(2) + bad, custom_dims() + bad)
+    client.gets["/reportsuites/collections/suites/rs1"] = {"name": {"a": 1}, "timezoneZoneinfo": ""}
+    run_id = run_fetch(client, store, opts())
+    run = store.get_run(run_id)
+    assert (run["status"], run["rsid_name"], run["timezone"]) == ("ok", "rs1", "UTC")

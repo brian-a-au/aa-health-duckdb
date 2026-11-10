@@ -254,3 +254,13 @@ def test_alert_line_counts_each_kind(tmp_path, capsys):
     assert _alert_line(store, rid, 0.55, 0.50) == (
         "Alerts for 2026-11-06: 0 unusual values, 1 large drop, 0 large spikes, 1 drop to zero"
     )
+
+
+def test_a_suite_with_an_answer_in_another_form_does_not_stop_the_others(run, tmp_path, capsys):
+    client = fake()
+    client.gets["/reportsuites/collections/suites/rs2"] = [1]
+    assert run(client, "--all-suites") == 1
+    captured = capsys.readouterr()
+    assert stored(tmp_path) == [("rs1", "ok"), ("rs3", "ok")]
+    assert "Error for rs2: " in captured.err and "the report suite" in captured.err
+    assert captured.out.rstrip().endswith("Checked 3 report suites: 2 ok, 0 partial, 1 failed.")

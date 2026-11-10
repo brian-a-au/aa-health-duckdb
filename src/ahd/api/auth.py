@@ -94,6 +94,11 @@ def _json(resp: Any) -> Any:
         return None
 
 
+def _list(value: Any) -> list:
+    """The value when it is a list, else an empty list."""
+    return value if isinstance(value, list) else []
+
+
 def _missing_scopes(scopes: str) -> list[str]:
     have = {s.strip() for s in scopes.replace(" ", ",").split(",") if s.strip()}
     return [s for s in REQUIRED_SCOPES if s not in have]
@@ -185,7 +190,7 @@ def find_company(
             f"Sign-in worked, but the Analytics discovery call answered HTTP {resp.status_code}. "
             "Wait a little and try again."
         )
-    orgs = [o for o in body.get("imsOrgs") or [] if isinstance(o, dict)]
+    orgs = [o for o in _list(body.get("imsOrgs")) if isinstance(o, dict)]
     if not orgs:
         missing = _missing_scopes(creds.scopes)
         if missing:
@@ -198,7 +203,7 @@ def find_company(
         raise SignInError(WRONG_ORG)
     companies = [
         (str(c["globalCompanyId"]), str(c.get("companyName") or ""))
-        for c in org.get("companies") or []
+        for c in _list(org.get("companies"))
         if isinstance(c, dict) and c.get("globalCompanyId")
     ]
     if not companies:
