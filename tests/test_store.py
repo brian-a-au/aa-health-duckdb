@@ -5,7 +5,7 @@ import pytest
 
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
-from ahd.store import SCHEMA_VERSION, SchemaVersionError, Store
+from ahd.store import SCHEMA_VERSION, VIEWS_VERSION, SchemaVersionError, Store
 
 
 def _comp(cid="metrics/pageviews"):
@@ -300,3 +300,145 @@ def test_bulk_insert_keeps_every_value(tmp_path):
         (1, 'a\'b "c"', 3.0, 2),
         (2, "<x>", 1.0, 2),
     ]
+
+
+# A version of the alerts macro from an earlier ahd, with the same parameters but other rules.
+OLD_MACRO = (
+    "CREATE OR REPLACE MACRO alerts(run_number, threshold := 0.30, spike_threshold := 0.50,"
+    " min_usual := 10, for_day := NULL) AS TABLE SELECT 'old rule' AS alert"
+)
+
+
+def _fill_zero_day(store):
+    """A run whose component dropped to 0 yesterday, which the alerts macro reports."""
+    rid = store.create_run("rs1", "Name", None, date(2026, 11, 7), "UTC", "0.1")
+    store.add_components(rid, [_comp("metrics/event1")])
+    store.add_daily_values(
+        rid,
+        [
+            DailyValue("metrics/event1", date(2026, 11, 1), 3.0, None, None, None, None),
+            DailyValue("metrics/event1", date(2026, 11, 6), 0.0, None, None, None, None),
+        ],
+    )
+    store.finish_run(rid, "ok")
+    return rid
+
+
+def _edit(path, *statements):
+    con = duckdb.connect(str(path))
+    for sql in statements:
+        con.execute(sql)
+    con.close()
+
+
+def _alerts(con, rid):
+    return con.execute("select alert from alerts(?)", [rid]).fetchall()
+
+
+def test_new_file_gets_views_version(tmp_path):
+    p = tmp_path / "a.duckdb"
+    Store.open(p).con.close()
+    s = Store.open(p)  # reopening does not add a second row
+    assert s.con.execute("select version from views_version").fetchall() == [(VIEWS_VERSION,)]
+
+
+@pytest.mark.parametrize(
+    "setup",
+    [
+        "drop table views_version",  # a file made by 0.1.2 or earlier
+        "update views_version set version = 0",
+    ],
+)
+def test_older_views_are_replaced_on_a_write_open(tmp_path, setup):
+    p = tmp_path / "a.duckdb"
+    s = Store.open(p)
+    rid = _fill_zero_day(s)
+    other = _fill(s)
+    s.con.close()
+    _edit(p, setup, OLD_MACRO, "CREATE OR REPLACE VIEW latest_runs AS SELECT 1 AS z")
+    s = Store.open(p)
+    # The stored runs are kept, and they now follow the new rules.
+    assert [r["run_id"] for r in s.list_runs()] == [other, rid]
+    assert _alerts(s.con, rid) == [("dropped to zero",)]
+    # Each run is the latest of its own segment.
+    assert s.con.execute("select run_id from latest_runs order by run_id").fetchall() == [
+        (rid,),
+        (other,),
+    ]
+    assert s.con.execute("select version from views_version").fetchall() == [(VIEWS_VERSION,)]
+
+
+def test_newer_views_are_kept(tmp_path):
+    # An older ahd must not put back its older macro over a newer one.
+    p = tmp_path / "a.duckdb"
+    s = Store.open(p)
+    rid = _fill_zero_day(s)
+    s.con.close()
+    _edit(p, "update views_version set version = 99", OLD_MACRO)
+    s = Store.open(p)
+    assert _alerts(s.con, rid) == [("old rule",)]
+    assert s.con.execute("select version from views_version").fetchall() == [(99,)]
+
+
+def test_read_only_open_keeps_older_views(tmp_path):
+    # DuckDB refuses to replace a view in a read-only file, so ahd does not try.
+    p = tmp_path / "a.duckdb"
+    s = Store.open(p)
+    rid = _fill_zero_day(s)
+    s.con.close()
+    _edit(p, "drop table views_version", OLD_MACRO)
+    s = Store.open(p, read_only=True)
+    assert _alerts(s.con, rid) == [("old rule",)]
+    assert [r["run_id"] for r in s.list_runs()] == [rid]
+    s.con.close()
+    con = duckdb.connect(str(p), read_only=True)
+    assert not con.execute(
+        "select count(*) from duckdb_tables() where table_name = 'views_version'"
+    ).fetchone()[0]
+
+
+def test_failed_views_update_keeps_the_old_views(tmp_path, monkeypatch):
+    import ahd.store
+
+    p = tmp_path / "a.duckdb"
+    s = Store.open(p)
+    rid = _fill_zero_day(s)
+    s.con.close()
+    _edit(p, "update views_version set version = 0", OLD_MACRO)
+    broken = "CREATE OR REPLACE VIEW latest_runs AS SELECT 1 AS z; SELECT no_such_column FROM runs;"
+    monkeypatch.setattr(ahd.store, "_views", lambda: broken)
+    with pytest.raises(duckdb.Error):
+        Store.open(p)
+    con = duckdb.connect(str(p))  # the file was closed again
+    assert _alerts(con, rid) == [("old rule",)]
+    assert len(con.execute("from latest_runs").description) > 1
+    assert con.execute("select version from views_version").fetchall() == [(0,)]
+
+
+# The SHA-256 of sql/views.sql for each views version. When you change views.sql, raise
+# VIEWS_VERSION in store.py and add a line here. Never change an earlier line.
+VIEWS_HASHES = {
+    1: "1952ca70ead33583074735cd092584e30381974b9c3303277cc1a97a5d5b7420",
+}
+
+
+def test_views_version_is_raised_when_views_sql_changes():
+    import hashlib
+
+    from ahd.store import _views
+
+    found = hashlib.sha256(_views().encode("utf-8")).hexdigest()
+    assert max(VIEWS_HASHES) == VIEWS_VERSION
+    assert VIEWS_HASHES[VIEWS_VERSION] == found, (
+        "sql/views.sql changed. Raise VIEWS_VERSION in store.py and add its hash to VIEWS_HASHES."
+    )
+
+
+def test_alerts_macro_keeps_its_parameters(tmp_path):
+    # An older ahd may call the macro of a newer one, so a parameter may be added with a default,
+    # but never renamed or removed. Such a change needs a new SCHEMA_VERSION instead.
+    s = Store.open(tmp_path / "a.duckdb")
+    [params] = s.con.execute(
+        "select parameters from duckdb_functions() where function_name = 'alerts'"
+    ).fetchone()
+    assert {"run_number", "threshold", "spike_threshold", "min_usual", "for_day"} <= set(params)

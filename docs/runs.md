@@ -57,12 +57,15 @@ Every row carries its run number, `run_id`. The tables are:
 | `breakdowns`, `breakdown_totals` | The browser and device tables of each pair, with their totals |
 | `issues` | Anything that could not be read, with the reason |
 | `schema_version` | The version of this layout |
+| `views_version` | The version of the views and the macro |
 
 The file also holds two views and a table macro for your own SQL: `latest_runs`, `component_days` and `alerts()`. They follow the same rules as the report. The [DuckDB guide](duckdb.md) explains them, with recipes.
 
 ## Layout versions
 
-When a new version of the tool changes the layout, it refuses a file made with the old layout and asks you to start a new file. It does not upgrade old files. See [Troubleshooting](troubleshooting.md#the-database-was-made-by-a-different-version).
+When a new version of the tool changes the tables, it refuses a file made with the old tables and asks you to start a new file. It does not upgrade the tables of old files. See [Troubleshooting](troubleshooting.md#the-database-was-made-by-a-different-version).
+
+When a new version of the tool changes only the views or the `alerts()` macro, e.g., to fix an alert rule, you keep your file. The next `ahd run`, `ahd individual` or `ahd prune` replaces the views and the macro, and your stored runs then follow the new rules. `ahd render` and `ahd runs` open the file read-only, so they do not replace them. An older version of the tool keeps the newer views and macro that it finds in a file.
 
 ## Looking inside
 

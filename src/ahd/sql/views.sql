@@ -1,12 +1,16 @@
 -- Views and a table macro stored in every ahd database, for your own SQL.
 -- They follow the same rules as the report. See docs/duckdb.md for examples.
+--
+-- ahd runs this file again on an existing file when VIEWS_VERSION in store.py is raised, so
+-- every statement must replace what it creates. To remove a view or a macro, add a
+-- DROP ... IF EXISTS statement for it. The views may only use columns the tables already have.
 
-CREATE VIEW latest_runs AS
+CREATE OR REPLACE VIEW latest_runs AS
 FROM runs
 WHERE status IN ('ok', 'partial')
 QUALIFY row_number() OVER (PARTITION BY rsid, coalesce(segment_id, '') ORDER BY run_id DESC) = 1;
 
-CREATE VIEW component_days AS
+CREATE OR REPLACE VIEW component_days AS
 WITH dv AS (
     SELECT d.run_id, d.component_id, d.day, r.today,
         CASE WHEN isfinite(d.value) THEN d.value END AS value,
@@ -44,7 +48,7 @@ LEFT JOIN usual u ON u.run_id = dv.run_id AND u.component_id = dv.component_id
     AND u.dow = dayofweek(dv.day)
 LEFT JOIN used ON used.run_id = dv.run_id AND used.component_id = dv.component_id;
 
-CREATE MACRO alerts(run_number, threshold := 0.30, spike_threshold := 0.50, min_usual := 10,
+CREATE OR REPLACE MACRO alerts(run_number, threshold := 0.30, spike_threshold := 0.50, min_usual := 10,
     for_day := NULL) AS TABLE
 SELECT run_id, day, component_id, name, "group", metric_type, value, usual, expected,
     pct_vs_usual,

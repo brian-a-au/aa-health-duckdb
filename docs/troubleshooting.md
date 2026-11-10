@@ -94,7 +94,7 @@ When Adobe asks for a longer wait with a Retry-After header, the tool waits that
 The database data/ahd.duckdb was made by a different version of ahd.
 ```
 
-A newer version of the tool changed the layout of the file. The tool does not upgrade old files. Delete the file, or choose another one with `--db`, and run again.
+A newer version of the tool changed the tables of the file. The tool does not upgrade the tables of old files. Delete the file, or choose another one with `--db`, and run again.
 
 ### The database is in use by another program
 

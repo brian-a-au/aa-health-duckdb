@@ -16,6 +16,11 @@ from ahd.catalog import Component
 # refused, and you start a new file.
 SCHEMA_VERSION = 7
 
+# Bump when sql/views.sql changes. When ahd opens a file for writing, it replaces the views and
+# the macro of a file with an older views version, or with none. It keeps those of a file with a
+# newer views version, so that an older ahd does not put back its older rules.
+VIEWS_VERSION = 1
+
 _SCHEMA = """
 CREATE TABLE schema_version (version INTEGER);
 CREATE SEQUENCE run_seq START 1;
@@ -63,6 +68,28 @@ RUN_TABLES = (
 def _views() -> str:
     """The views and the alerts macro from ahd/sql/views.sql."""
     return resources.files("ahd").joinpath("sql/views.sql").read_text(encoding="utf-8")
+
+
+def _update_views(con: duckdb.DuckDBPyConnection, has_table: bool) -> None:
+    """Write the views and the macro when the file holds an older version of them, or none.
+
+    has_table says whether the file has a views_version table. Files made by ahd 0.1.2 and
+    earlier have none. It all happens in one transaction, so a failure keeps the old views.
+    """
+    if has_table:
+        found = con.execute("SELECT max(version) FROM views_version").fetchone()[0]
+        if found is not None and found >= VIEWS_VERSION:
+            return
+    con.execute("BEGIN TRANSACTION")
+    try:
+        con.execute(_views())
+        con.execute("CREATE TABLE IF NOT EXISTS views_version (version INTEGER)")
+        con.execute("DELETE FROM views_version")
+        con.execute("INSERT INTO views_version (version) VALUES (?)", [VIEWS_VERSION])
+    except BaseException:
+        con.execute("ROLLBACK")
+        raise
+    con.execute("COMMIT")
 
 
 class SchemaVersionError(ValueError):
@@ -135,8 +162,8 @@ class Store:
                 raise StoreError(f"The database {path} holds no ahd runs.")
             if not tables:
                 con.execute(_SCHEMA)
-                con.execute(_views())
                 con.execute("INSERT INTO schema_version (version) VALUES (?)", [SCHEMA_VERSION])
+                _update_views(con, has_table=False)
             else:
                 found = None
                 if "schema_version" in tables:
@@ -146,6 +173,9 @@ class Store:
                         f"The database {path} was made by a different version of ahd. "
                         "Delete the file to start again, or choose another file with --db."
                     )
+                # A read-only file cannot be changed. No read-only command uses the views.
+                if not read_only:
+                    _update_views(con, has_table="views_version" in tables)
         except BaseException:
             con.close()
             raise
