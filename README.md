@@ -92,7 +92,7 @@ If something fails, see [Troubleshooting](https://github.com/brian-a-au/aa-healt
 | [DuckDB guide](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/duckdb.md) | SQL recipes: alert emails, owner routing, digests across suites and organizations, audits and exports |
 | [Troubleshooting](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/troubleshooting.md) | Sign-in problems, limited access, warnings and database errors |
 | [Compared with the Excel workbook](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/excel-comparison.md) | How the numbers differ, what the tool adds, and what it leaves out |
-| [Development](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/development.md) | Tests, lint and the README slideshow. See also [AGENTS.md](https://github.com/brian-a-au/aa-health-duckdb/blob/main/AGENTS.md) |
+| [Development](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/development.md) | Working from a clone, tests, lint, releases and the README slideshow. See also [AGENTS.md](https://github.com/brian-a-au/aa-health-duckdb/blob/main/AGENTS.md) |
 
 ## Related tools
 

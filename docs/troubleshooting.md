@@ -12,7 +12,7 @@ Start with `ahd check --rsid <suite>`. It signs in, counts what the credential c
 - [Problems in the status section](#problems-in-the-status-section)
 - [Time zones](#time-zones)
 - [Profiles and config files](#profiles-and-config-files)
-- [The database](#the-database)
+- [The database](#the-database): a file from another version, no file, a file in use, an older `duckdb`, and a run that stays "running"
 - [Getting more detail](#getting-more-detail)
 
 ## Sign-in problems
@@ -45,7 +45,7 @@ See [Configuration](configuration.md#permissions) for the full list of permissio
 
 ## Fewer components than last time
 
-After each run, the tool compares the number of custom events, eVars and props with the previous run of the same report suite that stored any components. That run can have another segment. If any of them fell by more than 20 percent, the run output and the report show a warning.
+After each run, the tool compares the number of custom events, eVars and props with the run before it. That is the run of the same report suite that was made last before this one and stored any components. The run number does not decide it, e.g., an old run that `ahd import` gave a higher number is not the run before. That run can have another segment. If any of them fell by more than 20 percent, the run output and the report show a warning.
 
 Data did not stop. This run simply cannot see the missing components, so the report does not check them. The usual cause is one of these:
 
@@ -60,7 +60,11 @@ A run that finished with status "partial" lists what it could not read. `ahd run
 - **"Some parts of the Individual Component Summary came back empty."** The product profile may hide the chosen dimension, or it had no data.
 - **"Some requests failed because of network problems."** Running again may fix it.
 - **"Some requests failed because Adobe's sign-in service had a temporary problem."** The tool signs in again when its token runs out. Adobe's sign-in service answered with a temporary error 3 times. Running again may fix it.
+- **"Adobe sent an answer that could not be read for some requests."** Adobe answered with valid JSON that was not a report, e.g., with an empty value where a number belongs. Running again may fix it.
+- **"Adobe returned an error for some requests."** Adobe answered with an error that has no code of its own. The list under the heading gives the HTTP status of each.
 - **"Anomaly detection could not be tested"** or **"Anomaly bands are not available."** See [Limited access](#limited-access).
+
+A command can also stop with one line that says "Adobe sent an answer for ... in a form that the tool could not read", e.g., for the list of metrics. Adobe then sent a whole answer in a form that the tool does not know, before the run stored anything. Run the command again. In a run of several suites, only that suite fails.
 
 When a request fails in a way that may pass, the tool waits and tries again. How long it waits depends on the kind of error:
 
@@ -80,6 +84,7 @@ When Adobe asks for a longer wait with a Retry-After header, the tool waits that
 ## Profiles and config files
 
 - **"Profile 'x' was not found"**: the file `~/.aa/orgs/x/config.json` does not exist. Check the name, or create the profile with `aa_auto_sdr --profile-add`.
+- **"Profile name 'x' is not valid"**: a profile name holds only letters, digits, dots, dashes and underscores, and starts with a letter or a digit.
 - **"is not valid UTF-8 JSON"**: the file has a syntax error, e.g., a missing comma or quote.
 - **"must hold one JSON object"**: the file holds a list or a single value, not `{ ... }`.
 - **"No credential was found"**: there is no profile, no `AHD_*` variable and no `config.json` in the current folder. See [Configuration](configuration.md).
@@ -99,6 +104,16 @@ The rest of the message says what to do. There are three cases:
 - **The file is from an older version, and its runs can be kept.** The message names two steps: rename the file, then run `ahd import` with the renamed file. The tool then makes a new file and copies the old runs into it. See [How runs are stored](runs.md#layout-versions).
 - **The file is from a newer version.** Update the tool, or choose another file with `--db`.
 - **The file is too old to import.** This holds for files from 0.1.0 and 0.1.1. Delete the file, or choose another one with `--db`, and run again.
+
+### There is no database
+
+```
+There is no database at data/ahd.duckdb.
+```
+
+Only `ahd run` and `ahd import` make a new file. Every other command needs a file that holds runs. Make a run first, or name the file with `--db` or a profile. [How runs are stored](runs.md#where-the-file-is) says where the file is.
+
+Two more messages name a file that is not usable. "holds no ahd runs" means the file is an empty DuckDB database. "is not a DuckDB database" means the file is something else. Choose the right file with `--db`.
 
 ### The database is in use by another program
 

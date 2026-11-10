@@ -188,7 +188,7 @@ ahd render --run 3 --change-alert 50 --out ./shared/
 
 ## runs
 
-Lists every stored run, newest first, with its number, report suite, date, status and how long it took.
+Lists every stored run with its number, report suite, run date, status and how long it took. The run with the highest number comes first. That is the run made last, except after an `ahd import` that gave old runs new numbers.
 
 ```
 ahd runs

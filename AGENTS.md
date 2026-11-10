@@ -49,8 +49,9 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 | `tests/chrome.py`, `tests/test_report_js.py` | Run `report.js` in headless Chrome and read the results back |
 | `scripts/make_showcase.py` | Builds the README slideshow from synthetic data |
 | `docs/` | The user documentation. The README is a short landing page that links to it. Update the matching page when behavior changes |
+| `tests/test_docs.py` | Checks the docs: every link and heading link, every option in `docs/usage.md`, and the messages that `docs/troubleshooting.md` quotes |
 | `docs/duckdb.md` | SQL recipes for the database, including alert emails |
-| `docs/examples/send_alerts.py` | The example alert email script, with its own tests |
+| `docs/examples/send_alerts.py` | The example alert email script, with its own tests in `tests/test_examples.py`. They also run every SQL example in `docs/duckdb.md` |
 | `.github/workflows/` | Tests, lint, the type check, actionlint, the lockfile check, CodeQL, and the release from a `v*.*.*` tag |
 
 ## Rules

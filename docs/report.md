@@ -59,7 +59,7 @@ Under the sliders, one line says what the weekday average is. Open "How large dr
 - **Small numbers are skipped.** Components with a weekday average under 10 are never large drops or spikes, because small numbers change a lot from day to day. In the weekly view, the same holds for a component whose average week is under 70.
 - **Zero and Adobe flags come first.** A value of 0 is listed as "Dropped to zero", and a value that Adobe flagged is listed as an unusual value. Neither one is also a large drop or spike.
 - **Arrows follow the sliders.** The tables show a down arrow for a change past the drop slider, and an up arrow for a change past the spike slider.
-- **Everything updates at once.** When you move a slider, the tiles, the tables, the "Show only flagged" filter and the alerts change right away.
+- **Everything updates at once.** When you move a slider, the tiles, the tables, the "Show only flagged" filter and the alerts change right away. In a report with more than 400 components, they change when you pause, so that the slider stays smooth. The same holds for the "Find a component" box.
 
 Two lines under the sliders say how many components are large drops and large spikes on the day the Components Summary shows. Each also names the largest drop or rise, even when it is under the slider's percent, so you can see why nothing was flagged.
 
