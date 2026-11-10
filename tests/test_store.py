@@ -133,14 +133,15 @@ def test_a_run_records_whether_date_set_its_run_date(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "setup",
+    ("setup", "advice"),
     [
-        "update schema_version set version = 99",
-        "update schema_version set version = 2",
-        "drop table schema_version",
+        # A newer layout needs a newer ahd. A layout too old to import can only be started again.
+        ("update schema_version set version = 99", "That version is newer. Update ahd"),
+        ("update schema_version set version = 2", "Delete the file"),
+        ("drop table schema_version", "Delete the file"),
     ],
 )
-def test_other_version_is_refused(tmp_path, setup):
+def test_other_version_is_refused(tmp_path, setup, advice):
     p = tmp_path / "a.duckdb"
     Store.open(p).con.close()
     con = duckdb.connect(str(p))
@@ -149,7 +150,7 @@ def test_other_version_is_refused(tmp_path, setup):
     with pytest.raises(SchemaVersionError) as e:
         Store.open(p)
     assert isinstance(e.value, ValueError)
-    assert "different version of ahd" in str(e.value) and "Delete the file" in str(e.value)
+    assert "different version of ahd" in str(e.value) and advice in str(e.value)
     duckdb.connect(str(p)).close()  # the refused file was closed again
 
 

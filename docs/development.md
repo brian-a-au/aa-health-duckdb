@@ -78,7 +78,7 @@ The tool is on PyPI as [aa-health-duckdb](https://pypi.org/project/aa-health-duc
 
 To release:
 
-1. In a pull request, set the new `version` in `pyproject.toml`, run `uv lock`, and add a section to `CHANGELOG.md`, e.g., `## 0.2.0 (2026-12-01)`. Follow [Semantic Versioning](https://semver.org/). Until 1.0.0, raise the minor version, e.g., 0.2.0, for a change to the database layout or the options, and the patch version, e.g., 0.1.1, for fixes.
+1. In a pull request, set the new `version` in `pyproject.toml`, run `uv lock`, and add a section to `CHANGELOG.md`, e.g., `## 0.2.0 (2026-12-01)`. Follow [Semantic Versioning](https://semver.org/). Until 1.0.0, raise the minor version, e.g., 0.2.0, for a change that can break a user's file or script: a new database layout, or a changed or removed command or option. Raise the patch version, e.g., 0.1.1, for fixes and for additions that break nothing, e.g., a new command.
 2. Merge the pull request with `gh pr merge --merge`, and wait for the checks on `main` to pass.
 3. Optionally, open the release workflow on GitHub and choose "Run workflow". It runs the build job only, as a dry run, and uploads nothing. Nothing waits for an approval after the tag, so this is the last check before the upload.
 4. Tag the merge commit on `main` and push the tag:

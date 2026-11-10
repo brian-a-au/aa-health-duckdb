@@ -13,8 +13,13 @@ from ahd.api.reports import DailyValue
 from ahd.catalog import Component
 
 # Bump when the tables change. ahd does not upgrade files: a file with another version is
-# refused, and you start a new file.
+# refused, and you start a new file. ahd import then copies the runs of the old file into it.
 SCHEMA_VERSION = 7
+
+# The oldest layout that ahd import reads. It copies by column name, so a layout change that
+# only adds or removes columns needs nothing. Raise this when a change is of another kind and
+# transfer.py gets no conversion for it. Layouts before 7 were never importable.
+IMPORT_FROM_VERSION = 7
 
 # Bump when sql/views.sql changes. When ahd opens a file for writing, it replaces the views and
 # the macro of a file with another views version, or with none. The views in a file then follow
@@ -109,6 +114,20 @@ class SchemaVersionError(ValueError):
     """The database file was written by a different version of ahd."""
 
 
+def _version_message(path: Path, found: object) -> str:
+    """What to do with a file of another layout: update ahd, import its runs, or start again."""
+    start = f"The database {path} was made by a different version of ahd. "
+    if isinstance(found, int) and found > SCHEMA_VERSION:
+        return start + "That version is newer. Update ahd, or choose another file with --db."
+    if isinstance(found, int) and found >= IMPORT_FROM_VERSION:
+        old = path.with_name(f"{path.stem}-old{path.suffix}")
+        return (
+            start + f"To keep its runs, rename the file to {old.name}, then run "
+            f"ahd import {old} --db {path}. Or choose another file with --db."
+        )
+    return start + "Delete the file to start again, or choose another file with --db."
+
+
 class StoreError(Exception):
     """The database file could not be opened. The message says why in plain words."""
 
@@ -188,10 +207,7 @@ class Store:
                 if "schema_version" in tables:
                     found = _first(con.execute("SELECT max(version) FROM schema_version"))
                 if found != SCHEMA_VERSION:
-                    raise SchemaVersionError(
-                        f"The database {path} was made by a different version of ahd. "
-                        "Delete the file to start again, or choose another file with --db."
-                    )
+                    raise SchemaVersionError(_version_message(path, found))
                 # A read-only file cannot be changed. No read-only command uses the views.
                 if not read_only:
                     _update_views(con)

@@ -87,7 +87,7 @@ If something fails, see [Troubleshooting](https://github.com/brian-a-au/aa-healt
 | [Usage](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/usage.md) | Every command, with its options, exit codes and defaults |
 | [Configuration](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/configuration.md) | Where the tool finds your credential, profiles, and the Admin Console permissions it needs |
 | [The report](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/report.md) | A walkthrough of the HTML report: the sliders, tiles, tabs, alerts and copying |
-| [How runs are stored](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/runs.md) | The DuckDB file, run numbers, deleting runs, and the tables inside |
+| [How runs are stored](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/runs.md) | The DuckDB file, run numbers, deleting runs, keeping runs when the layout changes, and the tables inside |
 | [Run it every day](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/scheduling.md) | A daily check of every suite with an alert email, on Windows, macOS and Linux |
 | [DuckDB guide](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/duckdb.md) | SQL recipes: alert emails, owner routing, digests across suites and organizations, audits and exports |
 | [Troubleshooting](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/troubleshooting.md) | Sign-in problems, limited access, warnings and database errors |

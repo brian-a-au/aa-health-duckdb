@@ -44,6 +44,7 @@ from ahd.summary import (
     component_drops,
     duration_text,
 )
+from ahd.transfer import export_runs, import_runs
 
 DEFAULT_DB = "./data/ahd.duckdb"
 PROFILE_DB = "ahd.duckdb"
@@ -256,6 +257,23 @@ def _parser() -> argparse.ArgumentParser:
     prune.add_argument("--yes", action="store_true", help="Delete without asking first.")
     prune.add_argument(
         "--force", action="store_true", help='Also delete runs still marked "running".'
+    )
+
+    export = sub.add_parser(
+        "export", help="Write the stored runs to a folder of Parquet files, e.g., as a backup."
+    )
+    common(export, config=False)
+    export.add_argument(
+        "--out", type=Path, required=True, help="A new or an empty folder for the files."
+    )
+
+    imp = sub.add_parser(
+        "import",
+        help="Copy the runs of another ahd database, or of an export folder, into this one.",
+    )
+    common(imp, config=False)
+    imp.add_argument(
+        "source", type=Path, help="An ahd DuckDB file, or a folder that ahd export wrote."
     )
     return p
 
@@ -646,6 +664,48 @@ def _prune(args: argparse.Namespace) -> int:
     return 0
 
 
+def _count(n: int, one: str) -> str:
+    return f"{n} {one}" if n == 1 else f"{n} {one}s"
+
+
+def _export(args: argparse.Namespace) -> int:
+    counts = export_runs(_db_path(args), args.out)
+    print(f"Wrote {_count(counts.get('runs', 0), 'run')} to {args.out}.")
+    return 0
+
+
+def _import(args: argparse.Namespace) -> int:
+    path = _db_path(args)
+    if not args.source.exists():
+        # Checked before the database is opened, so a wrong name leaves no new empty file.
+        raise StoreError(f"There is nothing at {args.source} to import.")
+    is_new = not path.exists()
+    store = Store.open(path)
+    try:
+        result = import_runs(store, args.source)
+    except BaseException:
+        store.con.close()
+        if is_new:
+            # The import made this file and put nothing into it. Do not leave it behind.
+            path.unlink(missing_ok=True)
+        raise
+    store.con.close()
+    print(f"Imported {_count(len(result.numbers), 'run')} from {args.source}.")
+    if result.already_there:
+        print(f"Left out {_count(result.already_there, 'run')} that this database already holds.")
+    if result.renumbered:
+        print("Some run numbers were taken in this database, so the imported runs got new ones:")
+        for old, new in result.renumbered:
+            print(f"  Run {old} is now run {new}.")
+    if result.left_out:
+        print(
+            "These columns of the older layout are no longer stored and were left out: "
+            + ", ".join(result.left_out)
+            + "."
+        )
+    return 0
+
+
 def _runs(args: argparse.Namespace) -> int:
     _print_runs(Store.open(_db_path(args), read_only=True).list_runs())
     return 0
@@ -681,6 +741,10 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
             return _render(args)
         if args.command == "prune":
             return _prune(args)
+        if args.command == "export":
+            return _export(args)
+        if args.command == "import":
+            return _import(args)
         if args.command == "individual":
             return _individual(args, client_factory)
         if args.command == "suites":
