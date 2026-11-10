@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 from functools import wraps
+from typing import Any, TypeVar, cast
 
 MALFORMED = "Adobe sent an answer in a form that the tool could not read."
 
@@ -14,7 +15,10 @@ class MalformedResponse(Exception):
     """A report answer was valid JSON but did not have the parts a report has."""
 
 
-def _checked[**P, T](parse: Callable[P, T]) -> Callable[P, T]:
+_Parser = TypeVar("_Parser", bound=Callable[..., Any])
+
+
+def _checked(parse: _Parser) -> _Parser:
     """Make a parser raise MalformedResponse for an answer of the wrong shape.
 
     Without it, e.g., a list in place of an object or a missing value would end the whole run
@@ -22,13 +26,13 @@ def _checked[**P, T](parse: Callable[P, T]) -> Callable[P, T]:
     """
 
     @wraps(parse)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return parse(*args, **kwargs)
         except (AttributeError, IndexError, KeyError, TypeError, ValueError):
             raise MalformedResponse(MALFORMED) from None
 
-    return wrapper
+    return cast(_Parser, wrapper)
 
 
 @dataclass(frozen=True)
