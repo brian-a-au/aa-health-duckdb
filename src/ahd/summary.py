@@ -491,7 +491,9 @@ def _pairs(store: Store, run_id: int, p: dict[str, Any]) -> list[dict[str, Any]]
             {"movement": _movement(r), "rank": r["rank"], "item": r["item"], "value": r["value"]}
             for r in _rows(store, _TOP_SQL, q)
         ]
-        tables = {k: {"labels": [], "rows": [], "totals": []} for k in ("browser", "device")}
+        tables: dict[str, dict[str, list[Any]]] = {
+            k: {"labels": [], "rows": [], "totals": []} for k in ("browser", "device")
+        }
         for r in _rows(store, _LABELS_SQL, q):
             if r["kind"] in tables:
                 tables[r["kind"]]["labels"] = r["labels"]

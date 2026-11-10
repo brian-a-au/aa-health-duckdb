@@ -2,10 +2,11 @@
 
 import json
 
+import duckdb
 import pytest
 from fakes import ApiError, FakeClient, is_anomaly_trend, suite
 
-from ahd.cli import main
+from ahd.cli import main, run_fetch
 from ahd.store import Store
 
 CONFIG = {"org_id": "o@AdobeOrg", "client_id": "cid-12345", "secret": "sec-67890", "scopes": "x"}
@@ -139,6 +140,37 @@ def test_a_report_that_cannot_be_written_does_not_stop_the_others(tmp_path, caps
     assert captured.err.count("The report could not be written to") == 3
     assert "Error for rs3: The report could not be written to" in captured.err
     assert "Checked 3 report suites: 0 ok, 0 partial, 3 failed." in captured.out
+
+
+def test_a_database_error_in_one_suite_is_one_line_and_the_others_go_on(
+    run, tmp_path, capsys, monkeypatch
+):
+    def fetch(client, store, opts, **kw):
+        if opts.rsid == "rs1":
+            raise duckdb.IOException("IO Error: No space left on device\nmore detail")
+        return run_fetch(client, store, opts, **kw)
+
+    monkeypatch.setattr("ahd.cli.run_fetch", fetch)
+    assert run(fake(), "--rsid", "rs1", "--rsid", "rs2") == 1
+    cap = capsys.readouterr()
+    assert (
+        "Error for rs1: the database could not be read or written (IOException). "
+        "IO Error: No space left on device\n" in cap.err
+    )
+    assert "more detail" not in cap.err and "Traceback" not in cap.err
+    assert stored(tmp_path) == [("rs2", "ok")]
+    assert "Checked 2 report suites: 1 ok, 0 partial, 1 failed." in cap.out
+
+
+def test_a_database_error_with_one_suite_is_one_line(run, capsys, monkeypatch):
+    def fetch(*a, **kw):
+        raise duckdb.IOException("IO Error: No space left on device")
+
+    monkeypatch.setattr("ahd.cli.run_fetch", fetch)
+    assert run(fake(), "--rsid", "rs1") == 1
+    err = capsys.readouterr().err
+    assert err.startswith("Error: the database could not be read or written (IOException).")
+    assert "Traceback" not in err
 
 
 def test_a_partial_suite_gives_exit_code_3(run, tmp_path, capsys):

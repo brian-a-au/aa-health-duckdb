@@ -13,14 +13,16 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from importlib import metadata
-from typing import Any
+from typing import Any, Literal
 
 import requests
 
 from ahd.api.auth import SignInUnavailable
 from ahd.api.client import ApiError
 from ahd.api.reports import (
+    MALFORMED,
     Column,
+    MalformedResponse,
     breakdown_body,
     parse_breakdown,
     parse_ranked,
@@ -56,9 +58,12 @@ INDIVIDUAL_PREFIX = "individual/"
 NO_ANOMALY_CODES = ("anomaly_not_allowed", "anomaly_probe_failed")
 NETWORK_ERROR = "network_error"
 SIGN_IN_UNAVAILABLE = "sign_in_unavailable"
+INVALID_RESPONSE = "invalid_response"
 
+# The 5 requests of one Individual Component Summary pair.
+PairKind = Literal["current", "historical", "browser", "device", "trend"]
 # Plain names for the Individual requests, used in issue messages.
-INDIVIDUAL_LABELS = {
+INDIVIDUAL_LABELS: dict[PairKind, str] = {
     "current": "Top 100 values for yesterday",
     "historical": "Top 100 values for the previous 90 days",
     "browser": "Browser table",
@@ -72,7 +77,7 @@ def pair_series_id(pair: int) -> str:
     return f"{INDIVIDUAL_PREFIX}{pair}"
 
 
-def _no_rows_message(kind: str, label: str) -> str:
+def _no_rows_message(kind: PairKind, label: str) -> str:
     return (
         f"{INDIVIDUAL_LABELS[kind]} ({label}): no rows came back. The credential's product profile "
         "may hide this dimension, or it had no data."
@@ -161,18 +166,25 @@ def _batches(columns: list[Column], size: int) -> list[list[Column]]:
 
 
 @contextmanager
-def _pool(workers: int) -> Iterator[ThreadPoolExecutor]:
+def _pool(workers: int, client: Any = None) -> Iterator[ThreadPoolExecutor]:
     """A worker pool that drops its waiting requests when the caller stops, e.g. on Ctrl-C.
 
     A plain `with ThreadPoolExecutor()` waits for every queued request before it lets an
     exception through, so Ctrl-C would still send the whole run. Requests that already
     started finish, because a thread cannot be stopped from outside.
+
+    On Ctrl-C the client is also told to stop. Without that, a worker that was waiting to try
+    a request again would keep trying, and the command would not end until it gave up.
     """
     pool = ThreadPoolExecutor(max_workers=max(1, workers))
     try:
         yield pool
-    except BaseException:
+    except BaseException as e:
         pool.shutdown(wait=False, cancel_futures=True)
+        stop = getattr(client, "stop", None)
+        # An ordinary error keeps the client usable, e.g., for the next suite of the run.
+        if stop is not None and not isinstance(e, Exception):
+            stop()
         raise
     pool.shutdown(wait=True)
 
@@ -230,7 +242,7 @@ def _run(
     catalog: list[Component],
     window: RunWindow,
     progress: Callable[[str], None] = _quiet,
-) -> str:
+) -> Literal["ok", "partial", "failed"]:
     issue_count = 0
     value_count = 0
 
@@ -267,7 +279,7 @@ def _run(
         opts.metric_type,
     )
 
-    with _pool(opts.workers) as pool:
+    with _pool(opts.workers, client) as pool:
         batch_futures: list[tuple[list[Column], Future]] = [
             (
                 batch,
@@ -287,11 +299,15 @@ def _run(
             wait([fut])
             progress(f"Daily trends: {done} of {total} requests done.")
             try:
-                resp = fut.result()
+                values, errors = parse_trend(fut.result(), batch)
             except ApiError as e:
                 code = e.error_code or f"http_{e.status}"
                 for col in batch:
                     issue("column", col.component_id, code, e.message)
+                continue
+            except MalformedResponse:
+                for col in batch:
+                    issue("column", col.component_id, INVALID_RESPONSE, MALFORMED)
                 continue
             except SignInUnavailable as e:
                 # Signing in again failed for a while. Later requests may still work.
@@ -302,7 +318,6 @@ def _run(
                 for col in batch:
                     issue("column", col.component_id, NETWORK_ERROR, _network_message(e))
                 continue
-            values, errors = parse_trend(resp, batch)
             store.add_daily_values(run_id, values)
             value_count += len(values)
             for err in errors:
@@ -333,10 +348,10 @@ def _submit_pair(
     dimension: str,
     metric: str,
     pair: int,
-) -> tuple[Column, dict[str, Future]]:
+) -> tuple[Column, dict[PairKind, Future]]:
     """Start the 5 requests of one pair: top 100 twice, browser, device and the daily trend."""
     trend_col = Column(pair_series_id(pair), metric, exists_dimension=dimension)
-    bodies = {
+    bodies: dict[PairKind, dict] = {
         "current": top_items_body(rsid, window.yesterday_range(), dimension, metric, seg),
         "historical": top_items_body(rsid, window.historical_range(), dimension, metric, seg),
         "browser": breakdown_body(
@@ -367,7 +382,7 @@ def _store_pair(
     run_id: int,
     pair: int,
     trend_col: Column,
-    futures: dict[str, Future],
+    futures: dict[PairKind, Future],
     label: str,
     issue: Callable[[str, str | None, str, str], None],
     progress: Callable[[str], None],
@@ -394,19 +409,26 @@ def _store_pair(
         except requests.RequestException as e:
             issue("individual", cid, NETWORK_ERROR, f"{what}: {_network_message(e)}")
             continue
-        if kind in ("current", "historical"):
-            rows, _total = parse_ranked(resp)
-            store.add_top_items(run_id, kind, rows, pair=pair)
-            empty = not rows
-            got_rows = bool(rows)
-        elif kind in ("browser", "device"):
-            rows, totals = parse_breakdown(resp)
+        try:
+            if kind in ("current", "historical"):
+                ranked, _total = parse_ranked(resp)
+            elif kind in ("browser", "device"):
+                table, totals = parse_breakdown(resp)
+            else:
+                values, errors = parse_trend(resp, [trend_col])
+        except MalformedResponse:
+            issue("individual", cid, INVALID_RESPONSE, f"{what}: {MALFORMED}")
+            continue
+        if kind == "current" or kind == "historical":
+            store.add_top_items(run_id, kind, ranked, pair=pair)
+            empty = not ranked
+            got_rows = bool(ranked)
+        elif kind == "browser" or kind == "device":
             labels = BROWSER_LABELS if kind == "browser" else DEVICE_LABELS
-            store.add_breakdown(run_id, kind, labels, rows, totals, pair=pair)
-            empty = not rows
-            got_rows = bool(rows)
+            store.add_breakdown(run_id, kind, labels, table, totals, pair=pair)
+            empty = not table
+            got_rows = bool(table)
         else:
-            values, errors = parse_trend(resp, [trend_col])
             store.add_daily_values(run_id, values)
             value_count += len(values)
             for err in errors:
@@ -467,7 +489,7 @@ def add_pair(
 
     label = _pair_label(dimension_name or dimension, metric_name or metric)
     try:
-        with _pool(5) as pool:
+        with _pool(5, client) as pool:
             trend_col, futures = _submit_pair(
                 pool,
                 client,

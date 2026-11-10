@@ -52,7 +52,7 @@
       <li>The weekday average for a day is the average of the same weekday in the 12 weeks before it, e.g., the 12 Mondays before a Monday.</li>
       <li>A value is a large drop when its change from the weekday average is below the drop slider's setting, e.g., below -30%. Move the slider left to flag only deeper drops.</li>
       <li>A value is a large spike when its change from the weekday average is above the spike slider's setting, e.g., above +50%. Move the slider right to flag only bigger spikes. A value that doubled is about +100%.</li>
-      <li>Components with a weekday average under {{ min_usual }} are skipped, because small numbers change a lot from day to day.</li>
+      <li>Components with a weekday average under {{ min_usual }} are skipped, because small numbers change a lot from day to day. In the weekly view, a component is skipped when its average week is under {{ min_usual * 7 }}.</li>
       <li>A value of 0 is not a large drop. It is listed as "Dropped to zero".</li>
       <li>A value that Adobe flagged is listed as an unusual value, not as a large drop or spike.</li>
       <li>A large drop gets a "Large drop" badge in the Flag column, a large spike gets a "Large spike" badge, and both are listed on the Alerts tab.</li>

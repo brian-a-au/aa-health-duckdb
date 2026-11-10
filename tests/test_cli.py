@@ -178,6 +178,38 @@ def test_check_without_rsid(tmp_path, cfg, capsys):
     assert code == 0 and "testco" in out and "2" in out
 
 
+def test_check_counts_the_suites_of_every_page(cfg, capsys):
+    """A company with more suites than one page holds is counted in full."""
+    pages = [[{"rsid": "a"}, {"rsid": "b"}], [{"rsid": "c"}]]
+    fake = fake_for("rs1", [], [])
+    fake.gets["/reportsuites/collections/suites"] = lambda params: {
+        "content": pages[params["page"]],
+        "totalPages": len(pages),
+        "lastPage": params["page"] == len(pages) - 1,
+    }
+    code = main(["check", "--config", str(cfg)], client_factory=lambda c, company_id=None: fake)
+    assert code == 0 and "Report suites visible: 3" in capsys.readouterr().out
+
+
+def test_run_names_a_database_folder_that_cannot_be_made(tmp_path, cfg, capsys):
+    """A folder path that runs through a file is a plain error, not an error trace."""
+    (tmp_path / "file").write_text("x")
+    code = main(
+        [
+            "run",
+            "--config",
+            str(cfg),
+            "--rsid",
+            "rs1",
+            "--db",
+            str(tmp_path / "file" / "sub" / "a.duckdb"),
+        ],
+        client_factory=lambda c, company_id=None: pytest.fail("must not sign in"),
+    )
+    err = capsys.readouterr().err
+    assert code == 1 and "could not be made" in err and "--db" in err and "Traceback" not in err
+
+
 def test_check_reports_restricted_profile(tmp_path, cfg, capsys):
     fake = fake_for("rs1", restricted_metrics(), restricted_dimensions())
     code = main(

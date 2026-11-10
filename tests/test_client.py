@@ -493,3 +493,48 @@ def test_client_waits_for_the_pacer_before_each_try():
     # The 13th request waited for the pacer. Its retry after the 429 counts as a request too.
     assert len(session.calls) == 14
     assert clock.sleeps[0] == 6.0 and len(sleeps) == 1
+
+
+def test_a_stopped_client_sends_no_more_requests():
+    from ahd.api.client import Stopped
+
+    c, s, _ = make([(200, {"a": 1}, {})])
+    c.stop()
+    with pytest.raises(Stopped):
+        c.get("/metrics")
+    assert s.calls == []
+
+
+def test_stop_ends_the_wait_before_another_try():
+    """A request that Adobe answered with 503 waits and tries again. After stop(), the wait
+    ends at once and the next try is not sent."""
+    from ahd.api.client import Stopped
+
+    session = FakeSession([(503, None, {}), (200, {"a": 1}, {})])
+    # No sleep is given, so the client waits on its own stop signal.
+    c = AdobeClient._from_parts(session, dict(HEADER), "co1", lambda: dict(HEADER))
+    answer = session.request
+
+    def answer_then_stop(*a, **kw):
+        c.stop()
+        return answer(*a, **kw)
+
+    session.request = answer_then_stop
+    with pytest.raises(Stopped):
+        c.get("/metrics")
+    assert len(session.calls) == 1
+
+
+def test_a_stopped_pacer_does_not_wait():
+    import threading
+
+    from ahd.api.client import Pacer
+
+    clock = FakeClock()
+    stop = threading.Event()
+    pacer = Pacer(clock=clock, sleep=clock.sleep, stop=stop)
+    for _ in range(12):
+        pacer.wait()
+    stop.set()
+    pacer.wait()
+    assert clock.sleeps == []

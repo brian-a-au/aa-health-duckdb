@@ -2,8 +2,29 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime
+
+MALFORMED = "Adobe sent an answer in a form that the tool could not read."
+
+
+class MalformedResponse(Exception):
+    """A report answer was valid JSON but did not have the parts a report has."""
+
+
+@contextmanager
+def _checked() -> Iterator[None]:
+    """Raise MalformedResponse for an answer of the wrong shape.
+
+    Without it, e.g., a list in place of an object or a missing value would end the whole run
+    with an error trace. The caller records the problem for that one request and goes on.
+    """
+    try:
+        yield
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+        raise MalformedResponse(MALFORMED) from None
 
 
 @dataclass(frozen=True)
@@ -135,8 +156,10 @@ def _parse_day(row: dict) -> date:
     try:
         return datetime.strptime(row["value"], "%b %d, %Y").date()
     except (KeyError, TypeError, ValueError):
-        s = str(row["itemId"])  # 1YYMMDD
-        return date(2000 + int(s[1:3]), int(s[3:5]), int(s[5:7]))
+        # The itemId is the years since 1900, the month counted from 0, and the day, e.g.,
+        # 1260708 for August 8, 2026.
+        s = str(row["itemId"])
+        return date(1900 + int(s[:3]), int(s[3:5]) + 1, int(s[5:7]))
 
 
 def _at(arr: list | None, i: int):
@@ -145,7 +168,7 @@ def _at(arr: list | None, i: int):
     return arr[i]
 
 
-def parse_trend(resp: dict, columns: list[Column]) -> tuple[list[DailyValue], list[ColumnError]]:
+def _trend(resp: dict, columns: list[Column]) -> tuple[list[DailyValue], list[ColumnError]]:
     col_meta = resp.get("columns") or {}
     errors: list[ColumnError] = []
     failed: set[int] = set()
@@ -186,14 +209,32 @@ def parse_trend(resp: dict, columns: list[Column]) -> tuple[list[DailyValue], li
     return values, errors
 
 
-def parse_ranked(resp: dict) -> tuple[list[tuple[int, str, float]], int]:
+def _ranked(resp: dict) -> tuple[list[tuple[int, str, float]], int]:
     rows = [
         (n, r["value"], float(r["data"][0])) for n, r in enumerate(resp.get("rows") or [], start=1)
     ]
     return rows, int(resp.get("totalElements", len(rows)))
 
 
-def parse_breakdown(resp: dict) -> tuple[list[tuple[str, list[float]]], list[float]]:
+def _breakdown(resp: dict) -> tuple[list[tuple[str, list[float]]], list[float]]:
     rows = [(r["value"], [float(x) for x in r["data"]]) for r in resp.get("rows") or []]
     totals = [float(x) for x in (resp.get("summaryData") or {}).get("totals") or []]
     return rows, totals
+
+
+def parse_trend(resp: dict, columns: list[Column]) -> tuple[list[DailyValue], list[ColumnError]]:
+    """The daily values of a trend answer, and the columns that Adobe refused."""
+    with _checked():
+        return _trend(resp, columns)
+
+
+def parse_ranked(resp: dict) -> tuple[list[tuple[int, str, float]], int]:
+    """The rows of a top items answer as (rank, item, value), and how many items there are."""
+    with _checked():
+        return _ranked(resp)
+
+
+def parse_breakdown(resp: dict) -> tuple[list[tuple[str, list[float]]], list[float]]:
+    """The rows of a breakdown answer as (item, values), and the column totals."""
+    with _checked():
+        return _breakdown(resp)

@@ -93,7 +93,9 @@ def build_catalog(
                 and cid.removesuffix("instances") in wanted
             ):
                 continue  # exact id exists; it wins over the instances fallback
-            kind = "dimension" if wanted[cid] == "Reserved eVars" else "metric"
+            kind: Literal["metric", "dimension"] = (
+                "dimension" if wanted[cid] == "Reserved eVars" else "metric"
+            )
             out[cid] = Component(cid, name, kind, wanted[cid], None, Column(cid, cid), None, mtype)
 
     for d in dimensions:

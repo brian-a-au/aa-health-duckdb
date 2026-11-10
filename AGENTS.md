@@ -22,6 +22,7 @@ Run the same checks as GitHub Actions before every commit:
 uv run pytest --cov=ahd --cov-branch
 uv run ruff check
 uv run ruff format --check
+uv run mypy
 uv lock --check
 ```
 
@@ -49,7 +50,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 | `docs/` | The user documentation. The README is a short landing page that links to it. Update the matching page when behavior changes |
 | `docs/duckdb.md` | SQL recipes for the database, including alert emails |
 | `docs/examples/send_alerts.py` | The example alert email script, with its own tests |
-| `.github/workflows/` | Tests, lint, actionlint, the lockfile check, CodeQL, and the release from a `v*.*.*` tag |
+| `.github/workflows/` | Tests, lint, the type check, actionlint, the lockfile check, CodeQL, and the release from a `v*.*.*` tag |
 
 ## Rules
 

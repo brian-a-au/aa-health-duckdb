@@ -129,7 +129,8 @@ def trend_response(
     ]
     rows = [
         {
-            "itemId": f"1{d:%y%m%d}",
+            # As Adobe writes it: the years since 1900, the month counted from 0, and the day.
+            "itemId": f"{d.year - 1900}{d.month - 1:02d}{d.day:02d}",
             "value": f"{d:%b} {d.day}, {d.year}",
             "data": [0.0 if i in (column_errors or {}) else value for i in range(n)],
         }

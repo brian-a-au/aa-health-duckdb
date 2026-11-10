@@ -119,7 +119,7 @@ The `duckdb` command is older than 2.0. Update it, then check with `duckdb --ver
 
 ### A run stays "running"
 
-A run that you stop with Ctrl-C is marked "failed". The requests that were already sent finish first, and the rest are not sent.
+A run that you stop with Ctrl-C is marked "failed". The requests that were already sent finish first, and the rest are not sent. A request that was waiting to try again is not tried again.
 
 A run that stopped in another way, e.g., because you closed the window, keeps the status "running". Make a new run. To delete the old one, use `ahd prune --run N --force`.
 

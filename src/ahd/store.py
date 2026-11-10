@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from importlib import resources
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import duckdb
 
@@ -71,18 +71,26 @@ def _views() -> str:
     return resources.files("ahd").joinpath("sql/views.sql").read_text(encoding="utf-8")
 
 
+def _first(cur: duckdb.DuckDBPyConnection) -> Any:
+    """The first column of the first row of a result, or None when it has no row."""
+    row = cur.fetchone()
+    return None if row is None else row[0]
+
+
 def _update_views(con: duckdb.DuckDBPyConnection) -> None:
     """Write the views and the macro when the file holds another version of them, or none.
 
     Files made by ahd 0.1.2 and earlier have no views_version table. It all happens in one
     transaction, so a failure keeps the old views.
     """
-    has_table = con.execute(
-        "SELECT count(*) FROM information_schema.tables"
-        " WHERE table_schema = 'main' AND table_name = 'views_version'"
-    ).fetchone()[0]
+    has_table = _first(
+        con.execute(
+            "SELECT count(*) FROM information_schema.tables"
+            " WHERE table_schema = 'main' AND table_name = 'views_version'"
+        )
+    )
     if has_table:
-        found = con.execute("SELECT max(version) FROM views_version").fetchone()[0]
+        found = _first(con.execute("SELECT max(version) FROM views_version"))
         if found == VIEWS_VERSION:
             return
     con.execute("BEGIN TRANSACTION")
@@ -154,7 +162,13 @@ class Store:
         if not (read_only or create) and not path.exists():
             raise StoreError(f"There is no database at {path}. Choose the file with --db.")
         if not read_only:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                raise StoreError(
+                    f"The folder {path.parent} for the database could not be made "
+                    f"({e.strerror or type(e).__name__}). Choose another file with --db."
+                ) from None
         con = _connect(path, read_only)
         try:
             tables = {
@@ -172,7 +186,7 @@ class Store:
             else:
                 found = None
                 if "schema_version" in tables:
-                    found = con.execute("SELECT max(version) FROM schema_version").fetchone()[0]
+                    found = _first(con.execute("SELECT max(version) FROM schema_version"))
                 if found != SCHEMA_VERSION:
                     raise SchemaVersionError(
                         f"The database {path} was made by a different version of ahd. "
@@ -211,24 +225,25 @@ class Store:
         date_given: bool = False,
     ) -> int:
         """date_given is true when ahd run --date set the run date, not today's date."""
-        row = self.con.execute(
-            "INSERT INTO runs (run_id, rsid, rsid_name, segment_id, today, timezone,"
-            " tool_version, status, started_at, finished_at, currency, date_given)"
-            " VALUES (nextval('run_seq'), ?, ?, ?, ?, ?, ?, 'running', ?, NULL, ?, ?)"
-            " RETURNING run_id",
-            [
-                rsid,
-                rsid_name,
-                segment_id,
-                today,
-                timezone,
-                tool_version,
-                datetime.now(),
-                currency,
-                date_given,
-            ],
-        ).fetchone()
-        return row[0]
+        return _first(
+            self.con.execute(
+                "INSERT INTO runs (run_id, rsid, rsid_name, segment_id, today, timezone,"
+                " tool_version, status, started_at, finished_at, currency, date_given)"
+                " VALUES (nextval('run_seq'), ?, ?, ?, ?, ?, ?, 'running', ?, NULL, ?, ?)"
+                " RETURNING run_id",
+                [
+                    rsid,
+                    rsid_name,
+                    segment_id,
+                    today,
+                    timezone,
+                    tool_version,
+                    datetime.now(),
+                    currency,
+                    date_given,
+                ],
+            )
+        )
 
     def set_status(self, run_id: int, status: str) -> None:
         """Change only the status, e.g. when a pair added later had problems."""
@@ -244,23 +259,24 @@ class Store:
         metric_type: str | None = None,
     ) -> int:
         """Store a pair for the run and return its number: 1 for the first, then 2, 3 and so on."""
-        row = self.con.execute(
-            "INSERT INTO pairs (run_id, pair, dimension, metric, dimension_name, metric_name,"
-            " metric_type, added_at)"
-            " SELECT ?, coalesce(max(pair), 0) + 1, ?, ?, ?, ?, ?, ? FROM pairs WHERE run_id = ?"
-            " RETURNING pair",
-            [
-                run_id,
-                dimension,
-                metric,
-                dimension_name,
-                metric_name,
-                metric_type,
-                datetime.now(),
-                run_id,
-            ],
-        ).fetchone()
-        return row[0]
+        return _first(
+            self.con.execute(
+                "INSERT INTO pairs (run_id, pair, dimension, metric, dimension_name, metric_name,"
+                " metric_type, added_at)"
+                " SELECT ?, coalesce(max(pair), 0) + 1, ?, ?, ?, ?, ?, ? FROM pairs WHERE run_id = ?"
+                " RETURNING pair",
+                [
+                    run_id,
+                    dimension,
+                    metric,
+                    dimension_name,
+                    metric_name,
+                    metric_type,
+                    datetime.now(),
+                    run_id,
+                ],
+            )
+        )
 
     def list_pairs(self, run_id: int) -> list[dict]:
         cur = self.con.execute("SELECT * FROM pairs WHERE run_id = ? ORDER BY pair", [run_id])
@@ -407,20 +423,24 @@ class Store:
 
     def pair_has_data(self, run_id: int, pair: int, series_id: str) -> bool:
         """Whether the pair stored any row: a top 100 item, a breakdown or a daily value."""
-        row = self.con.execute(
-            "SELECT EXISTS (FROM top_items WHERE run_id = $r AND pair = $p)"
-            " OR EXISTS (FROM breakdowns WHERE run_id = $r AND pair = $p)"
-            " OR EXISTS (FROM breakdown_totals WHERE run_id = $r AND pair = $p)"
-            " OR EXISTS (FROM daily_values WHERE run_id = $r AND component_id = $s)",
-            {"r": run_id, "p": pair, "s": series_id},
-        ).fetchone()
-        return bool(row[0])
+        return bool(
+            _first(
+                self.con.execute(
+                    "SELECT EXISTS (FROM top_items WHERE run_id = $r AND pair = $p)"
+                    " OR EXISTS (FROM breakdowns WHERE run_id = $r AND pair = $p)"
+                    " OR EXISTS (FROM breakdown_totals WHERE run_id = $r AND pair = $p)"
+                    " OR EXISTS (FROM daily_values WHERE run_id = $r AND component_id = $s)",
+                    {"r": run_id, "p": pair, "s": series_id},
+                )
+            )
+        )
 
     def delete_pair(self, run_id: int, pair: int, series_id: str) -> None:
         """Remove one pair and every row stored for it, all or nothing.
 
         Used when ahd individual stops part way, so that the same pair can be tried again, and
-        when it replaces a pair that stored nothing. series_id is the component_id of the pair's daily trend, e.g. "individual/2".
+        when it replaces a pair that stored nothing. series_id is the component_id of the pair's
+        daily trend, e.g. "individual/2".
         """
         self.con.execute("BEGIN TRANSACTION")
         try:

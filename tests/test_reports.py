@@ -2,8 +2,11 @@ import json
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from ahd.api.reports import (
     Column,
+    MalformedResponse,
     breakdown_body,
     parse_breakdown,
     parse_ranked,
@@ -127,10 +130,45 @@ def test_parse_trend_without_anomaly_fields():
 def test_parse_trend_date_falls_back_to_item_id():
     resp = {
         "columns": {"columnIds": ["0"]},
-        "rows": [{"itemId": "1251028", "value": "garbage", "data": [3.0]}],
+        "rows": [
+            # Adobe counts the month in an itemId from 0: 09 is October and 00 is January.
+            {"itemId": "1250928", "value": "garbage", "data": [3.0]},
+            {"itemId": "1260008", "value": "garbage", "data": [4.0]},
+        ],
     }
     vals, _ = parse_trend(resp, [Column("metrics/a", "metrics/a")])
-    assert vals[0].day == date(2025, 10, 28)
+    assert [v.day for v in vals] == [date(2025, 10, 28), date(2026, 1, 8)]
+
+
+def test_item_id_fallback_agrees_with_the_dates_adobe_sent():
+    """Every row of a saved live answer gives the same day by its itemId as by its text."""
+    rows = load("live_trend_anomaly.json")["rows"]
+    cols = [Column("metrics/a", "metrics/a")]
+    by_text, _ = parse_trend({"rows": rows}, cols)
+    by_id, _ = parse_trend({"rows": [{**r, "value": "garbage"} for r in rows]}, cols)
+    assert rows and [v.day for v in by_id] == [v.day for v in by_text]
+
+
+@pytest.mark.parametrize(
+    "resp",
+    [
+        [],
+        {"rows": [{"itemId": "1260708", "value": "Aug 8, 2026", "data": [None]}]},
+        {"rows": [{"data": [1]}]},
+        {"rows": [{"itemId": "x", "value": "garbage", "data": [1]}]},
+        {"rows": "text"},
+    ],
+)
+def test_parse_trend_names_an_answer_of_the_wrong_shape(resp):
+    with pytest.raises(MalformedResponse):
+        parse_trend(resp, [Column("metrics/a", "metrics/a")])
+
+
+def test_parse_ranked_and_breakdown_name_an_answer_of_the_wrong_shape():
+    with pytest.raises(MalformedResponse):
+        parse_ranked({"rows": [{"value": "x", "data": []}]})
+    with pytest.raises(MalformedResponse):
+        parse_breakdown({"rows": [{"value": "x", "data": ["text"]}]})
 
 
 def test_parse_ranked():

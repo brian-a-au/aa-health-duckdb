@@ -79,6 +79,10 @@ class ApiError(Exception):
         return f"Adobe API error {self.status}{code}: {self.message}"
 
 
+class Stopped(Exception):
+    """The client was told to stop, e.g., after Ctrl-C, so the request was not sent."""
+
+
 def _json_or_none(resp: Any) -> Any:
     try:
         return resp.json()
@@ -114,12 +118,15 @@ class Pacer:
         limit: int = PACE_LIMIT,
         window: float = PACE_WINDOW,
         clock: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], None] = time.sleep,
+        sleep: Callable[[float], object] = time.sleep,
+        stop: threading.Event | None = None,
     ):
         self.limit = limit
         self.window = window
         self._clock = clock
         self._sleep = sleep
+        # When this is set, wait() returns at once. The client then stops the request.
+        self._stop = stop
         self._starts: deque[float] = deque()
         # A thread that must wait keeps the lock while it sleeps. The other threads then wait
         # behind it, in turn.
@@ -129,6 +136,8 @@ class Pacer:
         """Return when another request may start, and count it."""
         with self._lock:
             while True:
+                if self._stop is not None and self._stop.is_set():
+                    return
                 now = self._clock()
                 while self._starts and now - self._starts[0] >= self.window:
                     self._starts.popleft()
@@ -147,13 +156,16 @@ class AdobeClient:
         header: dict,
         company_id: str,
         relogin: Callable[[], dict],
-        sleep: Callable[[float], None] = time.sleep,
+        sleep: Callable[[float], object] | None = None,
         company_name: str = "",
         companies: int = 1,
         pacer: Pacer | None = None,
+        stop: threading.Event | None = None,
     ):
         self._session = session
         self._pacer = pacer
+        # Set by stop(). A wait between tries ends at once, and no new request is sent.
+        self._stop = stop or threading.Event()
         self._header = dict(header)
         # Guards _header. The generation counts sign-ins, so that when several threads see an
         # expired token at once, only the first signs in again and the rest reuse its header.
@@ -168,14 +180,20 @@ class AdobeClient:
         self.company_name = company_name
         self.companies = companies
         self._relogin = relogin
-        self._sleep = sleep
+        self._sleep = sleep or self._stop.wait
+
+    def stop(self) -> None:
+        """Send no more requests, from any thread. A request that is waiting for Adobe's
+        answer still gets it, because a thread cannot be stopped from outside. Every later
+        request raises Stopped, also one that was waiting to try again."""
+        self._stop.set()
 
     def __repr__(self) -> str:
         return f"AdobeClient(company_id={self.company_id!r})"
 
     @classmethod
     def _from_parts(
-        cls, session, header, company_id, relogin, sleep=time.sleep, pacer=None
+        cls, session, header, company_id, relogin, sleep=None, pacer=None
     ) -> AdobeClient:
         return cls(session, header, company_id, relogin, sleep=sleep, pacer=pacer)
 
@@ -187,6 +205,7 @@ class AdobeClient:
         def relogin() -> dict:
             return header_for(get_token(session, creds), creds, first.company_id)
 
+        stop = threading.Event()
         return cls(
             session,
             first.header,
@@ -194,7 +213,8 @@ class AdobeClient:
             relogin,
             company_name=first.company_name,
             companies=first.companies,
-            pacer=Pacer(),
+            pacer=Pacer(sleep=stop.wait, stop=stop),
+            stop=stop,
         )
 
     def get(self, path: str, params: dict | None = None) -> Any:
@@ -211,6 +231,8 @@ class AdobeClient:
         while True:
             if self._pacer is not None:
                 self._pacer.wait()
+            if self._stop.is_set():
+                raise Stopped("The client was stopped.")
             with self._header_lock:
                 header, gen, sign_ins = self._header, self._header_gen, self._sign_ins
             try:
