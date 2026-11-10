@@ -10,6 +10,10 @@ Fixes to the docs. The tool works the same as in 0.1.6.
 - The recipe "Values that dropped out of the top 100" listed each value once for every stored run. It now reads the latest run of each suite and names the suite.
 - The docs now name `ahd import` among the commands that write to the file and that replace the views and the macro.
 - The guide said that `unused` means a value of 0 on every day. It means a value of 0 or no value on every day.
+- Troubleshooting now covers more messages: an answer from Adobe that could not be read, an error from Adobe without a code, a profile name that is not valid, and a database file that does not exist or holds no runs.
+- Troubleshooting and "How runs are stored" now say which run is "the run before" and that a higher run number does not always mean a newer run, as 0.1.6 works.
+- The docs said that `ahd runs` lists the newest run first. It lists the highest run number first.
+- "The report" now says that a report with more than 400 components draws its tables when you pause, not on every step of a slider.
 
 ## 0.1.6 (2026-11-10)
 

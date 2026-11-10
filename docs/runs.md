@@ -24,11 +24,11 @@ With profiles, data from different organizations never shares a file. Runs for d
 
 ## How runs work
 
-- **Run numbers.** Runs are numbered 1, 2, 3 and so on, in the order you make them. The number appears in the report's file name, e.g., `ahd_my_suite_2026-11-07_run3.html`.
+- **Run numbers.** Runs are numbered 1, 2, 3 and so on, in the order you make them. A run that `ahd import` copies into a file can get a new number, so a higher number does not always mean a newer run. The tool goes by the run date and the start time where the order counts, e.g., in `latest_runs`. The number appears in the report's file name, e.g., `ahd_my_suite_2026-11-07_run3.html`.
 - **Each run is complete.** A run holds its own copy of everything its report needs, including all 92 days of data, even when those days overlap with an earlier run. Runs never share or merge data. If you run twice on the same day, you get two runs, and their numbers can differ a little if Adobe was still processing data in between.
 - **A run never changes.** The tool never changes or overwrites an earlier run's data. The one thing you can add is another Individual Component Summary pair, with `ahd individual`.
 - **Status.** A run starts as "running" and ends as "ok", "partial" or "failed". A run that you stop with Ctrl-C is "failed". A run that stopped in another way, e.g., because you closed the window, stays "running". `ahd individual` changes an "ok" run to "partial" when the new pair had problems, and a "failed" run to "partial" when the new pair stored data.
-- **Listing and rebuilding.** `ahd runs` lists every stored run, newest first. `ahd render --run 3` rebuilds the report for run 3 from the file, with no calls to Adobe. A rebuilt report uses the current version of the page design.
+- **Listing and rebuilding.** `ahd runs` lists every stored run, with the highest run number first. `ahd render --run 3` rebuilds the report for run 3 from the file, with no calls to Adobe. A rebuilt report uses the current version of the page design.
 - **Size.** One run of a suite with about 400 components takes about 3 MB. The file grows until you delete runs.
 - **Earlier runs in the report.** Each report lists the earlier runs of the same suite and segment in the file, with their alerts. A report you rebuild with `ahd render` lists the runs in the file at that time, so a deleted run is not listed. See [The report](report.md#earlier-runs).
 
