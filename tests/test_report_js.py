@@ -1874,3 +1874,161 @@ def test_the_chart_names_each_day_on_its_bottom_edge_once(chrome, tmp_path, days
     values = [_dv(cid, YESTERDAY - timedelta(days=d - 1), 5.0) for d in days]
     got = run_probe(chrome, _one_metric_page(tmp_path, values), LINES_PROBE, tmp_path)
     assert got["axis"] == labels
+
+
+def _page_of(tmp_path, series):
+    """The report of a run with one custom event for each list of daily values."""
+    store = Store.open(tmp_path / "some.duckdb")
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
+    comps, values = [], []
+    for i, make in enumerate(series, start=1):
+        cid = f"metrics/event{i}"
+        comps.append(
+            Component(cid, f"Event {i}", "metric", "custom_events", i, Column(cid, cid), True)
+        )
+        values += make(cid)
+    store.add_components(rid, comps)
+    store.add_daily_values(rid, values)
+    store.finish_run(rid, "ok")
+    html = render_html(build_view(store, rid))
+    store.con.close()
+    return html
+
+
+def _halved_last_week(usual):
+    """usual on every day, and half of it on each of the last 7 days."""
+    week = {YESTERDAY - timedelta(days=n) for n in range(7)}
+    return lambda cid: [
+        _dv(cid, d, usual / 2 if d in week else usual) for d in _days() if d != TODAY
+    ]
+
+
+WEEK_PROBE = """
+var g = document.getElementById("granularity");
+g.value = "week";
+g.dispatchEvent(new Event("change"));
+var out = { rows: {}, text: document.getElementById("change-alert-result").textContent };
+[].forEach.call(document.querySelectorAll("#tables tbody tr"), function (tr) {
+  out.rows[tr.querySelector("td.name").firstChild.textContent] = tr.textContent;
+});
+var only = document.getElementById("flagged-only");
+only.click();
+out.flagged = [].map.call(document.querySelectorAll("#tables tbody tr"), function (tr) {
+  return tr.querySelector("td.name").firstChild.textContent;
+});
+return out;
+"""
+
+
+def test_the_weekly_view_skips_a_component_with_a_small_average_week(chrome, tmp_path):
+    # Event 1 has 2 a day, so its average week is 14. Every daily view skips it, because its
+    # weekday average is under 10, and the weekly view must skip it too. Event 2 has 20 a day.
+    page = _page_of(tmp_path, [_halved_last_week(2.0), _halved_last_week(20.0)])
+    got = run_probe(chrome, page, WEEK_PROBE, tmp_path)
+    assert "Large drop" not in got["rows"]["Event 1"]
+    assert "Large drop" in got["rows"]["Event 2"]
+    assert got["flagged"] == ["Event 2"]
+    assert ": 1 component is more than 30% below the average week." in got["text"]
+    assert "under 70" in page
+
+
+SLOW_PROBE = """
+var slider = document.getElementById("change-alert");
+var result = document.getElementById("change-alert-result");
+var find = document.getElementById("find");
+var out = { before: result.textContent, rows: document.querySelectorAll("#tables tbody tr").length };
+[-40, -50, -60].forEach(function (v) {
+  slider.value = String(v);
+  slider.dispatchEvent(new Event("input"));
+});
+out.shown = document.getElementById("change-alert-value").textContent;
+out.atOnce = result.textContent;
+find.value = "Event 7";
+find.dispatchEvent(new Event("input"));
+out.rowsAtOnce = document.querySelectorAll("#tables tbody tr").length;
+return new Promise(function (r) { setTimeout(r, 1000); }).then(function () {
+  out.later = result.textContent;
+  out.rowsLater = document.querySelectorAll("#tables tbody tr").length;
+  return out;
+});
+"""
+
+
+def test_a_large_page_draws_again_once_the_reader_pauses(chrome, tmp_path):
+    # With more than 400 components, the tables are drawn again after a pause, not on every step
+    # of the slider. The slider's own value still changes at once.
+    page = _page_of(tmp_path, [lambda cid: [_dv(cid, YESTERDAY, 5.0)]] * 401)
+    got = run_probe(chrome, page, SLOW_PROBE, tmp_path)
+    assert got["rows"] == 401 and got["shown"] == "-60%"
+    assert "more than 30%" in got["before"] and got["atOnce"] == got["before"]
+    assert got["rowsAtOnce"] == 401
+    assert "more than 60%" in got["later"]
+    assert 0 < got["rowsLater"] < 401
+
+
+PAGE_EDGE_PROBE = """
+var svg = document.querySelector("#calendar svg");
+function key(name, times) {
+  for (var i = 0; i < (times || 1); i++) {
+    svg.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true }));
+  }
+  return document.querySelector("#calendar .calendar-readout").textContent;
+}
+var out = { up: key("ArrowUp"), back: key("ArrowDown") };
+out.right = key("ArrowRight");
+out.down = key("ArrowDown");
+out.left = key("ArrowLeft", 20);
+out.wide = document.documentElement.scrollWidth - document.documentElement.clientWidth;
+var status = document.getElementById("change-alert-result");
+var node = status.firstChild;
+var find = document.getElementById("find");
+find.value = "Event";
+find.dispatchEvent(new Event("input"));
+out.sameText = status.firstChild === node;
+out.axis = [].map.call(document.querySelectorAll("#metric-chart svg text.axis"), function (t) {
+  return t.textContent;
+}).filter(function (t) { return /^[0-9.]+$/.test(t); });
+return out;
+"""
+
+
+def test_calendar_keys_stop_at_the_edges_and_small_values_get_their_own_labels(chrome, tmp_path):
+    # Values up to 0.2 give axis steps of 0.05. One decimal named two lines "0.1".
+    values = [_dv("metrics/event1", d, 0.2 if d.day % 2 else 0.1) for d in _days() if d != TODAY]
+    page = _one_metric_page(tmp_path, values)
+    # 650 px is wider than a phone and narrower than the four columns of the sliders need.
+    got = run_probe(chrome, page, PAGE_EDGE_PROBE, tmp_path, width=650)
+    assert got["up"].startswith("Thu, Nov 5") and got["back"].startswith("Fri, Nov 6")
+    # Yesterday is the last day. A key that would leave the grid keeps the choice.
+    assert got["right"] == got["back"] and got["down"] == got["back"]
+    # 20 weeks back is before the first day, so the choice stops on the first Friday.
+    assert got["left"].startswith("Fri, Aug 14")
+    assert got["wide"] <= 0
+    assert got["sameText"] is True
+    assert got["axis"] == ["0", "0.05", "0.1", "0.15", "0.2"]
+
+
+FLAG_SORT_PROBE = """
+var table = document.querySelector("#tables table");
+var note = table.closest(".table-wrap").nextElementSibling;
+var button = [].filter.call(table.tHead.querySelectorAll("button"), function (b) {
+  return b.firstChild.textContent === "Flag";
+})[0];
+button.click();
+var out = { first: note.firstChild.textContent };
+button.click();
+out.second = note.firstChild.textContent;
+var reset = note.querySelector("button");
+reset.focus();
+reset.click();
+out.hidden = note.hidden;
+out.focus = document.activeElement === button;
+return out;
+"""
+
+
+def test_a_flag_sort_has_no_a_to_z_and_original_order_keeps_the_focus(chrome, edges, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*edges)), FLAG_SORT_PROBE, tmp_path)
+    assert got["first"] == "Sorted by Flag."
+    assert got["second"] == "Sorted by Flag, in reverse order."
+    assert got["hidden"] is True and got["focus"] is True

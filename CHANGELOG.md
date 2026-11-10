@@ -6,6 +6,15 @@ This file lists the changes in each release. The version numbers follow [Semanti
 
 The database layout stays at version 7.
 
+- The weekly view no longer shows a large drop or spike for a component with a small average week. It compared the average week with the daily minimum of 10, so a component with 2 a day could be flagged. The weekly view now skips a component whose average week is under 70, which is 10 a day, as the daily views do.
+- A report with more than 400 components now draws its tables again when you pause, not on every step of a slider or every letter in the find box. Dragging a slider on a large report no longer stutters. A smaller report still draws at once.
+- In the calendar, an arrow key at the edge of the grid now keeps the chosen day. Before, it jumped to the first or the last day, which could be another weekday.
+- "Original order" under a sorted table now keeps the keyboard focus on the column's heading. Before, the focus went back to the top of the page.
+- The sentences under the sliders are no longer read out again by a screen reader when their text did not change, e.g., while you type in the find box.
+- The note under a table sorted by Flag or Number no longer says "A to Z".
+- A chart of very small values, e.g., up to 0.2, now gives each line its own label. Before, two lines could both read "0.1".
+- The report no longer scrolls sideways in a window between about 600 and 690 px wide.
+- The report's Content Security Policy now also blocks a changed base address and any form target.
 - An answer from Adobe that is valid JSON but not a report, e.g., one with an empty value where a number belongs, no longer ends the run with an error trace. The requests that got such an answer are listed in the report's status section under "Adobe sent an answer that could not be read", and the run ends "partial" with the rest of its data.
 - When Adobe sends a day in a form the tool does not know, the tool reads the day from Adobe's own number for it. That reading was wrong by one month, and it failed for every day in January. It is now correct. Adobe's usual answers were not affected.
 - `ahd check` without `--rsid` now counts every report suite. Before, it stopped counting at 1,000.

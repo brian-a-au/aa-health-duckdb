@@ -56,7 +56,7 @@ The spike slider sets how far a value must rise above its weekday average to cou
 Under the sliders, one line says what the weekday average is. Open "How large drops and spikes are found" to read the full rule:
 
 - **The weekday average** is the average of the same weekday in the 12 weeks before the day, e.g., the 12 Mondays before a Monday. It is not Adobe's expected value. Adobe's anomaly detection computes the expected value with its own model.
-- **Small numbers are skipped.** Components with a weekday average under 10 are never large drops or spikes, because small numbers change a lot from day to day.
+- **Small numbers are skipped.** Components with a weekday average under 10 are never large drops or spikes, because small numbers change a lot from day to day. In the weekly view, the same holds for a component whose average week is under 70.
 - **Zero and Adobe flags come first.** A value of 0 is listed as "Dropped to zero", and a value that Adobe flagged is listed as an unusual value. Neither one is also a large drop or spike.
 - **Arrows follow the sliders.** The tables show a down arrow for a change past the drop slider, and an up arrow for a change past the spike slider.
 - **Everything updates at once.** When you move a slider, the tiles, the tables, the "Show only flagged" filter and the alerts change right away.

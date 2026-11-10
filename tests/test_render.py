@@ -458,7 +458,8 @@ def test_issue_headings_for_known_codes():
 def test_csp_meta_is_first_in_head():
     html = render_html(sample_view())
     assert CSP == (
-        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:"
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; "
+        "base-uri 'none'; form-action 'none'"
     )
     meta = f'<meta http-equiv="Content-Security-Policy" content="{CSP}">'
     assert meta.replace("'", "&#39;") in html or meta in html

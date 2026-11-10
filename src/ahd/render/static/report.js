@@ -130,15 +130,19 @@
     if (type === "currency") return (Math.abs(v) >= 100 ? moneyRound : money).format(v);
     return Math.abs(v) >= 100 ? roundBig.format(v) : roundSmall.format(v);
   }
-  function fmtShort(v, type) {
+  // digits: the decimals to keep for a value under 1,000, e.g., 2 for an axis in steps of 0.05.
+  function fmtShort(v, type, digits) {
     if (type === "currency" && moneyShort) return moneyShort.format(v);
     var a = Math.abs(v);
     if (a >= 1e9) return trim(v / 1e9) + "B";
     if (a >= 1e6) return trim(v / 1e6) + "M";
     if (a >= 1e3) return trim(v / 1e3) + "K";
-    return trim(v);
+    return trim(v, digits);
   }
-  function trim(v) { return String(Math.round(v * 10) / 10); }
+  function trim(v, digits) {
+    var f = Math.pow(10, digits > 1 ? digits : 1);
+    return String(Math.round(v * f) / f);
+  }
   function fmtPct(p) {
     if (p === null || p === undefined) return "";
     var n = Math.round(p * 1000) / 10;
@@ -373,12 +377,22 @@
       });
       clear(note);
       if (st.dir) {
-        var h = headers[st.col];
-        var how = numSort(h) ? (st.dir === 1 ? "largest first" : "smallest first") :
-          (st.dir === 1 ? "A to Z" : "Z to A");
-        note.appendChild(document.createTextNode("Sorted by " + h.label + ", " + how + "."));
+        var h = headers[st.col], col = st.col;
+        // A column of text that sorts by a number, e.g., Flag, has no A to Z order.
+        var byNumber = !numSort(h) && rows.some(function (r) {
+          return typeof cellKey(r[col]) === "number";
+        });
+        var how = numSort(h) ? (st.dir === 1 ? ", largest first" : ", smallest first") :
+          byNumber ? (st.dir === 1 ? "" : ", in reverse order") :
+          (st.dir === 1 ? ", A to Z" : ", Z to A");
+        note.appendChild(document.createTextNode("Sorted by " + h.label + how + "."));
         var reset = el("button", { type: "button" }, "Original order");
-        reset.addEventListener("click", function () { setSort(-1, 0); });
+        reset.addEventListener("click", function () {
+          setSort(-1, 0);
+          // The note with this button is gone now. Keep the keyboard focus in the table.
+          var back = ths[col] && ths[col].querySelector("button");
+          if (back) back.focus();
+        });
         note.appendChild(reset);
         note.hidden = false;
       } else {
@@ -464,15 +478,19 @@
     return null;
   }
   // A value that rose further above its weekday average than the spike slider allows.
-  function isLargeSpike(value, usual, pct) {
+  // The smallest average that a row needs for a large drop or spike. A row of the weekly view
+  // holds the average week, the sum of the 7 weekday averages, so it needs 7 times as much.
+  function minUsual(week) { return week ? MIN_USUAL * 7 : MIN_USUAL; }
+  // week is true for a row of the weekly view.
+  function isLargeSpike(value, usual, pct, week) {
     return value !== 0 && pct !== null && pct !== undefined && pct > state.s &&
-      usual !== null && usual >= MIN_USUAL;
+      usual !== null && usual >= minUsual(week);
   }
   // A value that fell further below its weekday average than the slider allows. Zero is its own
   // alert.
-  function isLargeDrop(value, usual, pct) {
+  function isLargeDrop(value, usual, pct, week) {
     return value !== 0 && pct !== null && pct !== undefined && pct < -state.t &&
-      usual !== null && usual >= MIN_USUAL;
+      usual !== null && usual >= minUsual(week);
   }
 
   function changeCell(arrow, pct) {
@@ -546,8 +564,8 @@
   function flagCell(row, daily) {
     if (!daily) {
       var wf = weekFlags(row), flags = weekFlagBadges(row);
-      var extra = isLargeDrop(row.value, row.baseline, row.pct) ? dropBadge() :
-        isLargeSpike(row.value, row.baseline, row.pct) ? spikeBadge() : null;
+      var extra = isLargeDrop(row.value, row.baseline, row.pct, true) ? dropBadge() :
+        isLargeSpike(row.value, row.baseline, row.pct, true) ? spikeBadge() : null;
       if (!flags && !extra) return { c: "", k: null };
       var cell = el("span", { "class": "week-flags" });
       if (flags) cell.appendChild(flags);
@@ -562,13 +580,14 @@
   }
 
   function isFlagged(row) {
-    if (state.gran === "week") {
+    var week = state.gran === "week";
+    if (week) {
       var wf = weekFlags(row);
       if (wf.high || wf.low) return true;
     }
     return !!(row.anomaly || (row.zero && !row.unused) ||
-      isLargeDrop(row.value, row.baseline, row.pct) ||
-      isLargeSpike(row.value, row.baseline, row.pct));
+      isLargeDrop(row.value, row.baseline, row.pct, week) ||
+      isLargeSpike(row.value, row.baseline, row.pct, week));
   }
 
   // The find box matches a component's name, number, e.g., "eVar5", or id, in any case.
@@ -744,6 +763,8 @@
     return frag;
   }
 
+  function setText(node, text) { if (node.textContent !== text) node.textContent = text; }
+
   function currentRows() {
     return (state.gran === "week" ? data.views.week : data.views["day:" + state.day]) || [];
   }
@@ -751,10 +772,9 @@
   function renderSliderResult() {
     var when = state.gran === "week" ? "The week ending " + fmtDay(yesterday, false) :
       fmtDay(state.day, false) + dayNote(state.day);
-    byId("change-alert-result").textContent = dropSummary(currentRows(), when,
-      state.gran === "week");
-    byId("spike-alert-result").textContent = spikeSummary(currentRows(), when,
-      state.gran === "week");
+    // A screen reader reads these lines again when their text is set, so set only a new text.
+    setText(byId("change-alert-result"), dropSummary(currentRows(), when, state.gran === "week"));
+    setText(byId("spike-alert-result"), spikeSummary(currentRows(), when, state.gran === "week"));
   }
 
   function renderTables() {
@@ -844,6 +864,15 @@
     var norm = raw / mag;
     var step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10;
     return step * mag;
+  }
+
+  // The fewest decimals, from 1 to 6, that write the step in full, e.g., 2 for 0.05.
+  function stepDigits(step) {
+    for (var d = 1; d < 6; d++) {
+      var scaled = step * Math.pow(10, d);
+      if (Math.abs(scaled - Math.round(scaled)) < 1e-6) return d;
+    }
+    return 6;
   }
 
   function segments(points, pick) {
@@ -956,6 +985,9 @@
     var top = Math.ceil(max / step) * step;
     var bottom = Math.floor(min / step) * step;
     function y(v) { return T + (top - v) / (top - bottom) * ph; }
+    // A step under 1 needs its own decimals, or two lines get the same label, e.g., 0.1 twice
+    // for steps of 0.05.
+    var axisDigits = stepDigits(step);
 
     var svg = sv("svg", {
       viewBox: "0 0 " + W + " " + H, role: "img", tabindex: 0,
@@ -969,7 +1001,7 @@
       svg.appendChild(sv("line", { x1: L, x2: W - R, y1: y(v), y2: y(v),
         "class": Math.abs(v) < step / 2 ? "base" : "grid" }));
       var lab = sv("text", { x: L - 6, y: y(v) + 3, "text-anchor": "end", "class": "axis" });
-      lab.textContent = fmtShort(v, type);
+      lab.textContent = fmtShort(v, type, axisDigits);
       svg.appendChild(lab);
     }
     // A short series has fewer days than labels, so each day gets one label at most.
@@ -1379,7 +1411,9 @@
         var step = { ArrowLeft: -7, ArrowRight: 7, ArrowUp: -1, ArrowDown: 1 }[e.key];
         if (!step) return;
         e.preventDefault();
-        select(Math.max(0, Math.min(days.length - 1, selected + step)));
+        // At an edge of the grid the choice stays, so it never jumps to another weekday.
+        var to = selected + step;
+        if (to >= 0 && to < days.length) select(to);
       });
       svgHost.appendChild(svg);
       drawGrid.place = place;
@@ -1767,13 +1801,13 @@
   function dropSummary(rows, when, week) {
     var base = week ? "the average week" : "the weekday average";
     var pct = Math.round(state.t * 100) + "%";
-    var drops = rows.filter(function (r) { return isLargeDrop(r.value, r.baseline, r.pct); });
+    var drops = rows.filter(function (r) { return isLargeDrop(r.value, r.baseline, r.pct, week); });
     var flagged = drops.length;
     var byAdobe = drops.filter(function (r) { return !!r.anomaly; }).length;
     var worst = null;
     rows.forEach(function (r) {
       if (r.zero || r.pct === null || r.pct === undefined || r.pct >= 0) return;
-      if (r.baseline === null || r.baseline < MIN_USUAL) return;
+      if (r.baseline === null || r.baseline < minUsual(week)) return;
       if (!worst || r.pct < worst.pct) worst = r;
     });
     var head = flagged ?
@@ -1791,13 +1825,13 @@
   function spikeSummary(rows, when, week) {
     var base = week ? "the average week" : "the weekday average";
     var pct = Math.round(state.s * 100) + "%";
-    var spikes = rows.filter(function (r) { return isLargeSpike(r.value, r.baseline, r.pct); });
+    var spikes = rows.filter(function (r) { return isLargeSpike(r.value, r.baseline, r.pct, week); });
     var flagged = spikes.length;
     var byAdobe = spikes.filter(function (r) { return !!r.anomaly; }).length;
     var best = null;
     rows.forEach(function (r) {
       if (r.pct === null || r.pct === undefined || r.pct <= 0) return;
-      if (r.baseline === null || r.baseline < MIN_USUAL) return;
+      if (r.baseline === null || r.baseline < minUsual(week)) return;
       if (!best || r.pct > best.pct) best = r;
     });
     var head = flagged ?
@@ -2290,9 +2324,23 @@
     state.flagged = e.target.checked;
     renderTables();
   });
+  // Drawing every table again takes about 0.1 s for 1,500 components. On a page with more than
+  // SLOW_ROWS components, the page waits until the reader pauses, so that dragging a slider or
+  // typing stays smooth. A smaller page draws at once.
+  var SLOW_ROWS = 400, PAUSE_MS = 150;
+  var slowPage = (data.views.week || []).length > SLOW_ROWS;
+  function whenPaused(draw) {
+    var timer = null;
+    return function () {
+      if (!slowPage) { draw(); return; }
+      clearTimeout(timer);
+      timer = setTimeout(draw, PAUSE_MS);
+    };
+  }
+  var drawFound = whenPaused(renderTables);
   byId("find").addEventListener("input", function (e) {
     state.find = e.target.value.trim();
-    renderTables();
+    drawFound();
   });
 
   var alertDaySel = byId("alert-day");
@@ -2316,12 +2364,12 @@
     input.style.setProperty("--pos", Math.round(pos * 1000) / 10 + "%");
     input.style.setProperty("--strength", Math.round(20 + far * 80) + "%");
   }
-  function afterSlider() {
+  var afterSlider = whenPaused(function () {
     renderTiles();
     renderTables();
     renderAlerts();
     renderHistory();
-  }
+  });
   var slider = byId("change-alert");
   slider.value = String(-Math.round(state.t * 100));
   paintSlider(slider, "left");

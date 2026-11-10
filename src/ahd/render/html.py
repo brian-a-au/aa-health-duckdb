@@ -58,7 +58,11 @@ ISSUE_HEADINGS = {
 # The fetch step records an Adobe error without its own code as http_<status>.
 HTTP_HEADING = "Adobe returned an error for some requests."
 
-CSP = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:"
+# default-src does not cover base-uri and form-action, so they are named.
+CSP = (
+    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; "
+    "base-uri 'none'; form-action 'none'"
+)
 
 BREAKDOWN_NOTES = {
     "browser": "Rows are the top 10 values in the first column (Google), as in the Excel version.",

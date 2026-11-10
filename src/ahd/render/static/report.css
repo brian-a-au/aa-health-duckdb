@@ -159,10 +159,11 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .change-alert input[type="range"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 .change-alert output { font-weight: 600; min-width: 3.5em; }
 /* The two sliders line up in a grid: label, slider, value, then the words after the value. On a
-   phone the label and the words take their own rows. */
+   narrow window the label and the words take their own rows. The four columns need about 690 px,
+   so the change comes at 720 px. */
 .sliders { flex-basis: 100%; display: grid; grid-template-columns: max-content minmax(160px, 320px) 4em max-content; align-items: center; gap: 6px 12px; }
 .sliders input[type="range"] { max-width: none; width: 100%; }
-@media (max-width: 600px) {
+@media (max-width: 720px) {
   .sliders { grid-template-columns: 1fr auto; gap: 2px 12px; }
   .sliders label, .sliders span { grid-column: 1 / -1; }
   .sliders span { margin-bottom: 8px; color: var(--text-2); }
