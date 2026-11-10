@@ -345,3 +345,45 @@ def test_an_imported_run_gives_the_same_report(tmp_path):
         import_runs(new, src)
         assert render_html(build_view(new, rid)) == before, name
         new.con.close()
+
+
+def test_an_import_with_new_numbers_keeps_the_latest_run_and_the_run_before(tmp_path):
+    """Old runs that got higher numbers are not the latest run, and not the run before."""
+    from ahd.catalog import CUSTOM_GROUPS
+    from ahd.summary import component_drops
+
+    def run(store, today, events):
+        rid = store.create_run("rs1", "Name", None, today, "UTC", "0.1")
+        store.add_components(
+            rid,
+            [
+                Component(
+                    f"metrics/event{i}",
+                    f"E{i}",
+                    "metric",
+                    CUSTOM_GROUPS[0],
+                    i,
+                    Column(f"metrics/event{i}", f"metrics/event{i}"),
+                    None,
+                )
+                for i in range(1, events + 1)
+            ],
+        )
+        store.finish_run(rid, "ok")
+        return rid
+
+    old = Store.open(tmp_path / "old.duckdb")
+    run(old, date(2026, 10, 15), 10)
+    run(old, date(2026, 10, 16), 10)
+    old.con.close()
+    new = Store.open(tmp_path / "new.duckdb")
+    yesterday = run(new, date(2026, 11, 8), 5)
+    result = import_runs(new, tmp_path / "old.duckdb")
+    assert result.renumbered == [(1, 2), (2, 3)]
+    assert new.con.execute("SELECT run_id FROM latest_runs").fetchall() == [(yesterday,)]
+    today = run(new, date(2026, 11, 9), 5)
+    assert new.con.execute("SELECT run_id FROM latest_runs").fetchall() == [(today,)]
+    # The run of the day before saw the same 5 events, so there is nothing to warn about.
+    assert new.previous_run(today) == yesterday
+    assert component_drops(new, today) == []
+    new.con.close()

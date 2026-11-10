@@ -277,6 +277,63 @@ def test_latest_runs_view(tmp_path):
     assert rows == [(b,), (c,)] and a not in rows and running not in rows
 
 
+def _run_on(store, today, rsid="rs1"):
+    """A finished run for this run date."""
+    rid = store.create_run(rsid, "Name", None, today, "UTC", "0.1")
+    store.add_components(rid, [_comp()])
+    store.finish_run(rid, "ok")
+    return rid
+
+
+def _latest(store):
+    return store.con.execute("select run_id from latest_runs order by run_id").fetchall()
+
+
+def test_latest_runs_goes_by_the_run_date_not_the_run_number(tmp_path):
+    s = Store.open(tmp_path / "a.duckdb")
+    newest = _run_on(s, date(2026, 11, 9))
+    # Made later with --date for an old date, so it has the higher number.
+    _run_on(s, date(2026, 10, 15))
+    assert _latest(s) == [(newest,)]
+
+
+def test_latest_runs_of_one_date_is_the_run_made_last(tmp_path):
+    s = Store.open(tmp_path / "a.duckdb")
+    first = _run_on(s, date(2026, 11, 9))
+    second = _run_on(s, date(2026, 11, 9))
+    assert _latest(s) == [(second,)]
+    # The numbers do not decide it, e.g., after an import gave the runs new numbers.
+    s.con.execute(
+        "update runs set started_at = started_at + interval 1 hour where run_id = ?", [first]
+    )
+    assert _latest(s) == [(first,)]
+    # Two runs that started at the same time go by their number.
+    s.con.execute("update runs set started_at = timestamp '2026-11-09 08:00:00'")
+    assert _latest(s) == [(second,)]
+
+
+def test_previous_run_goes_by_the_start_time_not_the_run_number(tmp_path):
+    s = Store.open(tmp_path / "a.duckdb")
+    yesterday = _run_on(s, date(2026, 11, 8))
+    # Two old runs with higher numbers, as ahd import leaves them in a file that held a run.
+    old_a = _run_on(s, date(2026, 10, 15))
+    old_b = _run_on(s, date(2026, 10, 16))
+    for run, started in ((old_a, "2026-10-15 06:00:00"), (old_b, "2026-10-16 06:00:00")):
+        s.con.execute("update runs set started_at = ?::timestamp where run_id = ?", [started, run])
+    s.con.execute(
+        "update runs set started_at = timestamp '2026-11-08 06:00:00' where run_id = ?", [yesterday]
+    )
+    today = _run_on(s, date(2026, 11, 9))
+    assert s.previous_run(today) == yesterday
+    assert s.previous_run(yesterday) == old_b
+    assert s.previous_run(old_b) == old_a
+    assert s.previous_run(old_a) is None
+    # Runs that started at the same time go by their number.
+    s.con.execute("update runs set started_at = timestamp '2026-11-08 06:00:00'")
+    assert s.previous_run(today) == old_b and s.previous_run(old_a) == yesterday
+    assert s.previous_run(yesterday) is None
+
+
 def test_bulk_insert_keeps_every_value(tmp_path):
     import math
 
@@ -417,7 +474,7 @@ def test_failed_views_update_keeps_the_old_views(tmp_path, monkeypatch):
 
 # The SHA-256 of sql/views.sql. When you change views.sql, raise VIEWS_VERSION in store.py and
 # put the new hash here.
-VIEWS_SHA256 = "1952ca70ead33583074735cd092584e30381974b9c3303277cc1a97a5d5b7420"
+VIEWS_SHA256 = "1e6db7603e00bde846383f5b61963be617d68396a4376eac0fc5bf3e220510de"
 
 
 def test_views_version_is_raised_when_views_sql_changes():
@@ -426,7 +483,7 @@ def test_views_version_is_raised_when_views_sql_changes():
     from ahd.store import _views
 
     found = hashlib.sha256(_views().encode("utf-8")).hexdigest()
-    assert VIEWS_VERSION == 1 and found == VIEWS_SHA256, (
+    assert VIEWS_VERSION == 2 and found == VIEWS_SHA256, (
         "sql/views.sql changed. Raise VIEWS_VERSION in store.py, and put the new version and hash"
         " in this test."
     )

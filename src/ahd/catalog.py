@@ -57,6 +57,21 @@ def _exists_column(dim_id: str) -> Column:
     return Column(dim_id, "metrics/occurrences", dim_id)
 
 
+def _with_id(rows: list[dict]) -> list[dict]:
+    """The entries that are objects with a text ID. Any other entry cannot be checked."""
+    return [r for r in rows if isinstance(r, dict) and isinstance(r.get("id"), str) and r["id"]]
+
+
+def _name(row: dict, default: str) -> str:
+    name = row.get("name")
+    return name if isinstance(name, str) and name else default
+
+
+def _allowed(row: dict) -> bool | None:
+    allowed = row.get("allowedForReporting")
+    return allowed if isinstance(allowed, bool) else None
+
+
 def build_catalog(
     metrics: list[dict], dimensions: list[dict], solution: dict[str, list[str]]
 ) -> list[Component]:
@@ -70,11 +85,13 @@ def build_catalog(
         if cid.startswith("metrics/"):
             wanted[cid] = g
             wanted[cid + "instances"] = g
+    metrics = _with_id(metrics)
+    dimensions = _with_id(dimensions)
     exact = {m["id"] for m in metrics}
 
     for m in metrics:
         cid = m["id"]
-        name = m.get("name") or cid
+        name = _name(m, cid)
         mtype = m.get("type") if isinstance(m.get("type"), str) else None
         if mt := _EVENT.match(cid):
             out[cid] = Component(
@@ -100,8 +117,8 @@ def build_catalog(
 
     for d in dimensions:
         cid = d["id"]
-        name = d.get("name") or cid
-        allowed = d.get("allowedForReporting")
+        name = _name(d, cid)
+        allowed = _allowed(d)
         if mt := _PROP.match(cid):
             out[cid] = Component(
                 cid, name, "dimension", "custom_props", int(mt[1]), _exists_column(cid), allowed
@@ -114,12 +131,12 @@ def build_catalog(
     page = next((d for d in dimensions if d["id"] == "variables/page"), {})
     out["variables/page"] = Component(
         "variables/page",
-        page.get("name") or "Page",
+        _name(page, "Page"),
         "dimension",
         "Reserved Props",
         None,
         _exists_column("variables/page"),
-        page.get("allowedForReporting"),
+        _allowed(page),
     )
 
     def key(c: Component):

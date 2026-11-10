@@ -141,7 +141,7 @@ Alerts for 2026-11-07: 2 unusual values, 1 large drop, 0 large spikes, 0 drops t
 
 The alerts line uses the `--change-alert` percent for large drops and the `--spike-alert` percent for large spikes. It is left out after a failed run.
 
-If the run sees more than 20 percent fewer custom events, eVars or props than the run before it for the same suite, it prints a warning. The warning gives both counts and the usual cause. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
+If the run sees more than 20 percent fewer custom events, eVars or props than the run before it for the same suite, it prints a warning. The run before is the run of that suite that was made last before this one, also when its run number is higher, e.g., after `ahd import`. The warning gives both counts and the usual cause. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 
 With several suites, the command signs in once and checks the suites one after another. Each suite gets its own run and its own report.
 

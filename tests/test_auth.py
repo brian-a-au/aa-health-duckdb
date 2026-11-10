@@ -222,3 +222,14 @@ def test_org_without_companies_is_product_profile():
 @pytest.mark.parametrize("discovery", [(403, {"error": "x"}), (200, None), (200, [1])])
 def test_discovery_failure(discovery):
     assert "discovery call answered" in _fails(Session(GOOD_TOKEN, discovery))
+
+
+@pytest.mark.parametrize("companies", [5, "text", {"globalCompanyId": "co1"}])
+def test_companies_in_another_form_are_no_company(companies):
+    entry = {"imsOrgId": "ORG1@AdobeOrg", "companies": companies}
+    assert _fails(Session(GOOD_TOKEN, orgs(entry))) == NO_COMPANY
+
+
+@pytest.mark.parametrize("found", [5, "text", {"imsOrgId": "ORG1@AdobeOrg"}])
+def test_orgs_in_another_form_are_no_org(found):
+    assert _fails(Session(GOOD_TOKEN, (200, {"imsOrgs": found}))) == NO_COMPANY

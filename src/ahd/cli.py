@@ -26,6 +26,8 @@ from ahd.fetch import (
     fetch_catalog,
     probe_anomaly,
     run_fetch,
+    suite_name,
+    suite_zone,
 )
 from ahd.lookup import (
     list_segments,
@@ -383,7 +385,7 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
         return 0
     catalog, suite = fetch_catalog(client, args.rsid)
     counts = {g: sum(1 for c in catalog if c.group == g) for g in CUSTOM_GROUPS}
-    print(f"Report suite: {suite.get('name') or args.rsid}")
+    print(f"Report suite: {suite_name(suite, args.rsid)}")
     print(f"Custom events: {counts['custom_events']}")
     print(f"Custom eVars: {counts['custom_evars']}")
     print(f"Custom props: {counts['custom_props']}")
@@ -392,9 +394,7 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     if not any(counts.values()):
         ok = False
         print("No custom events, eVars or props are visible to this credential.")
-    window = RunWindow.for_today(
-        today_in_zone(suite.get("timezoneZoneinfo") or "UTC", datetime.now(UTC))
-    )
+    window = RunWindow.for_today(today_in_zone(suite_zone(suite), datetime.now(UTC)))
     if catalog:
         try:
             allowed = probe_anomaly(client, args.rsid, window, catalog[0].column)

@@ -79,6 +79,19 @@ class ApiError(Exception):
         return f"Adobe API error {self.status}{code}: {self.message}"
 
 
+def unreadable(what: str) -> ApiError:
+    """The error for an answer that is valid JSON but not in the form the tool reads.
+
+    what names the answer in plain words, e.g., "the list of metrics".
+    """
+    return ApiError(
+        200,
+        f"Adobe sent an answer for {what} in a form that the tool could not read. Running "
+        "again may fix this.",
+        "invalid_response",
+    )
+
+
 class Stopped(Exception):
     """The client was told to stop, e.g., after Ctrl-C, so the request was not sent."""
 

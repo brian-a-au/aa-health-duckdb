@@ -115,7 +115,9 @@ When a new version of `ahd` changes these rules, the next `ahd run`, `ahd indivi
 
 ### `latest_runs`
 
-The newest run of each report suite and segment that ended "ok" or "partial". Failed runs are left out.
+The latest run of each report suite and segment that ended "ok" or "partial". Failed runs are left out.
+
+The latest run is the one with the newest run date, which is the `today` column. The run number does not decide it. A run made later with `ahd run --date` for an old date has a higher number, and so does an old run that `ahd import` gave a new number. When two runs have the same run date, the one that was made last is the latest.
 
 ```sql
 FROM latest_runs SELECT run_id, rsid_name, today, status ORDER BY run_id DESC;
@@ -226,7 +228,7 @@ If the same variable has been broken for a week, a daily email about it adds not
 
 ```sql
 SET VARIABLE runs = (
-    SELECT list(run_id ORDER BY run_id DESC) FROM runs
+    SELECT list(run_id ORDER BY today DESC, started_at DESC, run_id DESC) FROM runs
     WHERE rsid = 'my_suite' AND segment_id IS NULL AND status IN ('ok', 'partial')
 );
 SELECT alert, name, value
@@ -236,7 +238,7 @@ WHERE component_id NOT IN (
 );
 ```
 
-`SET VARIABLE` keeps a value for later queries, here the list of runs without a segment, with the newest first. When the suite has only one such run, every alert is new.
+`SET VARIABLE` keeps a value for later queries, here the list of runs without a segment, with the newest run date first. When the suite has only one such run, every alert is new.
 
 ### Send each alert to its owner
 
@@ -426,7 +428,9 @@ SELECT component_id, count(*) AS days, min(day) AS first_day, max(day) AS last_d
 FROM (
     FROM component_days JOIN runs USING (run_id)
     WHERE rsid = 'my_suite' AND segment_id IS NULL AND status IN ('ok', 'partial')
-    QUALIFY row_number() OVER (PARTITION BY component_id, day ORDER BY run_id DESC) = 1
+    QUALIFY row_number() OVER (
+        PARTITION BY component_id, day ORDER BY today DESC, started_at DESC, run_id DESC
+    ) = 1
 )
 WHERE component_id = 'metrics/visits'
 GROUP BY ALL;

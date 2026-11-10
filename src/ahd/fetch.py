@@ -18,7 +18,7 @@ from typing import Any, Literal
 import requests
 
 from ahd.api.auth import SignInUnavailable
-from ahd.api.client import ApiError
+from ahd.api.client import ApiError, unreadable
 from ahd.api.reports import (
     MALFORMED,
     Column,
@@ -136,7 +136,32 @@ def fetch_catalog(client: Any, rsid: str) -> tuple[list[Component], dict]:
     params = {"rsid": rsid, "expansion": "allowedForReporting"}
     metrics = client.get("/metrics", params) or []
     dimensions = client.get("/dimensions", dict(params)) or []
-    return build_catalog(metrics, dimensions, load_solution()), suite or {}
+    suite = suite or {}
+    # An answer of another form, e.g., an object where a list belongs, is not read at all. A
+    # single entry of a list that cannot be read is left out by build_catalog.
+    if not isinstance(suite, dict):
+        raise unreadable("the report suite")
+    if not isinstance(metrics, list):
+        raise unreadable("the list of metrics")
+    if not isinstance(dimensions, list):
+        raise unreadable("the list of dimensions")
+    return build_catalog(metrics, dimensions, load_solution()), suite
+
+
+def suite_zone(suite: dict) -> str:
+    """The report suite's time zone name, or "UTC" when Adobe sent none."""
+    zone = suite.get("timezoneZoneinfo")
+    if zone is None or zone == "":
+        return "UTC"
+    if not isinstance(zone, str):
+        # A guess here would move the run to another day.
+        raise unreadable("the report suite's time zone")
+    return zone
+
+
+def suite_name(suite: dict, rsid: str) -> str:
+    name = suite.get("name")
+    return name if isinstance(name, str) and name else rsid
 
 
 def probe_anomaly(
@@ -204,7 +229,7 @@ def run_fetch(
     progress("Reading the report suite and its components.")
     catalog, suite = fetch_catalog(client, opts.rsid)
     progress(f"Found {len(catalog)} components to check.")
-    zone = suite.get("timezoneZoneinfo") or "UTC"
+    zone = suite_zone(suite)
     suite_today = today_in_zone(zone, now())
     if opts.today is not None and opts.today > suite_today:
         # The last full day would be today or later, which has no full data yet.
@@ -217,7 +242,7 @@ def run_fetch(
     window = RunWindow.for_today(today)
     run_id = store.create_run(
         opts.rsid,
-        suite.get("name") or opts.rsid,
+        suite_name(suite, opts.rsid),
         opts.segment_id,
         today,
         zone,

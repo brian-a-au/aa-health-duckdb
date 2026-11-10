@@ -1,8 +1,16 @@
 import pytest
 from fakes import FakeClient
 
+from ahd.api.client import ApiError
 from ahd.config import ConfigError
-from ahd.lookup import list_segments, list_suites, resolve_segment, resolve_suite
+from ahd.lookup import (
+    list_components,
+    list_segments,
+    list_suites,
+    resolve_component,
+    resolve_segment,
+    resolve_suite,
+)
 
 
 def paged(pages):
@@ -110,3 +118,65 @@ def test_resolve_component_errors():
         resolve_component(comp_client(), "rs1", "metric", "nope")
     with pytest.raises(ConfigError, match="evar1 or page"):
         resolve_component(comp_client(), "rs1", "dimension", "nope")
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [[{"rsid": "rs1"}], {"content": 5}, {"content": {"rsid": "rs1"}}, "text", 7],
+)
+def test_a_list_in_another_form_is_a_plain_error(answer):
+    c = FakeClient(gets={"/reportsuites/collections/suites": answer, "/segments": answer})
+    for read, what in (
+        (lambda: list_suites(c), "the list of report suites"),
+        (lambda: list_segments(c, "rs1"), "the list of segments"),
+    ):
+        with pytest.raises(ApiError) as e:
+            read()
+        assert e.value.error_code == "invalid_response" and what in e.value.message
+
+
+def test_rows_with_an_id_or_name_of_another_type():
+    """A row without a text ID is left out. A name that is not text is shown as empty."""
+    rows = [
+        {"rsid": 5, "name": "number id"},
+        {"rsid": "rs_b", "name": 7},
+        {"rsid": "rs_a", "name": "Alpha"},
+        {"id": "rs_c", "name": None},
+    ]
+    c = FakeClient(
+        gets={
+            # A page count that is not a number ends the list after the first page.
+            "/reportsuites/collections/suites": {
+                "content": rows,
+                "lastPage": False,
+                "totalPages": "3",
+            },
+            "/segments": {"content": [{"id": 5, "name": "x"}, {"id": "s1", "name": 5}]},
+        }
+    )
+    assert list_suites(c) == [
+        {"id": "rs_b", "name": ""},
+        {"id": "rs_c", "name": ""},
+        {"id": "rs_a", "name": "Alpha"},
+    ]
+    assert len(c.calls) == 1
+    assert list_segments(c, "rs1") == [{"id": "s1", "name": ""}]
+
+
+def test_components_with_an_id_or_name_of_another_type():
+    rows = [
+        {"id": 5, "name": "number id"},
+        "text",
+        {"id": "metrics/visits", "name": 7, "type": ["int"]},
+        {"id": "metrics/orders", "name": "Orders", "type": "int"},
+    ]
+    c = FakeClient(gets={"/metrics": rows, "/dimensions": {"content": []}})
+    assert list_components(c, "rs1", "metric") == [
+        {"id": "metrics/visits", "name": "metrics/visits", "type": None},
+        {"id": "metrics/orders", "name": "Orders", "type": "int"},
+    ]
+    assert resolve_component(c, "rs1", "metric", "orders")["id"] == "metrics/orders"
+    with pytest.raises(ApiError) as e:
+        list_components(c, "rs1", "dimension")
+    assert e.value.error_code == "invalid_response"
+    assert "the list of dimensions" in e.value.message

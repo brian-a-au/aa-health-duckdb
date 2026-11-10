@@ -149,3 +149,31 @@ def test_metric_type_is_kept():
     assert types["metrics/evar1instances"] == "int"
     assert types["metrics/event3"] is None
     assert types["variables/prop1"] is None
+
+
+def test_entries_that_cannot_be_read_are_left_out():
+    """An entry without a text ID, or one that is not an object, does not stop the catalog."""
+    bad = [{"name": "no id"}, "text", None, 5, {"id": 5}, {"id": None}, {"id": ""}]
+    cat = build_catalog(METRICS + bad, DIMS + bad, load_solution())
+    assert [c.id for c in cat] == [c.id for c in catalog()]
+
+
+def test_a_name_or_flag_of_another_type_is_not_used():
+    metrics = [
+        {"id": "metrics/event1", "name": 5},
+        {"id": "metrics/evar1instances", "name": {"a": 1}},
+        {"id": "metrics/evar2instances", "name": "Campaign Instances", "type": 7},
+    ]
+    dims = [
+        {"id": "variables/prop1", "name": ["x"], "allowedForReporting": "yes"},
+        {"id": "variables/page", "name": 3, "allowedForReporting": True},
+    ]
+    cat = {c.id: c for c in build_catalog(metrics, dims, load_solution())}
+    assert cat["metrics/event1"].name == "metrics/event1"
+    assert cat["metrics/evar1instances"].name == "metrics/evar1instances"
+    assert cat["metrics/evar2instances"].name == "Campaign"
+    assert cat["metrics/evar2instances"].metric_type is None
+    assert cat["variables/prop1"].name == "variables/prop1"
+    assert cat["variables/prop1"].allowed_for_reporting is None
+    assert cat["variables/page"].name == "Page"
+    assert cat["variables/page"].allowed_for_reporting is True
