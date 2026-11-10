@@ -399,15 +399,13 @@ def test_read_only_open_keeps_older_views(tmp_path):
 
 
 def test_failed_views_update_keeps_the_old_views(tmp_path, monkeypatch):
-    import ahd.store
-
     p = tmp_path / "a.duckdb"
     s = Store.open(p)
     rid = _fill_zero_day(s)
     s.con.close()
     _edit(p, "update views_version set version = 0", OLD_MACRO)
     broken = "CREATE OR REPLACE VIEW latest_runs AS SELECT 1 AS z; SELECT no_such_column FROM runs;"
-    monkeypatch.setattr(ahd.store, "_views", lambda: broken)
+    monkeypatch.setattr("ahd.store._views", lambda: broken)
     with pytest.raises(duckdb.Error):
         Store.open(p)
     con = duckdb.connect(str(p))  # the file was closed again
