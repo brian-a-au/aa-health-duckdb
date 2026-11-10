@@ -7,7 +7,7 @@ This file lists the changes in each release. The version numbers follow [Semanti
 A bug-fix release. The database layout stays at version 7, so files made by 0.1.2 keep working.
 
 - A fix to the alert rules in the views or the `alerts()` macro no longer asks you to start a new database file. The next `ahd run`, `ahd individual` or `ahd prune` replaces the views and the macro in your file, and your stored runs then follow the new rules. A change to the tables still asks you to start a new file. If you built your own views on top of `component_days`, they follow the new rules after the update.
-- Each file now has a `views_version` table with the version of its views and macro. An older version of the tool keeps the newer views and macro that it finds in a file.
+- Each file now has a `views_version` table with the version of its views and macro. If you go back to an older version of the tool, from 0.1.3 on, it puts back its own views and macro. The alert line of `ahd run` then always follows the same rules as its report.
 
 ## 0.1.2 (2026-11-09)
 

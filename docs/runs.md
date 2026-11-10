@@ -65,7 +65,7 @@ The file also holds two views and a table macro for your own SQL: `latest_runs`,
 
 When a new version of the tool changes the tables, it refuses a file made with the old tables and asks you to start a new file. It does not upgrade the tables of old files. See [Troubleshooting](troubleshooting.md#the-database-was-made-by-a-different-version).
 
-When a new version of the tool changes only the views or the `alerts()` macro, e.g., to fix an alert rule, you keep your file. The next `ahd run`, `ahd individual` or `ahd prune` replaces the views and the macro, and your stored runs then follow the new rules. `ahd render` and `ahd runs` open the file read-only, so they do not replace them. An older version of the tool keeps the newer views and macro that it finds in a file.
+When a new version of the tool changes only the views or the `alerts()` macro, e.g., to fix an alert rule, you keep your file. The next `ahd run`, `ahd individual` or `ahd prune` replaces the views and the macro, and your stored runs then follow the new rules. `ahd render` and `ahd runs` open the file read-only, so they do not replace them. If you go back to an older version of the tool, from 0.1.3 on, its next write puts back its own views and macro. 0.1.2 and earlier leave the views as they find them.
 
 ## Looking inside
 

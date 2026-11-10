@@ -368,16 +368,17 @@ def test_older_views_are_replaced_on_a_write_open(tmp_path, setup):
     assert s.con.execute("select version from views_version").fetchall() == [(VIEWS_VERSION,)]
 
 
-def test_newer_views_are_kept(tmp_path):
-    # An older ahd must not put back its older macro over a newer one.
+def test_newer_views_are_replaced(tmp_path):
+    # After a newer ahd, an older one puts back its own views, so that the alert line of ahd run
+    # follows the same rules as its report.
     p = tmp_path / "a.duckdb"
     s = Store.open(p)
     rid = _fill_zero_day(s)
     s.con.close()
     _edit(p, "update views_version set version = 99", OLD_MACRO)
     s = Store.open(p)
-    assert _alerts(s.con, rid) == [("old rule",)]
-    assert s.con.execute("select version from views_version").fetchall() == [(99,)]
+    assert _alerts(s.con, rid) == [("dropped to zero",)]
+    assert s.con.execute("select version from views_version").fetchall() == [(VIEWS_VERSION,)]
 
 
 def test_read_only_open_keeps_older_views(tmp_path):
@@ -415,11 +416,9 @@ def test_failed_views_update_keeps_the_old_views(tmp_path, monkeypatch):
     assert con.execute("select version from views_version").fetchall() == [(0,)]
 
 
-# The SHA-256 of sql/views.sql for each views version. When you change views.sql, raise
-# VIEWS_VERSION in store.py and add a line here. Never change an earlier line.
-VIEWS_HASHES = {
-    1: "1952ca70ead33583074735cd092584e30381974b9c3303277cc1a97a5d5b7420",
-}
+# The SHA-256 of sql/views.sql. When you change views.sql, raise VIEWS_VERSION in store.py and
+# put the new hash here.
+VIEWS_SHA256 = "1952ca70ead33583074735cd092584e30381974b9c3303277cc1a97a5d5b7420"
 
 
 def test_views_version_is_raised_when_views_sql_changes():
@@ -428,17 +427,7 @@ def test_views_version_is_raised_when_views_sql_changes():
     from ahd.store import _views
 
     found = hashlib.sha256(_views().encode("utf-8")).hexdigest()
-    assert max(VIEWS_HASHES) == VIEWS_VERSION
-    assert VIEWS_HASHES[VIEWS_VERSION] == found, (
-        "sql/views.sql changed. Raise VIEWS_VERSION in store.py and add its hash to VIEWS_HASHES."
+    assert VIEWS_VERSION == 1 and found == VIEWS_SHA256, (
+        "sql/views.sql changed. Raise VIEWS_VERSION in store.py, and put the new version and hash"
+        " in this test."
     )
-
-
-def test_alerts_macro_keeps_its_parameters(tmp_path):
-    # An older ahd may call the macro of a newer one, so a parameter may be added with a default,
-    # but never renamed or removed. Such a change needs a new SCHEMA_VERSION instead.
-    s = Store.open(tmp_path / "a.duckdb")
-    [params] = s.con.execute(
-        "select parameters from duckdb_functions() where function_name = 'alerts'"
-    ).fetchone()
-    assert {"run_number", "threshold", "spike_threshold", "min_usual", "for_day"} <= set(params)

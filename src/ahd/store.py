@@ -17,8 +17,9 @@ from ahd.catalog import Component
 SCHEMA_VERSION = 7
 
 # Bump when sql/views.sql changes. When ahd opens a file for writing, it replaces the views and
-# the macro of a file with an older views version, or with none. It keeps those of a file with a
-# newer views version, so that an older ahd does not put back its older rules.
+# the macro of a file with another views version, or with none. The views in a file then follow
+# the same rules as the ahd that last wrote to it, so the alert line of ahd run agrees with its
+# report, also after going back to an older ahd.
 VIEWS_VERSION = 1
 
 _SCHEMA = """
@@ -70,15 +71,19 @@ def _views() -> str:
     return resources.files("ahd").joinpath("sql/views.sql").read_text(encoding="utf-8")
 
 
-def _update_views(con: duckdb.DuckDBPyConnection, has_table: bool) -> None:
-    """Write the views and the macro when the file holds an older version of them, or none.
+def _update_views(con: duckdb.DuckDBPyConnection) -> None:
+    """Write the views and the macro when the file holds another version of them, or none.
 
-    has_table says whether the file has a views_version table. Files made by ahd 0.1.2 and
-    earlier have none. It all happens in one transaction, so a failure keeps the old views.
+    Files made by ahd 0.1.2 and earlier have no views_version table. It all happens in one
+    transaction, so a failure keeps the old views.
     """
+    has_table = con.execute(
+        "SELECT count(*) FROM information_schema.tables"
+        " WHERE table_schema = 'main' AND table_name = 'views_version'"
+    ).fetchone()[0]
     if has_table:
         found = con.execute("SELECT max(version) FROM views_version").fetchone()[0]
-        if found is not None and found >= VIEWS_VERSION:
+        if found == VIEWS_VERSION:
             return
     con.execute("BEGIN TRANSACTION")
     try:
@@ -163,7 +168,7 @@ class Store:
             if not tables:
                 con.execute(_SCHEMA)
                 con.execute("INSERT INTO schema_version (version) VALUES (?)", [SCHEMA_VERSION])
-                _update_views(con, has_table=False)
+                _update_views(con)
             else:
                 found = None
                 if "schema_version" in tables:
@@ -175,7 +180,7 @@ class Store:
                     )
                 # A read-only file cannot be changed. No read-only command uses the views.
                 if not read_only:
-                    _update_views(con, has_table="views_version" in tables)
+                    _update_views(con)
         except BaseException:
             con.close()
             raise
