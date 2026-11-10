@@ -70,7 +70,10 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 
 ### The database
 
-- The layout is in `store.py` and `sql/views.sql`. When you change a table, a view or the macro, raise `SCHEMA_VERSION`. The tool refuses a file with another version and tells the user to start a new file. There is no upgrade code, on purpose.
+- The tables are in `store.py`. When you change a table, raise `SCHEMA_VERSION`. The tool refuses a file with another version and tells the user to start a new file. There is no upgrade code for tables, on purpose.
+- The views and the `alerts` macro are in `sql/views.sql`. When you change them, raise `VIEWS_VERSION` in `store.py` and put the new version and hash in `test_views_version_is_raised_when_views_sql_changes` in `tests/test_store.py`. The test fails until you do. When the tool opens a file for writing, it replaces the views and the macro of a file with another views version. The views in a file then follow the same rules as the version of the tool that last wrote to it, also after going back to an older version.
+- Every statement in `views.sql` must use `CREATE OR REPLACE`. To remove a view or the macro, add a `DROP ... IF EXISTS` statement for it.
+- A view must only use columns the tables already have. If it needs a new column, that is a table change and needs a new `SCHEMA_VERSION`.
 - Every row carries its `run_id`. A run's data never changes after the run, except that `ahd individual` may add a pair.
 - Only the calling thread writes to the store. Worker threads only call the API.
 - The tool targets DuckDB 2.0 or newer. Use its features freely.

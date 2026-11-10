@@ -103,12 +103,15 @@ Every row carries its `run_id`, so you can always tell which run it came from.
 | `breakdowns`, `breakdown_totals` | The browser and device tables of each pair |
 | `issues` | Anything that could not be read, with the reason |
 | `schema_version` | The version of this layout |
+| `views_version` | The version of the views and the macro |
 
 To see every column of a table, run `DESCRIBE daily_values`. To see a quick profile of every column, with minimum, maximum, averages and missing values, run `SUMMARIZE daily_values`.
 
 ## Ready-made views and the alerts macro
 
 Every file comes with two views and one table macro. A view is a saved query that you use like a table. A table macro is a saved query that takes options. They use the same rules as the report, and the tests check that they agree.
+
+When a new version of `ahd` changes these rules, the next `ahd run`, `ahd individual` or `ahd prune` replaces the views and the macro in your file. Until then, your own SQL and the [alert email script](#email-recipes) use the old rules. If you built your own views on top of `component_days`, they follow the new rules after the update.
 
 ### `latest_runs`
 
