@@ -276,19 +276,22 @@ ORDER BY day
 # The alerts on the last day of each run of the same report suite and segment, by the same
 # rules as the tiles: one query over every run's stored values. Each run uses its own dates.
 # The runs are this one and the runs for earlier run dates, newest date first, and for this
-# run's date, the runs made up to this one. A run made later with --date for an earlier date
-# is listed too. drops lists the change of every candidate for a large drop, so the page can
+# run's date, the runs made up to this one. "Made up to" goes by the time a run started, not
+# by its number, as in the latest_runs view: an old run that ahd import gave a new number has
+# a higher number than the runs made after it. A run made later with --date for an earlier
+# date is listed too. drops lists the change of every candidate for a large drop, so the page can
 # count them for the slider's setting. A failed or unfinished run is left out, unless it is
 # this one.
 _HISTORY_SQL = f"""
-WITH cur AS (SELECT rsid, segment_id, today FROM runs WHERE run_id = $run_id),
+WITH cur AS (SELECT rsid, segment_id, today, started_at FROM runs WHERE run_id = $run_id),
 r AS (
-    SELECT r.run_id, r.today, r.status
+    SELECT r.run_id, r.today, r.status, r.started_at
     FROM runs r, cur
     WHERE r.rsid = cur.rsid AND r.segment_id IS NOT DISTINCT FROM cur.segment_id
-        AND (r.today < cur.today OR (r.today = cur.today AND r.run_id <= $run_id))
+        AND (r.today < cur.today OR (r.today = cur.today AND (r.started_at < cur.started_at
+            OR (r.started_at IS NOT DISTINCT FROM cur.started_at AND r.run_id <= $run_id))))
         AND (r.status IN ('ok', 'partial') OR r.run_id = $run_id)
-    ORDER BY r.today DESC, r.run_id DESC
+    ORDER BY r.today DESC, r.started_at DESC, r.run_id DESC
     LIMIT {HISTORY_RUNS}
 ),
 dv AS (
@@ -331,8 +334,8 @@ SELECT r.run_id, CAST(r.today AS VARCHAR) AS today, CAST(r.today - 1 AS VARCHAR)
         AND l.usual >= {MIN_USUAL} AND l.pct > {MIN_SPIKE_ALERT}), []) AS spikes,
     (SELECT count(*) FROM issues i WHERE i.run_id = r.run_id) AS problems
 FROM r LEFT JOIN last l ON l.run_id = r.run_id
-GROUP BY r.run_id, r.today, r.status
-ORDER BY r.today DESC, r.run_id DESC
+GROUP BY r.run_id, r.today, r.status, r.started_at
+ORDER BY r.today DESC, r.started_at DESC, r.run_id DESC
 """
 
 # Slow declines: components whose weekly totals fell a little each week for DECLINE_WEEKS weeks.

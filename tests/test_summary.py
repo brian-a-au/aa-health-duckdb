@@ -1,6 +1,6 @@
 import json
 import math
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 
@@ -1016,6 +1016,26 @@ def test_history_lists_earlier_runs_by_the_tile_rules(tmp_path):
     assert history[3]["drops"] == pytest.approx([-0.5]) and history[3]["problems"] == 2
     assert (history[2]["high"], history[2]["zero"], history[2]["unused"]) == (1, 1, 1)
     assert history[0]["low"] == 1
+
+
+def test_history_orders_runs_of_one_date_by_start_time_not_by_number(tmp_path):
+    # After ahd import, an old run can have a higher number than a run that was made later.
+    store = Store.open(tmp_path / "h.duckdb")
+    d = date(2026, 11, 5)
+    made_last = _run(store, d)
+    imported = _run(store, d)
+    same_time = _run(store, d)
+    start = datetime(2026, 11, 5, 9, 0)
+    for rid, at in ((made_last, start), (imported, start - timedelta(hours=1)), (same_time, start)):
+        store.con.execute("UPDATE runs SET started_at = ? WHERE run_id = ?", [at, rid])
+
+    def ids(rid):
+        return [h["run_id"] for h in build_view(store, rid)["history"]]
+
+    assert ids(made_last) == [made_last, imported]
+    assert ids(imported) == [imported]
+    # Runs that started at the same time go by their number.
+    assert ids(same_time) == [same_time, made_last, imported]
 
 
 def test_history_keeps_this_run_even_when_it_failed(tmp_path):
