@@ -345,6 +345,17 @@ def test_a_date_after_the_suites_today_is_refused(store):
     assert store.get_run(rid)["today"] == date(2026, 11, 7)
 
 
+def test_a_given_date_makes_a_run_when_the_time_zone_is_not_known(store):
+    # e.g., a computer without the time zone data. The message for it names --date as the way out.
+    fake = fake_for("rs1", events(1), custom_dims(), tz="Nowhere/Unknown")
+    with pytest.raises(ConfigError, match="which this computer does not know"):
+        run_fetch(fake, store, RunOptions(rsid="rs1"))
+    assert store.list_runs() == []
+    rid = run_fetch(fake, store, opts())
+    run = store.get_run(rid)
+    assert (run["today"], run["timezone"], run["status"]) == (TODAY, "Nowhere/Unknown", "ok")
+
+
 def test_fetch_catalog_calls():
     fake = fake_for("rs1", events(1), custom_dims())
     catalog, suite = fetch_catalog(fake, "rs1")

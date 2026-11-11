@@ -2,9 +2,21 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
-## Unreleased
+## 0.1.7 (2026-11-11)
 
-Fixes to the docs. The tool works the same as in 0.1.6.
+Fixes to the tool and to the docs. The database layout stays at version 7, and the views and the `alerts()` macro do not change.
+
+- `ahd run --date` now makes a run when your computer does not know the report suite's time zone. Before, it stopped with the message that names `--date` as the way out. Such a run skips the check that the date is not after today in the suite's time zone.
+- The report's list of earlier runs now orders the runs of one run date by the time they started. Before, it ordered them by their number. After an `ahd import` that gave old runs new numbers, the report of a run could leave out a run that was made before it on the same run date, and the report of the old run could list a newer run as earlier.
+- A report answer from Adobe with a value of the wrong kind in one more place, e.g., an object where an expected value or the name of an item belongs, no longer ends the run with a database error. The request is listed in the report's status section under "Adobe sent an answer that could not be read", as 0.1.4 does for the other places.
+- `ahd prune --before` now takes a date only in the form YYYY-MM-DD, as `ahd run --date` does. Before, it also took other forms, e.g., `2026-W45-1`, and its message for a wrong date was not plain.
+- A run whose test of anomaly detection failed, e.g., on a network error, now shows "Anomaly detection not available" in the two tiles and "Not available" in the Flag column. Before, the report said "0, Flagged by Adobe" and "Adobe flagged no unusual values", although nothing could be flagged. A run with a credential that may not use anomaly detection already showed this.
+- In the calendar, a day without data can now be clicked. Before, a click only worked on the outline of its square.
+- A trend line in a table now shows a day with a value when the days before and after it have none. Before, such a day drew nothing, so a component with a value on one day only had an empty trend line.
+- For a run made with `--date`, the hint on the Week box now names the last day. Before, it said "the 7 days ending yesterday".
+- The "Show" and "Custom components" boxes and "Show only flagged" now start at their first setting after a reload in Firefox. Firefox puts back what you chose before a reload, and the tables then did not match these controls.
+
+Fixes to the docs:
 
 - The DuckDB guide's command for the notebook in your browser did not work. `duckdb -readonly -ui` opens a page that shows "Initialization Error", because the notebook cannot save its own notebooks in a read-only session. The guide now starts the notebook with `duckdb -ui -cmd "ATTACH 'data/ahd.duckdb' AS ahd (READ_ONLY); USE ahd;"`, which still keeps your file read-only. It also says that the file must exist, where to find your file, and that the terminal stays open while you use the notebook.
 - The recipe "Values that dropped out of the top 100" listed each value once for every stored run. It now reads the latest run of each suite and names the suite.

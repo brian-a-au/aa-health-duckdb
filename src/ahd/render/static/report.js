@@ -212,8 +212,10 @@
     s: typeof data.spike_alert === "number" ? data.spike_alert : 0.5 };
   var MIN_USUAL = typeof data.min_usual === "number" ? data.min_usual : 10;
   var sortState = {};
+  // The two codes that fetch.py records when a run was made without anomaly detection: the
+  // credential may not use it, or the request that tests it failed.
   var anomalyBlocked = (data.issues || []).some(function (i) {
-    return i.code === "anomaly_not_allowed";
+    return i.code === "anomaly_not_allowed" || i.code === "anomaly_probe_failed";
   });
 
   // ---- tabs ----------------------------------------------------------------
@@ -614,7 +616,7 @@
       var max = 0;
       pts.forEach(function (p) { if (p[1] > max) max = p[1]; });
       var at = {};
-      var d = "", prev = null;
+      var d = "", prev = null, alone = false;
       pts.forEach(function (p) {
         var back = (end - parseDay(p[0]).getTime()) / 864e5;
         if (back < 0 || back > span) return;
@@ -622,11 +624,16 @@
         var y = SPARK_H - 3 - (max > 0 ? Math.max(0, p[1]) / max : 0) * (SPARK_H - 6);
         x = Math.round(x * 10) / 10;
         y = Math.round(y * 10) / 10;
-        // A day without a value breaks the line.
-        d += (prev !== null && back === prev - 1 ? "L" : "M") + x + " " + y;
+        // A day without a value breaks the line. A day with no day next to it would draw
+        // nothing, so it gets a very short line, which shows as a dot, as in drawChart.
+        var joined = prev !== null && back === prev - 1;
+        if (!joined && alone) d += "l0.01 0";
+        d += (joined ? "L" : "M") + x + " " + y;
+        alone = !joined;
         prev = back;
         at[p[0]] = [x, y];
       });
+      if (alone) d += "l0.01 0";
       shape = d ? { d: d, at: at } : null;
     }
     sparkCache[cid] = shape;

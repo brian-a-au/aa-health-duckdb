@@ -425,7 +425,8 @@ td.shade { background: rgba(var(--shade), var(--a, 0)); }
 .cal-cell.l2, .calendar-legend .l2 { fill: rgba(var(--shade), 0.50); background: rgba(var(--shade), 0.50); }
 .cal-cell.l3, .calendar-legend .l3 { fill: rgba(var(--shade), 0.74); background: rgba(var(--shade), 0.74); }
 .cal-cell.l4, .calendar-legend .l4 { fill: rgba(var(--shade), 1); background: rgba(var(--shade), 1); }
-.cal-cell.missing { fill: none; stroke: var(--grid); stroke-width: 1; }
+/* pointer-events: a shape without a fill else takes a click only on its outline. */
+.cal-cell.missing { fill: none; stroke: var(--grid); stroke-width: 1; pointer-events: all; }
 .cal-ring { fill: none; stroke: var(--text); stroke-width: 2; pointer-events: none; }
 .cal-week { fill: none; stroke: var(--accent); stroke-width: 1.5; pointer-events: none; }
 .calendar-svg:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: 4px; }

@@ -230,7 +230,14 @@ def run_fetch(
     catalog, suite = fetch_catalog(client, opts.rsid)
     progress(f"Found {len(catalog)} components to check.")
     zone = suite_zone(suite)
-    suite_today = today_in_zone(zone, now())
+    try:
+        suite_today = today_in_zone(zone, now())
+    except ConfigError:
+        # This computer does not know the time zone. A date that was given needs no time
+        # zone, so the run goes on without the check that the date is not after today.
+        if opts.today is None:
+            raise
+        suite_today = opts.today
     if opts.today is not None and opts.today > suite_today:
         # The last full day would be today or later, which has no full data yet.
         raise ConfigError(

@@ -83,16 +83,22 @@ ACCESS_FIX = (
 )
 
 
-def _run_date(text: str) -> date:
-    """An argparse type for --date: a date as YYYY-MM-DD whose 92 trend days are real dates."""
+def _day(text: str) -> date:
+    """An argparse type for a date as YYYY-MM-DD. date.fromisoformat alone also takes other
+    forms, e.g., 20261101 and 2026-W45-1."""
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
         raise argparse.ArgumentTypeError(f"{text!r} is not a date in the form YYYY-MM-DD.")
     try:
-        day = date.fromisoformat(text)
+        return date.fromisoformat(text)
     except ValueError:
         raise argparse.ArgumentTypeError(
             f"{text!r} is not a date in the form YYYY-MM-DD."
         ) from None
+
+
+def _run_date(text: str) -> date:
+    """An argparse type for --date: a date as YYYY-MM-DD whose 92 trend days are real dates."""
+    day = _day(text)
     try:
         RunWindow.for_today(day)
     except OverflowError:
@@ -254,7 +260,7 @@ def _parser() -> argparse.ArgumentParser:
         "--run", type=int, action="append", default=[], metavar="N", help="A run number to delete."
     )
     prune.add_argument(
-        "--before", type=date.fromisoformat, metavar="YYYY-MM-DD", help="Delete runs dated before."
+        "--before", type=_day, metavar="YYYY-MM-DD", help="Delete runs dated before."
     )
     prune.add_argument("--yes", action="store_true", help="Delete without asking first.")
     prune.add_argument(
