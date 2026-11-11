@@ -337,8 +337,13 @@ def test_week_note_and_controls():
         assert label in html
     # The page builds the Custom components options from the run's components.
     assert "901 to 1000" not in html and "Component numbers" not in html
-    assert re.search(r"<label>Show\s*<select id=\"granularity\">", html)
+    assert re.search(r"<label>Show\s*<select id=\"granularity\" autocomplete=\"off\">", html)
     assert "Granularity" not in html
+    assert 'title="The report compares one week: the 7 days ending yesterday."' in html
+    # The script starts these at Daily, All and not ticked. Firefox would else put back what
+    # the reader chose before a reload, and the tables would not match the controls.
+    for control in ('<select id="range"', '<input type="checkbox" id="flagged-only"'):
+        assert control + ' autocomplete="off">' in html
 
 
 def test_static_assets_inlined():
@@ -499,7 +504,7 @@ def test_page_has_tiles_flag_filter_and_sortable_tables():
     html = render_html(sample_view())
     assert '<section class="tiles" id="tiles"' in html
     assert html.index('id="tiles"') < html.index('id="status"')
-    assert '<input type="checkbox" id="flagged-only">' in html
+    assert '<input type="checkbox" id="flagged-only" autocomplete="off">' in html
     assert "aria-sort" in html and "Original order" in html
 
 
@@ -713,6 +718,7 @@ def test_a_run_made_with_date_names_its_days():
     assert f"Top 10 values on {last} for each device type." in html
     assert f'aria-label="{last} at a glance"' in html
     assert f"This week is the 7 days ending on {last}." in html
+    assert f'title="The report compares one week: the 7 days ending on {last}."' in html
     assert "Top 100 values yesterday" not in html
 
 

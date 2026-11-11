@@ -2032,3 +2032,74 @@ def test_a_flag_sort_has_no_a_to_z_and_original_order_keeps_the_focus(chrome, ed
     assert got["first"] == "Sorted by Flag."
     assert got["second"] == "Sorted by Flag, in reverse order."
     assert got["hidden"] is True and got["focus"] is True
+
+
+# ---- fixes from the review before 0.1.7 --------------------------------------------------
+
+NO_ANOMALY_PROBE = """
+var tiles = [].map.call(document.querySelectorAll(".tile"), function (t) {
+  var note = t.querySelector(".tile-note");
+  return [t.querySelector(".tile-value").textContent, note ? note.textContent : ""];
+});
+var flags = [].map.call(document.querySelectorAll("#tables .muted"), function (n) {
+  return n.textContent;
+});
+document.getElementById("tab-alerts").click();
+return { tiles: tiles.slice(1, 3), flags: flags,
+  alerts: document.getElementById("panel-alerts").innerText };
+"""
+
+
+@pytest.mark.parametrize("code", ["anomaly_not_allowed", "anomaly_probe_failed"])
+def test_a_run_without_anomaly_detection_does_not_say_that_nothing_was_flagged(
+    chrome, with_problem, tmp_path, code
+):
+    view = build_view(*with_problem)
+    view["issues"].append(
+        {"scope": "permissions", "component_id": None, "code": code, "message": "m"}
+    )
+    got = run_probe(chrome, render_html(view), NO_ANOMALY_PROBE, tmp_path)
+    assert got["tiles"] == [["–", "Anomaly detection not available"]] * 2
+    assert "Not available" in got["flags"]
+    assert "Anomaly detection is not available for this run" in got["alerts"]
+    assert "Adobe flagged no unusual values" not in got["alerts"]
+
+
+MISSING_DAY_PROBE = """
+var r = document.querySelector("#calendar rect.cal-cell.missing");
+r.scrollIntoView();
+var b = r.getBoundingClientRect();
+var hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+hit.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+return { day: r.getAttribute("data-day"), hit: hit === r,
+  readout: document.querySelector("#calendar .calendar-readout").textContent };
+"""
+
+
+def test_a_calendar_day_without_data_can_be_clicked(chrome, showcase, tmp_path):
+    view = build_view(*showcase)
+    view["calendar"] = [c for c in view["calendar"] if c["day"] != "2026-10-01"]
+    got = run_probe(chrome, render_html(view), MISSING_DAY_PROBE, tmp_path)
+    assert got["day"] == "2026-10-01" and got["hit"]
+    assert got["readout"].startswith("Thu, Oct 1, 2026: ")
+
+
+LONE_POINT_PROBE = """
+return document.querySelector("#tables button.spark path").getAttribute("d");
+"""
+
+
+def test_a_trend_line_shows_a_day_that_has_no_day_next_to_it(chrome, with_problem, tmp_path):
+    view = build_view(*with_problem)
+    points = view["series"]["metrics/event1"]
+    assert len(points) == 91
+    # Values on one day alone, on two days in a row, and on the last day alone.
+    for at, p in enumerate(points):
+        if at not in (10, 50, 51, 90):
+            p[1] = None
+    path = run_probe(chrome, render_html(view), LONE_POINT_PROBE, tmp_path)
+    parts = re.findall(r"M[^M]+", path)
+    assert len(parts) == 3
+    # A lone day gets a very short line, which draws a dot. Two days in a row get a line.
+    assert parts[0].endswith("l0.01 0") and parts[2].endswith("l0.01 0")
+    assert "L" in parts[1] and "l0.01" not in parts[1]

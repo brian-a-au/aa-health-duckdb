@@ -125,7 +125,7 @@
 <section class="panel" role="tabpanel" id="panel-components" aria-labelledby="tab-components">
   <div class="controls">
     <label>Show
-      <select id="granularity">
+      <select id="granularity" autocomplete="off">
         <option value="day">Daily</option>
         <option value="week">Weekly</option>
       </select>
@@ -134,14 +134,14 @@
       <select id="day"></select>
     </label>
     <label id="week-label" hidden>Week
-      <select id="week" disabled title="The report compares one week: the 7 days ending yesterday."></select>
+      <select id="week" disabled title="The report compares one week: the 7 days ending {{ day_words }}."></select>
     </label>
     <label>Custom components
-      <select id="range">
+      <select id="range" autocomplete="off">
         <option value="">All</option>
       </select>
     </label>
-    <label class="check" id="flagged-label"><input type="checkbox" id="flagged-only"> Show only flagged</label>
+    <label class="check" id="flagged-label"><input type="checkbox" id="flagged-only" autocomplete="off"> Show only flagged</label>
   </div>
   <p class="note" id="week-note" hidden>{{ week_note }}</p>
 
