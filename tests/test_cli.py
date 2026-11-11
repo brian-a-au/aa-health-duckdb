@@ -663,7 +663,8 @@ def test_prune_before_takes_only_a_date_as_yyyy_mm_dd(three_runs, capsys, value)
     with pytest.raises(SystemExit):
         main(["prune", "--db", str(three_runs), "--before", value, "--yes"])
     assert f"{value!r} is not a date in the form YYYY-MM-DD." in capsys.readouterr().err
-    assert len(Store.open(three_runs, read_only=True).list_runs()) == 3
+    runs = Store.open(three_runs, read_only=True).list_runs()
+    assert len(runs) == 3
 
 
 def test_prune_asks_then_deletes(three_runs, capsys, monkeypatch):
