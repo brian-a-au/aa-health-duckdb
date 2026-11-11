@@ -157,6 +157,10 @@ def test_item_id_fallback_agrees_with_the_dates_adobe_sent():
         {"rows": [{"data": [1]}]},
         {"rows": [{"itemId": "x", "value": "garbage", "data": [1]}]},
         {"rows": "text"},
+        # A value that is not a number would else reach the database and end the run there.
+        {"rows": [{"value": "Aug 8, 2026", "data": [1], "dataExpected": [{"a": 1}]}]},
+        {"rows": [{"value": "Aug 8, 2026", "data": [1], "dataUpperBound": ["text"]}]},
+        {"columns": {"columnErrors": [{"columnId": "0", "errorCode": {"a": 1}}]}},
     ],
 )
 def test_parse_trend_names_an_answer_of_the_wrong_shape(resp):
@@ -169,6 +173,23 @@ def test_parse_ranked_and_breakdown_name_an_answer_of_the_wrong_shape():
         parse_ranked({"rows": [{"value": "x", "data": []}]})
     with pytest.raises(MalformedResponse):
         parse_breakdown({"rows": [{"value": "x", "data": ["text"]}]})
+    with pytest.raises(MalformedResponse):
+        parse_ranked({"rows": [{"value": {"a": 1}, "data": [1]}]})
+    with pytest.raises(MalformedResponse):
+        parse_breakdown({"rows": [{"value": ["x"], "data": [1]}]})
+
+
+def test_a_number_where_text_belongs_is_read_as_text():
+    assert parse_ranked({"rows": [{"value": 404, "data": [2]}]}) == ([(1, "404", 2.0)], 1)
+    vals, errs = parse_trend(
+        {
+            "columns": {"columnErrors": [{"columnId": "0", "errorCode": None}]},
+            "rows": [{"value": "Aug 8, 2026", "data": [1, 2], "dataExpected": ["1.5", None]}],
+        },
+        [Column("metrics/a", "metrics/a"), Column("metrics/b", "metrics/b")],
+    )
+    assert (errs[0].error_code, errs[0].message) == ("", "")
+    assert (vals[0].component_id, vals[0].value, vals[0].expected) == ("metrics/b", 2.0, None)
 
 
 def test_parse_ranked():

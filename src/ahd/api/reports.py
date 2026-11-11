@@ -168,6 +168,22 @@ def _at(arr: list | None, i: int):
     return arr[i]
 
 
+def _number_at(arr: list | None, i: int) -> float | None:
+    """The number at this place, or None when there is none. A value that is not a number,
+    e.g., an object, raises, so that it does not reach the database and end the run there."""
+    value = _at(arr, i)
+    return None if value is None else float(value)
+
+
+def _text(value: object) -> str:
+    """The value as text. Only text and plain numbers are read, e.g., a page name of 404."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    raise TypeError("not text")
+
+
 def _trend(resp: dict, columns: list[Column]) -> tuple[list[DailyValue], list[ColumnError]]:
     col_meta = resp.get("columns") or {}
     errors: list[ColumnError] = []
@@ -183,8 +199,8 @@ def _trend(resp: dict, columns: list[Column]) -> tuple[list[DailyValue], list[Co
         errors.append(
             ColumnError(
                 columns[idx].component_id,
-                e.get("errorCode", ""),
-                e.get("errorDescription", ""),
+                _text(e.get("errorCode") or ""),
+                _text(e.get("errorDescription") or ""),
             )
         )
     values: list[DailyValue] = []
@@ -200,9 +216,9 @@ def _trend(resp: dict, columns: list[Column]) -> tuple[list[DailyValue], list[Co
                     col.component_id,
                     day,
                     float(data[i]),
-                    _at(row.get("dataExpected"), i),
-                    _at(row.get("dataUpperBound"), i),
-                    _at(row.get("dataLowerBound"), i),
+                    _number_at(row.get("dataExpected"), i),
+                    _number_at(row.get("dataUpperBound"), i),
+                    _number_at(row.get("dataLowerBound"), i),
                     None if anomaly is None else bool(anomaly),
                 )
             )
@@ -211,13 +227,14 @@ def _trend(resp: dict, columns: list[Column]) -> tuple[list[DailyValue], list[Co
 
 def _ranked(resp: dict) -> tuple[list[tuple[int, str, float]], int]:
     rows = [
-        (n, r["value"], float(r["data"][0])) for n, r in enumerate(resp.get("rows") or [], start=1)
+        (n, _text(r["value"]), float(r["data"][0]))
+        for n, r in enumerate(resp.get("rows") or [], start=1)
     ]
     return rows, int(resp.get("totalElements", len(rows)))
 
 
 def _breakdown(resp: dict) -> tuple[list[tuple[str, list[float]]], list[float]]:
-    rows = [(r["value"], [float(x) for x in r["data"]]) for r in resp.get("rows") or []]
+    rows = [(_text(r["value"]), [float(x) for x in r["data"]]) for r in resp.get("rows") or []]
     totals = [float(x) for x in (resp.get("summaryData") or {}).get("totals") or []]
     return rows, totals
 
