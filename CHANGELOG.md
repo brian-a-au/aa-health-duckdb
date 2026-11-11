@@ -2,7 +2,7 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
-## Unreleased
+## 0.1.7 (2026-11-11)
 
 Fixes to the tool and to the docs. The database layout stays at version 7, and the views and the `alerts()` macro do not change.
 
