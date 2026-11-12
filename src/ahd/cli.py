@@ -8,13 +8,15 @@ import os
 import re
 import sys
 from collections.abc import Callable
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import duckdb
 import requests
 
+from ahd.alerts import FORMATS, Rules, alerts_day, choose_runs, counts_line, read_alerts, write
 from ahd.api.auth import NO_REPORT_SUITES, SignInError, SignInUnavailable
 from ahd.api.client import AdobeClient, ApiError
 from ahd.catalog import CUSTOM_GROUPS
@@ -59,6 +61,10 @@ DEFAULT_OUT = "./reports/"
 EXIT_CODES = {"ok": 0, "failed": 1, "partial": 3}
 # The usual exit code after Ctrl-C: 128 plus the signal number of SIGINT.
 EXIT_STOPPED = 130
+# ahd alerts found no alerts. It exits with 0 when it printed alerts, so that a scheduled job can
+# send them with "ahd alerts ... && send". 1 is an error and 2 a wrong option, as for every
+# command, and 3 is a partial run.
+EXIT_NO_ALERTS = 4
 STOPPED = (
     "Stopped by Ctrl-C. A run that ahd run had started is marked failed. A pair that ahd "
     "individual was adding is removed."
@@ -122,6 +128,21 @@ def _run_date(text: str) -> date:
             f"{text!r} is too early or too late. A run reads the 91 days before the date."
         ) from None
     return day
+
+
+def _percent_share(high: int) -> Callable[[str], float]:
+    """An argparse type for a percent above 0 and up to high, e.g., 30 or 27.5. It gives the
+    share, e.g., 0.275, as the float that the share written as a decimal gives, so a percent
+    from a share that the email script got is exactly that share again."""
+
+    def parse(text: str) -> float:
+        if re.fullmatch(r"\d+(\.\d+)?", text) and 0 < Decimal(text) <= high:
+            return float(f"{text}e-2")
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not a percent above 0 and up to {high}, e.g., 30 or 27.5."
+        )
+
+    return parse
 
 
 def _whole_number(low: int, high: int) -> Callable[[str], int]:
@@ -192,6 +213,9 @@ def _parser() -> argparse.ArgumentParser:
             "above the usual value, and show up arrows for them. 10 to 200, in steps of 10 "
             "(default 50).",
         )
+        anomaly(sp)
+
+    def anomaly(sp: argparse.ArgumentParser) -> None:
         # No default here, so that _choose_anomaly can tell an option from a variable.
         sp.add_argument(
             "--anomaly-method",
@@ -283,6 +307,57 @@ def _parser() -> argparse.ArgumentParser:
     render.add_argument("--run", type=int, required=True, help="The stored run to rebuild.")
     render.add_argument("--out", type=Path, default=Path(DEFAULT_OUT), help=OUT_HELP)
     change_alert(render)
+
+    alerts = sub.add_parser(
+        "alerts",
+        help="Print the alerts of stored runs as text, JSON or CSV. No API calls.",
+    )
+    common(alerts, config=False)
+    pick = alerts.add_mutually_exclusive_group(required=True)
+    pick.add_argument("--run", type=int, help="The stored run whose alerts to print.")
+    pick.add_argument(
+        "--rsid",
+        action="append",
+        metavar="RSID",
+        help="A report suite ID, as ahd runs lists it. Prints the alerts of its latest run that "
+        "ended ok or partial. Give it more than once for several suites.",
+    )
+    pick.add_argument(
+        "--all-suites",
+        action="store_true",
+        help="The latest run that ended ok or partial of every suite in the database.",
+    )
+    alerts.add_argument(
+        "--segment",
+        metavar="ID",
+        help="With --rsid or --all-suites: use the latest runs with this segment ID. Without "
+        "it, the runs without a segment.",
+    )
+    alerts.add_argument(
+        "--format",
+        choices=FORMATS,
+        default="text",
+        help="text for a person or an email (default), json or csv for a program.",
+    )
+    alerts.add_argument(
+        "--change-alert",
+        dest="threshold",
+        type=_percent_share(100),
+        default=DEFAULT_CHANGE_ALERT,
+        metavar="PERCENT",
+        help="A large drop is more than this percent below the weekday average. Above 0 and up "
+        "to 100, e.g., 30 or 27.5 (default 30).",
+    )
+    alerts.add_argument(
+        "--spike-alert",
+        dest="spike_threshold",
+        type=_percent_share(200),
+        default=DEFAULT_SPIKE_ALERT,
+        metavar="PERCENT",
+        help="A large spike is more than this percent above the weekday average. Above 0 and "
+        "up to 200 (default 50).",
+    )
+    anomaly(alerts)
 
     runs = sub.add_parser("runs", help="List stored runs.")
     common(runs, config=False)
@@ -459,12 +534,6 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
 
 # The order of the statuses from best to worst, for the exit code of a run of several suites.
 WORST_LAST = ("ok", "partial", "failed")
-ALERT_NAMES = (
-    ("unusual", "unusual value", "unusual values"),
-    ("large drop", "large drop", "large drops"),
-    ("large spike", "large spike", "large spikes"),
-    ("dropped to zero", "drop to zero", "drops to zero"),
-)
 
 
 def _suites_to_run(args: argparse.Namespace, client: Any) -> list[str]:
@@ -511,12 +580,7 @@ def _alert_line(
             [run_id, threshold, spike, method, sensitivity],
         ).fetchall()
     )
-    day = date.fromisoformat(str(store.get_run(run_id)["today"])) - timedelta(days=1)
-    parts = []
-    for key, one, many in ALERT_NAMES:
-        n = counts.get(key, 0)
-        parts.append(f"{n} {one if n == 1 else many}")
-    return f"Alerts for {day.isoformat()}: {', '.join(parts)}"
+    return counts_line(alerts_day(store.get_run(run_id)), counts)
 
 
 def _write(view: dict[str, Any], out: Path) -> Path:
@@ -676,6 +740,35 @@ def _render(args: argparse.Namespace) -> int:
         )
     )
     return 0
+
+
+def _alerts(args: argparse.Namespace) -> int:
+    """Print the alerts of the chosen runs. Exit with 0 when there are any, EXIT_NO_ALERTS when
+    there are none, and 1 when a suite has no finished run. The others are still printed."""
+    if args.run is not None and args.segment is not None:
+        raise ConfigError(
+            "--segment works only with --rsid or --all-suites. The run that --run names already "
+            "has its segment."
+        )
+    path = _db_path(args)
+    rules = Rules(
+        args.threshold, args.spike_threshold, args.anomaly_method, args.anomaly_sensitivity
+    )
+    # Read-only, so a DuckDB session that reads the file does not stop it. The current views
+    # are made for this session only, so the file keeps its own.
+    store = Store.open(path, read_only=True)
+    try:
+        store.use_current_views()
+        runs, missing = choose_runs(store, path, args.run, args.rsid, args.all_suites, args.segment)
+        results = [read_alerts(store, run, rules) for run in runs]
+    finally:
+        store.con.close()
+    for message in missing:
+        print(f"Error: {message}", file=sys.stderr)
+    write(results, rules, args.format, sys.stdout)
+    if missing:
+        return 1
+    return 0 if any(r.alerts for r in results) else EXIT_NO_ALERTS
 
 
 def _one_of(values: tuple[str, ...]) -> str:
@@ -872,6 +965,8 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
             return _run(args, client_factory)
         if args.command == "render":
             return _render(args)
+        if args.command == "alerts":
+            return _alerts(args)
         if args.command == "prune":
             return _prune(args)
         if args.command == "export":

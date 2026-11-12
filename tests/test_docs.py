@@ -20,6 +20,7 @@ COMMANDS = (
     "run",
     "individual",
     "render",
+    "alerts",
     "runs",
     "prune",
     "export",

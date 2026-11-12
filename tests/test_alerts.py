@@ -1,0 +1,709 @@
+"""ahd alerts: the alerts of stored runs as text, JSON or CSV, by the rules of the alerts() macro."""
+
+import csv
+import io
+import json
+import math
+import shutil
+import subprocess
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+import duckdb
+import pytest
+
+from ahd.api.reports import Column, DailyValue
+from ahd.catalog import Component
+from ahd.cli import main
+from ahd.store import Store
+from ahd.summary import ANOMALY_METHODS, SENSITIVITIES
+
+TODAY = date(2026, 11, 7)
+YESTERDAY = TODAY - timedelta(days=1)
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+# One component for each kind of alert, one without an alert and one that never collected data.
+# Each has the value 100 on every day but yesterday, so its weekday average is 100.
+KINDS = {
+    "metrics/event1": ("Flagged", 150.0),
+    "metrics/event2": ("Zero", 0.0),
+    "metrics/event3": ("Drop", 50.0),
+    "metrics/event4": ("Spike", 200.0),
+    "metrics/event5": ("Quiet", 100.0),
+    "metrics/event6": ("Never", 0.0),
+}
+
+
+def _add_run(
+    store, rsid="rs1", name="Suite One", segment=None, today=TODAY, quiet=False, names=None
+):
+    """A finished run. quiet gives every component its usual value yesterday, so no alerts."""
+    names = names or {}
+    rid = store.create_run(rsid, name, segment, today, "UTC", "0.1")
+    comps = [
+        Component(cid, names.get(cid, label), "metric", "custom_events", n, Column(cid, cid), True)
+        for n, (cid, (label, _)) in enumerate(KINDS.items(), start=1)
+    ]
+    store.add_components(rid, comps)
+    values = []
+    for cid, (_label, last) in KINDS.items():
+        usual = 0.0 if cid == "metrics/event6" else 100.0
+        for n in range(91):
+            day = today - timedelta(days=91 - n)
+            if day == today - timedelta(days=1):
+                value = usual if quiet else last
+                if cid == "metrics/event1" and not quiet:
+                    # Adobe flagged it: above the upper end of its range.
+                    values.append(DailyValue(cid, day, value, 100.0, 120.0, 80.0, True))
+                    continue
+            else:
+                value = usual
+            values.append(DailyValue(cid, day, value, None, None, None, None))
+    store.add_daily_values(rid, values)
+    store.finish_run(rid, "ok")
+    return rid
+
+
+def _db(tmp_path, **kw):
+    db = tmp_path / "ahd.duckdb"
+    store = Store.open(db)
+    _add_run(store, **kw)
+    store.con.close()
+    return db
+
+
+def _alerts(db, *options, client_factory=None):
+    """The exit code and the output of ahd alerts on this database."""
+    kw = {} if client_factory is None else {"client_factory": client_factory}
+    return main(["alerts", "--db", str(db), *options], **kw)
+
+
+def _macro(db, run, **options):
+    """The rows of the alerts() macro of the current views, as dicts."""
+    store = Store.open(db)  # a write open puts in the current views
+    try:
+        names = "".join(f", {k} := ${k}" for k in options)
+        cur = store.con.execute(f"FROM alerts($run{names})", {"run": run, **options})
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        store.con.close()
+
+
+RULES = (
+    "A large drop is more than 30% below the weekday average, and a large spike is more than "
+    "50% above it. The weekday average is the average of the same weekday in the 12 weeks "
+    "before. Adobe's anomaly detection flags the unusual values."
+)
+
+
+# ---- text -------------------------------------------------------------------------------
+
+
+def test_text_lists_every_kind_of_alert(tmp_path, capsys):
+    db = _db(tmp_path)
+    assert _alerts(db, "--run", "1") == 0
+    assert capsys.readouterr().out == (
+        f"{RULES}\n"
+        "\n"
+        "Run 1, Suite One (rs1), status ok\n"
+        "Alerts for 2026-11-06: 1 unusual value, 1 large drop, 1 large spike, 1 drop to zero\n"
+        "- unusual: Flagged (metrics/event1), weekday average 100, actual 150, expected 100, "
+        "change +50.0%\n"
+        "- large spike: Spike (metrics/event4), weekday average 100, actual 200, change +100.0%\n"
+        "- large drop: Drop (metrics/event3), weekday average 100, actual 50, change -50.0%\n"
+        "- dropped to zero: Zero (metrics/event2), weekday average 100, actual 0, "
+        "change -100.0%\n"
+    )
+
+
+def test_text_without_alerts_says_so_and_exits_with_4(tmp_path, capsys):
+    db = _db(tmp_path, quiet=True)
+    assert _alerts(db, "--run", "1", "--format", "text") == 4
+    assert capsys.readouterr().out == (
+        f"{RULES}\n"
+        "\n"
+        "Run 1, Suite One (rs1), status ok\n"
+        "Alerts for 2026-11-06: 0 unusual values, 0 large drops, 0 large spikes, 0 drops to zero\n"
+    )
+
+
+def test_text_names_the_segment_the_method_and_the_thresholds(tmp_path, capsys):
+    db = _db(tmp_path, segment="s300_mobile", name=None)
+    options = ["--change-alert", "27.5", "--spike-alert", "120"]
+    local = ["--anomaly-method", "weekday-iqr", "--anomaly-sensitivity", "high"]
+    assert _alerts(db, "--run", "1", *options, *local) == 0
+    out = capsys.readouterr().out
+    assert out.startswith(
+        "A large drop is more than 27.5% below the weekday average, and a large spike is more "
+        "than 120% above it. The weekday average is the average of the same weekday in the 12 "
+        "weeks before. The Weekday quartile range method with high sensitivity flags the "
+        "unusual values. ahd computes this method from the daily values of the run.\n\n"
+    )
+    # A run without a stored suite name shows its ID.
+    assert "\nRun 1, rs1, segment s300_mobile, status ok\n" in out
+
+
+def test_the_text_line_is_the_alert_line_of_ahd_run(tmp_path, capsys):
+    from ahd.cli import _alert_line
+
+    db = _db(tmp_path)
+    store = Store.open(db)
+    lines = {
+        m: _alert_line(store, 1, 0.3, 0.5, method=m)
+        for m in ("adobe", "weekday-median", "weekday-trend")
+    }
+    store.con.close()
+    for method, line in lines.items():
+        _alerts(db, "--run", "1", "--anomaly-method", method)
+        assert f"\n{line}\n" in capsys.readouterr().out
+
+
+def test_ahd_run_and_ahd_alerts_print_the_same_line(tmp_path, capsys):
+    """The alert line that ahd run prints after a run, and the one of ahd alerts, agree."""
+    from fakes import fake_for
+
+    cfg = tmp_path / "config.json"
+    cfg.write_text(
+        json.dumps({"org_id": "o@AdobeOrg", "client_id": "c", "secret": "s", "scopes": "x"}),
+        encoding="utf-8",
+    )
+    events = [{"id": f"metrics/event{i}", "name": f"Event {i}"} for i in (1, 2, 3)] + [
+        {"id": "metrics/occurrences", "name": "Occurrences", "type": "int"}
+    ]
+    dims = [{"id": "variables/page", "name": "Page", "allowedForReporting": True}]
+    fake = fake_for("rs1", events, dims)
+    db = tmp_path / "t.duckdb"
+    run = ["run", "--config", str(cfg), "--db", str(db), "--rsid", "rs1", "--date", "2026-11-07"]
+    local = ["--anomaly-method", "weekday-median", "--change-alert", "50"]
+    code = main([*run, "--out", str(tmp_path / "o"), *local], client_factory=lambda c, **k: fake)
+    assert code == 0
+    [line] = [x for x in capsys.readouterr().out.splitlines() if x.startswith("Alerts for ")]
+    _alerts(db, "--run", "1", *local)
+    assert f"\n{line}\n" in capsys.readouterr().out
+
+
+# ---- JSON -------------------------------------------------------------------------------
+
+
+def _plain(value):
+    """A value of the macro as the JSON output gives it."""
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
+
+
+def test_json_holds_the_run_and_every_column_of_the_macro(tmp_path, capsys):
+    db = _db(tmp_path)
+    assert _alerts(db, "--run", "1", "--format", "json") == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["format_version"] == 1
+    [run] = data["runs"]
+    alerts = run.pop("alerts")
+    assert run == {
+        "run_id": 1,
+        "rsid": "rs1",
+        "rsid_name": "Suite One",
+        "segment_id": None,
+        "status": "ok",
+        "day": "2026-11-06",
+        "method": "adobe",
+        "method_name": "Adobe",
+        "sensitivity": "normal",
+        "threshold": 0.3,
+        "spike_threshold": 0.5,
+    }
+    rows = _macro(db, 1)
+    # Each alert has every column of the macro. Its run_id and day are those of the run.
+    assert [a["alert"] for a in alerts] == [
+        "unusual",
+        "large spike",
+        "large drop",
+        "dropped to zero",
+    ]
+    for alert, row in zip(alerts, rows, strict=True):
+        run_id, day = row.pop("run_id"), row.pop("day")
+        assert (run_id, day) == (1, YESTERDAY)
+        assert alert == {k: _plain(v) for k, v in row.items()}
+    assert alerts[0]["anomaly"] == "high" and alerts[0]["expected"] == 100.0
+    assert alerts[2]["pct_vs_usual"] == -0.5
+
+
+def test_json_without_alerts_has_the_run_with_an_empty_list(tmp_path, capsys):
+    db = _db(tmp_path, quiet=True)
+    assert _alerts(db, "--run", "1", "--format", "json") == 4
+    [run] = json.loads(capsys.readouterr().out)["runs"]
+    assert run["alerts"] == [] and run["run_id"] == 1
+
+
+# Every pair but adobe with low or high, which the command refuses. test_cli.py checks that.
+PAIRS = [(m, s) for m in ANOMALY_METHODS for s in SENSITIVITIES if m != "adobe" or s == "normal"]
+
+
+@pytest.mark.parametrize(("method", "sensitivity"), PAIRS)
+def test_json_agrees_with_the_macro_for_every_method_and_sensitivity(
+    tmp_path, capsys, method, sensitivity
+):
+    db = _db(tmp_path)
+    options = ["--anomaly-method", method, "--anomaly-sensitivity", sensitivity]
+    code = _alerts(db, "--run", "1", "--format", "json", "--change-alert", "45", *options)
+    [run] = json.loads(capsys.readouterr().out)["runs"]
+    rows = _macro(db, 1, threshold=0.45, method=method, sensitivity=sensitivity)
+    assert code == (0 if rows else 4)
+    assert (run["method"], run["sensitivity"], run["threshold"]) == (method, sensitivity, 0.45)
+    assert [(a["component_id"], a["alert"], a["anomaly"]) for a in run["alerts"]] == [
+        (r["component_id"], r["alert"], r["anomaly"]) for r in rows
+    ]
+
+
+def test_json_keeps_numbers_that_are_not_finite_out(tmp_path):
+    from ahd.alerts import json_value
+
+    assert json_value(math.inf) is None and json_value(-math.inf) is None
+    assert json_value(math.nan) is None
+    assert json_value(1.5) == 1.5 and json_value(None) is None and json_value("x") == "x"
+    assert json_value(YESTERDAY) == "2026-11-06"
+
+
+def test_json_of_a_value_that_is_not_finite_is_valid_json(tmp_path, capsys):
+    db = _db(tmp_path)
+    con = duckdb.connect(str(db))
+    con.execute(
+        "UPDATE daily_values SET value = 'Infinity'::DOUBLE, expected = 'NaN'::DOUBLE "
+        "WHERE component_id = 'metrics/event1' AND day = ?",
+        [YESTERDAY],
+    )
+    con.close()
+    assert _alerts(db, "--run", "1", "--format", "json") == 0
+    out = capsys.readouterr().out
+    assert "Infinity" not in out and "NaN" not in out
+    alerts = json.loads(out)["runs"][0]["alerts"]
+    flagged = next(a for a in alerts if a["component_id"] == "metrics/event1")
+    assert flagged["value"] is None and flagged["expected"] is None
+    assert flagged["pct_vs_usual"] is None
+    # The text says so, and has no change for it.
+    assert _alerts(db, "--run", "1") == 0
+    line = "- unusual: Flagged (metrics/event1), weekday average 100, actual no data, expected no data\n"
+    assert line in capsys.readouterr().out
+
+
+# ---- CSV --------------------------------------------------------------------------------
+
+CSV_HEADER = [
+    "run_id",
+    "rsid",
+    "rsid_name",
+    "segment_id",
+    "status",
+    "day",
+    "method",
+    "method_name",
+    "sensitivity",
+    "threshold",
+    "spike_threshold",
+    "alert",
+    "anomaly",
+    "component_id",
+    "name",
+    "group",
+    "metric_type",
+    "value",
+    "usual",
+    "expected",
+    "pct_vs_usual",
+]
+
+
+def test_csv_has_one_header_and_one_row_per_alert(tmp_path, capsys):
+    db = tmp_path / "ahd.duckdb"
+    store = Store.open(db)
+    _add_run(store)
+    _add_run(store, rsid="rs2", name="Two")
+    store.con.close()
+    assert _alerts(db, "--rsid", "rs1", "--rsid", "rs2", "--format", "csv") == 0
+    rows = list(csv.reader(io.StringIO(capsys.readouterr().out)))
+    assert rows[0] == CSV_HEADER
+    assert len(rows) == 1 + 4 + 4
+    first = dict(zip(CSV_HEADER, rows[1]))
+    assert first == {
+        "run_id": "1",
+        "rsid": "rs1",
+        "rsid_name": "Suite One",
+        "segment_id": "",
+        "status": "ok",
+        "day": "2026-11-06",
+        "method": "adobe",
+        "method_name": "Adobe",
+        "sensitivity": "normal",
+        "threshold": "0.3",
+        "spike_threshold": "0.5",
+        "alert": "unusual",
+        "anomaly": "high",
+        "component_id": "metrics/event1",
+        "name": "Flagged",
+        "group": "custom_events",
+        "metric_type": "",
+        "value": "150.0",
+        "usual": "100.0",
+        "expected": "100.0",
+        "pct_vs_usual": "0.5",
+    }
+    assert [r[1] for r in rows[1:]] == ["rs1"] * 4 + ["rs2"] * 4
+
+
+def test_csv_without_alerts_is_only_the_header(tmp_path, capsys):
+    db = _db(tmp_path, quiet=True)
+    assert _alerts(db, "--run", "1", "--format", "csv") == 4
+    assert capsys.readouterr().out == ",".join(CSV_HEADER) + "\n"
+
+
+# ---- names from Adobe stay inert --------------------------------------------------------
+
+ODD = {
+    "metrics/event1": 'Big "quoted", <b>bold</b>',
+    "metrics/event3": '=HYPERLINK("x")\nsecond line\r\x1b[31mred\u202e',
+    "metrics/event4": "日本サイト\u2028next",
+}
+
+
+def test_odd_names_stay_inert_in_every_format(tmp_path, capsys):
+    db = _db(tmp_path, names=ODD, name="Suite\n\x07 One")
+    assert _alerts(db, "--run", "1", "--format", "json") == 0
+    out = capsys.readouterr().out
+    assert out.isascii()  # every other character is escaped
+    alerts = {a["component_id"]: a["name"] for a in json.loads(out)["runs"][0]["alerts"]}
+    assert all(alerts[k] == v for k, v in ODD.items())
+
+    assert _alerts(db, "--run", "1", "--format", "csv") == 0
+    rows = list(csv.reader(io.StringIO(capsys.readouterr().out, newline="")))
+    found = {r[CSV_HEADER.index("component_id")]: r[CSV_HEADER.index("name")] for r in rows[1:]}
+    assert all(found[k] == v for k, v in ODD.items())
+    assert len(rows) == 5
+
+    assert _alerts(db, "--run", "1") == 0
+    text = capsys.readouterr().out
+    # One line for each alert, and no character that moves the cursor or colors the terminal.
+    lines = text.splitlines()
+    assert len(lines) == 3 + 1 + 4
+    assert "Run 1, Suite?? One (rs1), status ok" in lines
+    assert '- large drop: =HYPERLINK("x")?second line??[31mred? (metrics/event3)' in text
+    assert "- large spike: 日本サイト?next (metrics/event4)" in text
+    assert not any(c in text for c in "\x1b\x07\r\u202e\u2028")
+
+
+# ---- which runs -------------------------------------------------------------------------
+
+
+@pytest.fixture
+def many(tmp_path):
+    """rs1 without a segment (run 1), and an older run date in run 4. rs2 has no alerts (run 2).
+    rs1 with a segment (run 3). rs3 only failed (run 5)."""
+    db = tmp_path / "ahd.duckdb"
+    store = Store.open(db)
+    _add_run(store)
+    _add_run(store, rsid="rs2", name="Another", quiet=True)
+    _add_run(store, segment="s300_mobile", quiet=True)
+    _add_run(store, today=TODAY - timedelta(days=30), quiet=True)
+    rid = _add_run(store, rsid="rs3", name="Failed")
+    store.finish_run(rid, "failed")
+    store.con.close()
+    return db
+
+
+def _runs(capsys):
+    return [(r["run_id"], r["rsid"]) for r in json.loads(capsys.readouterr().out)["runs"]]
+
+
+def test_rsid_takes_the_latest_run_by_run_date(many, capsys):
+    # Run 4 has a higher number, but an older run date.
+    assert _alerts(many, "--rsid", "rs1", "--format", "json") == 0
+    assert _runs(capsys) == [(1, "rs1")]
+
+
+def test_several_rsids_keep_their_order_and_count_once(many, capsys):
+    assert _alerts(many, "--rsid", "rs2", "--rsid", "rs1", "--rsid", "rs2", "--format", "json") == 0
+    assert _runs(capsys) == [(2, "rs2"), (1, "rs1")]
+
+
+def test_segment_picks_the_runs_with_it(many, capsys):
+    assert _alerts(many, "--rsid", "rs1", "--segment", "s300_mobile", "--format", "json") == 4
+    assert _runs(capsys) == [(3, "rs1")]
+
+
+def test_all_suites_uses_every_suite_with_a_finished_run_by_name(many, capsys):
+    assert _alerts(many, "--all-suites", "--format", "json") == 0
+    assert _runs(capsys) == [(2, "rs2"), (1, "rs1")]
+    assert _alerts(many, "--all-suites", "--segment", "s300_mobile", "--format", "json") == 4
+    assert _runs(capsys) == [(3, "rs1")]
+
+
+def test_a_suite_without_a_finished_run_is_an_error_but_the_others_are_printed(many, capsys):
+    code = _alerts(many, "--rsid", "rs1", "--rsid", "rs3", "--rsid", "typo", "--format", "json")
+    assert code == 1
+    captured = capsys.readouterr()
+    assert [r["rsid"] for r in json.loads(captured.out)["runs"]] == ["rs1"]
+    assert captured.err == (
+        f"Error: {many} holds no finished run of rs3 without a segment. Check the report suite "
+        "ID, or run ahd runs to list the runs.\n"
+        f"Error: {many} holds no finished run of typo without a segment. Check the report suite "
+        "ID, or run ahd runs to list the runs.\n"
+    )
+    assert _alerts(many, "--rsid", "rs2", "--segment", "s300_other") == 1
+    assert "holds no finished run of rs2 with the segment s300_other." in capsys.readouterr().err
+
+
+def test_all_suites_without_a_finished_run_is_an_error(many, capsys):
+    assert _alerts(many, "--all-suites", "--segment", "s300_none") == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == f"Error: {many} holds no finished run with the segment s300_none.\n"
+
+
+@pytest.mark.parametrize(
+    ("run", "message"),
+    [
+        ("9", "There is no stored run 9."),
+        (
+            "5",
+            'Run 5 ended "failed", so it has no alerts. Choose a run that ended "ok" or "partial".',
+        ),
+    ],
+)
+def test_a_run_that_has_no_alerts_to_read_is_an_error(many, capsys, run, message):
+    assert _alerts(many, "--run", run) == 1
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err == f"Error: {message}\n"
+
+
+def test_a_running_run_is_an_error(many, capsys):
+    con = duckdb.connect(str(many))
+    con.execute("UPDATE runs SET status = 'running' WHERE run_id = 1")
+    con.close()
+    assert _alerts(many, "--run", "1") == 1
+    assert 'Run 1 is still marked "running"' in capsys.readouterr().err
+
+
+def test_a_partial_run_has_alerts(many, capsys):
+    con = duckdb.connect(str(many))
+    con.execute("UPDATE runs SET status = 'partial' WHERE run_id = 1")
+    con.close()
+    assert _alerts(many, "--run", "1", "--format", "json") == 0
+    assert json.loads(capsys.readouterr().out)["runs"][0]["status"] == "partial"
+
+
+def test_segment_does_not_go_with_run(many, capsys):
+    assert _alerts(many, "--run", "1", "--segment", "s300_mobile") == 1
+    assert capsys.readouterr().err == (
+        "Error: --segment works only with --rsid or --all-suites. The run that --run names "
+        "already has its segment.\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "options",
+    [[], ["--run", "1", "--rsid", "rs1"], ["--rsid", "rs1", "--all-suites"], ["--run", "x"]],
+)
+def test_the_runs_are_chosen_one_way_only(many, capsys, options):
+    with pytest.raises(SystemExit) as e:
+        _alerts(many, *options)
+    assert e.value.code == 2
+    assert "usage:" in capsys.readouterr().err
+
+
+def test_it_makes_no_api_call_and_no_new_file(tmp_path, capsys):
+    def no_sign_in(*a, **k):
+        raise AssertionError("ahd alerts must not sign in.")
+
+    db = tmp_path / "new" / "ahd.duckdb"
+    assert _alerts(db, "--run", "1", client_factory=no_sign_in) == 1
+    assert "There is no database at" in capsys.readouterr().err
+    assert not db.parent.exists()
+    db = _db(tmp_path)
+    assert _alerts(db, "--all-suites", client_factory=no_sign_in) == 0
+
+
+# ---- thresholds -------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("option", "percent", "share"),
+    [
+        ("--change-alert", "27.5", 0.275),
+        ("--change-alert", "100", 1.0),
+        ("--change-alert", "0.001", 0.00001),
+        ("--spike-alert", "200", 2.0),
+        ("--spike-alert", "33.3333333333333333333333333333", 0.333333333333333333333333333333),
+    ],
+)
+def test_a_percent_becomes_the_exact_share_of_the_macro(tmp_path, capsys, option, percent, share):
+    db = _db(tmp_path)
+    _alerts(db, "--run", "1", "--format", "json", option, percent)
+    [run] = json.loads(capsys.readouterr().out)["runs"]
+    key = "threshold" if option == "--change-alert" else "spike_threshold"
+    assert run[key] == share  # the same float as the share written as a decimal
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--change-alert", "0"),
+        ("--change-alert", "100.5"),
+        ("--change-alert", "-5"),
+        ("--change-alert", "1e1"),
+        ("--change-alert", "nan"),
+        ("--change-alert", "thirty"),
+        ("--spike-alert", "0"),
+        ("--spike-alert", "201"),
+        ("--spike-alert", "inf"),
+    ],
+)
+def test_a_percent_out_of_range_is_a_usage_error(tmp_path, capsys, option, value):
+    with pytest.raises(SystemExit) as e:
+        _alerts(tmp_path / "t.duckdb", "--run", "1", option, value)
+    assert e.value.code == 2
+    assert "is not a percent above 0 and up to" in capsys.readouterr().err
+
+
+def test_the_thresholds_change_the_alerts(tmp_path, capsys):
+    db = _db(tmp_path)
+    # The drop is 50 percent and the spike 100 percent.
+    _alerts(db, "--run", "1", "--format", "json", "--change-alert", "50", "--spike-alert", "100")
+    [run] = json.loads(capsys.readouterr().out)["runs"]
+    assert [a["alert"] for a in run["alerts"]] == ["unusual", "dropped to zero"]
+
+
+# ---- the anomaly variables --------------------------------------------------------------
+
+
+def test_the_anomaly_variables_choose_the_method(tmp_path, capsys, monkeypatch):
+    db = _db(tmp_path)
+    monkeypatch.setenv("AHD_ANOMALY_METHOD", "weekday-trend")
+    monkeypatch.setenv("AHD_ANOMALY_SENSITIVITY", "low")
+    _alerts(db, "--run", "1", "--format", "json")
+    [run] = json.loads(capsys.readouterr().out)["runs"]
+    assert (run["method"], run["method_name"], run["sensitivity"]) == (
+        "weekday-trend",
+        "Weekday trend",
+        "low",
+    )
+    _alerts(db, "--run", "1", "--format", "json", "--anomaly-sensitivity", "normal")
+    assert json.loads(capsys.readouterr().out)["runs"][0]["sensitivity"] == "normal"
+
+
+# ---- files with older views, and files that others hold open -----------------------------
+
+
+def _with_old_views(db, sql):
+    con = duckdb.connect(str(db))
+    con.execute(sql)
+    con.close()
+
+
+def _local(db, capsys):
+    options = ["--anomaly-method", "weekday-median", "--anomaly-sensitivity", "high"]
+    code = _alerts(db, "--run", "1", "--format", "json", *options)
+    return code, json.loads(capsys.readouterr().out)["runs"][0]["alerts"]
+
+
+def test_a_file_with_the_views_of_0_1_8_gets_the_current_rules(tmp_path, capsys):
+    """0.1.8 wrote views version 4. Its macros take no sensitivity, and ahd alerts must not
+    write to the file to get the current ones."""
+    new = _db(tmp_path / "new")
+    old = tmp_path / "old.duckdb"
+    shutil.copy(new, old)
+    views = (FIXTURES / "views_0_1_8.sql").read_text(encoding="utf-8")
+    _with_old_views(old, views + "\nUPDATE views_version SET version = 4;")
+    assert _local(old, capsys) == _local(new, capsys)
+    assert _local(old, capsys)[0] == 0
+    # The file keeps its old views: the command did not write to it.
+    con = duckdb.connect(str(old), read_only=True)
+    try:
+        assert con.execute("FROM views_version").fetchall() == [(4,)]
+        with pytest.raises(duckdb.BinderException):
+            con.execute("FROM alerts(1, sensitivity := 'high')")
+    finally:
+        con.close()
+
+
+def test_a_file_without_any_views_gets_the_current_rules(tmp_path, capsys):
+    """ahd 0.1.2 and earlier wrote no views and no views_version table."""
+    db = _db(tmp_path)
+    expected = _local(db, capsys)
+    _with_old_views(
+        db,
+        "DROP MACRO TABLE alerts; DROP MACRO TABLE anomaly_days; DROP VIEW latest_runs; "
+        "DROP VIEW component_days; DROP TABLE views_version;",
+    )
+    assert _local(db, capsys) == expected
+    assert _alerts(db, "--all-suites", "--format", "json") == 0
+    assert [r["run_id"] for r in json.loads(capsys.readouterr().out)["runs"]] == [1]
+
+
+def test_the_current_views_are_made_for_the_session_only(tmp_path):
+    from ahd.store import temporary_views
+
+    sql = temporary_views()
+    statements = [
+        s.strip()
+        for s in "\n".join(
+            line for line in sql.splitlines() if not line.lstrip().startswith("--")
+        ).split(";")
+        if s.strip()
+    ]
+    assert len(statements) == 4
+    assert all(s.startswith("CREATE OR REPLACE TEMP ") for s in statements)
+
+
+def test_a_drop_in_the_views_is_left_out_of_the_session(tmp_path, monkeypatch, capsys):
+    from ahd.store import _views
+
+    db = _db(tmp_path)
+    monkeypatch.setattr(
+        "ahd.store._views", lambda: _views() + "\nDROP MACRO TABLE IF EXISTS gone;\n"
+    )
+    assert _alerts(db, "--run", "1") == 0
+
+
+def _hold(db, read_only):
+    """Another process that holds the file open until it is killed. It prints a line when the
+    file is open, and the caller waits for that line."""
+    return subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                f"import duckdb, time; c = duckdb.connect({str(db)!r}, read_only={read_only}); "
+                "print('ready', flush=True); time.sleep(60)"
+            ),
+        ],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+
+
+def test_it_reads_a_file_that_another_reader_holds_open(tmp_path, capsys):
+    db = _db(tmp_path)
+    with _hold(db, read_only=True) as holder:
+        try:
+            ready = holder.stdout.readline().strip()
+            assert ready == "ready"
+            assert _alerts(db, "--run", "1") == 0
+            assert "Alerts for 2026-11-06" in capsys.readouterr().out
+        finally:
+            holder.kill()
+
+
+def test_a_file_that_a_writer_holds_is_a_plain_error(tmp_path, capsys):
+    db = _db(tmp_path)
+    with _hold(db, read_only=False) as holder:
+        try:
+            ready = holder.stdout.readline().strip()
+            assert ready == "ready"
+            assert _alerts(db, "--run", "1") == 1
+            captured = capsys.readouterr()
+            assert captured.out == ""
+            assert "is in use by another program" in captured.err
+            assert captured.err.count("\n") == 1
+        finally:
+            holder.kill()

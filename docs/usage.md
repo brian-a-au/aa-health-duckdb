@@ -14,6 +14,7 @@ This page describes every `ahd` command, with its options and exit codes. Add `-
 - [run](#run): fetch data and write the report
 - [individual](#individual): add a dimension by metric pair to a stored run
 - [render](#render): rebuild a report with no API calls
+- [alerts](#alerts): print the alerts of stored runs as text, JSON or CSV
 - [runs](#runs): list stored runs
 - [prune](#prune): delete stored runs
 - [export and import](#export-and-import): back up stored runs, or copy them into another file
@@ -41,7 +42,7 @@ ahd runs                           # list what is stored
 | `--db PATH` | Uses this database file. For the commands that read or write a database. |
 | `--verbose` | Writes debug detail to stderr. Put it before the command, e.g., `ahd --verbose run ...`. |
 
-The commands that sign in are `check`, `suites`, `segments`, `run` and `individual`. Each of them first prints where the credential came from, e.g., "Signed in using profile prod". The others never call Adobe. `runs`, `render` and `export` only read the database. `prune` deletes runs from it, and `import` adds runs to it. Only `run` and `import` create a new database. The other commands stop when the file does not exist.
+The commands that sign in are `check`, `suites`, `segments`, `run` and `individual`. Each of them first prints where the credential came from, e.g., "Signed in using profile prod". The others never call Adobe. `runs`, `render`, `alerts` and `export` only read the database. `prune` deletes runs from it, and `import` adds runs to it. Only `run` and `import` create a new database. The other commands stop when the file does not exist.
 
 Where a command takes a report suite, segment, dimension or metric, it accepts an ID or a name. See [How IDs and names are matched](#how-ids-and-names-are-matched).
 
@@ -65,7 +66,7 @@ When nothing matches a dimension or metric, the tool suggests an ID such as `eva
 
 With several `--rsid` options, `ahd run` matches each one before it checks any suite. If one does not match, the command stops and checks no suite. A suite that you give twice, e.g., once by ID and once by name, is checked once.
 
-The example script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning) does not look up names. It takes only report suite IDs and segment IDs, and they must match exactly.
+`ahd alerts` and the example script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning) do not look up names, because they never call Adobe. They take only report suite IDs and segment IDs, and they must match exactly.
 
 ### Compared with aa_auto_sdr
 
@@ -158,7 +159,7 @@ export AHD_ANOMALY_SENSITIVITY=high
 ahd run --rsid my_suite
 ```
 
-- `ahd run`, `ahd individual` and `ahd render` read them, and so does the alert email script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning). A scheduled job that sets them once gives the reports and the email the same method. See [Run it every day](scheduling.md).
+- `ahd run`, `ahd individual`, `ahd render` and `ahd alerts` read them, and so does the alert email script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning). A scheduled job that sets them once gives the reports and the email the same method. See [Run it every day](scheduling.md).
 - An option on the command line wins over its variable, e.g., `--anomaly-sensitivity normal` with `AHD_ANOMALY_SENSITIVITY=high` gives `normal`.
 - Without the option and the variable, the defaults are `adobe` and `normal`. An empty variable counts as not set.
 - A value that is not in the list stops the command with exit code 1, before it signs in or opens the database. The message names the variable and the values it takes.
@@ -214,6 +215,123 @@ ahd render --run 3 --anomaly-method weekday-median --anomaly-sensitivity low
 
 The anomaly method and its sensitivity are chosen each time a report is written. They are not stored with the run. So you can write the report of any stored run again with another method or sensitivity, e.g., to compare the flags of `weekday-median` with Adobe's, and no new requests go to Adobe. This also works for a run whose credential may not use Adobe's anomaly detection. See [Troubleshooting](troubleshooting.md#limited-access). `render` only reads the database, so it works while a `duckdb -readonly` session has the file open.
 
+## alerts
+
+Prints the alerts of stored runs, with no calls to Adobe. It finds them by the same rules as the report and the alert line of `ahd run`, because it reads them with the [`alerts()` macro](duckdb.md#alertsrun-threshold--030-spike_threshold--050-min_usual--10-for_day--null-method--adobe-sensitivity--normal). The alerts are for the day before the run date. Use it to read the alerts in a terminal, to put them in an email, or to give them to another program.
+
+```
+ahd alerts --run 2
+ahd alerts --rsid my_suite
+ahd alerts --rsid my_suite --rsid other_suite --segment s300_mobile
+ahd alerts --all-suites --format json
+ahd alerts --all-suites --format csv > alerts.csv
+ahd alerts --rsid my_suite --change-alert 27.5 --anomaly-method weekday-median
+```
+
+| Option | What it does |
+|---|---|
+| `--run` | Prints the alerts of this stored run. The run must have ended "ok" or "partial". |
+| `--rsid` | A report suite ID, as `ahd runs` lists it. Prints the alerts of the latest run of the suite that ended "ok" or "partial", which is the run that the view [`latest_runs`](duckdb.md#latest_runs) holds. Give it more than once for several suites. They come in the order you give them, and each suite comes once. |
+| `--all-suites` | Prints the alerts of the latest run that ended "ok" or "partial" of every suite in the database, in the order of the suite names. |
+| `--segment` | With `--rsid` or `--all-suites`, uses the latest runs with this segment ID. Without it, the command uses the runs without a segment. It does not work with `--run`, because a run already has its segment. |
+| `--format` | `text`, the default, for a person or the body of a plain email. `json` or `csv` for another program. See [The formats](#the-formats). |
+| `--change-alert` | A large drop is a value more than this percent below the weekday average. The default is 30. Any percent above 0 and up to 100 works, e.g., `27.5`, because there is no slider here. |
+| `--spike-alert` | A large spike is a value more than this percent above the weekday average. The default is 50. Any percent above 0 and up to 200 works. |
+| `--anomaly-method`, `--anomaly-sensitivity` | Work as in `run`, with the same defaults and the same variables `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`. With `adobe`, `low` or `high` stops the command with exit code 1. See [Set the anomaly method once](#set-the-anomaly-method-once). |
+
+You need one of `--run`, `--rsid` or `--all-suites`. When a suite has no finished run, the command says so on stderr, e.g., "holds no finished run of my_suite without a segment". It still prints the alerts of the other suites, and exits with 1.
+
+The command opens the database read-only, so it works while a `duckdb -readonly` session has the file open. While `ahd run` or another command writes to the file, it stops with "is in use by another program". It uses the rules of the version of `ahd` that you run, also on a file that an older version wrote. Such a file keeps the views and macros of that version, e.g., an `alerts()` macro without `sensitivity`. The command makes the current views and macros for its own use and leaves the file as it is.
+
+### The formats
+
+`text` starts with the rules in use. Then it gives each run a heading with its number, suite and status, the same alert line that `ahd run` prints, and one line for each alert. A run without alerts has only its heading and its alert line. A character in a name that could change how a terminal shows the text, e.g., a line break, shows as `?`. For the Adobe Store suite, shortened:
+
+```
+A large drop is more than 30% below the weekday average, and a large spike is more than 50% above it. The weekday average is the average of the same weekday in the 12 weeks before. Adobe's anomaly detection flags the unusual values.
+
+Run 2, Adobe Store (dgeo1xxpnwcidadobestore), status ok
+Alerts for 2026-11-11: 3 unusual values, 0 large drops, 10 large spikes, 0 drops to zero
+- unusual: Exit Link Instances (metrics/exitlinkinstances), weekday average 2.42, actual 8, expected 2.51, change +231.0%
+- unusual: Cart Additions (metrics/cartadditions), weekday average 140.08, actual 230, expected 77.06, change +64.2%
+- unusual: Orders (metrics/orders), weekday average 18.33, actual 35, expected 20.91, change +90.9%
+- large spike: Custom Link Instances (metrics/customlinkinstances), weekday average 12.08, actual 41, change +239.3%
+- large spike: Page (variables/page), weekday average 4,848.50, actual 8,172, change +68.5%
+```
+
+`json` gives one object with these fields:
+
+- `format_version`: the version of this layout, now 1. It changes only when a field is removed or changes its meaning.
+- `runs`: one object for each run, in the order of the text.
+
+Each run has these fields:
+
+- `run_id`, `rsid`, `rsid_name`, `segment_id` and `status`, as in the `runs` table. `segment_id` is `null` for a run without a segment.
+- `day`: the day of the alerts, as YYYY-MM-DD.
+- `method` and `sensitivity`: the anomaly method and sensitivity in use, e.g., `weekday-median` and `high`. `method_name` is the name that the report gives the method, e.g., "Weekday median".
+- `threshold` and `spike_threshold`: the percents for a large drop and a large spike, as shares, e.g., `0.3` for 30 percent, as the `alerts()` macro takes them.
+- `alerts`: one object for each alert, in the order of the `alerts()` macro. It has the columns of the macro: `alert`, `anomaly`, `component_id`, `name`, `group`, `metric_type`, `value`, `usual`, `expected` and `pct_vs_usual`. The run gives the `run_id` and the `day` of the macro. The [DuckDB guide](duckdb.md#alertsrun-threshold--030-spike_threshold--050-min_usual--10-for_day--null-method--adobe-sensitivity--normal) explains each column. A run without alerts has an empty list.
+
+Later versions may add fields to the object, to a run and to an alert, e.g., the day since an alert has held. A program that reads the JSON should ignore the fields it does not know. A number that is not finite, e.g., a value that Adobe sent as infinity, is `null`. Every character outside ASCII is written as an escape, e.g., `日` for 日, so the output reads the same in any text encoding. For the same suite, shortened:
+
+```json
+{
+  "format_version": 1,
+  "runs": [
+    {
+      "run_id": 2,
+      "rsid": "dgeo1xxpnwcidadobestore",
+      "rsid_name": "Adobe Store",
+      "segment_id": null,
+      "status": "ok",
+      "day": "2026-11-11",
+      "method": "adobe",
+      "method_name": "Adobe",
+      "sensitivity": "normal",
+      "threshold": 0.3,
+      "spike_threshold": 0.5,
+      "alerts": [
+        {
+          "alert": "unusual",
+          "anomaly": "high",
+          "component_id": "metrics/exitlinkinstances",
+          "name": "Exit Link Instances",
+          "group": "Reserved Props",
+          "metric_type": "int",
+          "value": 8.0,
+          "usual": 2.4166666666666665,
+          "expected": 2.505854996828865,
+          "pct_vs_usual": 2.310344828
+        }
+      ]
+    }
+  ]
+}
+```
+
+`csv` gives one header row and one row for each alert. Each row starts with the fields of its run, as in the JSON, and goes on with the fields of the alert. A run without alerts has no row. A value with a comma, a quote or a line break is put in quotes, as CSV does it. For the same suite, shortened:
+
+```
+run_id,rsid,rsid_name,segment_id,status,day,method,method_name,sensitivity,threshold,spike_threshold,alert,anomaly,component_id,name,group,metric_type,value,usual,expected,pct_vs_usual
+2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,unusual,high,metrics/exitlinkinstances,Exit Link Instances,Reserved Props,int,8.0,2.4166666666666665,2.505854996828865,2.310344828
+2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,unusual,high,metrics/cartadditions,Cart Additions,Reserved Purchase Events,int,230.0,140.08333333333334,77.06421405092522,0.641879833
+```
+
+### Exit codes of alerts
+
+| Code | Meaning |
+|---|---|
+| 0 | It printed at least one alert. |
+| 4 | The chosen runs have no alerts. |
+| 1 | Something is wrong, e.g., there is no such run, or the file is in use. When a suite has no finished run, the command still prints the alerts of the others. |
+| 2 | An option is wrong. |
+
+So a scheduled job can send the alerts only when there are any, e.g., with a `mail` program:
+
+```
+ahd alerts --profile prod --all-suites > alerts.txt && mail -s "Analytics Health alerts" team@example.com < alerts.txt
+```
+
 ## runs
 
 Lists every stored run with its number, report suite, run date, status and how long it took. The run with the highest number comes first. That is the run made last, except after an `ahd import` that gave old runs new numbers.
@@ -260,10 +378,11 @@ ahd import backup/2026-11 --db data/other.duckdb
 
 | Code | Meaning |
 |---|---|
-| 0 | Everything worked. |
-| 1 | The command failed. The message on stderr says why. `run` also exits with 1 when the run ends "failed". `prune` also exits with 1 when you answer no. |
+| 0 | Everything worked. `alerts` printed at least one alert. |
+| 1 | The command failed. The message on stderr says why. `run` also exits with 1 when the run ends "failed". `prune` also exits with 1 when you answer no. `alerts` also exits with 1 when a suite has no finished run. |
 | 2 | `check` found limited access, or a check could not be run. `check` or `suites` found no report suites. Any command also exits with 2 when an option is wrong, e.g., `--change-alert 12`, and prints its usage. |
 | 3 | `run` or `individual` finished, but some columns or requests had problems. The report's status section lists them. After a run of several suites, at least one suite ended "partial" and none failed. |
+| 4 | `alerts` found no alerts in the chosen runs. See [Exit codes of alerts](#exit-codes-of-alerts). |
 | 130 | You stopped the command with Ctrl-C. A run that `ahd run` had started is marked "failed". A pair that `ahd individual` was adding is removed. |
 
 ## Defaults
@@ -273,8 +392,8 @@ ahd import backup/2026-11 --db data/other.duckdb
 | Database | `./data/ahd.duckdb`, or `~/.aa/orgs/<name>/ahd.duckdb` with a profile |
 | Report folder | `./reports/` |
 | Individual Component Summary pair | Page by Occurrences |
-| Large drop slider | 30 percent |
-| Large spike slider | 50 percent |
+| Large drop slider, and the large drop of `alerts` | 30 percent |
+| Large spike slider, and the large spike of `alerts` | 50 percent |
 | Anomaly method | `AHD_ANOMALY_METHOD` when it is set, else `adobe`, Adobe's anomaly detection |
 | Anomaly sensitivity | `AHD_ANOMALY_SENSITIVITY` when it is set, else `normal` |
 | Columns per trend request | 20 |

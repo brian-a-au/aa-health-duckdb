@@ -870,7 +870,10 @@ SENSITIVITY_COMMANDS = [
     ["run", "--rsid", "rs1"],
     ["individual", "--run", "1", "--dimension", "page", "--metric", "event1"],
     ["render", "--run", "1"],
+    ["alerts", "--run", "1"],
 ]
+# The commands of SENSITIVITY_COMMANDS that sign in, and so take --config.
+SIGNS_IN = ("run", "individual")
 
 
 @pytest.mark.parametrize("command", SENSITIVITY_COMMANDS, ids=lambda c: c[0])
@@ -886,7 +889,7 @@ def test_anomaly_sensitivity_needs_a_local_method(
     rest = [*method, "--anomaly-sensitivity", sensitivity]
     code = main(
         [command[0], "--config", str(cfg), "--db", str(db), *command[1:], *rest]
-        if command[0] != "render"
+        if command[0] in SIGNS_IN
         else [*command, "--db", str(db), *rest],
         client_factory=no_sign_in,
     )
@@ -926,15 +929,7 @@ def test_anomaly_sensitivity_must_be_a_known_level(tmp_path, capsys, command, ba
     assert "--anomaly-sensitivity: invalid choice" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize(
-    "command",
-    [
-        ["run", "--rsid", "rs1"],
-        ["individual", "--run", "1", "--dimension", "page", "--metric", "event1"],
-        ["render", "--run", "1"],
-    ],
-    ids=lambda c: c[0],
-)
+@pytest.mark.parametrize("command", SENSITIVITY_COMMANDS, ids=lambda c: c[0])
 @pytest.mark.parametrize("bad", ["nope", "Adobe", "weekday_median"])
 def test_anomaly_method_must_be_a_known_method(tmp_path, capsys, command, bad):
     with pytest.raises(SystemExit) as stop:
@@ -1084,7 +1079,7 @@ def test_an_unknown_value_in_an_anomaly_variable_is_a_plain_error(
     db = tmp_path / "t.duckdb"
     argv = (
         [command[0], "--config", str(cfg), "--db", str(db), *command[1:]]
-        if command[0] != "render"
+        if command[0] in SIGNS_IN
         else [*command, "--db", str(db)]
     )
     # Exit code 1 and no usage, because the user typed no wrong option.
@@ -1167,7 +1162,7 @@ def test_a_sensitivity_from_a_variable_needs_a_local_method(
     db = tmp_path / "t.duckdb"
     argv = (
         [command[0], "--config", str(cfg), "--db", str(db), *command[1:]]
-        if command[0] != "render"
+        if command[0] in SIGNS_IN
         else [*command, "--db", str(db)]
     )
     assert main([*argv, *options], client_factory=no_sign_in) == 1
