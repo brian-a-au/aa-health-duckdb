@@ -2,6 +2,23 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## 0.1.11 (unreleased)
+
+This release adds the command `ahd alerts`. The database layout stays at version 7 and the views version at 6, so files made by 0.1.2 to 0.1.10 keep working, and no command replaces anything in them. The rules of the alerts do not change.
+
+- `ahd alerts` prints the alerts of stored runs, with no calls to Adobe. It takes `--run N`, `--rsid` with a report suite ID, or `--all-suites`, and `--segment` with a segment ID. With `--rsid` or `--all-suites`, it uses the latest run of each suite that ended "ok" or "partial". See [Usage](docs/usage.md#alerts).
+  - It finds the alerts with the `alerts()` macro, so they are the same as in the report and in the alert line of `ahd run`.
+  - It takes `--change-alert`, `--spike-alert`, `--anomaly-method` and `--anomaly-sensitivity` with the same defaults as `ahd render`, and reads the variables `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`. Here `--change-alert` and `--spike-alert` take any percent, e.g., `27.5`, because there is no slider.
+  - `--format text` is the default, for a person or a plain email. `--format json` and `--format csv` are for another program. [Usage](docs/usage.md#the-formats) lists the fields of the JSON. Later versions may add fields.
+  - It exits with 0 when it printed an alert, with 4 when there were none, with 1 when something is wrong and with 2 for a wrong option. So a scheduled job can send an email only on a day with alerts.
+  - It opens the file read-only, so it works while a `duckdb -readonly` session has the file open. It uses the views and macros of the `ahd` that you run for its own session, so it follows the current rules also on a file that an older version wrote, and it leaves the file as it is.
+- The alert email script `send_alerts.py` now gets its alerts from `ahd alerts --format json`. It no longer keeps its own copy of the anomaly methods and of the checks of the variables. Its options, its variables, its exit codes and its email stay the same, so a scheduled job keeps working. These things change for a user of the script:
+  - **It needs `ahd` 0.1.11 or newer.** Before, it needed only DuckDB. In a clone of the repository, `uv run` already has `ahd`. Elsewhere, run it with `ahd` added, e.g., `uv run --with aa-health-duckdb python send_alerts.py ...`, or install `ahd` so that it is on your `PATH`. Without `ahd`, the script stops with exit code 1 and says how to install it. With an older `ahd`, it says to update it.
+  - Every anomaly method and sensitivity now works on a file that an older version of `ahd` wrote last. Before, the script stopped with exit code 1 and said to run `ahd run` once.
+  - The messages for a wrong anomaly option or variable, a locked file and a missing file are now those of `ahd`, e.g., "Error: The database ... is in use by another program". A sensitivity of `low` or `high` with `adobe` from the options no longer prints the usage of the script. The exit code stays 1.
+  - The shares of `--threshold` and `--spike-threshold` go to `ahd alerts` as exact percents, e.g., `0.275` as `27.5`, so a job gets the same alerts as before. The rows of the email are the same. Two rows with the same alert and the same change now always come in the order of their group and ID. Before, DuckDB could list them in either order.
+- [Run it every day](docs/scheduling.md#without-the-email-script) shows a job that sends the text of `ahd alerts` with a `mail` program, and the [DuckDB guide](docs/duckdb.md#print-the-alerts-with-ahd-alerts) shows the command next to the SQL recipes.
+
 ## 0.1.10 (2026-11-12)
 
 The database layout stays at version 7, so files made by 0.1.2 to 0.1.9 keep working. The views version changes from 5 to 6, because the `anomaly_days()` macro changes. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces it in your file. `ahd render` opens the file read-only, so it does not replace it.
