@@ -173,6 +173,33 @@ In the example for `weekday-median` above, the spread is 7.413. With `high`, the
 
 The sensitivity does not apply to `adobe`, because Adobe returns its own range. With `adobe`, `low` or `high` stops the command with an error. See [Troubleshooting](troubleshooting.md#anomaly-detection-options).
 
+### Which sensitivity to choose
+
+- Start with `normal`. It is the default, and it gives the same ranges as ahd 0.1.8.
+- Choose `low` when a local method flags more values than you can check, e.g., on a suite whose values jump a lot from week to week. It flags fewer values, but it also misses more of the values that Adobe flags.
+- Choose `high` when a missed problem costs more than a false alarm. It finds more of the values that Adobe flags, but it flags many more values that Adobe does not flag.
+- Do not expect a sensitivity to make a local method agree with Adobe. On the suites below, no method at any sensitivity found more than about three quarters of Adobe's flags, and on Demo Data, the best found half of them.
+- A sensitivity does not help `weekday-trend` much when the level of a component starts to change faster than in the earlier weeks. On Demo Data CJA, the values fell by about 20 percent a week until mid October, and by 32 to 54 percent a week after that. `weekday-trend` flagged 744 values there even with `low`, and `weekday-median` flagged 64 with `low`.
+
+The evidence for this advice is limited. The four suites below are the only suites that were available for the test, and all four are Adobe's demo report suites. Adobe generates their data, so it does not behave like the data of a real website, e.g., Demo Data CJA falls on every day of the run, and Demo Data Evangelists has no data from 2026-11-04 on. A real suite may give other counts. To check your own suite, run the query in [`anomaly_days`](duckdb.md#anomaly_daysrun-method--adobe-min_usual--10-sensitivity--normal) with `sensitivity := 'low'` and then `'high'` added to the local method.
+
+These counts come from one run of each suite, with the run date 2026-11-12. They cover the 28 days from 2026-10-15 to 2026-11-11, which have a range with every local method. Each cell gives the number of values that the method flagged, where a value is one component on one day. The number in brackets is how many of them Adobe flagged too.
+
+| Method | Sensitivity | Demo Data | Adobe Store | Demo Data CJA | Demo Data Evangelists |
+|---|---|---:|---:|---:|---:|
+| `adobe` | | 64 | 58 | 3 | 667 |
+| `weekday-median` | `low` | 57 (3) | 66 (33) | 64 (2) | 3,175 (469) |
+| `weekday-median` | `normal` | 281 (7) | 91 (38) | 169 (2) | 3,478 (495) |
+| `weekday-median` | `high` | 1,220 (24) | 138 (43) | 303 (2) | 3,919 (513) |
+| `weekday-iqr` | `low` | 107 (1) | 78 (36) | 101 (0) | 2,290 (287) |
+| `weekday-iqr` | `normal` | 358 (6) | 96 (37) | 174 (0) | 2,660 (293) |
+| `weekday-iqr` | `high` | 706 (22) | 126 (44) | 307 (2) | 2,848 (295) |
+| `weekday-trend` | `low` | 82 (4) | 40 (28) | 744 (0) | 691 (261) |
+| `weekday-trend` | `normal` | 300 (21) | 53 (35) | 1,090 (2) | 1,620 (283) |
+| `weekday-trend` | `high` | 1,106 (32) | 92 (43) | 1,447 (2) | 2,718 (463) |
+
+The suites have 410, 35, 124 and 371 components. On Demo Data Evangelists, most flags of the local methods are values of 0 after the data stopped. Adobe flagged almost all of its values of 0 on the first two days, 2026-11-04 and 2026-11-05.
+
 ### The first eight weeks have no range
 
 The charts show 91 days, which is 13 weeks. A local method needs 8 earlier days of the same weekday in the run. The days of the first 8 weeks do not have that many, so they get no expected range and no flags. The charts draw the range only for the last 5 weeks. In the same way, a square in the first 8 weeks of the calendar only counts drops to zero. With a local method, the calendar shows flags only for the last 5 weeks.
