@@ -371,7 +371,7 @@ def test_locked_database_is_one_line_error(tmp_path, cfg, capsys):
     db = tmp_path / "t.duckdb"
     Store.open(db).con.close()
     # Another process holds the file open for writing, as ahd run does.
-    holder = subprocess.Popen(
+    with subprocess.Popen(
         [
             sys.executable,
             "-c",
@@ -382,23 +382,22 @@ def test_locked_database_is_one_line_error(tmp_path, cfg, capsys):
         ],
         stdout=subprocess.PIPE,
         text=True,
-    )
-    try:
-        assert holder.stdout.readline().strip() == "ready"
-        called = []
+    ) as holder:
+        try:
+            assert holder.stdout.readline().strip() == "ready"
+            called = []
 
-        def sign_in(creds, company_id=None):
-            called.append(1)
+            def sign_in(creds, company_id=None):
+                called.append(1)
 
-        for argv in (["runs", "--db", str(db)], args(tmp_path, cfg, "run", "--rsid", "rs1")):
-            code = main(argv, client_factory=sign_in)
-            err = capsys.readouterr().err
-            assert code == 1 and err.count("\n") == 1 and "Traceback" not in err
-            assert "is in use by another program" in err
-            assert not called  # ahd run stops before it signs in
-    finally:
-        holder.kill()
-        holder.wait()
+            for argv in (["runs", "--db", str(db)], args(tmp_path, cfg, "run", "--rsid", "rs1")):
+                code = main(argv, client_factory=sign_in)
+                err = capsys.readouterr().err
+                assert code == 1 and err.count("\n") == 1 and "Traceback" not in err
+                assert "is in use by another program" in err
+                assert not called  # ahd run stops before it signs in
+        finally:
+            holder.kill()
 
 
 def test_file_that_is_not_a_database_is_one_line_error(tmp_path, capsys):
@@ -905,9 +904,11 @@ def test_anomaly_sensitivity_needs_a_local_method(
 def test_anomaly_sensitivity_normal_works_with_adobe(tmp_path, capsys, command):
     # normal is the default, so it may be given with adobe. The command then goes on, and here
     # stops later because there is no stored run.
-    from ahd.cli import _parser
+    from ahd.cli import _choose_anomaly, _parser
 
-    assert _parser().parse_args(command).anomaly_sensitivity == "normal"
+    parsed = _parser().parse_args(command)
+    _choose_anomaly(parsed)
+    assert (parsed.anomaly_method, parsed.anomaly_sensitivity) == ("adobe", "normal")
     db = ["--db", str(tmp_path / "t.duckdb")]
     rest = [*db, "--anomaly-method", "adobe", "--anomaly-sensitivity", "normal"]
     argv = [command[0], *rest, *command[1:]]
@@ -940,6 +941,238 @@ def test_anomaly_method_must_be_a_known_method(tmp_path, capsys, command, bad):
         main([*command, "--db", str(tmp_path / "t.duckdb"), "--anomaly-method", bad])
     assert stop.value.code == 2
     assert "--anomaly-method: invalid choice" in capsys.readouterr().err
+
+
+def _record_anomaly_choices(monkeypatch):
+    """The method and sensitivity that each report and alert line gets, as a list."""
+    from ahd.cli import _alert_line as real_line
+    from ahd.cli import build_view as real_view
+
+    seen = []
+
+    def view(*a, **k):
+        seen.append(("view", k.get("method", "adobe"), k.get("sensitivity", "normal")))
+        return real_view(*a, **k)
+
+    def line(*a, **k):
+        seen.append(("line", k.get("method", "adobe"), k.get("sensitivity", "normal")))
+        return real_line(*a, **k)
+
+    monkeypatch.setattr("ahd.cli.build_view", view)
+    monkeypatch.setattr("ahd.cli._alert_line", line)
+    return seen
+
+
+def test_the_anomaly_variables_set_the_method_and_the_sensitivity(
+    tmp_path, cfg, capsys, monkeypatch
+):
+    # One place for a scheduled job: ahd run and send_alerts.py read the same two variables.
+    seen = _record_anomaly_choices(monkeypatch)
+    monkeypatch.setenv("AHD_ANOMALY_METHOD", "weekday-median")
+    monkeypatch.setenv("AHD_ANOMALY_SENSITIVITY", "high")
+    fake = fake_for("rs1", events(2), custom_dims())
+    fake.gets["/dimensions"] = custom_dims() + [{"id": "variables/evar17", "name": "Term"}]
+    out = tmp_path / "o"
+    run = ["run", "--rsid", "rs1", "--date", "2026-11-07", "--out", str(out)]
+    assert main(args(tmp_path, cfg, *run), client_factory=lambda c, company_id=None: fake) == 0
+    assert seen == [("view", "weekday-median", "high"), ("line", "weekday-median", "high")]
+    page = next(out.glob("*.html")).read_text(encoding="utf-8")
+    assert "<dt>Anomaly detection</dt><dd>Weekday median, high sensitivity <span" in page
+    assert "Alerts for 2026-11-06: " in capsys.readouterr().out
+
+    seen.clear()
+    individual = ["individual", "--run", "1", "--dimension", "evar17", "--metric", "event1"]
+    code = main(
+        args(tmp_path, cfg, *individual, "--out", str(tmp_path / "o1")),
+        client_factory=lambda c, company_id=None: fake,
+    )
+    assert code == 0
+    assert seen == [("view", "weekday-median", "high")]
+
+    seen.clear()
+    out2 = tmp_path / "o2"
+    db = ["--db", str(tmp_path / "t.duckdb"), "--out", str(out2)]
+    assert main(["render", "--run", "1", *db]) == 0
+    assert seen == [("view", "weekday-median", "high")]
+    page = next(out2.glob("*.html")).read_text(encoding="utf-8")
+    assert "<dt>Anomaly detection</dt><dd>Weekday median, high sensitivity <span" in page
+
+
+@pytest.mark.parametrize(
+    ("variables", "options", "want"),
+    [
+        # An option on the command line wins over the variable.
+        (
+            {"AHD_ANOMALY_METHOD": "weekday-median", "AHD_ANOMALY_SENSITIVITY": "high"},
+            ["--anomaly-method", "weekday-iqr", "--anomaly-sensitivity", "low"],
+            ("weekday-iqr", "low"),
+        ),
+        (
+            {"AHD_ANOMALY_METHOD": "weekday-median", "AHD_ANOMALY_SENSITIVITY": "high"},
+            ["--anomaly-sensitivity", "normal"],
+            ("weekday-median", "normal"),
+        ),
+        # The option of one and the variable of the other work together.
+        (
+            {"AHD_ANOMALY_SENSITIVITY": "low"},
+            ["--anomaly-method", "weekday-trend"],
+            ("weekday-trend", "low"),
+        ),
+        (
+            {"AHD_ANOMALY_METHOD": "weekday-iqr"},
+            ["--anomaly-sensitivity", "high"],
+            ("weekday-iqr", "high"),
+        ),
+        # adobe with normal from the variables is the same as the defaults.
+        (
+            {"AHD_ANOMALY_METHOD": "adobe", "AHD_ANOMALY_SENSITIVITY": "normal"},
+            [],
+            ("adobe", "normal"),
+        ),
+        # A variable that is empty, or holds only spaces, is not set.
+        ({"AHD_ANOMALY_METHOD": "", "AHD_ANOMALY_SENSITIVITY": " "}, [], ("adobe", "normal")),
+        (
+            {"AHD_ANOMALY_METHOD": " weekday-median ", "AHD_ANOMALY_SENSITIVITY": ""},
+            [],
+            ("weekday-median", "normal"),
+        ),
+        # Without either, the defaults stay.
+        ({}, [], ("adobe", "normal")),
+    ],
+)
+@pytest.mark.parametrize("command", SENSITIVITY_COMMANDS, ids=lambda c: c[0])
+def test_an_anomaly_option_wins_over_its_variable(monkeypatch, command, variables, options, want):
+    from ahd.cli import _choose_anomaly, _parser
+
+    for name, value in variables.items():
+        monkeypatch.setenv(name, value)
+    parsed = _parser().parse_args([*command, *options])
+    _choose_anomaly(parsed)
+    assert (parsed.anomaly_method, parsed.anomaly_sensitivity) == want
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "message"),
+    [
+        (
+            "AHD_ANOMALY_METHOD",
+            "weekday_median",
+            (
+                "Error: The AHD_ANOMALY_METHOD variable is set to 'weekday_median', which is not an "
+                "anomaly method. Use adobe, weekday-median, weekday-iqr or weekday-trend, or unset "
+                "the variable.\n"
+            ),
+        ),
+        (
+            "AHD_ANOMALY_SENSITIVITY",
+            "Medium",
+            (
+                "Error: The AHD_ANOMALY_SENSITIVITY variable is set to 'Medium', which is not an "
+                "anomaly sensitivity. Use low, normal or high, or unset the variable.\n"
+            ),
+        ),
+    ],
+)
+@pytest.mark.parametrize("command", SENSITIVITY_COMMANDS, ids=lambda c: c[0])
+def test_an_unknown_value_in_an_anomaly_variable_is_a_plain_error(
+    tmp_path, cfg, capsys, monkeypatch, command, name, value, message
+):
+    def no_sign_in(*a, **k):
+        raise AssertionError("The command should stop before it signs in.")
+
+    monkeypatch.setenv(name, value)
+    db = tmp_path / "t.duckdb"
+    argv = (
+        [command[0], "--config", str(cfg), "--db", str(db), *command[1:]]
+        if command[0] != "render"
+        else [*command, "--db", str(db)]
+    )
+    # Exit code 1 and no usage, because the user typed no wrong option.
+    assert main(argv, client_factory=no_sign_in) == 1
+    assert capsys.readouterr().err == message
+    assert not db.exists()
+    # An option on the command line wins, so the variable is not read.
+    from ahd.cli import _choose_anomaly, _parser
+
+    option = "--anomaly-method" if name == "AHD_ANOMALY_METHOD" else "--anomaly-sensitivity"
+    chosen = "weekday-median" if name == "AHD_ANOMALY_METHOD" else "normal"
+    parsed = _parser().parse_args([*command, option, chosen])
+    _choose_anomaly(parsed)
+    assert value not in (parsed.anomaly_method, parsed.anomaly_sensitivity)
+
+
+def test_the_anomaly_variables_do_not_matter_to_other_commands(tmp_path, cfg, capsys, monkeypatch):
+    db = tmp_path / "t.duckdb"
+    Store.open(db).con.close()
+    monkeypatch.setenv("AHD_ANOMALY_METHOD", "nope")
+    monkeypatch.setenv("AHD_ANOMALY_SENSITIVITY", "nope")
+    assert main(["runs", "--db", str(db)]) == 0
+    assert "AHD_ANOMALY" not in capsys.readouterr().err
+
+
+NEEDS_LOCAL = (
+    "works only with a local anomaly method, e.g., --anomaly-method weekday-median or "
+    "AHD_ANOMALY_METHOD=weekday-median. The adobe method uses the expected range that Adobe "
+    "returned, which ahd does not change."
+)
+
+
+@pytest.mark.parametrize(
+    ("variables", "options", "message"),
+    [
+        (
+            {"AHD_ANOMALY_SENSITIVITY": "high"},
+            [],
+            (
+                "The anomaly sensitivity high from the AHD_ANOMALY_SENSITIVITY variable "
+                f"{NEEDS_LOCAL} To use adobe, unset AHD_ANOMALY_SENSITIVITY or set it to normal."
+            ),
+        ),
+        (
+            {"AHD_ANOMALY_SENSITIVITY": "low"},
+            ["--anomaly-method", "adobe"],
+            (
+                "The anomaly sensitivity low from the AHD_ANOMALY_SENSITIVITY variable "
+                f"{NEEDS_LOCAL} To use adobe, unset AHD_ANOMALY_SENSITIVITY or set it to normal."
+            ),
+        ),
+        (
+            {"AHD_ANOMALY_METHOD": "adobe"},
+            ["--anomaly-sensitivity", "high"],
+            (
+                f"--anomaly-sensitivity {NEEDS_LOCAL} The method adobe comes from the "
+                "AHD_ANOMALY_METHOD variable."
+            ),
+        ),
+        (
+            {"AHD_ANOMALY_METHOD": "adobe", "AHD_ANOMALY_SENSITIVITY": "high"},
+            [],
+            (
+                "The anomaly sensitivity high from the AHD_ANOMALY_SENSITIVITY variable "
+                f"{NEEDS_LOCAL} The method adobe comes from the AHD_ANOMALY_METHOD variable. To use "
+                "adobe, unset AHD_ANOMALY_SENSITIVITY or set it to normal."
+            ),
+        ),
+    ],
+)
+@pytest.mark.parametrize("command", SENSITIVITY_COMMANDS, ids=lambda c: c[0])
+def test_a_sensitivity_from_a_variable_needs_a_local_method(
+    tmp_path, cfg, capsys, monkeypatch, command, variables, options, message
+):
+    def no_sign_in(*a, **k):
+        raise AssertionError("The command should stop before it signs in.")
+
+    for name, value in variables.items():
+        monkeypatch.setenv(name, value)
+    db = tmp_path / "t.duckdb"
+    argv = (
+        [command[0], "--config", str(cfg), "--db", str(db), *command[1:]]
+        if command[0] != "render"
+        else [*command, "--db", str(db)]
+    )
+    assert main([*argv, *options], client_factory=no_sign_in) == 1
+    assert capsys.readouterr().err == f"Error: {message}\n"
+    assert not db.exists()
 
 
 def test_the_alert_line_counts_by_the_chosen_method(tmp_path):

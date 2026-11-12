@@ -10,6 +10,7 @@ import pytest
 
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
+from ahd.cli import METHOD_ENV, SENSITIVITY_ENV
 from ahd.store import Store
 from ahd.summary import ANOMALY_METHODS, SENSITIVITIES
 
@@ -277,11 +278,118 @@ def test_send_alerts_refuses_a_sensitivity_with_adobe(tmp_path, monkeypatch, cap
     assert (tmp_path / "alerts.eml").is_file()
 
 
+def test_send_alerts_reads_the_anomaly_variables_of_ahd(tmp_path, monkeypatch):
+    # A scheduled job sets the two variables once, for ahd run and for this script.
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    db = _weeks_db(tmp_path, 16_000_000.0)
+    monkeypatch.setenv("AHD_ANOMALY_METHOD", "weekday-median")
+    monkeypatch.setenv("AHD_ANOMALY_SENSITIVITY", "high")
+    assert mod.main([db, "rs1"]) == 0
+    text, page = _mail(tmp_path)
+    assert "- unusual: Big <event>" in text
+    named = "The Weekday median method with high sensitivity flagged the"
+    assert named in text and named in page
+    # An option wins over the variable.
+    assert mod.main([db, "rs1", "--anomaly-sensitivity", "normal"]) == 0
+    text, _page = _mail(tmp_path)
+    assert "- large drop: Big <event>" in text
+    assert "The Weekday median method flagged the unusual values." in text
+    assert mod.main([db, "rs1", "--anomaly-method", "weekday-iqr"]) == 0
+    assert "The Weekday quartile range method with high sensitivity" in _mail(tmp_path)[0]
+    # An empty variable, or one with only spaces, is not set.
+    monkeypatch.setenv("AHD_ANOMALY_METHOD", "")
+    monkeypatch.setenv("AHD_ANOMALY_SENSITIVITY", " ")
+    assert mod.main([db, "rs1"]) == 0
+    assert "Adobe's anomaly detection flagged the unusual values." in _mail(tmp_path)[0]
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "message"),
+    [
+        (
+            "AHD_ANOMALY_METHOD",
+            "weekday_median",
+            (
+                "The AHD_ANOMALY_METHOD variable is set to 'weekday_median', which is not an anomaly "
+                "method. Use adobe, weekday-median, weekday-iqr or weekday-trend, or unset the "
+                "variable.\n"
+            ),
+        ),
+        (
+            "AHD_ANOMALY_SENSITIVITY",
+            "Medium",
+            (
+                "The AHD_ANOMALY_SENSITIVITY variable is set to 'Medium', which is not an anomaly "
+                "sensitivity. Use low, normal or high, or unset the variable.\n"
+            ),
+        ),
+    ],
+)
+def test_send_alerts_stops_for_an_unknown_value_in_a_variable(
+    tmp_path, monkeypatch, capsys, name, value, message
+):
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    db = _weeks_db(tmp_path, 16_000_000.0)
+    monkeypatch.setenv(name, value)
+    # Exit code 1, as for a wrong option, but without the usage: no option is wrong.
+    assert mod.main([db, "rs1"]) == 1
+    assert capsys.readouterr().err == message
+    assert not (tmp_path / "alerts.eml").exists()
+    # An option on the command line wins, so the variable is not read.
+    option = "--anomaly-method" if name == "AHD_ANOMALY_METHOD" else "--anomaly-sensitivity"
+    chosen = "weekday-median" if name == "AHD_ANOMALY_METHOD" else "normal"
+    assert mod.main([db, "rs1", option, chosen]) == 0
+
+
+@pytest.mark.parametrize(
+    ("variables", "options", "message"),
+    [
+        (
+            {"AHD_ANOMALY_SENSITIVITY": "high"},
+            [],
+            (
+                "The anomaly sensitivity high from the AHD_ANOMALY_SENSITIVITY variable works only "
+                "with a local anomaly method, e.g., --anomaly-method weekday-median or "
+                "AHD_ANOMALY_METHOD=weekday-median. The adobe method uses the expected range that "
+                "Adobe returned. To use adobe, unset AHD_ANOMALY_SENSITIVITY or set it to normal.\n"
+            ),
+        ),
+        (
+            {"AHD_ANOMALY_METHOD": "adobe"},
+            ["--anomaly-sensitivity", "low"],
+            (
+                "--anomaly-sensitivity works only with a local anomaly method, e.g., "
+                "--anomaly-method weekday-median or AHD_ANOMALY_METHOD=weekday-median. The adobe "
+                "method uses the expected range that Adobe returned. The method adobe comes from the "
+                "AHD_ANOMALY_METHOD variable.\n"
+            ),
+        ),
+    ],
+)
+def test_send_alerts_refuses_a_sensitivity_with_adobe_from_a_variable(
+    tmp_path, monkeypatch, capsys, variables, options, message
+):
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    db = _weeks_db(tmp_path, 16_000_000.0)
+    for name, value in variables.items():
+        monkeypatch.setenv(name, value)
+    assert mod.main([db, "rs1", *options]) == 1
+    assert capsys.readouterr().err == message
+    assert not (tmp_path / "alerts.eml").exists()
+
+
 def test_send_alerts_knows_the_methods_and_sensitivities_of_ahd():
     # The script runs without ahd installed, so it keeps its own lists.
     mod = _load("send_alerts")
     assert tuple(mod.METHODS) == ANOMALY_METHODS
     assert mod.SENSITIVITIES == SENSITIVITIES
+    assert (mod.METHOD_ENV, mod.SENSITIVITY_ENV) == (METHOD_ENV, SENSITIVITY_ENV)
 
 
 def test_send_alerts_with_the_defaults_reads_a_file_with_older_macros(
@@ -377,7 +485,7 @@ def test_send_alerts_missing_or_locked_database(tmp_path, capsys):
     mod = _load("send_alerts")
     assert mod.main([str(tmp_path / "none.duckdb"), "rs1"]) == 1
     db = _db(tmp_path, 5_000_000.0)
-    holder = subprocess.Popen(
+    with subprocess.Popen(
         [
             sys.executable,
             "-c",
@@ -388,14 +496,13 @@ def test_send_alerts_missing_or_locked_database(tmp_path, capsys):
         ],
         stdout=subprocess.PIPE,
         text=True,
-    )
-    try:
-        assert holder.stdout.readline().strip() == "ready"
-        assert mod.main([str(db), "rs1"]) == 1
-        assert "Could not read" in capsys.readouterr().err
-    finally:
-        holder.kill()
-        holder.wait()
+    ) as holder:
+        try:
+            assert holder.stdout.readline().strip() == "ready"
+            assert mod.main([str(db), "rs1"]) == 1
+            assert "Could not read" in capsys.readouterr().err
+        finally:
+            holder.kill()
 
 
 @pytest.mark.parametrize("value", [None, 12.5])

@@ -2,6 +2,19 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## 0.1.10 (2026-11-12)
+
+The database layout stays at version 7, so files made by 0.1.2 to 0.1.9 keep working. The views version changes from 5 to 6, because the `anomaly_days()` macro changes. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces it in your file. `ahd render` opens the file read-only, so it does not replace it.
+
+- The `anomaly_days()` macro no longer gives rows for the Individual Component Summary pairs, e.g., `individual/1`. These pairs have daily values but are not components, and `component_days` and `alerts()` already left them out. Counts from your own SQL on `anomaly_days()` can go down by the rows of the pairs, for every method, also `adobe`. For one run of Adobe's demo suites, the Weekday median method flagged 8 values on a day instead of 9, and Adobe 7 instead of 8. `alerts()`, the report, the alert line and `send_alerts.py` do not change. The DuckDB guide no longer explains how to leave these rows out.
+- Two new environment variables set the defaults of the anomaly options: `AHD_ANOMALY_METHOD` for `--anomaly-method` and `AHD_ANOMALY_SENSITIVITY` for `--anomaly-sensitivity`. `ahd run`, `ahd individual`, `ahd render` and the alert email script `send_alerts.py` read them. A scheduled job can set them once, so the reports and the email use the same method. Before, the job had to give the same two options to both commands, and nothing caught a difference. See [Set the anomaly method once](docs/usage.md#set-the-anomaly-method-once).
+  - An option on the command line wins over its variable. Without both, the defaults stay `adobe` and `normal`. An empty variable counts as not set.
+  - A value that is not a method or a sensitivity stops the command with exit code 1 and a message that names the variable and the values it takes.
+  - With the method `adobe`, a sensitivity of `low` or `high` still stops the command, wherever each value comes from. The message names the variable that gave a value.
+  - [Run it every day](docs/scheduling.md) now sets the two variables in the scripts of the job.
+- Every output in the DuckDB guide now comes from one file, with four runs of Adobe's demo report suites dated 2026-11-12. Before, the guide mixed output from files of different days. The examples with `for_day` now use a day of that file that has alerts, and a block that is shortened says so.
+- [The report](docs/report.md#when-not-to-choose-weekday-trend) now says when not to choose `weekday-trend`. It is a poor choice for a suite whose rise or fall can speed up or slow down, and it should not be relied on to report data that stops. The rule of the method does not change. Six changes to it were tested on four of Adobe's demo report suites, and none of them gave better results.
+
 ## 0.1.9 (2026-11-12)
 
 This release adds a sensitivity for the local anomaly methods. The database layout stays at version 7, so files made by 0.1.2 to 0.1.8 keep working. The views version changes from 4 to 5, because the `alerts()` and `anomaly_days()` macros take a new option. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces them in your file. `ahd render` opens the file read-only, so it does not replace them. Until a command replaces them, your own SQL that gives `sensitivity` to a macro stops with an error.

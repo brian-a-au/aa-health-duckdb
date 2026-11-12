@@ -32,7 +32,7 @@ uv lock --check
 
 - The tests use saved Adobe responses and never call Adobe.
 - Every test runs with the network blocked, so a test fails if it tries to open a connection.
-- The tests ignore your own `AA_PROFILE`, `AHD_*` variables and `~/.aa` profiles.
+- The tests ignore your own `AA_PROFILE`, `AHD_*` variables and `~/.aa` profiles. Only `AHD_CHROME` stays, which chooses the Chrome for the page tests.
 - The example script in `docs/examples` has tests too.
 - The tests in `tests/test_report_js.py` open reports in headless Google Chrome or Chromium. They check the page script, e.g., that the alert lists match the `alerts` macro. The tests look for Chrome in the usual places. To choose the program, set `AHD_CHROME` to its path. Without Chrome these tests are skipped, but on GitHub Actions they fail.
 

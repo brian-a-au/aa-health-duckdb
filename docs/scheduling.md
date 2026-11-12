@@ -20,7 +20,7 @@ These steps run from a clone of this repository, because the email script is in 
   ```
 
 - **Check the email first.** Without `SMTP_HOST`, the script writes `alerts.eml` in the current folder. Open it, and set the mail settings when it looks right. See [Send an alert email every morning](duckdb.md#send-an-alert-email-every-morning).
-- **Give both commands the same anomaly method.** By default, both use Adobe's anomaly detection. If you choose a local method, e.g., `--anomaly-method weekday-median --anomaly-sensitivity high`, add the same two options to `ahd run` and to `send_alerts.py`. Otherwise the reports and the email flag different values. See [The report](report.md#anomaly-detection-methods).
+- **Choose the anomaly method once for the job.** The scripts below set the variables `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`. `ahd run` and `send_alerts.py` both read them, so the reports and the email always flag the same values. The scripts set the defaults, `adobe` and `normal`, which use Adobe's anomaly detection. To use a local method, change the two values, e.g., to `weekday-median` and `high`. Do not also give `--anomaly-method` or `--anomaly-sensitivity` to only one of the commands, because an option wins over the variable. See [Set the anomaly method once](usage.md#set-the-anomaly-method-once) and [The report](report.md#anomaly-detection-methods).
 - **Keep the reports where you want them.** Reports go to `./reports/` in the folder the schedule starts in. To choose another folder, add `--out`, e.g., `--out ~/ahd-reports`.
 
 The script with the commands holds your mail password when your server needs a login. Only your user account should be able to read it. The steps below show how.
@@ -43,6 +43,8 @@ export MAIL_FROM=ahd@example.com
 export MAIL_TO=team@example.com
 export SMTP_USER=ahd@example.com
 export SMTP_PASSWORD='your mail password'
+export AHD_ANOMALY_METHOD=adobe
+export AHD_ANOMALY_SENSITIVITY=normal
 UV="$HOME/.local/bin/uv"
 "$UV" run ahd run --profile prod --all-suites
 "$UV" run python docs/examples/send_alerts.py "$HOME/.aa/orgs/prod/ahd.duckdb" --all
@@ -112,6 +114,8 @@ set MAIL_FROM=ahd@example.com
 set MAIL_TO=team@example.com
 set SMTP_USER=ahd@example.com
 set SMTP_PASSWORD=your mail password
+set AHD_ANOMALY_METHOD=adobe
+set AHD_ANOMALY_SENSITIVITY=normal
 set UV=%USERPROFILE%\.local\bin\uv.exe
 (
   "%UV%" run ahd run --profile prod --all-suites

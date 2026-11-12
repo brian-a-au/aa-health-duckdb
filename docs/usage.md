@@ -127,8 +127,8 @@ ahd run --all-suites
 | `--date` | Treats this date as today, e.g., `2026-11-07` to repeat an earlier day. Write it as YYYY-MM-DD. It cannot be after today in the report suite's time zone, because that day's data is not complete. By default, today is today in the report suite's time zone. With `--date`, the report says so under the run date, and it names the day before that date instead of saying "yesterday". |
 | `--change-alert` | Where the report's large drop slider starts: 10 to 100, in steps of 5. The default is 30. The slider shows it as a negative change, e.g., 30 is -30%. See [The report](report.md#the-large-drop-and-spike-sliders). |
 | `--spike-alert` | Where the report's large spike slider starts: 10 to 200, in steps of 10. The default is 50. See [The report](report.md#the-large-drop-and-spike-sliders). |
-| `--anomaly-method` | How the report finds unusual values: `adobe`, `weekday-median`, `weekday-iqr` or `weekday-trend`. The default is `adobe`, which uses Adobe's anomaly detection. The other three compute the expected range from the daily values of the run, with no extra requests to Adobe. See [The report](report.md#anomaly-detection-methods). |
-| `--anomaly-sensitivity` | How wide the expected range of a local anomaly method is: `low`, `normal` or `high`. The default is `normal`. `low` makes the range wider, so fewer values are flagged. `high` makes it narrower, so more values are flagged. It works only with `weekday-median`, `weekday-iqr` or `weekday-trend`. With `adobe`, any value other than `normal` stops the command with an error, because Adobe returns its own range. See [The report](report.md#the-sensitivity-of-the-local-methods). |
+| `--anomaly-method` | How the report finds unusual values: `adobe`, `weekday-median`, `weekday-iqr` or `weekday-trend`. The default is `adobe`, which uses Adobe's anomaly detection. The other three compute the expected range from the daily values of the run, with no extra requests to Adobe. The variable `AHD_ANOMALY_METHOD` can set another default. See [The report](report.md#anomaly-detection-methods) and [Set the anomaly method once](#set-the-anomaly-method-once). |
+| `--anomaly-sensitivity` | How wide the expected range of a local anomaly method is: `low`, `normal` or `high`. The default is `normal`. `low` makes the range wider, so fewer values are flagged. `high` makes it narrower, so more values are flagged. It works only with `weekday-median`, `weekday-iqr` or `weekday-trend`. With `adobe`, any value other than `normal` stops the command with an error, because Adobe returns its own range. The variable `AHD_ANOMALY_SENSITIVITY` can set another default. See [The report](report.md#the-sensitivity-of-the-local-methods). |
 | `--out` | The folder for the HTML report. The default is `./reports/`. |
 | `--batch-size` | How many columns go into one trend request, from 1 to 100. The default is 20. |
 | `--workers` | How many requests run at the same time, from 1 to 16. The default is 8. The tool starts no more than 12 requests in any 6 seconds, which is Adobe's limit. |
@@ -142,6 +142,28 @@ Alerts for 2026-11-07: 2 unusual values, 1 large drop, 0 large spikes, 0 drops t
 ```
 
 The alerts line uses the `--change-alert` percent for large drops, the `--spike-alert` percent for large spikes and the `--anomaly-method` and `--anomaly-sensitivity` for unusual values. It is left out after a failed run.
+
+### Set the anomaly method once
+
+Two environment variables set the defaults of the two anomaly options:
+
+| Variable | Sets the default of | Values |
+|---|---|---|
+| `AHD_ANOMALY_METHOD` | `--anomaly-method` | `adobe`, `weekday-median`, `weekday-iqr` or `weekday-trend` |
+| `AHD_ANOMALY_SENSITIVITY` | `--anomaly-sensitivity` | `low`, `normal` or `high` |
+
+```
+export AHD_ANOMALY_METHOD=weekday-median
+export AHD_ANOMALY_SENSITIVITY=high
+ahd run --rsid my_suite
+```
+
+- `ahd run`, `ahd individual` and `ahd render` read them, and so does the alert email script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning). A scheduled job that sets them once gives the reports and the email the same method. See [Run it every day](scheduling.md).
+- An option on the command line wins over its variable, e.g., `--anomaly-sensitivity normal` with `AHD_ANOMALY_SENSITIVITY=high` gives `normal`.
+- Without the option and the variable, the defaults are `adobe` and `normal`. An empty variable counts as not set.
+- A value that is not in the list stops the command with exit code 1, before it signs in or opens the database. The message names the variable and the values it takes.
+- The sensitivity still works only with a local method, wherever each value comes from. With the method `adobe`, a sensitivity of `low` or `high` stops the command, and the message names the variable that gave it.
+- The tool reads them each time a command runs. They are not stored with the run. A report says which method and sensitivity it used, in the header fact "Anomaly detection".
 
 If the run sees more than 20 percent fewer custom events, eVars or props than the run before it for the same suite, it prints a warning. The run before is the run of that suite that was made last before this one, also when its run number is higher, e.g., after `ahd import`. The warning gives both counts and the usual cause. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 
@@ -253,7 +275,7 @@ ahd import backup/2026-11 --db data/other.duckdb
 | Individual Component Summary pair | Page by Occurrences |
 | Large drop slider | 30 percent |
 | Large spike slider | 50 percent |
-| Anomaly method | `adobe`, Adobe's anomaly detection |
-| Anomaly sensitivity | `normal` |
+| Anomaly method | `AHD_ANOMALY_METHOD` when it is set, else `adobe`, Adobe's anomaly detection |
+| Anomaly sensitivity | `AHD_ANOMALY_SENSITIVITY` when it is set, else `normal` |
 | Columns per trend request | 20 |
 | Requests at the same time | 8 |

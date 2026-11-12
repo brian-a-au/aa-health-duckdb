@@ -57,7 +57,9 @@ LEFT JOIN usual u ON u.run_id = dv.run_id AND u.component_id = dv.component_id
 LEFT JOIN used ON used.run_id = dv.run_id AND used.component_id = dv.component_id;
 
 -- The expected value, the expected range and the anomaly flag of each component and day of one
--- run, by an anomaly method. It covers the same days as component_days.
+-- run, by an anomaly method. It covers the same components and days as component_days. The
+-- pairs of the Individual Component Summary, e.g., individual/1, have daily values but are not
+-- components, so it leaves them out by the start of their ID, as src/ahd/summary.py does.
 --
 -- 'adobe' gives the values that Adobe returned, as component_days does. The other methods
 -- judge each day by earlier days in the run. Each takes its own sample of a day and gives from
@@ -108,6 +110,7 @@ dv AS (
         d.anomaly
     FROM daily_values d JOIN runs r USING (run_id)
     WHERE d.run_id = run_number AND d.day BETWEEN r.today - 91 AND r.today - 1
+        AND NOT starts_with(d.component_id, 'individual/')
 ),
 -- The level of each day, for weekday-trend.
 leveled AS (

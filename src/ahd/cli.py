@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import re
 import sys
 from collections.abc import Callable
@@ -91,6 +92,11 @@ SENSITIVITY_NEEDS_LOCAL = (
     "weekday-median. The adobe method uses the expected range that Adobe returned, which ahd "
     "does not change."
 )
+
+# The variables that set --anomaly-method and --anomaly-sensitivity when the option is not
+# given, so that a scheduled job sets them once for ahd run and for send_alerts.py.
+METHOD_ENV = "AHD_ANOMALY_METHOD"
+SENSITIVITY_ENV = "AHD_ANOMALY_SENSITIVITY"
 
 
 def _day(text: str) -> date:
@@ -186,21 +192,22 @@ def _parser() -> argparse.ArgumentParser:
             "above the usual value, and show up arrows for them. 10 to 200, in steps of 10 "
             "(default 50).",
         )
+        # No default here, so that _choose_anomaly can tell an option from a variable.
         sp.add_argument(
             "--anomaly-method",
             choices=ANOMALY_METHODS,
-            default=DEFAULT_ANOMALY_METHOD,
             help="How the report finds unusual values. adobe uses the expected range that "
             "Adobe's anomaly detection returned. The other methods compute the range from the "
-            f"run's own daily values (default {DEFAULT_ANOMALY_METHOD}).",
+            f"run's own daily values. Defaults to the {METHOD_ENV} variable, else "
+            f"{DEFAULT_ANOMALY_METHOD}.",
         )
         sp.add_argument(
             "--anomaly-sensitivity",
             choices=SENSITIVITIES,
-            default=DEFAULT_SENSITIVITY,
             help="How wide the expected range of a local anomaly method is. low widens it, so "
             "fewer values are flagged, and high narrows it, so more values are flagged. It does "
-            f"not apply to adobe (default {DEFAULT_SENSITIVITY}).",
+            f"not apply to adobe. Defaults to the {SENSITIVITY_ENV} variable, else "
+            f"{DEFAULT_SENSITIVITY}.",
         )
 
     check = sub.add_parser("check", help="Sign in and check what this credential can see.")
@@ -671,11 +678,74 @@ def _render(args: argparse.Namespace) -> int:
     return 0
 
 
-def _check_anomaly_options(args: argparse.Namespace) -> None:
-    """Stop before any other work when the sensitivity cannot apply to the anomaly method."""
-    sensitivity = getattr(args, "anomaly_sensitivity", DEFAULT_SENSITIVITY)
-    if sensitivity != DEFAULT_SENSITIVITY and args.anomaly_method == DEFAULT_ANOMALY_METHOD:
-        raise ConfigError(SENSITIVITY_NEEDS_LOCAL)
+def _one_of(values: tuple[str, ...]) -> str:
+    """The values as a list in words, e.g., "low, normal or high"."""
+    return f"{', '.join(values[:-1])} or {values[-1]}"
+
+
+def _from_env(name: str, allowed: tuple[str, ...], what: str) -> str | None:
+    """The value of the variable, or None when it is not set or empty. An unknown value stops
+    the command with a message that names the variable."""
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return None
+    if value not in allowed:
+        raise ConfigError(
+            f"The {name} variable is set to {value!r}, which is not an anomaly {what}. "
+            f"Use {_one_of(allowed)}, or unset the variable."
+        )
+    return value
+
+
+def _sensitivity_needs_local(method_from_env: bool, sensitivity: str | None) -> str:
+    """The message for a sensitivity other than normal with the adobe method. sensitivity is
+    the value of the variable when the sensitivity came from it, else None."""
+    if not method_from_env and sensitivity is None:
+        return SENSITIVITY_NEEDS_LOCAL
+    parts = [
+        "--anomaly-sensitivity"
+        if sensitivity is None
+        else f"The anomaly sensitivity {sensitivity} from the {SENSITIVITY_ENV} variable",
+        (
+            "works only with a local anomaly method, e.g., --anomaly-method weekday-median or "
+            f"{METHOD_ENV}=weekday-median. The adobe method uses the expected range that Adobe "
+            "returned, which ahd does not change."
+        ),
+    ]
+    if method_from_env:
+        parts.append(f"The method adobe comes from the {METHOD_ENV} variable.")
+    if sensitivity is not None:
+        parts.append(f"To use adobe, unset {SENSITIVITY_ENV} or set it to normal.")
+    return " ".join(parts)
+
+
+def _choose_anomaly(args: argparse.Namespace) -> None:
+    """Set the anomaly method and sensitivity of a command that takes them.
+
+    An option wins. Without it, the variable METHOD_ENV or SENSITIVITY_ENV gives the value, and
+    without that the default does. The variables are read here, when the command runs. Stop
+    before any other work when the sensitivity cannot apply to the method.
+    """
+    if not hasattr(args, "anomaly_method"):
+        return
+    method_from_env = sensitivity_from_env = False
+    if args.anomaly_method is None:
+        found = _from_env(METHOD_ENV, ANOMALY_METHODS, "method")
+        method_from_env = found is not None
+        args.anomaly_method = found or DEFAULT_ANOMALY_METHOD
+    if args.anomaly_sensitivity is None:
+        found = _from_env(SENSITIVITY_ENV, SENSITIVITIES, "sensitivity")
+        sensitivity_from_env = found is not None
+        args.anomaly_sensitivity = found or DEFAULT_SENSITIVITY
+    if (
+        args.anomaly_sensitivity != DEFAULT_SENSITIVITY
+        and args.anomaly_method == DEFAULT_ANOMALY_METHOD
+    ):
+        raise ConfigError(
+            _sensitivity_needs_local(
+                method_from_env, args.anomaly_sensitivity if sensitivity_from_env else None
+            )
+        )
 
 
 def _print_runs(rows: list[dict]) -> None:
@@ -795,7 +865,7 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
         force=True,
     )
     try:
-        _check_anomaly_options(args)
+        _choose_anomaly(args)
         if args.command == "check":
             return _check(args, client_factory)
         if args.command == "run":
