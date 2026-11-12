@@ -31,6 +31,9 @@ DEFAULT_SPIKE_ALERT = 0.50
 MIN_SPIKE_ALERT = 0.10
 # A percent drop alert needs a usual value of at least this much. Small numbers swing a lot.
 MIN_USUAL = 10
+# A local anomaly method gives a day a range only when the run has at least this many earlier
+# values of its weekday. The anomaly_days macro in views.sql has the same number.
+MIN_SAMPLE = 4
 # The earlier runs that a report lists, newest first.
 HISTORY_RUNS = 30
 # Warn when a run sees more than this share fewer custom components than the run before.
@@ -125,7 +128,7 @@ def _local_dv(source: str) -> str:
     today - 1. Each method gives the expected value and the range from the sample, and the
     same guards then apply to every method:
 
-    1. A day with fewer than 4 values in its sample gets no range and no flag.
+    1. A day with fewer than MIN_SAMPLE values in its sample gets no range and no flag.
     2. When the expected value is above 0, the range reaches at least 5 percent above and
        below it.
     3. When no value in the sample is below 0, the lower limit is not below 0.
@@ -164,10 +167,10 @@ m_sampled AS (
 ),
 m_wide AS (
     SELECT run_id, component_id, day, lowest,
-        CASE WHEN n >= 4 THEN rng.expected END AS expected,
-        CASE WHEN n >= 4 THEN CASE WHEN rng.expected > 0
+        CASE WHEN n >= {MIN_SAMPLE} THEN rng.expected END AS expected,
+        CASE WHEN n >= {MIN_SAMPLE} THEN CASE WHEN rng.expected > 0
             THEN greatest(rng.upper, rng.expected * 1.05) ELSE rng.upper END END AS upper,
-        CASE WHEN n >= 4 THEN CASE WHEN rng.expected > 0
+        CASE WHEN n >= {MIN_SAMPLE} THEN CASE WHEN rng.expected > 0
             THEN least(rng.lower, rng.expected * 0.95) ELSE rng.lower END END AS lower
     FROM m_sampled
 ),
@@ -199,9 +202,31 @@ def _method(key: str) -> AnomalyMethod:
     raise ValueError(f"Unknown anomaly method: {key!r}. Use one of: {', '.join(ANOMALY_METHODS)}.")
 
 
+def method_data(key: str = DEFAULT_ANOMALY_METHOD) -> dict[str, Any]:
+    """The anomaly_method entry of the page data: the method's key, label and rule, and
+    whether it is Adobe's. The page names the method only through this entry."""
+    m = _method(key)
+    return {
+        "key": m.key,
+        "label": m.label,
+        "adobe": m.key == DEFAULT_ANOMALY_METHOD,
+        "rule": m.rule,
+    }
+
+
 def _for_method(sql: str, method: str, adobe_dv: str, local_dv: str) -> str:
-    """The query with the dv CTE of the method in place of Adobe's."""
-    return sql if method == DEFAULT_ANOMALY_METHOD else sql.replace(adobe_dv, local_dv, 1)
+    """The query with the dv CTE of the method in place of Adobe's.
+
+    The query must hold Adobe's dv CTE exactly once. Otherwise a local method would show
+    Adobe's values under its own name, so this fails instead.
+    """
+    if method == DEFAULT_ANOMALY_METHOD:
+        return sql
+    if sql.count(adobe_dv) != 1:
+        raise RuntimeError(
+            f"The query must hold the dv part exactly once to use the anomaly method {method!r}."
+        )
+    return sql.replace(adobe_dv, local_dv)
 
 
 _ANOMALY = """CASE WHEN {a}.anomaly
@@ -755,12 +780,7 @@ def build_view(
     history_sql = _for_method(_HISTORY_SQL, method, _HISTORY_DV, _LOCAL_HISTORY_DV)
     return {
         "run": run,
-        "anomaly_method": {
-            "key": chosen.key,
-            "label": chosen.label,
-            "adobe": chosen.key == DEFAULT_ANOMALY_METHOD,
-            "rule": chosen.rule,
-        },
+        "anomaly_method": method_data(chosen.key),
         "views": views,
         "series": series,
         "alerts": _rows(store, flagged(_ALERTS_SQL), p),

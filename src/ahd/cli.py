@@ -39,6 +39,8 @@ from ahd.lookup import (
 from ahd.render.html import write_report
 from ahd.store import SchemaVersionError, Store, StoreError
 from ahd.summary import (
+    ANOMALY_METHODS,
+    DEFAULT_ANOMALY_METHOD,
     DEFAULT_CHANGE_ALERT,
     DEFAULT_SPIKE_ALERT,
     DROP_CAUSE,
@@ -175,6 +177,14 @@ def _parser() -> argparse.ArgumentParser:
             help="Start the report's spike slider here: flag rises larger than this percent "
             "above the usual value, and show up arrows for them. 10 to 200, in steps of 10 "
             "(default 50).",
+        )
+        sp.add_argument(
+            "--anomaly-method",
+            choices=ANOMALY_METHODS,
+            default=DEFAULT_ANOMALY_METHOD,
+            help="How the report finds unusual values. adobe uses the expected range that "
+            "Adobe's anomaly detection returned. The other methods compute the range from the "
+            f"run's own daily values (default {DEFAULT_ANOMALY_METHOD}).",
         )
 
     check = sub.add_parser("check", help="Sign in and check what this credential can see.")
@@ -460,14 +470,20 @@ def _error_text(e: BaseException) -> str:
     return str(e)
 
 
-def _alert_line(store: Store, run_id: int, threshold: float, spike: float) -> str:
+def _alert_line(
+    store: Store,
+    run_id: int,
+    threshold: float,
+    spike: float,
+    method: str = DEFAULT_ANOMALY_METHOD,
+) -> str:
     """For example "Alerts for 2026-11-07: 2 unusual values, 1 large drop, 0 large spikes,
-    0 drops to zero"."""
+    0 drops to zero". method is the anomaly method that finds the unusual values."""
     counts = dict(
         store.con.execute(
-            "SELECT alert, count(*) FROM alerts(?, threshold := ?, spike_threshold := ?) "
-            "GROUP BY alert",
-            [run_id, threshold, spike],
+            "SELECT alert, count(*) FROM alerts(?, threshold := ?, spike_threshold := ?, "
+            "method := ?) GROUP BY alert",
+            [run_id, threshold, spike, method],
         ).fetchall()
     )
     day = date.fromisoformat(str(store.get_run(run_id)["today"])) - timedelta(days=1)
@@ -516,11 +532,12 @@ def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -
     status = store.get_run(run_id)["status"]
     threshold = args.change_alert / 100
     spike = args.spike_alert / 100
-    path = _write(build_view(store, run_id, threshold, spike), args.out)
+    method = args.anomaly_method
+    path = _write(build_view(store, run_id, threshold, spike, method=method), args.out)
     print(path)
     print(f"Run {run_id} for {rsid} finished with status: {status}")
     if status != "failed":
-        print(_alert_line(store, run_id, threshold, spike))
+        print(_alert_line(store, run_id, threshold, spike, method=method))
     drops = component_drops(store, run_id)
     if drops:
         print("Warning: this run sees fewer components than the run before it.")
@@ -596,7 +613,13 @@ def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
         progress.done()
     print(
         _write(
-            build_view(store, args.run, args.change_alert / 100, args.spike_alert / 100),
+            build_view(
+                store,
+                args.run,
+                args.change_alert / 100,
+                args.spike_alert / 100,
+                method=args.anomaly_method,
+            ),
             args.out,
         )
     )
@@ -615,7 +638,13 @@ def _render(args: argparse.Namespace) -> int:
         raise ConfigError(f"There is no stored run {args.run}.") from None
     print(
         _write(
-            build_view(store, args.run, args.change_alert / 100, args.spike_alert / 100),
+            build_view(
+                store,
+                args.run,
+                args.change_alert / 100,
+                args.spike_alert / 100,
+                method=args.anomaly_method,
+            ),
             args.out,
         )
     )

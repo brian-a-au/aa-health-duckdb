@@ -753,6 +753,104 @@ def test_spike_alert_must_be_a_slider_step(tmp_path, bad):
         main(["render", "--run", "1", "--db", str(tmp_path / "t.duckdb"), "--spike-alert", bad])
 
 
+def test_anomaly_method_option_reaches_the_report_and_the_alert_line(
+    tmp_path, cfg, capsys, monkeypatch
+):
+    import ahd.cli
+
+    seen = []
+    real_view, real_line = ahd.cli.build_view, ahd.cli._alert_line
+
+    def view(*a, **k):
+        seen.append(("view", k.get("method", "adobe")))
+        return real_view(*a, **k)
+
+    def line(*a, **k):
+        seen.append(("line", k.get("method", "adobe")))
+        return real_line(*a, **k)
+
+    monkeypatch.setattr(ahd.cli, "build_view", view)
+    monkeypatch.setattr(ahd.cli, "_alert_line", line)
+    fake = fake_for("rs1", events(2), custom_dims())
+    fake.gets["/dimensions"] = custom_dims() + [{"id": "variables/evar17", "name": "Term"}]
+    out = tmp_path / "o"
+    run = ["run", "--rsid", "rs1", "--date", "2026-11-07", "--out", str(out)]
+    assert main(args(tmp_path, cfg, *run), client_factory=lambda c, company_id=None: fake) == 0
+    assert seen == [("view", "adobe"), ("line", "adobe")]
+    page = next(out.glob("*.html")).read_text(encoding="utf-8")
+    assert "<dt>Anomaly detection</dt><dd>Adobe</dd>" in page
+
+    seen.clear()
+    main(
+        args(tmp_path, cfg, *run, "--anomaly-method", "weekday-median"),
+        client_factory=lambda c, company_id=None: fake,
+    )
+    assert seen == [("view", "weekday-median"), ("line", "weekday-median")]
+
+    seen.clear()
+    individual = ["individual", "--run", "1", "--dimension", "evar17", "--metric", "event1"]
+    main(
+        args(tmp_path, cfg, *individual, "--out", str(out), "--anomaly-method", "weekday-iqr"),
+        client_factory=lambda c, company_id=None: fake,
+    )
+    assert seen == [("view", "weekday-iqr")]
+
+    seen.clear()
+    out2 = tmp_path / "o2"
+    db = ["--db", str(tmp_path / "t.duckdb"), "--out", str(out2)]
+    assert main(["render", "--run", "1", *db, "--anomaly-method", "weekday-median"]) == 0
+    assert seen == [("view", "weekday-median")]
+    page = next(out2.glob("*.html")).read_text(encoding="utf-8")
+    assert "<dt>Anomaly detection</dt><dd>Weekday median <span" in page
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["run", "--rsid", "rs1"],
+        ["individual", "--run", "1", "--dimension", "page", "--metric", "event1"],
+        ["render", "--run", "1"],
+    ],
+    ids=lambda c: c[0],
+)
+@pytest.mark.parametrize("bad", ["nope", "Adobe", "weekday_median"])
+def test_anomaly_method_must_be_a_known_method(tmp_path, capsys, command, bad):
+    with pytest.raises(SystemExit) as stop:
+        main([*command, "--db", str(tmp_path / "t.duckdb"), "--anomaly-method", bad])
+    assert stop.value.code == 2
+    assert "--anomaly-method: invalid choice" in capsys.readouterr().err
+
+
+def test_the_alert_line_counts_by_the_chosen_method(tmp_path):
+    from datetime import date, timedelta
+
+    from ahd.api.reports import Column, DailyValue
+    from ahd.catalog import Component
+    from ahd.cli import _alert_line
+
+    store = Store.open(tmp_path / "a.duckdb")
+    rid = store.create_run("rs1", "S", None, date(2026, 11, 7), "UTC", "0")
+    cid = "metrics/event1"
+    store.add_components(
+        rid, [Component(cid, "E1", "metric", "custom_events", 1, Column(cid, cid), True)]
+    )
+    values, day = [], date(2026, 8, 8)
+    while day <= date(2026, 11, 7):
+        # 100 on every Friday, and 50 on the last one: a large drop, and below a local range.
+        v = 50.0 if day == date(2026, 11, 6) else 100.0 if day.weekday() == 4 else 0.0
+        values.append(DailyValue(cid, day, v, None, None, None, None))
+        day += timedelta(days=1)
+    store.add_daily_values(rid, values)
+    store.finish_run(rid, "ok")
+    assert _alert_line(store, rid, 0.3, 0.5) == (
+        "Alerts for 2026-11-06: 0 unusual values, 1 large drop, 0 large spikes, 0 drops to zero"
+    )
+    assert _alert_line(store, rid, 0.3, 0.5, method="weekday-median") == (
+        "Alerts for 2026-11-06: 1 unusual value, 0 large drops, 0 large spikes, 0 drops to zero"
+    )
+    store.con.close()
+
+
 # ---- suites, segments, names, company, progress --------------------------------
 
 

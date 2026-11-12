@@ -20,9 +20,23 @@ from typing import Any
 from jinja2 import Environment, PackageLoader
 from markupsafe import Markup
 
-from ahd.summary import DECLINE_MIN_FIT, DECLINE_PER_WEEK, DECLINE_WEEKS, HISTORY_RUNS
+from ahd.summary import (
+    ANOMALY_METHODS,
+    DECLINE_MIN_FIT,
+    DECLINE_PER_WEEK,
+    DECLINE_WEEKS,
+    DEFAULT_ANOMALY_METHOD,
+    HISTORY_RUNS,
+    MIN_SAMPLE,
+    method_data,
+)
 
 NO_BANDS_NOTE = "Anomaly bands are not available. See the status section."
+# The same note for a local anomaly method, which needs earlier values of the same weekday.
+LOCAL_NO_BANDS_NOTE = (
+    f"This chart has no expected range, because no day has at least {MIN_SAMPLE} earlier "
+    "values of its weekday in this run."
+)
 WEEK_NOTE = "This week is the 7 days ending yesterday."
 
 ISSUE_HEADINGS = {
@@ -57,6 +71,27 @@ ISSUE_HEADINGS = {
 }
 # The fetch step records an Adobe error without its own code as http_<status>.
 HTTP_HEADING = "Adobe returned an error for some requests."
+
+# The issue codes of a run made without Adobe's anomaly detection. A report with a local
+# anomaly method does not need it, so its headings for these codes say so. {source} is the
+# method, e.g., "the Weekday median method".
+ANOMALY_BLOCKED = ("anomaly_not_allowed", "anomaly_probe_failed")
+LOCAL_ISSUE_HEADINGS = {
+    "anomaly_not_allowed": (
+        "Adobe's anomaly detection is not available, because the API credential's product "
+        "profile does not include the Anomaly Detection permission (Report Suite Tools). This "
+        "report does not need it, because it uses {source}."
+    ),
+    "anomaly_probe_failed": (
+        "Adobe's anomaly detection could not be tested, because the test request failed. This "
+        "report does not need it, because it uses {source}."
+    ),
+}
+# The note after the method's name in the header.
+LOCAL_METHOD_NOTE = "computed by ahd from the 92 days of this run"
+BLOCKED_METHOD_NOTE = "not available for this run"
+# The local method that the page suggests for a run without Adobe's anomaly detection.
+SUGGESTED_METHOD = next(m for m in ANOMALY_METHODS if m != DEFAULT_ANOMALY_METHOD)
 
 # default-src does not cover base-uri and form-action, so they are named.
 CSP = (
@@ -236,16 +271,32 @@ def individual_label(pairs: list[dict[str, Any]]) -> str:
     return f"{pair_label(pairs[0])}, and {more} more pair{'s' if more > 1 else ''}"
 
 
-def _issue_groups(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def anomaly_method(view: dict[str, Any]) -> dict[str, Any]:
+    """The anomaly method of the view. A view without one uses Adobe's."""
+    return view.get("anomaly_method") or method_data()
+
+
+def anomaly_source(method: dict[str, Any]) -> str:
+    """Who flagged a value, inside a sentence: "Adobe" or, e.g., "the Weekday median method".
+
+    report.js has the same words in flaggedBy.
+    """
+    return "Adobe" if method.get("adobe") else f"the {method['label']} method"
+
+
+def _issue_groups(issues: list[dict[str, Any]], method: dict[str, Any]) -> list[dict[str, Any]]:
     """One group per issue code, in first-seen order, with a plain heading."""
     groups: dict[str, dict[str, Any]] = {}
     for it in issues:
         code = it.get("code") or "unknown"
         g = groups.get(code)
         if g is None:
+            heading = issue_heading(code)
+            if not method.get("adobe") and code in LOCAL_ISSUE_HEADINGS:
+                heading = LOCAL_ISSUE_HEADINGS[code].format(source=anomaly_source(method))
             g = groups[code] = {
                 "code": code,
-                "heading": issue_heading(code),
+                "heading": heading,
                 "entries": [],
             }
         g["entries"].append(
@@ -266,6 +317,14 @@ def render_html(view: dict[str, Any]) -> str:
     # A run made with --date is about the days before that date, not before the run time.
     last_day = _last_day(run) if run.get("date_given") else None
     day_words = f"on {last_day}" if last_day else "yesterday"
+    method = anomaly_method(view)
+    issues = view.get("issues", [])
+    if not method.get("adobe"):
+        method_note: str | None = LOCAL_METHOD_NOTE
+    elif any(i.get("code") in ANOMALY_BLOCKED for i in issues):
+        method_note = BLOCKED_METHOD_NOTE
+    else:
+        method_note = None
     template = _env.get_template("report.html.j2")
     return template.render(
         run=run,
@@ -277,7 +336,12 @@ def render_html(view: dict[str, Any]) -> str:
         csp=Markup(CSP),
         individual_label=individual_label(view.get("pairs", [])),
         breakdown_notes=BREAKDOWN_NOTES,
-        issue_groups=_issue_groups(view.get("issues", [])),
+        issue_groups=_issue_groups(issues, method),
+        anomaly=method,
+        anomaly_source=anomaly_source(method),
+        method_note=method_note,
+        min_sample=MIN_SAMPLE,
+        suggested_method=SUGGESTED_METHOD,
         component_drops=view.get("component_drops", []),
         change_alert_pct=round(view.get("change_alert", 0.3) * 100),
         spike_alert_pct=round(view.get("spike_alert", 0.5) * 100),
@@ -287,7 +351,7 @@ def render_html(view: dict[str, Any]) -> str:
         decline_pct=round(-DECLINE_PER_WEEK * 100),
         decline_fit=DECLINE_MIN_FIT,
         component_drop_cause=view.get("component_drop_cause", ""),
-        no_bands_note=NO_BANDS_NOTE,
+        no_bands_note=NO_BANDS_NOTE if method.get("adobe") else LOCAL_NO_BANDS_NOTE,
         week_note=WEEK_NOTE.replace("ending yesterday", f"ending {day_words}"),
         last_day=last_day,
         day_words=day_words,

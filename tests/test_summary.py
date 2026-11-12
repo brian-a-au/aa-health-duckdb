@@ -1427,3 +1427,15 @@ def test_the_default_method_is_adobe(tmp_path):
     comps, vals = _macro_data()
     store, rid = _build(tmp_path, comps, vals)
     assert build_view(store, rid) == build_view(store, rid, method="adobe")
+
+
+def test_a_query_without_the_part_to_replace_fails_for_a_local_method():
+    # Without the check, the page would show Adobe's values under the name of a local method.
+    from ahd.summary import _DV, _LOCAL_RUN_DV, _for_method
+
+    assert _for_method("SELECT 1", "adobe", _DV, _LOCAL_RUN_DV) == "SELECT 1"
+    for sql in ("SELECT 1", f"WITH {_DV}, {_DV} SELECT 1"):
+        with pytest.raises(RuntimeError, match="exactly once"):
+            _for_method(sql, "weekday-median", _DV, _LOCAL_RUN_DV)
+    sql = f"WITH {_DV} SELECT 1"
+    assert _for_method(sql, "weekday-iqr", _DV, _LOCAL_RUN_DV) == f"WITH {_LOCAL_RUN_DV} SELECT 1"

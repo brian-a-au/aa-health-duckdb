@@ -127,6 +127,7 @@ ahd run --all-suites
 | `--date` | Treats this date as today, e.g., `2026-11-07` to repeat an earlier day. Write it as YYYY-MM-DD. It cannot be after today in the report suite's time zone, because that day's data is not complete. By default, today is today in the report suite's time zone. With `--date`, the report says so under the run date, and it names the day before that date instead of saying "yesterday". |
 | `--change-alert` | Where the report's large drop slider starts: 10 to 100, in steps of 5. The default is 30. The slider shows it as a negative change, e.g., 30 is -30%. See [The report](report.md#the-large-drop-and-spike-sliders). |
 | `--spike-alert` | Where the report's large spike slider starts: 10 to 200, in steps of 10. The default is 50. See [The report](report.md#the-large-drop-and-spike-sliders). |
+| `--anomaly-method` | How the report finds unusual values: `adobe`, `weekday-median` or `weekday-iqr`. The default is `adobe`, which uses Adobe's anomaly detection. The other two compute the expected range from the daily values of the run. |
 | `--out` | The folder for the HTML report. The default is `./reports/`. |
 | `--batch-size` | How many columns go into one trend request, from 1 to 100. The default is 20. |
 | `--workers` | How many requests run at the same time, from 1 to 16. The default is 8. The tool starts no more than 12 requests in any 6 seconds, which is Adobe's limit. |
