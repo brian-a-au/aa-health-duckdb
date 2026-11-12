@@ -2,14 +2,27 @@
 
 from __future__ import annotations
 
+import html
 import importlib.util
 import json
+import os
 import re
+import subprocess
+import sys
+import threading
 from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
-from chrome import chrome_or_skip, find_chrome, run_probe, without_csp
+from chrome import (
+    ATTEMPTS,
+    chrome_or_skip,
+    find_chrome,
+    kill_tree,
+    launch,
+    run_probe,
+    without_csp,
+)
 
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
@@ -451,6 +464,113 @@ def test_ahd_chrome_chooses_the_program(monkeypatch, tmp_path):
     monkeypatch.setenv("AHD_CHROME", str(tmp_path / "missing"))
     with pytest.raises(pytest.fail.Exception, match="no file there"):
         find_chrome()
+
+
+# ---- a Chrome that hangs -----------------------------------------------------------------
+
+# The smallest page that run_probe accepts. The fake Chrome below never reads it.
+TINY_PAGE = "<html><body></body></html>"
+
+
+def _printed(result=None, errors=(), probe_error=None):
+    """What Chrome prints with --dump-dom for a probe that gave this result."""
+    msg = {"result": result, "errors": list(errors)}
+    if probe_error:
+        msg["probe_error"] = probe_error
+    return f'<html><body><pre id="probe">{html.escape(json.dumps(msg))}</pre></body></html>'
+
+
+def _hung():
+    return subprocess.TimeoutExpired(["chrome"], 40, stderr="what the hung Chrome wrote")
+
+
+class FakeStart:
+    """Takes the place of chrome.start_chrome. Each start takes the next step in the list.
+
+    A step is an exception to raise or the text Chrome prints. The fake keeps the profile
+    folder of each start.
+    """
+
+    def __init__(self, *steps):
+        self.steps = list(steps)
+        self.profiles = []
+
+    def __call__(self, cmd, folder, timeout):
+        self.profiles.append(next(a for a in cmd if a.startswith("--user-data-dir=")))
+        step = self.steps.pop(0)
+        if isinstance(step, BaseException):
+            raise step
+        return subprocess.CompletedProcess(cmd, 0, step, "")
+
+
+def test_a_chrome_that_hangs_once_is_started_again_with_a_new_profile(monkeypatch, tmp_path):
+    fake = FakeStart(_hung(), _printed(7))
+    monkeypatch.setattr("chrome.start_chrome", fake)
+    with pytest.warns(UserWarning, match="started again"):
+        got = run_probe("chrome", TINY_PAGE, "return 7;", tmp_path)
+    assert got == 7
+    assert len(fake.profiles) == 2
+    assert len(set(fake.profiles)) == 2
+    assert fake.steps == []
+
+
+def test_a_chrome_that_hangs_every_time_fails_the_test(monkeypatch, tmp_path):
+    fake = FakeStart(*[_hung() for _ in range(ATTEMPTS)])
+    monkeypatch.setattr("chrome.start_chrome", fake)
+    with (
+        pytest.warns(UserWarning, match="started again"),
+        pytest.raises(pytest.fail.Exception, match=f"on all {ATTEMPTS} attempts") as failed,
+    ):
+        run_probe("chrome", TINY_PAGE, "return 7;", tmp_path)
+    assert "what the hung Chrome wrote" in str(failed.value)
+    assert len(fake.profiles) == ATTEMPTS
+    assert len(set(fake.profiles)) == ATTEMPTS
+
+
+@pytest.mark.parametrize(
+    ("step", "error", "message"),
+    [
+        (OSError("Chrome could not start"), OSError, "could not start"),
+        (_printed(errors=["boom"]), AssertionError, "JavaScript errors in the page"),
+        (_printed(probe_error="probe broke"), AssertionError, "probe broke"),
+        ("<html><body></body></html>", pytest.fail.Exception, "no probe result"),
+    ],
+    ids=["no start", "page error", "probe error", "no result"],
+)
+def test_a_chrome_that_fails_another_way_is_not_started_again(
+    monkeypatch, tmp_path, step, error, message
+):
+    fake = FakeStart(step, _printed(7))
+    monkeypatch.setattr("chrome.start_chrome", fake)
+    with pytest.raises(error, match=message):
+        run_probe("chrome", TINY_PAGE, "return 7;", tmp_path)
+    assert len(fake.profiles) == 1
+
+
+# A program that hangs like Chrome can: it starts a child that keeps running, then never ends.
+# The child writes to the same pipe, so the pipe ends only when both have stopped.
+HUNG_PROGRAM = """
+import subprocess, sys, time
+subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"], stdout=sys.stdout)
+print("ready", flush=True)
+time.sleep(600)
+"""
+
+
+def test_a_hung_chrome_is_killed_with_the_processes_it_started(tmp_path):
+    r, w = os.pipe()
+    with os.fdopen(w, "w") as out, (tmp_path / "err.txt").open("w") as err:
+        proc = launch([sys.executable, "-c", HUNG_PROGRAM], out, err)
+    ended = threading.Event()
+    with os.fdopen(r) as pipe:
+        line = pipe.readline()
+        assert line.strip() == "ready"
+        kill_tree(proc)
+        proc.wait()
+        # The read returns only when no process holds the pipe open.
+        threading.Thread(target=lambda: (pipe.read(), ended.set()), daemon=True).start()
+        stopped = ended.wait(60)
+    assert stopped, "a process that the hung program started is still running"
 
 
 @pytest.fixture(scope="module")
