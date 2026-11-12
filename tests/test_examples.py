@@ -11,6 +11,7 @@ import pytest
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
 from ahd.store import Store
+from ahd.summary import ANOMALY_METHODS, SENSITIVITIES
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "docs" / "examples"
 TODAY = date(2026, 11, 7)
@@ -32,7 +33,9 @@ def _db(tmp_path, yesterday_value, segments=(None,)):
     return db
 
 
-def _add_run(s, yesterday_value, segment, rsid="rs1", name="Suite"):
+def _add_run(s, yesterday_value, segment, rsid="rs1", name="Suite", earlier=None):
+    """One finished run with one metric. earlier gives the value of day n of the run, from 0,
+    and is 25 million on every day by default."""
     rid = s.create_run(rsid, name, segment, TODAY, "UTC", "0.1")
     cid = "metrics/event1"
     s.add_components(
@@ -40,7 +43,15 @@ def _add_run(s, yesterday_value, segment, rsid="rs1", name="Suite"):
     )
     start = TODAY - timedelta(days=91)
     values = [
-        DailyValue(cid, start + timedelta(days=n), 25_000_000.0, None, None, None, None)
+        DailyValue(
+            cid,
+            start + timedelta(days=n),
+            25_000_000.0 if earlier is None else earlier(n),
+            None,
+            None,
+            None,
+            None,
+        )
         for n in range(91)
     ]
     values[-1] = DailyValue(cid, TODAY - timedelta(days=1), yesterday_value, None, None, None, None)
@@ -162,6 +173,8 @@ def test_send_alerts_unknown_suite_is_an_error_not_a_quiet_day(tmp_path, capsys)
         ["db", "rs1", "--threshold", "30"],
         ["db", "rs1", "--threshold", "zero"],
         ["db", "rs1", "--spike-threshold", "3"],
+        ["db", "rs1", "--anomaly-method", "rolling-median"],
+        ["db", "rs1", "--anomaly-method", "weekday-median", "--anomaly-sensitivity", "extreme"],
         ["db"],
         ["db", "rs1", "--all"],
         [],
@@ -182,6 +195,126 @@ def test_send_alerts_help_still_exits_with_0(capsys):
         mod.main(["--help"])
     assert e.value.code == 0
     assert "usage:" in capsys.readouterr().out
+
+
+def _weeks_db(tmp_path, yesterday_value):
+    """A run whose metric is 27.5 million in even weeks and 22.5 million in odd weeks.
+
+    Yesterday's weekday then has 12 earlier values, 6 of each, so the weekday average and the
+    median are 25 million, and the spread is 1.4826 times 2.5 million. The range of the Weekday
+    median method is 13.88 to 36.12 million with normal, and 17.59 to 32.41 million with high.
+    """
+    db = tmp_path / "ahd.duckdb"
+    s = Store.open(db)
+    _add_run(s, yesterday_value, None, earlier=lambda n: 27_500_000.0 - n // 7 % 2 * 5_000_000)
+    s.con.close()
+    return str(db)
+
+
+def _mail(tmp_path):
+    """The plain text and the HTML of alerts.eml."""
+    mail = email.message_from_bytes(
+        (tmp_path / "alerts.eml").read_bytes(), policy=email.policy.default
+    )
+    return mail.get_body(("plain",)).get_content(), mail.get_body(("html",)).get_content()
+
+
+def test_send_alerts_uses_adobe_by_default_and_says_so(tmp_path, monkeypatch):
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    # 16 million is 36 percent below the weekday average. The run has no flags from Adobe.
+    assert mod.main([_weeks_db(tmp_path, 16_000_000.0), "rs1"]) == 0
+    text, page = _mail(tmp_path)
+    assert "- large drop: Big <event>" in text
+    said = "Adobe's anomaly detection flagged the unusual values."
+    assert said in text and said in page
+    assert "sensitivity" not in text
+
+
+@pytest.mark.parametrize(
+    ("sensitivity", "alert", "named"),
+    [
+        # Inside the range of normal, so it stays a large drop.
+        (None, "large drop", "The Weekday median method flagged the unusual values."),
+        ("normal", "large drop", "The Weekday median method flagged the unusual values."),
+        # Below the range of high, so the method flags it.
+        ("high", "unusual", "The Weekday median method with high sensitivity flagged the"),
+    ],
+)
+def test_send_alerts_takes_the_anomaly_method_and_sensitivity(
+    tmp_path, monkeypatch, sensitivity, alert, named
+):
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    argv = [_weeks_db(tmp_path, 16_000_000.0), "rs1", "--anomaly-method", "weekday-median"]
+    if sensitivity:
+        argv += ["--anomaly-sensitivity", sensitivity]
+    assert mod.main(argv) == 0
+    text, page = _mail(tmp_path)
+    assert f"- {alert}: Big <event>" in text
+    assert named in text and named in page
+    assert "ahd computes this method from the daily values of the run." in text
+    assert "Adobe" not in text
+
+
+def test_send_alerts_refuses_a_sensitivity_with_adobe(tmp_path, monkeypatch, capsys):
+    # A scheduled job that ignored the setting would send other alerts than the user chose.
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    db = _weeks_db(tmp_path, 16_000_000.0)
+    with pytest.raises(SystemExit) as e:
+        mod.main([db, "rs1", "--anomaly-sensitivity", "high"])
+    assert e.value.code == 1
+    err = capsys.readouterr().err
+    assert "usage:" in err
+    assert "--anomaly-sensitivity works only with a local anomaly method" in err
+    assert not (tmp_path / "alerts.eml").exists()
+    # normal is the default, so it is accepted with adobe, as on the command line.
+    assert mod.main([db, "rs1", "--anomaly-sensitivity", "normal"]) == 0
+    assert (tmp_path / "alerts.eml").is_file()
+
+
+def test_send_alerts_knows_the_methods_and_sensitivities_of_ahd():
+    # The script runs without ahd installed, so it keeps its own lists.
+    mod = _load("send_alerts")
+    assert tuple(mod.METHODS) == ANOMALY_METHODS
+    assert mod.SENSITIVITIES == SENSITIVITIES
+
+
+def test_send_alerts_with_the_defaults_reads_a_file_with_older_macros(
+    tmp_path, monkeypatch, capsys
+):
+    """Until ahd writes to a file again, the file keeps the alerts() macro of the version that
+    last wrote to it. The defaults must still work with a macro without method or sensitivity.
+    Another method or sensitivity needs the new macro, and the message says how to get it."""
+    import duckdb
+
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    db = _db(tmp_path, 5_000_000.0)
+    with duckdb.connect(str(db)) as con:
+        con.execute(
+            "CREATE OR REPLACE MACRO alerts(run_number, threshold := 0.30, "
+            "spike_threshold := 0.50) AS TABLE "
+            "SELECT 'large drop' AS alert, 'Old macro' AS name, 'metrics/event1' AS component_id, "
+            "1.0 AS usual, 0.5 AS value, -0.5 AS pct_vs_usual, DATE '2026-11-06' AS day"
+        )
+    assert mod.main([str(db), "rs1"]) == 0
+    text, _page = _mail(tmp_path)
+    assert "- large drop: Old macro" in text
+    capsys.readouterr()
+    for options in (
+        ["--anomaly-method", "weekday-iqr"],
+        ["--anomaly-method", "weekday-trend", "--anomaly-sensitivity", "low"],
+    ):
+        assert mod.main([str(db), "rs1", *options]) == 1
+        err = capsys.readouterr().err
+        assert f"The alerts() macro in {db} is from an older version of ahd" in err
+        assert "Binder" not in err
 
 
 def _suites_db(tmp_path, values):

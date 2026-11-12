@@ -83,7 +83,7 @@ When Adobe asks for a longer wait with a Retry-After header, the tool waits that
 
 ## Anomaly detection options
 
-- **"--anomaly-sensitivity works only with a local anomaly method"**: the command got `--anomaly-sensitivity low` or `high` with the method `adobe`, which is the default. Adobe returns its own expected range, so ahd cannot make it wider or narrower. Add a local method, e.g., `--anomaly-method weekday-median`, or leave out `--anomaly-sensitivity`. The command stops before it signs in or opens the database. See [The report](report.md#the-sensitivity-of-the-local-methods).
+- **"--anomaly-sensitivity works only with a local anomaly method"**: the command got `--anomaly-sensitivity low` or `high` with the method `adobe`, which is the default. Adobe returns its own expected range, so ahd cannot make it wider or narrower. Add a local method, e.g., `--anomaly-method weekday-median`, or leave out `--anomaly-sensitivity`. The command stops before it signs in or opens the database. The alert email script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning) stops with the same message and exit code 1. See [The report](report.md#the-sensitivity-of-the-local-methods).
 
 ## Time zones
 

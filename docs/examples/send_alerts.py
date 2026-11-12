@@ -3,6 +3,7 @@
 Usage:
     uv run python docs/examples/send_alerts.py DATABASE RSID [RSID ...] [--segment ID]
         [--threshold 0.30] [--spike-threshold 0.50]
+        [--anomaly-method adobe] [--anomaly-sensitivity normal]
     uv run python docs/examples/send_alerts.py DATABASE --all [--segment ID]
 
 Run it from a clone of the aa-health-duckdb repository. Without a clone, download this file and
@@ -15,6 +16,13 @@ alerts. --all uses every suite that has a finished run in the database.
 Without --segment it uses the latest runs without a segment. --threshold is the large drop
 percent as a share, e.g., 0.30 for 30 percent, the default. --spike-threshold is the large spike
 percent as a share, e.g., 0.50 for 50 percent, the default.
+
+--anomaly-method chooses the method that flags the unusual values, as on ahd run. The default
+is adobe, which uses the flags that Adobe returned. weekday-median, weekday-iqr and
+weekday-trend are computed by ahd from the daily values of the run. --anomaly-sensitivity is
+low, normal or high, as on ahd run. The default is normal. It works only with a local method,
+so with adobe, low or high stops the script with exit code 1. The email names the method, and
+the sensitivity when it is not normal.
 
 To send, set SMTP_HOST, SMTP_PORT (default 587), MAIL_FROM and MAIL_TO, and SMTP_USER and
 SMTP_PASSWORD when the server needs a login. Without SMTP_HOST, it writes the message to
@@ -54,13 +62,31 @@ ORDER BY lower(rsid_name), rsid
 NAME_QUERY = "SELECT rsid_name FROM runs WHERE run_id = $run"
 
 QUERY = """
-FROM alerts($run, threshold := $threshold, spike_threshold := $spike)
+FROM alerts($run, threshold := $threshold, spike_threshold := $spike{options})
 SELECT alert, name, component_id, round(usual) AS usual, value,
     round(pct_vs_usual * 100, 1) AS pct, day
 ORDER BY alert DESC, pct
 """
 
 HEADERS = ["Alert", "Component", "ID", "Weekday average", "Actual", "Change"]
+
+# The anomaly methods and sensitivities of ahd, with the name the report gives each method. The
+# script runs without ahd installed, so it keeps its own copy, and a test checks that it
+# matches ahd.
+METHODS = {
+    "adobe": "Adobe's anomaly detection",
+    "weekday-median": "The Weekday median method",
+    "weekday-iqr": "The Weekday quartile range method",
+    "weekday-trend": "The Weekday trend method",
+}
+SENSITIVITIES = ("low", "normal", "high")
+DEFAULT_METHOD = "adobe"
+DEFAULT_SENSITIVITY = "normal"
+
+SENSITIVITY_NEEDS_LOCAL = (
+    "--anomaly-sensitivity works only with a local anomaly method, e.g., --anomaly-method "
+    "weekday-median. The adobe method uses the expected range that Adobe returned."
+)
 
 
 def _number(v: float | None) -> str:
@@ -109,7 +135,44 @@ def _parser() -> argparse.ArgumentParser:
         help="The large spike percent as a share, up to 2 (default 0.50).",
     )
     p.add_argument("--segment", help="Use the latest runs with this segment ID.")
+    p.add_argument(
+        "--anomaly-method",
+        choices=list(METHODS),
+        default=DEFAULT_METHOD,
+        help="The method that flags the unusual values (default adobe).",
+    )
+    p.add_argument(
+        "--anomaly-sensitivity",
+        choices=SENSITIVITIES,
+        default=DEFAULT_SENSITIVITY,
+        help="How wide the range of a local method is. It does not apply to adobe "
+        "(default normal).",
+    )
     return p
+
+
+def _query(args: argparse.Namespace) -> tuple[str, dict[str, str]]:
+    """The alerts query and the parameters it adds for the method and the sensitivity.
+
+    It names them only when they are not the defaults, so that the defaults also work with a
+    file whose alerts() macro is older and has neither.
+    """
+    chosen = {"method": args.anomaly_method, "sensitivity": args.anomaly_sensitivity}
+    defaults = {"method": DEFAULT_METHOD, "sensitivity": DEFAULT_SENSITIVITY}
+    params = {k: v for k, v in chosen.items() if v != defaults[k]}
+    options = "".join(f", {k} := ${k}" for k in params)
+    return QUERY.format(options=options), params
+
+
+def _flagged_by(method: str, sensitivity: str) -> str:
+    """The sentences that say which method flagged the unusual values."""
+    if method == DEFAULT_METHOD:
+        return f"{METHODS[method]} flagged the unusual values."
+    level = "" if sensitivity == DEFAULT_SENSITIVITY else f" with {sensitivity} sensitivity"
+    return (
+        f"{METHODS[method]}{level} flagged the unusual values. ahd computes this method from "
+        "the daily values of the run."
+    )
 
 
 def _table(rows: list[tuple]) -> tuple[list[str], str]:
@@ -134,7 +197,11 @@ def _table(rows: list[tuple]) -> tuple[list[str], str]:
 
 
 def build(
-    sections: list[tuple[str, str, list[tuple]]], threshold: float, spike: float = 0.50
+    sections: list[tuple[str, str, list[tuple]]],
+    threshold: float,
+    spike: float = 0.50,
+    method: str = DEFAULT_METHOD,
+    sensitivity: str = DEFAULT_SENSITIVITY,
 ) -> EmailMessage:
     """One email. Each section is (rsid, suite name, alert rows), for a suite with alerts."""
     total = sum(len(rows) for _, _, rows in sections)
@@ -143,14 +210,13 @@ def build(
         subject = f"{total} Analytics Health alerts for {rsid} on {rows[0][-1]}"
     else:
         subject = f"{total} Analytics Health alerts for {len(sections)} report suites"
-    text = [subject, ""]
-    parts = [
-        (
-            f"<p>{html.escape(subject)}. A large drop is more than {threshold:.0%} below the "
-            f"weekday average, and a large spike is more than {spike:.0%} above it. The weekday "
-            "average is the average of the same weekday in the 12 weeks before.</p>"
-        )
-    ]
+    rules = (
+        f"A large drop is more than {threshold:.0%} below the weekday average, and a large "
+        f"spike is more than {spike:.0%} above it. The weekday average is the average of the "
+        f"same weekday in the 12 weeks before. {_flagged_by(method, sensitivity)}"
+    )
+    text = [subject, "", rules, ""]
+    parts = [f"<p>{html.escape(subject)}. {html.escape(rules, quote=False)}</p>"]
     for rsid, name, rows in sections:
         heading = f"{name} ({rsid}), {rows[0][-1]}: {len(rows)} alerts"
         lines, table = _table(rows)
@@ -169,6 +235,7 @@ def _read(args: argparse.Namespace) -> tuple[list[str], list[tuple[str, str, lis
     """The suites without a finished run, and (rsid, name, alerts) for each suite with one."""
     missing: list[str] = []
     found: list[tuple[str, str, list[tuple]]] = []
+    query, options = _query(args)
     with duckdb.connect(args.database, read_only=True) as con:
         rsids = args.rsids
         if args.all:
@@ -181,7 +248,8 @@ def _read(args: argparse.Namespace) -> tuple[list[str], list[tuple[str, str, lis
                 continue
             name = con.execute(NAME_QUERY, {"run": run}).fetchone()[0] or rsid
             alerts = con.execute(
-                QUERY, {"run": run, "threshold": args.threshold, "spike": args.spike_threshold}
+                query,
+                {"run": run, "threshold": args.threshold, "spike": args.spike_threshold, **options},
             ).fetchall()
             found.append((rsid, name, alerts))
     return missing, found
@@ -206,14 +274,29 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     if bool(args.rsids) == args.all:
         parser.error("give one or more report suite IDs, or --all, but not both")
+    if args.anomaly_method == DEFAULT_METHOD and args.anomaly_sensitivity != DEFAULT_SENSITIVITY:
+        parser.error(SENSITIVITY_NEEDS_LOCAL)
     if not Path(args.database).is_file():
         print(f"There is no database at {args.database}.", file=sys.stderr)
         return 1
     try:
         missing, found = _read(args)
     except duckdb.Error as e:
-        # e.g. "Could not set lock on file" while ahd run writes to it.
-        print(f"Could not read {args.database}: {e}", file=sys.stderr)
+        chosen = (args.anomaly_method, args.anomaly_sensitivity)
+        if isinstance(e, duckdb.BinderException) and chosen != (
+            DEFAULT_METHOD,
+            DEFAULT_SENSITIVITY,
+        ):
+            # The file keeps the macro of the version of ahd that last wrote to it.
+            print(
+                f"The alerts() macro in {args.database} is from an older version of ahd, which "
+                "may not know this anomaly method or sensitivity. Run ahd run once with this "
+                "version of ahd, which updates the macro, and try again.",
+                file=sys.stderr,
+            )
+        else:
+            # e.g. "Could not set lock on file" while ahd run writes to it.
+            print(f"Could not read {args.database}: {e}", file=sys.stderr)
         return 1
     which = f"with the segment {args.segment}" if args.segment else "without a segment"
     for rsid in missing:
@@ -231,7 +314,14 @@ def main(argv: list[str]) -> int:
             print(f"No alerts for {rsid}.")
     if sections:
         count = sum(len(rows) for _, _, rows in sections)
-        _send(build(sections, args.threshold, args.spike_threshold), count)
+        msg = build(
+            sections,
+            args.threshold,
+            args.spike_threshold,
+            args.anomaly_method,
+            args.anomaly_sensitivity,
+        )
+        _send(msg, count)
     elif found:
         print("Nothing to send.")
     if missing:

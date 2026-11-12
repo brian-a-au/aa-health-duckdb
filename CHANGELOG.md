@@ -15,6 +15,7 @@ This release adds a sensitivity for the local anomaly methods. The database layo
 - The header fact "Anomaly detection" names a sensitivity other than `normal`, e.g., "Weekday median, high sensitivity". "How large drops and spikes are found" states the factor in use.
 - The alert line that `ahd run` prints uses the chosen sensitivity.
 - The `alerts()` and `anomaly_days()` macros take `sensitivity := 'normal'`, `'low'` or `'high'`. Another value stops the query with an error. With `method := 'adobe'`, each of the three values changes nothing. See the [DuckDB guide](docs/duckdb.md#anomaly_daysrun-method--adobe-min_usual--10-sensitivity--normal).
+- The alert email script `send_alerts.py` takes `--anomaly-method` and `--anomaly-sensitivity`, with the same values and defaults as `ahd run`. Before, it always used Adobe's flags, and the DuckDB guide said to change its query by hand for another method. With `adobe`, `low` or `high` stops the script with exit code 1, as on the command line. The email now says which method flagged the unusual values, and it names a sensitivity other than `normal`. See [Send an alert email every morning](docs/duckdb.md#send-an-alert-email-every-morning).
 - The 0.1.8 entry below now links to the new heading of `anomaly_days()` in the DuckDB guide.
 
 ## 0.1.8 (2026-11-12)
