@@ -83,18 +83,36 @@ comps AS (
 )"""
 
 
+# How wide the range of a local anomaly method is, from the widest to the narrowest. A higher
+# sensitivity gives a narrower range, so it flags more values.
+SENSITIVITIES = ("low", "normal", "high")
+DEFAULT_SENSITIVITY = "normal"
+
+
 @dataclass(frozen=True)
 class AnomalyMethod:
     """A way to find the unusual values of a run. rule says it in plain words for the page.
 
     sample names the sample of a day for the page, after a number, e.g., "at least 8 earlier
     values of its weekday". Adobe's method has none.
+
+    factors holds the width factor of the range for each of SENSITIVITIES, in that order: low
+    is 4/3 of normal and high is 2/3 of it. Each number is written as it goes into the SQL, so
+    normal gives the same results as 0.1.8. rule names the factor in use with {factor}. Adobe's
+    method has none, because Adobe returns its range.
     """
 
     key: str
     label: str
     rule: str
     sample: str | None = None
+    factors: tuple[str, str, str] | None = None
+
+    def factor(self, sensitivity: str) -> str:
+        """The factor of the sensitivity as SQL, e.g., "1.5"."""
+        if self.factors is None:
+            raise ValueError(f"The anomaly method {self.key!r} has no sensitivity.")
+        return self.factors[SENSITIVITIES.index(sensitivity)]
 
 
 # The anomaly methods, in the order the command line lists them. Adobe's values are stored with
@@ -111,29 +129,45 @@ _METHODS = (
         "weekday-median",
         "Weekday median",
         "A value is unusual when it is far from the median of the earlier values of the same "
-        "weekday in this run. Far means more than 3 times the usual spread of those values.",
+        "weekday in this run. Far means more than {factor} times the usual spread of those "
+        "values.",
         "earlier values of its weekday",
+        ("4", "3", "2"),
     ),
     AnomalyMethod(
         "weekday-iqr",
         "Weekday quartile range",
         "A value is unusual when it is far outside the middle half of the earlier values of the "
-        "same weekday in this run. Far means more than 1.5 times the width of the middle half "
-        "past its edge.",
+        "same weekday in this run. Far means more than {factor} times the width of the middle "
+        "half past its edge.",
         "earlier values of its weekday",
+        ("2.0", "1.5", "1.0"),
     ),
     AnomalyMethod(
         "weekday-trend",
         "Weekday trend",
         "A value is unusual when it is far from what its recent level and its weekday suggest. "
-        "The level is the average of the 7 days before it, and far means more than 3 times the "
-        "usual spread of how the earlier values of the same weekday compared with their level.",
+        "The level is the average of the 7 days before it, and far means more than {factor} "
+        "times the usual spread of how the earlier values of the same weekday compared with "
+        "their level.",
         "earlier values of its weekday that have a level",
+        ("4", "3", "2"),
     ),
 )
 ANOMALY_METHODS: tuple[str, ...] = tuple(m.key for m in _METHODS)
 ANOMALY_LABELS: dict[str, str] = {m.key: m.label for m in _METHODS}
 DEFAULT_ANOMALY_METHOD = "adobe"
+
+
+def _factor_sql(key: str) -> str:
+    """The width factor of a local method for the chosen sensitivity, as a CASE on $sensitivity.
+
+    The CASE stands where 0.1.8 had the number, e.g., 3 in 3 * 1.4826 * mad(...), and gives
+    the same number for normal. So normal gives the same results as 0.1.8, to the last digit.
+    """
+    m = next(m for m in _METHODS if m.key == key)
+    whens = " ".join(f"WHEN '{s}' THEN {m.factor(s)}" for s in SENSITIVITIES)
+    return f"(CASE $sensitivity {whens} END)"
 
 
 def _local_dv(source: str) -> str:
@@ -149,6 +183,8 @@ def _local_dv(source: str) -> str:
       7 days before it, when all 7 have a value and the average is above 0. The ratio of a day
       is its value divided by its level. The method multiplies its range by the day's level.
 
+    The width of each range is a factor of the method for $sensitivity, from _factor_sql().
+
     The same guards then apply to every method:
 
     1. A day with fewer than MIN_SAMPLE values in its sample gets no range and no flag.
@@ -161,6 +197,9 @@ def _local_dv(source: str) -> str:
     Days outside the 91 days keep their value but get no range and no flag. The anomaly_days
     macro in views.sql has the same rules, and tests check that both agree.
     """
+    by_median, by_iqr, by_trend = (
+        _factor_sql(k) for k in ("weekday-median", "weekday-iqr", "weekday-trend")
+    )
     return f"""
 m_src AS (
     SELECT d.run_id, d.component_id, d.day, ru.today,
@@ -182,22 +221,22 @@ m_sampled AS (
             WHEN 'weekday-median' THEN {{
                 'n': count(value) OVER w, 'lowest': min(value) OVER w,
                 'expected': median(value) OVER w,
-                'upper': median(value) OVER w + 3 * 1.4826 * mad(value) OVER w,
-                'lower': median(value) OVER w - 3 * 1.4826 * mad(value) OVER w}}
+                'upper': median(value) OVER w + {by_median} * 1.4826 * mad(value) OVER w,
+                'lower': median(value) OVER w - {by_median} * 1.4826 * mad(value) OVER w}}
             WHEN 'weekday-iqr' THEN {{
                 'n': count(value) OVER w, 'lowest': min(value) OVER w,
                 'expected': median(value) OVER w,
                 'upper': quantile_cont(value, 0.75) OVER w
-                    + 1.5 * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w),
+                    + {by_iqr} * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w),
                 'lower': quantile_cont(value, 0.25) OVER w
-                    - 1.5 * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w)}}
+                    - {by_iqr} * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w)}}
             WHEN 'weekday-trend' THEN {{
                 'n': count(value / level) OVER w, 'lowest': min(value / level) OVER w,
                 'expected': level * median(value / level) OVER w,
                 'upper': level * (median(value / level) OVER w
-                    + 3 * 1.4826 * mad(value / level) OVER w),
+                    + {by_trend} * 1.4826 * mad(value / level) OVER w),
                 'lower': level * (median(value / level) OVER w
-                    - 3 * 1.4826 * mad(value / level) OVER w)}}
+                    - {by_trend} * 1.4826 * mad(value / level) OVER w)}}
         END AS rng
     FROM m_leveled
     WINDOW w AS (PARTITION BY run_id, component_id, dayofweek(day) ORDER BY day
@@ -240,15 +279,44 @@ def _method(key: str) -> AnomalyMethod:
     raise ValueError(f"Unknown anomaly method: {key!r}. Use one of: {', '.join(ANOMALY_METHODS)}.")
 
 
-def method_data(key: str = DEFAULT_ANOMALY_METHOD) -> dict[str, Any]:
-    """The anomaly_method entry of the page data: the method's key, label, rule and sample, and
-    whether it is Adobe's. The page names the method only through this entry."""
+def _check_sensitivity(method: AnomalyMethod, sensitivity: str) -> None:
+    """Fail for an unknown sensitivity, and for one other than normal with Adobe's method."""
+    if sensitivity not in SENSITIVITIES:
+        raise ValueError(
+            f"Unknown anomaly sensitivity: {sensitivity!r}. Use one of: {', '.join(SENSITIVITIES)}."
+        )
+    if method.factors is None and sensitivity != DEFAULT_SENSITIVITY:
+        raise ValueError(
+            "The sensitivity applies only to a local anomaly method. Adobe returns its range."
+        )
+
+
+def method_data(
+    key: str = DEFAULT_ANOMALY_METHOD, sensitivity: str = DEFAULT_SENSITIVITY
+) -> dict[str, Any]:
+    """The anomaly_method entry of the page data: the method's key, label, rule and sample,
+    whether it is Adobe's, and the sensitivity. The page names the method only through this
+    entry.
+
+    label is the name of the method, which the page puts in sentences, e.g., "Flagged by the
+    Weekday median method". title is the name for the header, which also names a sensitivity
+    other than normal, e.g., "Weekday median, high sensitivity". rule names the factor in use.
+    """
     m = _method(key)
+    _check_sensitivity(m, sensitivity)
+    rule = m.rule
+    title = m.label
+    if m.factors is not None:
+        rule = rule.format(factor=f"{float(m.factor(sensitivity)):g}")
+        if sensitivity != DEFAULT_SENSITIVITY:
+            title = f"{m.label}, {sensitivity} sensitivity"
     return {
         "key": m.key,
         "label": m.label,
+        "title": title,
         "adobe": m.key == DEFAULT_ANOMALY_METHOD,
-        "rule": m.rule,
+        "sensitivity": sensitivity,
+        "rule": rule,
         "sample": m.sample,
     }
 
@@ -782,9 +850,15 @@ def build_view(
     change_alert: float = DEFAULT_CHANGE_ALERT,
     spike_alert: float = DEFAULT_SPIKE_ALERT,
     method: str = DEFAULT_ANOMALY_METHOD,
+    sensitivity: str = DEFAULT_SENSITIVITY,
 ) -> dict[str, Any]:
-    """The page data of a run. method picks the anomaly method, one of ANOMALY_METHODS."""
+    """The page data of a run. method picks the anomaly method, one of ANOMALY_METHODS.
+
+    sensitivity, one of SENSITIVITIES, sets the width of the range of a local method. Adobe's
+    method takes only the default.
+    """
     chosen = _method(method)
+    _check_sensitivity(chosen, sensitivity)
     run = _run_block(store, run_id)
     w = RunWindow.for_today(date.fromisoformat(run["today"]))
     p: dict[str, Any] = {
@@ -799,6 +873,7 @@ def build_view(
         "baseline_start": w.baseline_start,
         "baseline_end": w.baseline_end,
         "method": method,
+        "sensitivity": sensitivity,
     }
 
     def flagged(sql: str) -> str:
@@ -819,7 +894,7 @@ def build_view(
     history_sql = _for_method(_HISTORY_SQL, method, _HISTORY_DV, _LOCAL_HISTORY_DV)
     return {
         "run": run,
-        "anomaly_method": method_data(chosen.key),
+        "anomaly_method": method_data(chosen.key, sensitivity),
         "views": views,
         "series": series,
         "alerts": _rows(store, flagged(_ALERTS_SQL), p),

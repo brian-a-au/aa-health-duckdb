@@ -474,7 +474,7 @@ def test_failed_views_update_keeps_the_old_views(tmp_path, monkeypatch):
 
 # The SHA-256 of sql/views.sql. When you change views.sql, raise VIEWS_VERSION in store.py and
 # put the new hash here.
-VIEWS_SHA256 = "e71a88e3826ff352af5a026c7c6eeee7e16ef41ae779feebcec5224ca96d4186"
+VIEWS_SHA256 = "805295e86a9392c0e9a54ecb47724f4fda4264682f1609ca39f14e0ad6e21b0b"
 
 
 def test_views_version_is_raised_when_views_sql_changes():
@@ -483,7 +483,7 @@ def test_views_version_is_raised_when_views_sql_changes():
     from ahd.store import _views
 
     found = hashlib.sha256(_views().encode("utf-8")).hexdigest()
-    assert VIEWS_VERSION == 4 and found == VIEWS_SHA256, (
+    assert VIEWS_VERSION == 5 and found == VIEWS_SHA256, (
         "sql/views.sql changed. Raise VIEWS_VERSION in store.py, and put the new version and hash"
         " in this test."
     )

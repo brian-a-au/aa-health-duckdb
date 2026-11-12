@@ -1061,6 +1061,15 @@ def test_history_keeps_the_newest_runs(tmp_path, monkeypatch):
 # The local anomaly methods. Each rule is checked on the page data and on the alerts macro's
 # helper, anomaly_days, so the two copies of the rules in summary.py and views.sql agree.
 LOCAL_METHODS = ("weekday-median", "weekday-iqr", "weekday-trend")
+# The sensitivities of a local method, and each local method with each of them.
+LEVELS = ("low", "normal", "high")
+LOCAL_LEVELS = [(m, s) for m in LOCAL_METHODS for s in LEVELS]
+ALL_METHODS = ("adobe", *LOCAL_METHODS)
+LABELS = {
+    "weekday-median": "Weekday median",
+    "weekday-iqr": "Weekday quartile range",
+    "weekday-trend": "Weekday trend",
+}
 # The methods whose sample is the earlier values of the same weekday.
 WEEKDAY_METHODS = ("weekday-median", "weekday-iqr")
 # The 12 Fridays before yesterday that the report can use as the sample for yesterday.
@@ -1083,19 +1092,19 @@ def _fridays(cid, sample, last, other=0.0):
     return out
 
 
-def _yesterday(store, rid, method, cid):
+def _yesterday(store, rid, method, cid, sensitivity="normal"):
     """(expected, upper, lower, anomaly) of yesterday on the page and in the macro.
 
     It checks that both agree and returns the page's values.
     """
-    view = build_view(store, rid, method=method)
+    view = build_view(store, rid, method=method, sensitivity=sensitivity)
     day = YESTERDAY.isoformat()
     [point] = [p for p in view["series"][cid] if p[0] == day]
     page = tuple(point[2:])
     row = store.con.execute(
         "SELECT round(expected, 4), round(upper, 4), round(lower, 4), anomaly"
-        " FROM anomaly_days(?, method := ?) WHERE component_id = ? AND day = ?",
-        [rid, method, cid, YESTERDAY],
+        " FROM anomaly_days(?, method := ?, sensitivity := ?) WHERE component_id = ? AND day = ?",
+        [rid, method, sensitivity, cid, YESTERDAY],
     ).fetchone()
     assert row == pytest.approx(page), (page, row)
     assert _row(view["views"][f"day:{day}"], cid)["anomaly"] == page[3]
@@ -1161,6 +1170,66 @@ def test_local_range_matches_hand_computed_numbers(
     got = _yesterday(store, rid, method, cid)
     assert got[:3] == pytest.approx((expected, upper, lower))
     assert got[3] is None
+
+
+@pytest.mark.parametrize(
+    ("method", "sensitivity", "sample", "expected", "upper", "lower"),
+    [
+        # median 100, median distance 7.5, spread 1.4826 * 7.5 = 11.1195. low uses 4 spreads,
+        # normal 3 and high 2.
+        ("weekday-median", "low", S12, 100, 144.478, 55.522),
+        ("weekday-median", "normal", S12, 100, 133.3585, 66.6415),
+        ("weekday-median", "high", S12, 100, 122.239, 77.761),
+        # quartiles 93.75 and 106.25, range 12.5. low uses 2 ranges past each quartile, normal
+        # 1.5 and high 1.
+        ("weekday-iqr", "low", S12, 100, 131.25, 68.75),
+        ("weekday-iqr", "normal", S12, 100, 125, 75),
+        ("weekday-iqr", "high", S12, 100, 118.75, 81.25),
+        # The guards stay the same: at least 5 percent on each side of the median ...
+        ("weekday-median", "high", [100.0] * 10 + [101.0, 99.0], 100, 105, 95),
+        ("weekday-iqr", "high", [100.0] * 10 + [101.0, 99.0], 100, 105, 95),
+        ("weekday-median", "low", [100.0] * 10 + [101.0, 99.0], 100, 105, 95),
+        # ... and the lower limit stops at 0 for a sample of 0 or more. Median 55, median
+        # distance 45, so 4 spreads are 266.868 and 2 spreads are 133.434.
+        ("weekday-median", "low", [10.0] * 6 + [100.0] * 6, 55, 321.868, 0),
+        ("weekday-median", "high", [10.0] * 6 + [100.0] * 6, 55, 188.434, 0),
+        # quartiles 10 and 100, range 90
+        ("weekday-iqr", "low", [10.0] * 6 + [100.0] * 6, 55, 280, 0),
+        ("weekday-iqr", "high", [10.0] * 6 + [100.0] * 6, 55, 190, 0),
+        # A sample with negative values keeps a negative lower limit.
+        ("weekday-median", "high", [-v for v in S12], -100, -77.761, -122.239),
+        ("weekday-iqr", "low", [-v for v in S12], -100, -68.75, -131.25),
+    ],
+)
+def test_the_sensitivity_scales_the_range(
+    tmp_path, method, sensitivity, sample, expected, upper, lower
+):
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _fridays(cid, sample, expected))
+    got = _yesterday(store, rid, method, cid, sensitivity)
+    assert got[:3] == pytest.approx((expected, upper, lower))
+    assert got[3] is None
+
+
+@pytest.mark.parametrize(
+    ("method", "value", "flags"),
+    [
+        # Each value is just inside the range of one level and outside the next narrower one.
+        ("weekday-median", 144.0, {"low": None, "normal": "high", "high": "high"}),
+        ("weekday-median", 133.0, {"low": None, "normal": None, "high": "high"}),
+        ("weekday-median", 56.0, {"low": None, "normal": "low", "high": "low"}),
+        ("weekday-median", 67.0, {"low": None, "normal": None, "high": "low"}),
+        ("weekday-iqr", 131.0, {"low": None, "normal": "high", "high": "high"}),
+        ("weekday-iqr", 125.0, {"low": None, "normal": None, "high": "high"}),
+        ("weekday-iqr", 118.75, {"low": None, "normal": None, "high": None}),
+        ("weekday-iqr", 69.0, {"low": None, "normal": "low", "high": "low"}),
+    ],
+)
+def test_a_higher_sensitivity_flags_a_smaller_change(tmp_path, method, value, flags):
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _fridays(cid, S12, value))
+    got = {s: _yesterday(store, rid, method, cid, s)[3] for s in LEVELS}
+    assert got == flags
 
 
 @pytest.mark.parametrize("method", WEEKDAY_METHODS)
@@ -1255,18 +1324,18 @@ def _flat(cid, usual, last, on=None):
     return _values(cid, lambda d: on.get(d, usual))
 
 
-def _point(store, rid, method, cid, day):
+def _point(store, rid, method, cid, day, sensitivity="normal"):
     """(expected, upper, lower, anomaly) of one day on the page and in the macro.
 
     It checks that both agree and returns the page's values.
     """
-    view = build_view(store, rid, method=method)
+    view = build_view(store, rid, method=method, sensitivity=sensitivity)
     [point] = [p for p in view["series"][cid] if p[0] == day.isoformat()]
     page = tuple(point[2:])
     row = store.con.execute(
         "SELECT round(expected, 4), round(upper, 4), round(lower, 4), anomaly"
-        " FROM anomaly_days(?, method := ?) WHERE component_id = ? AND day = ?",
-        [rid, method, cid, day],
+        " FROM anomaly_days(?, method := ?, sensitivity := ?) WHERE component_id = ? AND day = ?",
+        [rid, method, sensitivity, cid, day],
     ).fetchone()
     assert row == pytest.approx(page), (page, row)
     return page
@@ -1364,6 +1433,30 @@ def test_weekday_trend_matches_hand_computed_numbers(
         vals = _trend(cid, fridays, value, recent=recent)
         store, rid = _build(tmp_path / flag, [_comp(cid, "E1", number=1)], vals)
         assert _yesterday(store, rid, "weekday-trend", cid)[3] == flag
+        store.con.close()
+
+
+@pytest.mark.parametrize(
+    ("sensitivity", "upper", "lower"),
+    [
+        # The ratios of test_weekday_trend_matches_hand_computed_numbers: median 1, spread
+        # 1.4826 * 0.1 = 0.14826. 4 spreads are 0.59304 and 2 spreads are 0.29652.
+        ("low", 159.304, 40.696),
+        ("normal", 144.478, 55.522),
+        ("high", 129.652, 70.348),
+    ],
+)
+def test_weekday_trend_scales_its_range_by_the_sensitivity(tmp_path, sensitivity, upper, lower):
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _trend(cid, S12, 100.0))
+    got = _yesterday(store, rid, "weekday-trend", cid, sensitivity)
+    assert got == pytest.approx((100, upper, lower, None))
+    store.con.close()
+    for value, flag in ((upper + 1, "high"), (lower - 1, "low")):
+        (tmp_path / flag).mkdir()
+        vals = _trend(cid, S12, value)
+        store, rid = _build(tmp_path / flag, [_comp(cid, "E1", number=1)], vals)
+        assert _yesterday(store, rid, "weekday-trend", cid, sensitivity)[3] == flag
         store.con.close()
 
 
@@ -1471,6 +1564,80 @@ def test_an_unknown_method_raises(tmp_path, method):
         store.con.execute("FROM alerts(?, method := NULL)", [rid]).fetchall()
 
 
+@pytest.mark.parametrize("sensitivity", ["nope", "Normal", "", "medium"])
+def test_an_unknown_sensitivity_raises(tmp_path, sensitivity):
+    import duckdb
+
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _fridays(cid, [100.0] * 12, 1.0))
+    for method in ALL_METHODS:
+        with pytest.raises(ValueError, match="anomaly sensitivity"):
+            build_view(store, rid, method=method, sensitivity=sensitivity)
+    for sql in (
+        "FROM alerts(?, method := ?, sensitivity := ?)",
+        "FROM anomaly_days(?, method := ?, sensitivity := ?)",
+    ):
+        for method in ALL_METHODS:
+            with pytest.raises(duckdb.Error, match="Use low, normal or high."):
+                store.con.execute(sql, [rid, method, sensitivity]).fetchall()
+            # The same for a run without any value.
+            with pytest.raises(duckdb.Error, match="anomaly sensitivity"):
+                store.con.execute(sql, [999, method, sensitivity]).fetchall()
+    with pytest.raises(duckdb.Error, match="anomaly sensitivity"):
+        store.con.execute("FROM alerts(?, sensitivity := NULL)", [rid]).fetchall()
+    # An unknown method is named first.
+    with pytest.raises(duckdb.Error, match="anomaly method"):
+        store.con.execute(
+            "FROM anomaly_days(?, method := 'x', sensitivity := 'x')", [rid]
+        ).fetchall()
+
+
+def test_the_sensitivity_does_not_apply_to_adobe(tmp_path):
+    store, rid = _build(tmp_path, *_macro_data())
+    # The page refuses it, because a report would name a sensitivity that changes nothing.
+    for sensitivity in ("low", "high"):
+        with pytest.raises(ValueError, match="only to a local anomaly method"):
+            build_view(store, rid, sensitivity=sensitivity)
+    # The macros accept it, and it changes nothing.
+    every = "SELECT * FROM anomaly_days(?{}) ORDER BY ALL"
+    plain = store.con.execute(every.format(""), [rid]).fetchall()
+    for sensitivity in LEVELS:
+        got = store.con.execute(every.format(", sensitivity := ?"), [rid, sensitivity]).fetchall()
+        assert got == plain
+        alerts = store.con.execute(
+            "SELECT * FROM alerts(?, method := 'adobe', sensitivity := ?)", [rid, sensitivity]
+        ).fetchall()
+        assert alerts == store.con.execute("SELECT * FROM alerts(?)", [rid]).fetchall()
+
+
+def test_only_a_local_method_has_factors():
+    from ahd.summary import SENSITIVITIES, _method
+
+    assert SENSITIVITIES == LEVELS
+    with pytest.raises(ValueError, match="has no sensitivity"):
+        _method("adobe").factor("normal")
+    for method in LOCAL_METHODS:
+        got = [f"{float(_method(method).factor(s)):g}" for s in LEVELS]
+        assert got == [FACTORS[method][s] for s in LEVELS]
+
+
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+def test_normal_is_the_default_sensitivity(tmp_path, method):
+    store, rid = _build(tmp_path, *_macro_data())
+    assert build_view(store, rid, method=method) == build_view(
+        store, rid, method=method, sensitivity="normal"
+    )
+    for sql in (
+        "SELECT * FROM anomaly_days(?, method := ?{}) ORDER BY ALL",
+        "SELECT * FROM alerts(?, method := ?, threshold := 0.1{})",
+    ):
+        plain = store.con.execute(sql.format(""), [rid, method]).fetchall()
+        normal = store.con.execute(
+            sql.format(", sensitivity := 'normal'"), [rid, method]
+        ).fetchall()
+        assert plain == normal
+
+
 def test_methods_have_keys_and_labels(tmp_path):
     import duckdb
 
@@ -1486,7 +1653,8 @@ def test_methods_have_keys_and_labels(tmp_path):
     store, rid = _build(tmp_path, [], [])
     for method in ANOMALY_METHODS:
         got = build_view(store, rid, method=method)["anomaly_method"]
-        assert set(got) == {"key", "label", "adobe", "rule", "sample"}
+        assert set(got) == {"key", "label", "adobe", "rule", "sample", "sensitivity", "title"}
+        assert got["sensitivity"] == "normal" and got["title"] == got["label"]
         assert (got["key"], got["label"], got["adobe"]) == (
             method,
             ANOMALY_LABELS[method],
@@ -1522,6 +1690,34 @@ def test_methods_have_keys_and_labels(tmp_path):
         "same weekday in this run. Far means more than 1.5 times the width of the middle half "
         "past its edge."
     )
+
+
+# The factor of each local method for each sensitivity, as the rule on the page states it.
+FACTORS = {
+    "weekday-median": {"low": "4", "normal": "3", "high": "2"},
+    "weekday-iqr": {"low": "2", "normal": "1.5", "high": "1"},
+    "weekday-trend": {"low": "4", "normal": "3", "high": "2"},
+}
+
+
+@pytest.mark.parametrize(("method", "sensitivity"), LOCAL_LEVELS)
+def test_the_page_data_names_the_sensitivity(tmp_path, method, sensitivity):
+    store, rid = _build(tmp_path, [], [])
+    got = build_view(store, rid, method=method, sensitivity=sensitivity)["anomaly_method"]
+    label = LABELS[method]
+    assert got["sensitivity"] == sensitivity
+    assert got["title"] == (
+        label if sensitivity == "normal" else f"{label}, {sensitivity} sensitivity"
+    )
+    # The label stays the name of the method, because the page puts it in sentences, e.g.,
+    # "Flagged by the Weekday median method".
+    assert got["label"] == label
+    # Only the factor differs from the rule of normal, which test_methods_have_keys_and_labels
+    # checks word for word.
+    normal = build_view(store, rid, method=method)["anomaly_method"]["rule"]
+    was = f"more than {FACTORS[method]['normal']} times"
+    assert normal.count(was) == 1
+    assert got["rule"] == normal.replace(was, f"more than {FACTORS[method][sensitivity]} times")
 
 
 def _macro_data():
@@ -1560,10 +1756,10 @@ def test_the_default_method_of_the_macro_is_adobe(tmp_path):
     assert unusual == [("metrics/event6",)]
 
 
-@pytest.mark.parametrize("method", ["adobe", *LOCAL_METHODS])
-def test_page_alerts_match_the_alerts_macro(tmp_path, method):
+@pytest.mark.parametrize(("method", "sensitivity"), [("adobe", "normal"), *LOCAL_LEVELS])
+def test_page_alerts_match_the_alerts_macro(tmp_path, method, sensitivity):
     store, rid = _build(tmp_path, *_macro_data())
-    view = build_view(store, rid, method=method)
+    view = build_view(store, rid, method=method, sensitivity=sensitivity)
     for day in [YESTERDAY - timedelta(days=n) for n in range(7)]:
         page = {}
         for a in view["alerts"]:
@@ -1578,8 +1774,8 @@ def test_page_alerts_match_the_alerts_macro(tmp_path, method):
             page[a["component_id"]] = (kind, a["anomaly"], a["expected"])
         rows = store.con.execute(
             "SELECT component_id, alert, anomaly, expected FROM alerts(?, threshold := 0.10,"
-            " spike_threshold := 0.10, for_day := ?, method := ?)",
-            [rid, day, method],
+            " spike_threshold := 0.10, for_day := ?, method := ?, sensitivity := ?)",
+            [rid, day, method, sensitivity],
         ).fetchall()
         macro = {r[0]: r[1:] for r in rows}
         assert set(macro) == set(page), day
@@ -1596,12 +1792,15 @@ def test_page_alerts_match_the_alerts_macro(tmp_path, method):
     if method == "adobe":
         assert flags == {"metrics/event6": "high"}
     else:
-        assert flags["metrics/event11"] == "high" and flags["metrics/event12"] == "low"
+        # The wider range of low leaves some of them out. See
+        # test_a_higher_sensitivity_narrows_every_range.
+        if sensitivity != "low":
+            assert flags["metrics/event11"] == "high" and flags["metrics/event12"] == "low"
         assert "metrics/event7" not in flags  # never collected data
 
 
-@pytest.mark.parametrize("method", LOCAL_METHODS)
-def test_page_and_macro_agree_on_every_day(tmp_path, method):
+def _random_run(tmp_path):
+    """Components with random values, some not finite, and some days without a row."""
     import random
 
     rnd = random.Random(7)
@@ -1627,15 +1826,20 @@ def test_page_and_macro_agree_on_every_day(tmp_path, method):
             v = rnd.gauss(100, 3) * (rnd.choice([0.5, 1.5]) if rnd.random() < 0.05 else 1)
             gap = i == 10 and d == START + timedelta(days=40)
             vals.append(_dv(f"metrics/event{i}", d, math.nan if gap else v))
-    store, rid = _build(tmp_path, comps, vals)
-    view = build_view(store, rid, method=method)
+    return _build(tmp_path, comps, vals)
+
+
+@pytest.mark.parametrize(("method", "sensitivity"), LOCAL_LEVELS)
+def test_page_and_macro_agree_on_every_day(tmp_path, method, sensitivity):
+    store, rid = _random_run(tmp_path)
+    view = build_view(store, rid, method=method, sensitivity=sensitivity)
     page = {(cid, p[0]): tuple(p[2:]) for cid, points in view["series"].items() for p in points}
     macro = {
         (cid, day.isoformat()): rest
         for cid, day, *rest in store.con.execute(
             "SELECT component_id, day, round(expected, 4), round(upper, 4), round(lower, 4),"
-            " anomaly FROM anomaly_days(?, method := ?)",
-            [rid, method],
+            " anomaly FROM anomaly_days(?, method := ?, sensitivity := ?)",
+            [rid, method, sensitivity],
         ).fetchall()
     }
     assert set(page) == set(macro)
@@ -1647,7 +1851,33 @@ def test_page_and_macro_agree_on_every_day(tmp_path, method):
 
 
 @pytest.mark.parametrize("method", LOCAL_METHODS)
-def test_a_local_method_reaches_every_part_of_the_page(tmp_path, method):
+def test_a_higher_sensitivity_narrows_every_range(tmp_path, method):
+    store, rid = _random_run(tmp_path)
+    days = {}
+    for s in LEVELS:
+        days[s] = {
+            (cid, day): rest
+            for cid, day, *rest in store.con.execute(
+                "SELECT component_id, day, expected, lower, upper, anomaly"
+                " FROM anomaly_days(?, method := ?, sensitivity := ?)",
+                [rid, method, s],
+            ).fetchall()
+        }
+    low, normal, high = (days[s] for s in LEVELS)
+    assert set(low) == set(normal) == set(high)
+    for key, (expected, lower, upper, _) in normal.items():
+        # The same days have a range, with the same expected value.
+        assert low[key][0] == expected == high[key][0]
+        if expected is None:
+            continue
+        assert low[key][1] <= lower <= high[key][1]
+        assert low[key][2] >= upper >= high[key][2]
+    flagged = {s: {k for k, v in days[s].items() if v[3]} for s in LEVELS}
+    assert flagged["low"] < flagged["normal"] < flagged["high"]
+
+
+@pytest.mark.parametrize(("method", "sensitivity"), LOCAL_LEVELS)
+def test_a_local_method_reaches_every_part_of_the_page(tmp_path, method, sensitivity):
     # A run that may not use Adobe's anomaly detection has no flags from Adobe.
     store = Store.open(tmp_path / "h.duckdb")
     before = _run(store, date(2026, 11, 5))
@@ -1657,7 +1887,7 @@ def test_a_local_method_reaches_every_part_of_the_page(tmp_path, method):
     )
     day = "2026-11-05"
     adobe = build_view(store, rid)
-    view = build_view(store, rid, method=method)
+    view = build_view(store, rid, method=method, sensitivity=sensitivity)
     assert _row(adobe["views"][f"day:{day}"], "metrics/event2")["anomaly"] is None
     assert _row(view["views"][f"day:{day}"], "metrics/event2")["anomaly"] == "high"
     assert [a["anomaly"] for a in view["alerts"] if a["component_id"] == "metrics/event2"] == [
@@ -1670,7 +1900,7 @@ def test_a_local_method_reaches_every_part_of_the_page(tmp_path, method):
     assert [(h["run_id"], h["high"]) for h in view["history"]] == [(rid, 1), (before, 0)]
     assert [h["high"] for h in adobe["history"]] == [0, 0]
     for h in view["history"]:
-        want = _tile_counts(build_view(store, h["run_id"], method=method))
+        want = _tile_counts(build_view(store, h["run_id"], method=method, sensitivity=sensitivity))
         drops = want.pop("drops")
         assert drops == pytest.approx(h["drops"])
         assert {k: h[k] for k in want} == want

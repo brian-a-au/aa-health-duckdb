@@ -69,6 +69,12 @@ LEFT JOIN used ON used.run_id = dv.run_id AND used.component_id = dv.component_i
 --   a day is its value divided by its level. The method multiplies its range by the day's
 --   level.
 --
+-- sensitivity sets the width factor of the range: 'low' is 4/3 of 'normal' and 'high' is 2/3
+-- of it. Each branch picks its factor with a CASE on sensitivity, in the place where ahd 0.1.8
+-- had the number, so 'normal' gives the same results as 0.1.8. The factors must match those of
+-- _METHODS in src/ahd/summary.py. 'adobe' takes any of the three and does not change, because
+-- Adobe returns its range.
+--
 -- The same guards then apply to every method:
 --
 -- 1. A day with fewer than 8 values in its sample gets no range and no flag. The number must
@@ -80,13 +86,16 @@ LEFT JOIN used ON used.run_id = dv.run_id AND used.component_id = dv.component_i
 --    and the value is above the upper limit or below the lower limit.
 --
 -- src/ahd/summary.py holds the same rules for the report, and tests check that both agree.
-CREATE OR REPLACE MACRO anomaly_days(run_number, method := 'adobe', min_usual := 10) AS TABLE
--- An unknown method stops the query with an error. DuckDB reads the argument of range() before
--- it reads any table, so this also happens for a run without values.
+CREATE OR REPLACE MACRO anomaly_days(run_number, method := 'adobe', min_usual := 10,
+    sensitivity := 'normal') AS TABLE
+-- An unknown method or sensitivity stops the query with an error. DuckDB reads the argument of
+-- range() before it reads any table, so this also happens for a run without values.
 WITH checked AS (
     SELECT method AS chosen
     FROM range(CASE WHEN method IN ('adobe', 'weekday-median', 'weekday-iqr', 'weekday-trend')
-            THEN 1
+            THEN CASE WHEN sensitivity IN ('low', 'normal', 'high') THEN 1
+                ELSE error(concat('Unknown anomaly sensitivity: ', sensitivity,
+                    '. Use low, normal or high.')) END
         ELSE error(concat('Unknown anomaly method: ', method,
             '. Use adobe, weekday-median, weekday-iqr or weekday-trend.')) END)
 ),
@@ -114,29 +123,44 @@ leveled AS (
 sampled AS (
     SELECT run_id, component_id, day, value,
         CASE chosen
-            -- The median, and 3 spreads on each side. The spread is 1.4826 times the median
-            -- distance from the median.
+            -- The median, and 4, 3 or 2 spreads on each side. The spread is 1.4826 times the
+            -- median distance from the median.
             WHEN 'weekday-median' THEN {
                 'n': count(value) OVER w, 'lowest': min(value) OVER w,
                 'expected': median(value) OVER w,
-                'upper': median(value) OVER w + 3 * 1.4826 * mad(value) OVER w,
-                'lower': median(value) OVER w - 3 * 1.4826 * mad(value) OVER w}
-            -- The median, and 1.5 times the distance between the quartiles past each quartile.
+                'upper': median(value) OVER w
+                    + (CASE sensitivity
+                        WHEN 'low' THEN 4 WHEN 'normal' THEN 3 WHEN 'high' THEN 2 END)
+                    * 1.4826 * mad(value) OVER w,
+                'lower': median(value) OVER w
+                    - (CASE sensitivity
+                        WHEN 'low' THEN 4 WHEN 'normal' THEN 3 WHEN 'high' THEN 2 END)
+                    * 1.4826 * mad(value) OVER w}
+            -- The median, and 2, 1.5 or 1 times the distance between the quartiles past each
+            -- quartile.
             WHEN 'weekday-iqr' THEN {
                 'n': count(value) OVER w, 'lowest': min(value) OVER w,
                 'expected': median(value) OVER w,
                 'upper': quantile_cont(value, 0.75) OVER w
-                    + 1.5 * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w),
+                    + (CASE sensitivity
+                        WHEN 'low' THEN 2.0 WHEN 'normal' THEN 1.5 WHEN 'high' THEN 1.0 END)
+                    * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w),
                 'lower': quantile_cont(value, 0.25) OVER w
-                    - 1.5 * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w)}
+                    - (CASE sensitivity
+                        WHEN 'low' THEN 2.0 WHEN 'normal' THEN 1.5 WHEN 'high' THEN 1.0 END)
+                    * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w)}
             -- As weekday-median, with the ratios to the level, times the level of the day.
             WHEN 'weekday-trend' THEN {
                 'n': count(value / level) OVER w, 'lowest': min(value / level) OVER w,
                 'expected': level * median(value / level) OVER w,
                 'upper': level * (median(value / level) OVER w
-                    + 3 * 1.4826 * mad(value / level) OVER w),
+                    + (CASE sensitivity
+                        WHEN 'low' THEN 4 WHEN 'normal' THEN 3 WHEN 'high' THEN 2 END)
+                    * 1.4826 * mad(value / level) OVER w),
                 'lower': level * (median(value / level) OVER w
-                    - 3 * 1.4826 * mad(value / level) OVER w)}
+                    - (CASE sensitivity
+                        WHEN 'low' THEN 4 WHEN 'normal' THEN 3 WHEN 'high' THEN 2 END)
+                    * 1.4826 * mad(value / level) OVER w)}
         END AS rng
     FROM leveled
     WINDOW w AS (PARTITION BY run_id, component_id, dayofweek(day) ORDER BY day
@@ -170,14 +194,15 @@ SELECT run_id, component_id, day, expected, lower, upper,
 FROM local;
 
 -- The alerts of one run on one day, by the same rules as the report. method picks the anomaly
--- method, as in anomaly_days.
+-- method and sensitivity the width of its range, as in anomaly_days.
 CREATE OR REPLACE MACRO alerts(run_number, threshold := 0.30, spike_threshold := 0.50, min_usual := 10,
-    for_day := NULL, method := 'adobe') AS TABLE
+    for_day := NULL, method := 'adobe', sensitivity := 'normal') AS TABLE
 WITH days AS (
     SELECT c.run_id, c.day, c.is_yesterday, c.component_id, c.name, c."group", c.metric_type,
         c.value, c.usual, a.expected, c.pct_vs_usual, c.zero, c.unused, a.anomaly
     FROM component_days c
-    JOIN anomaly_days(run_number, method := method, min_usual := min_usual) a
+    JOIN anomaly_days(run_number, method := method, min_usual := min_usual,
+        sensitivity := sensitivity) a
         ON a.run_id = c.run_id AND a.component_id = c.component_id AND a.day = c.day
     WHERE c.run_id = run_number
 )
