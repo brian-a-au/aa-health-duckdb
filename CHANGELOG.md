@@ -13,6 +13,7 @@ The database layout stays at version 7, so files made by 0.1.2 to 0.1.9 keep wor
   - With the method `adobe`, a sensitivity of `low` or `high` still stops the command, wherever each value comes from. The message names the variable that gave a value.
   - [Run it every day](docs/scheduling.md) now sets the two variables in the scripts of the job.
 - Every output in the DuckDB guide now comes from one file, with four runs of Adobe's demo report suites dated 2026-11-12. Before, the guide mixed output from files of different days. The examples with `for_day` now use a day of that file that has alerts, and a block that is shortened says so.
+- [The report](docs/report.md#when-not-to-choose-weekday-trend) now says when not to choose `weekday-trend`. It is a poor choice for a suite whose rise or fall can speed up or slow down, and it should not be relied on to report data that stops. The rule of the method does not change. Six changes to it were tested on four of Adobe's demo report suites, and none of them gave better results.
 
 ## 0.1.9 (2026-11-12)
 
