@@ -1419,7 +1419,8 @@ def test_a_local_method_reaches_every_part_of_the_page(tmp_path, method):
     assert [h["high"] for h in adobe["history"]] == [0, 0]
     for h in view["history"]:
         want = _tile_counts(build_view(store, h["run_id"], method=method))
-        assert want.pop("drops") == pytest.approx(h["drops"])
+        drops = want.pop("drops")
+        assert drops == pytest.approx(h["drops"])
         assert {k: h[k] for k in want} == want
     # component_days keeps Adobe's values.
     flags = store.con.execute(

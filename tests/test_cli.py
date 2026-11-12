@@ -756,10 +756,10 @@ def test_spike_alert_must_be_a_slider_step(tmp_path, bad):
 def test_anomaly_method_option_reaches_the_report_and_the_alert_line(
     tmp_path, cfg, capsys, monkeypatch
 ):
-    import ahd.cli
+    from ahd.cli import _alert_line as real_line
+    from ahd.cli import build_view as real_view
 
     seen = []
-    real_view, real_line = ahd.cli.build_view, ahd.cli._alert_line
 
     def view(*a, **k):
         seen.append(("view", k.get("method", "adobe")))
@@ -769,8 +769,8 @@ def test_anomaly_method_option_reaches_the_report_and_the_alert_line(
         seen.append(("line", k.get("method", "adobe")))
         return real_line(*a, **k)
 
-    monkeypatch.setattr(ahd.cli, "build_view", view)
-    monkeypatch.setattr(ahd.cli, "_alert_line", line)
+    monkeypatch.setattr("ahd.cli.build_view", view)
+    monkeypatch.setattr("ahd.cli._alert_line", line)
     fake = fake_for("rs1", events(2), custom_dims())
     fake.gets["/dimensions"] = custom_dims() + [{"id": "variables/evar17", "name": "Term"}]
     out = tmp_path / "o"
