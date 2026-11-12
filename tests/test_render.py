@@ -754,6 +754,7 @@ def test_the_header_names_the_anomaly_method():
     for method, label in (
         ("weekday-median", "Weekday median"),
         ("weekday-iqr", "Weekday quartile range"),
+        ("weekday-trend", "Weekday trend"),
     ):
         for bands in (True, False):
             assert _fact(render_html(sample_view(bands, method))) == (
@@ -779,16 +780,26 @@ def _rule(html: str) -> str:
     return html[html.index('<details class="rule"') : html.index("</details>")]
 
 
+# What a day needs for a flag, after "A day is flagged only when this run has at least 8".
+SAMPLE_WORDS = {
+    "weekday-median": "earlier values of its weekday",
+    "weekday-iqr": "earlier values of its weekday",
+    "weekday-trend": "earlier values of its weekday that have a level",
+}
+
+
 def test_the_rule_list_states_the_rule_of_the_method():
     for method in ANOMALY_METHODS:
         view = sample_view(method=method)
         rule = _rule(render_html(view))
         assert f"<li>{escape(view['anomaly_method']['rule'])}" in rule
-        needs = (
-            "A day is flagged only when this run has at least 8 earlier values of its weekday "
-            "and its expected value is 10 or more."
-        )
-        assert (needs in rule) is (method != "adobe")
+        assert ("A day is flagged only when" in rule) is (method != "adobe")
+        if method != "adobe":
+            needs = (
+                f"A day is flagged only when this run has at least 8 {SAMPLE_WORDS[method]} "
+                "and its expected value is 10 or more."
+            )
+            assert needs in rule
 
 
 def test_a_local_method_does_not_say_adobe_flagged_a_value():
@@ -796,7 +807,7 @@ def test_a_local_method_does_not_say_adobe_flagged_a_value():
     assert "A value that Adobe flagged is listed as an unusual value" in adobe
     assert "more components that Adobe flagged or that dropped to zero" in adobe
     assert "Components that Adobe flagged as unusual" in adobe
-    for method in ("weekday-median", "weekday-iqr"):
+    for method in ("weekday-median", "weekday-iqr", "weekday-trend"):
         html = render_html(sample_view(bands=False, method=method))
         label = ANOMALY_LABELS[method]
         markup = html[: html.index('<script type="application/json"')]
@@ -814,6 +825,12 @@ def test_a_local_method_has_its_own_note_for_a_chart_without_a_range():
         "This chart has no expected range, because no day has at least 8 earlier values of its "
         "weekday in this run."
     ) in html
+    for method, words in SAMPLE_WORDS.items():
+        html = render_html(sample_view(method=method))
+        assert NO_BANDS_NOTE not in html
+        assert (
+            f"This chart has no expected range, because no day has at least 8 {words} in this run."
+        ) in html
 
 
 def test_a_local_method_says_it_does_not_need_adobes_anomaly_detection():

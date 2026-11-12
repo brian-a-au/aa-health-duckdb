@@ -55,7 +55,7 @@
       <li>A value is a large spike when its change from the weekday average is above the spike slider's setting, e.g., above +50%. Move the slider right to flag only bigger spikes. A value that doubled is about +100%.</li>
       <li>Components with a weekday average under {{ min_usual }} are skipped, because small numbers change a lot from day to day. In the weekly view, a component is skipped when its average week is under {{ min_usual * 7 }}.</li>
       <li>A value of 0 is not a large drop. It is listed as "Dropped to zero".</li>
-      <li>{{ anomaly.rule }}{% if not anomaly.adobe %} A day is flagged only when this run has at least {{ min_sample }} earlier values of its weekday and its expected value is {{ min_usual }} or more.{% endif %}</li>
+      <li>{{ anomaly.rule }}{% if not anomaly.adobe %} A day is flagged only when this run has at least {{ min_sample }} {{ anomaly.sample }} and its expected value is {{ min_usual }} or more.{% endif %}</li>
       <li>A value that {{ anomaly_source }} flagged is listed as an unusual value, not as a large drop or spike.</li>
       <li>A large drop gets a "Large drop" badge in the Flag column, a large spike gets a "Large spike" badge, and both are listed on the Alerts tab.</li>
       <li>The tables show a down arrow for a change past the drop slider, and an up arrow for a change past the spike slider.</li>

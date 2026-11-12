@@ -1060,7 +1060,9 @@ def test_history_keeps_the_newest_runs(tmp_path, monkeypatch):
 
 # The local anomaly methods. Each rule is checked on the page data and on the alerts macro's
 # helper, anomaly_days, so the two copies of the rules in summary.py and views.sql agree.
-LOCAL_METHODS = ("weekday-median", "weekday-iqr")
+LOCAL_METHODS = ("weekday-median", "weekday-iqr", "weekday-trend")
+# The methods whose sample is the earlier values of the same weekday.
+WEEKDAY_METHODS = ("weekday-median", "weekday-iqr")
 # The 12 Fridays before yesterday that the report can use as the sample for yesterday.
 EARLIER_FRIDAYS = [d for d in _days(START, YESTERDAY - timedelta(days=1)) if d.weekday() == 4]
 MISSING = object()  # no stored row for that day
@@ -1103,7 +1105,7 @@ def _yesterday(store, rid, method, cid):
 S12 = [100.0, 110.0, 90.0, 100.0, 120.0, 80.0, 100.0, 105.0, 95.0, 100.0, 130.0, 70.0]
 
 
-@pytest.mark.parametrize("method", LOCAL_METHODS)
+@pytest.mark.parametrize("method", WEEKDAY_METHODS)
 def test_local_method_flags_a_high_and_a_low_value(tmp_path, method):
     comps = [_comp(f"metrics/event{i}", f"E{i}", number=i) for i in (1, 2, 3)]
     vals = (
@@ -1161,7 +1163,7 @@ def test_local_range_matches_hand_computed_numbers(
     assert got[3] is None
 
 
-@pytest.mark.parametrize("method", LOCAL_METHODS)
+@pytest.mark.parametrize("method", WEEKDAY_METHODS)
 @pytest.mark.parametrize(
     ("sample", "has_range"),
     [
@@ -1186,7 +1188,7 @@ def test_a_range_needs_8_earlier_values(tmp_path, method, sample, has_range):
         assert got == (None, None, None, None)
 
 
-@pytest.mark.parametrize("method", LOCAL_METHODS)
+@pytest.mark.parametrize("method", WEEKDAY_METHODS)
 def test_only_the_last_5_weeks_have_a_range(tmp_path, method):
     # docs/report.md says that the first 8 of the 13 weeks have no range and no flags.
     cid = "metrics/event1"
@@ -1203,14 +1205,14 @@ def test_only_the_last_5_weeks_have_a_range(tmp_path, method):
     assert macro == 35
 
 
-@pytest.mark.parametrize("method", LOCAL_METHODS)
+@pytest.mark.parametrize("method", WEEKDAY_METHODS)
 def test_a_value_that_is_not_finite_is_not_flagged(tmp_path, method):
     cid = "metrics/event1"
     store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _fridays(cid, [100.0] * 12, None))
     assert _yesterday(store, rid, method, cid) == pytest.approx((100, 105, 95, None))
 
 
-@pytest.mark.parametrize("method", LOCAL_METHODS)
+@pytest.mark.parametrize("method", WEEKDAY_METHODS)
 @pytest.mark.parametrize(("usual", "flagged"), [(9.0, False), (10.0, True)])
 def test_a_median_below_10_gives_no_flag(tmp_path, method, usual, flagged):
     cid = "metrics/event1"
@@ -1224,7 +1226,7 @@ def test_a_median_below_10_gives_no_flag(tmp_path, method, usual, flagged):
     ("method", "sample", "value", "flag"),
     [
         (m, [100.0] * 12, v, f)
-        for m in LOCAL_METHODS
+        for m in WEEKDAY_METHODS
         for v, f in ((105.0, None), (95.0, None), (105.01, "high"), (94.99, "low"))
     ]
     + [
@@ -1237,6 +1239,218 @@ def test_a_value_on_a_limit_is_not_flagged(tmp_path, method, sample, value, flag
     cid = "metrics/event1"
     store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _fridays(cid, sample, value))
     assert _yesterday(store, rid, method, cid)[3] == flag
+
+
+def _values(cid, value_of):
+    """A row for each day from START to TODAY with the value value_of(day).
+
+    MISSING stores no row, and None stores a row without a value.
+    """
+    return [_dv(cid, d, v) for d in _days(START, TODAY) if (v := value_of(d)) is not MISSING]
+
+
+def _flat(cid, usual, last, on=None):
+    """usual on every day, last yesterday, and the values of on for the days it names."""
+    on = {YESTERDAY: last, **(on or {})}
+    return _values(cid, lambda d: on.get(d, usual))
+
+
+def _point(store, rid, method, cid, day):
+    """(expected, upper, lower, anomaly) of one day on the page and in the macro.
+
+    It checks that both agree and returns the page's values.
+    """
+    view = build_view(store, rid, method=method)
+    [point] = [p for p in view["series"][cid] if p[0] == day.isoformat()]
+    page = tuple(point[2:])
+    row = store.con.execute(
+        "SELECT round(expected, 4), round(upper, 4), round(lower, 4), anomaly"
+        " FROM anomaly_days(?, method := ?) WHERE component_id = ? AND day = ?",
+        [rid, method, cid, day],
+    ).fetchone()
+    assert row == pytest.approx(page), (page, row)
+    return page
+
+
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+@pytest.mark.parametrize(
+    ("value", "flag"),
+    [(200.0, "high"), (50.0, "low"), (105.0, None), (95.0, None), (105.01, "high"), (94.99, "low")],
+)
+def test_every_local_method_flags_a_change_of_a_flat_component(tmp_path, method, value, flag):
+    # 100 on every day: no spread, so the range is 5 percent on each side of 100.
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _flat(cid, 100.0, value))
+    assert _yesterday(store, rid, method, cid) == pytest.approx((100, 105, 95, flag))
+
+
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+@pytest.mark.parametrize(("usual", "flagged"), [(9.0, False), (10.0, True)])
+def test_every_local_method_needs_an_expected_value_of_10(tmp_path, method, usual, flagged):
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _flat(cid, usual, 1000.0))
+    got = _yesterday(store, rid, method, cid)
+    assert got[:3] == pytest.approx((usual, usual * 1.05, usual * 0.95))
+    assert got[3] == ("high" if flagged else None)
+
+
+def test_weekday_trend_has_a_range_in_the_last_4_weeks(tmp_path):
+    # docs/report.md says so: the 7 days before a day give its level, so the first week has no
+    # level, and a day needs 8 earlier days of its weekday with a level.
+    cid = "metrics/event1"
+    vals = [_dv(cid, d, 100.0) for d in _days(START, YESTERDAY)]
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], vals)
+    series = build_view(store, rid, method="weekday-trend")["series"][cid]
+    assert len(series) == 91
+    with_range = [p[0] for p in series if p[2] is not None]
+    assert with_range == [d.isoformat() for d in _days(START + timedelta(weeks=9), YESTERDAY)]
+    assert len(with_range) == 28
+    macro = store.con.execute(
+        "SELECT count(expected) FROM anomaly_days(?, method := 'weekday-trend')", [rid]
+    ).fetchone()[0]
+    assert macro == 28
+
+
+def _trend(cid, fridays, last, other=100.0, recent=None):
+    """fridays on the 12 earlier Fridays, last yesterday, other on the other days.
+
+    recent, when given, is the value of the 6 days between the last two Fridays. The Thursday
+    before each Friday makes up for the Friday before it, so the level of each Friday is other,
+    or recent for yesterday: e.g., after a Friday of 70, the Thursday is 130, and the 7 days
+    add up to 700.
+    """
+    on = dict(zip(EARLIER_FRIDAYS, fridays, strict=True))
+    week = set(_days(YESTERDAY - timedelta(days=6), YESTERDAY - timedelta(days=1)))
+    vals = []
+    for v in _fridays(cid, fridays, last, other):
+        level = recent if v.day in week and recent is not None else other
+        before = on.get(v.day - timedelta(days=6))
+        if v.day.weekday() == 3 and isinstance(before, float) and math.isfinite(before):
+            v = _dv(cid, v.day, 2 * level - before)
+        elif v.day in week and recent is not None:
+            v = _dv(cid, v.day, recent)
+        vals.append(v)
+    return vals
+
+
+@pytest.mark.parametrize(
+    ("fridays", "recent", "expected", "upper", "lower"),
+    [
+        # The first Friday has no level, because the days before it are not in the run. Every
+        # other level is 100, so the ratios are S12[1:] / 100: median 1, median distance 0.1,
+        # so 3 * 1.4826 * 0.1 = 0.44478 on each side.
+        (S12, None, 100, 144.478, 55.522),
+        # The same ratios, and yesterday's level is 300.
+        (S12, 300.0, 300, 433.434, 166.566),
+        # No spread: the range is at least 5 percent on each side.
+        ([100.0] * 12, None, 100, 105, 95),
+        # ratios 0.4, 1.6 and 1: median 1, median distance 0.6, so 3 * 1.4826 * 0.6 = 2.66868.
+        # No ratio is below 0, so the lower limit stops at 0.
+        ([100.0, 40.0, 160.0] * 4, None, 100, 366.868, 0),
+    ],
+)
+def test_weekday_trend_matches_hand_computed_numbers(
+    tmp_path, fridays, recent, expected, upper, lower
+):
+    cid = "metrics/event1"
+    vals = _trend(cid, fridays, expected, recent=recent)
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], vals)
+    got = _yesterday(store, rid, "weekday-trend", cid)
+    assert got[:3] == pytest.approx((expected, upper, lower))
+    assert got[3] is None
+    store.con.close()
+    for value, flag in ((upper + 1, "high"), (lower - 1, "low")):
+        (tmp_path / flag).mkdir()
+        vals = _trend(cid, fridays, value, recent=recent)
+        store, rid = _build(tmp_path / flag, [_comp(cid, "E1", number=1)], vals)
+        assert _yesterday(store, rid, "weekday-trend", cid)[3] == flag
+        store.con.close()
+
+
+@pytest.mark.parametrize(
+    ("fridays", "has_range"),
+    [
+        # A Friday has a ratio only when it and the Friday before it have a value.
+        ([MISSING] * 4 + [100.0] * 8, False),  # 7 ratios
+        ([MISSING] * 3 + [100.0] * 9, True),  # 8 ratios
+        # NULL, NaN and Infinity are left out.
+        ([None, math.nan, math.inf, -math.inf] + [100.0] * 8, False),
+        ([None, math.nan, math.inf] + [100.0] * 9, True),
+    ],
+)
+def test_weekday_trend_needs_8_earlier_ratios(tmp_path, fridays, has_range):
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _trend(cid, fridays, 1000.0))
+    got = _yesterday(store, rid, "weekday-trend", cid)
+    if has_range:
+        assert got == pytest.approx((100, 105, 95, "high"))
+    else:
+        assert got == (None, None, None, None)
+
+
+@pytest.mark.parametrize(
+    ("gap", "has_range"),
+    [(100.0, True), (None, False), (math.nan, False), (math.inf, False), (MISSING, False)],
+)
+def test_weekday_trend_needs_a_value_on_each_of_the_7_days_before(tmp_path, gap, has_range):
+    cid = "metrics/event1"
+    vals = _flat(cid, 100.0, 1000.0, {YESTERDAY - timedelta(days=3): gap})
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], vals)
+    got = _yesterday(store, rid, "weekday-trend", cid)
+    if has_range:
+        assert got == pytest.approx((100, 105, 95, "high"))
+    else:
+        assert got == (None, None, None, None)
+
+
+@pytest.mark.parametrize("usual", [0.0, -100.0])
+def test_weekday_trend_needs_a_level_above_0(tmp_path, usual):
+    # The same value on every day: every level is that value, so no day has a range.
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _flat(cid, usual, 1000.0))
+    assert _yesterday(store, rid, "weekday-trend", cid) == (None, None, None, None)
+
+
+def test_weekday_trend_uses_the_average_of_the_7_days_before(tmp_path):
+    # 100 on every day, and 30 and 170 on two of the 7 days before yesterday. Their average is
+    # still 100. The 30 lowers the level of the next days: (600 + 30) / 7 = 90 for the third day
+    # after it, so its value of 100 is above the range.
+    cid = "metrics/event1"
+    on = {YESTERDAY - timedelta(days=5): 30.0, YESTERDAY - timedelta(days=2): 170.0}
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _flat(cid, 100.0, 1000.0, on))
+    assert _yesterday(store, rid, "weekday-trend", cid) == pytest.approx((100, 105, 95, "high"))
+    got = _point(store, rid, "weekday-trend", cid, YESTERDAY - timedelta(days=3))
+    assert got == pytest.approx((90, 94.5, 85.5, "high"))
+
+
+def _growing(cid, jump=1.0):
+    """2 percent more each day, weekends at 60 percent, and up to 1 percent of noise.
+
+    jump multiplies yesterday's value.
+    """
+    import random
+
+    rnd = random.Random(5)
+    out = []
+    for d in _days(START, YESTERDAY):
+        v = 100 * 1.02 ** (d - START).days * (0.6 if d.weekday() >= 5 else 1.0)
+        v *= 1 + rnd.uniform(-0.01, 0.01)
+        out.append(_dv(cid, d, v * (jump if d == YESTERDAY else 1.0)))
+    return out
+
+
+def test_weekday_trend_follows_steady_growth(tmp_path):
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _growing(cid))
+    last_week = list(_days(YESTERDAY - timedelta(days=6), YESTERDAY))
+    got = [_point(store, rid, "weekday-trend", cid, d) for d in last_week]
+    assert all(p[0] is not None for p in got)
+    assert [p[3] for p in got] == [None] * 7
+    store.con.close()
+    # A sudden jump of 20 percent is flagged.
+    (tmp_path / "jump").mkdir()
+    store, rid = _build(tmp_path / "jump", [_comp(cid, "E1", number=1)], _growing(cid, 1.2))
+    assert _yesterday(store, rid, "weekday-trend", cid)[3] == "high"
 
 
 @pytest.mark.parametrize("method", ["nope", "Adobe", ""])
@@ -1258,26 +1472,47 @@ def test_an_unknown_method_raises(tmp_path, method):
 
 
 def test_methods_have_keys_and_labels(tmp_path):
+    import duckdb
+
     from ahd.summary import ANOMALY_LABELS, ANOMALY_METHODS
 
-    assert ANOMALY_METHODS == ("adobe", "weekday-median", "weekday-iqr")
+    assert ANOMALY_METHODS == ("adobe", "weekday-median", "weekday-iqr", "weekday-trend")
     assert ANOMALY_LABELS == {
         "adobe": "Adobe",
         "weekday-median": "Weekday median",
         "weekday-iqr": "Weekday quartile range",
+        "weekday-trend": "Weekday trend",
     }
     store, rid = _build(tmp_path, [], [])
     for method in ANOMALY_METHODS:
         got = build_view(store, rid, method=method)["anomaly_method"]
-        assert set(got) == {"key", "label", "adobe", "rule"}
+        assert set(got) == {"key", "label", "adobe", "rule", "sample"}
         assert (got["key"], got["label"], got["adobe"]) == (
             method,
             ANOMALY_LABELS[method],
             method == "adobe",
         )
         assert got["rule"].endswith(".")
+        # The page puts the sample after a number, e.g., "at least 8 earlier values".
+        assert (got["sample"] is None) is (method == "adobe")
     assert build_view(store, rid)["anomaly_method"]["key"] == "adobe"
-    # docs/report.md quotes these two rules.
+    samples = {
+        m: build_view(store, rid, method=m)["anomaly_method"]["sample"] for m in LOCAL_METHODS
+    }
+    assert samples == {
+        "weekday-median": "earlier values of its weekday",
+        "weekday-iqr": "earlier values of its weekday",
+        "weekday-trend": "earlier values of its weekday that have a level",
+    }
+    # The macro names every method when it gets an unknown one.
+    with pytest.raises(duckdb.Error, match=", ".join(ANOMALY_METHODS[:-1]) + " or weekday-trend."):
+        store.con.execute("FROM anomaly_days(?, method := 'nope')", [rid]).fetchall()
+    # docs/report.md quotes these rules.
+    assert build_view(store, rid, method="weekday-trend")["anomaly_method"]["rule"] == (
+        "A value is unusual when it is far from what its recent level and its weekday suggest. "
+        "The level is the average of the 7 days before it, and far means more than 3 times the "
+        "usual spread of how the earlier values of the same weekday compared with their level."
+    )
     assert build_view(store, rid, method="weekday-median")["anomaly_method"]["rule"] == (
         "A value is unusual when it is far from the median of the earlier values of the same "
         "weekday in this run. Far means more than 3 times the usual spread of those values."
@@ -1306,7 +1541,8 @@ def _macro_data():
         + _series("metrics/event9", 100.0, 130.0)  # 30 percent spike
         + _series("metrics/event10", 8.0, 30.0)  # small usual value: skipped
         + _fridays("metrics/event11", S12, 140.0, other=50.0)  # local high
-        + _fridays("metrics/event12", S12, 60.0, other=50.0)  # local low
+        # Below the range of every local method. For weekday-trend it is 58.9 to 130.8.
+        + _fridays("metrics/event12", S12, 50.0, other=50.0)  # local low
     )
     return comps, vals
 
@@ -1349,7 +1585,14 @@ def test_page_alerts_match_the_alerts_macro(tmp_path, method):
         assert set(macro) == set(page), day
         for cid, want in page.items():
             assert macro[cid] == pytest.approx(want), (day, cid)
-    flags = {a["component_id"]: a["anomaly"] for a in view["alerts"] if a["anomaly"]}
+    # Yesterday's flags. weekday-trend also flags event11 and event12 on the 6 days before,
+    # because the low Friday before them lowers their level. See
+    # test_weekday_trend_uses_the_average_of_the_7_days_before.
+    flags = {
+        a["component_id"]: a["anomaly"]
+        for a in view["alerts"]
+        if a["anomaly"] and a["day"] == YESTERDAY.isoformat()
+    }
     if method == "adobe":
         assert flags == {"metrics/event6": "high"}
     else:
@@ -1375,6 +1618,15 @@ def test_page_and_macro_agree_on_every_day(tmp_path, method):
             if i == 3:
                 v = 0.0 if pick < 0.8 else 40.0  # mostly 0
             vals.append(_dv(f"metrics/event{i}", d, v))
+    # Values close to 100 and sometimes far from it. weekday-trend needs a value on every day to
+    # give many ranges, because the 7 days before a day must all have a value. event10 is the
+    # same with one day without a value.
+    for i in (9, 10):
+        comps.append(_comp(f"metrics/event{i}", f"E{i}", number=i))
+        for d in _days(START - timedelta(days=5), TODAY):
+            v = rnd.gauss(100, 3) * (rnd.choice([0.5, 1.5]) if rnd.random() < 0.05 else 1)
+            gap = i == 10 and d == START + timedelta(days=40)
+            vals.append(_dv(f"metrics/event{i}", d, math.nan if gap else v))
     store, rid = _build(tmp_path, comps, vals)
     view = build_view(store, rid, method=method)
     page = {(cid, p[0]): tuple(p[2:]) for cid, points in view["series"].items() for p in points}
