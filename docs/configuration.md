@@ -41,9 +41,11 @@ The tool uses the first of these that it finds:
 
 1. **A profile.** Pass `--profile <name>`, or set the `AA_PROFILE` environment variable. The tool reads `~/.aa/orgs/<name>/config.json`.
 2. **Environment variables.** Set all four of `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_SECRET` and `AHD_SCOPES`.
-3. **A config file.** Pass its path with `--config`, or put a file named `config.json` in the folder where you run the tool. If you also set some of the `AHD_*` variables, each one wins over the same key in the file.
+3. **A config file.** Pass its path with `--config`, or put a file named `config.json` in the folder where you run the tool. If you also set some of the four credential variables, each one wins over the same key in the file.
 
-A profile and `--config` cannot be used together. The tool stops and says so, also when the profile comes from `AA_PROFILE`. When all four `AHD_*` variables are set, the tool uses them and does not read a config file.
+A profile and `--config` cannot be used together. The tool stops and says so, also when the profile comes from `AA_PROFILE`. When all four credential variables are set, the tool uses them and does not read a config file.
+
+Two more variables, `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`, hold no credential. They set the defaults of `--anomaly-method` and `--anomaly-sensitivity`. See [Set the anomaly method once](usage.md#set-the-anomaly-method-once).
 
 When the tool finds no credential at all, it stops and lists the three ways to give one.
 

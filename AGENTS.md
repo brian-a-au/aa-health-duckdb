@@ -66,7 +66,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 ### Tests
 
 - Tests never use the network. `tests/conftest.py` blocks it and fails any test that tries. Use `tests/fakes.py` and the saved responses in `tests/fixtures/`.
-- `tests/conftest.py` also hides the maintainer's own `AA_PROFILE`, `AHD_*` variables and `~/.aa` profiles from every test.
+- `tests/conftest.py` also hides the maintainer's own `AA_PROFILE`, `AHD_*` variables and `~/.aa` profiles from every test. It keeps only `AHD_CHROME`. A new `AHD_*` variable is hidden without a change there.
 - Add or update a test for every change in behavior.
 - `tests/test_report_js.py` runs `report.js` in headless Chrome. It skips without Chrome, and fails without Chrome when `CI` is set. Set `AHD_CHROME` to choose the Chrome program. Add a test there for every change to what the page does.
 - A test that waits for another thread or process must wait for a signal, e.g., a `threading.Event`, and never for a fixed time.

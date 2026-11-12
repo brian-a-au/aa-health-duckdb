@@ -84,6 +84,9 @@ When Adobe asks for a longer wait with a Retry-After header, the tool waits that
 ## Anomaly detection options
 
 - **"--anomaly-sensitivity works only with a local anomaly method"**: the command got `--anomaly-sensitivity low` or `high` with the method `adobe`, which is the default. Adobe returns its own expected range, so ahd cannot make it wider or narrower. Add a local method, e.g., `--anomaly-method weekday-median`, or leave out `--anomaly-sensitivity`. The command stops before it signs in or opens the database. The alert email script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning) stops with the same message and exit code 1. See [The report](report.md#the-sensitivity-of-the-local-methods).
+  - When the sensitivity comes from the variable `AHD_ANOMALY_SENSITIVITY`, the message starts with "The anomaly sensitivity" and names the variable. Unset the variable, set it to `normal`, or choose a local method with `--anomaly-method` or `AHD_ANOMALY_METHOD`.
+  - When the method `adobe` comes from the variable `AHD_ANOMALY_METHOD`, the message says so. Set the variable to a local method, or give `--anomaly-method` with a local method.
+- **"variable is set to 'x', which is not an anomaly"**: the variable `AHD_ANOMALY_METHOD` or `AHD_ANOMALY_SENSITIVITY` holds a value that is not a method or a sensitivity, e.g., `weekday_median` with an underscore or `High` with a capital letter. The message names the variable and the values it takes. Fix the value, or unset the variable. An option on the command line wins over the variable, so the command does not read the variable then. The command stops with exit code 1 before it signs in or opens the database, and `send_alerts.py` stops in the same way. See [Set the anomaly method once](usage.md#set-the-anomaly-method-once).
 
 ## Time zones
 
@@ -95,7 +98,7 @@ When Adobe asks for a longer wait with a Retry-After header, the tool waits that
 - **"Profile name 'x' is not valid"**: a profile name holds only letters, digits, dots, dashes and underscores, and starts with a letter or a digit.
 - **"is not valid UTF-8 JSON"**: the file has a syntax error, e.g., a missing comma or quote.
 - **"must hold one JSON object"**: the file holds a list or a single value, not `{ ... }`.
-- **"No credential was found"**: there is no profile, no `AHD_*` variable and no `config.json` in the current folder. See [Configuration](configuration.md).
+- **"No credential was found"**: there is no profile, none of the variables `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_SECRET` and `AHD_SCOPES`, and no `config.json` in the current folder. See [Configuration](configuration.md).
 - **"Use a profile or --config, not both"**: remove `--config`, or unset `AA_PROFILE` with `unset AA_PROFILE`.
 - **"Missing credential keys"**: one of `org_id`, `client_id`, `secret` or `scopes` is missing or empty. The message names the key and where the tool looked.
 

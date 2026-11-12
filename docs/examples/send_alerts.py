@@ -24,6 +24,11 @@ low, normal or high, as on ahd run. The default is normal. It works only with a 
 so with adobe, low or high stops the script with exit code 1. The email names the method, and
 the sensitivity when it is not normal.
 
+Without these two options, the script reads the variables AHD_ANOMALY_METHOD and
+AHD_ANOMALY_SENSITIVITY, as ahd run does. Set them once in a scheduled job, so that the reports
+and the email use the same method. An option wins over its variable, and an empty variable
+counts as not set. An unknown value in a variable stops the script with exit code 1.
+
 To send, set SMTP_HOST, SMTP_PORT (default 587), MAIL_FROM and MAIL_TO, and SMTP_USER and
 SMTP_PASSWORD when the server needs a login. Without SMTP_HOST, it writes the message to
 alerts.eml in the current folder instead, so you can open it and check it first.
@@ -83,10 +88,19 @@ SENSITIVITIES = ("low", "normal", "high")
 DEFAULT_METHOD = "adobe"
 DEFAULT_SENSITIVITY = "normal"
 
+# The variables that give the method and the sensitivity when the option is not given, the
+# same as for ahd run.
+METHOD_ENV = "AHD_ANOMALY_METHOD"
+SENSITIVITY_ENV = "AHD_ANOMALY_SENSITIVITY"
+
 SENSITIVITY_NEEDS_LOCAL = (
     "--anomaly-sensitivity works only with a local anomaly method, e.g., --anomaly-method "
     "weekday-median. The adobe method uses the expected range that Adobe returned."
 )
+
+
+class _VariableError(Exception):
+    """A variable holds a value that the script cannot use."""
 
 
 def _number(v: float | None) -> str:
@@ -135,20 +149,69 @@ def _parser() -> argparse.ArgumentParser:
         help="The large spike percent as a share, up to 2 (default 0.50).",
     )
     p.add_argument("--segment", help="Use the latest runs with this segment ID.")
+    # No default here, so that _choose_anomaly can tell an option from a variable.
     p.add_argument(
         "--anomaly-method",
         choices=list(METHODS),
-        default=DEFAULT_METHOD,
-        help="The method that flags the unusual values (default adobe).",
+        help=f"The method that flags the unusual values (default {METHOD_ENV}, else adobe).",
     )
     p.add_argument(
         "--anomaly-sensitivity",
         choices=SENSITIVITIES,
-        default=DEFAULT_SENSITIVITY,
         help="How wide the range of a local method is. It does not apply to adobe "
-        "(default normal).",
+        f"(default {SENSITIVITY_ENV}, else normal).",
     )
     return p
+
+
+def _from_env(name: str, allowed: tuple[str, ...], what: str) -> str | None:
+    """The value of the variable, or None when it is not set or empty."""
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return None
+    if value not in allowed:
+        listed = f"{', '.join(allowed[:-1])} or {allowed[-1]}"
+        raise _VariableError(
+            f"The {name} variable is set to {value!r}, which is not an anomaly {what}. "
+            f"Use {listed}, or unset the variable."
+        )
+    return value
+
+
+def _choose_anomaly(args: argparse.Namespace) -> None:
+    """Set the method and the sensitivity: the option, else the variable, else the default.
+
+    It stops when the sensitivity cannot apply to the method and a variable gave one of them.
+    When both came from options, main leaves the message to the parser, which also prints the
+    usage.
+    """
+    method_from_env = sensitivity_from_env = False
+    if args.anomaly_method is None:
+        found = _from_env(METHOD_ENV, tuple(METHODS), "method")
+        method_from_env = found is not None
+        args.anomaly_method = found or DEFAULT_METHOD
+    if args.anomaly_sensitivity is None:
+        found = _from_env(SENSITIVITY_ENV, SENSITIVITIES, "sensitivity")
+        sensitivity_from_env = found is not None
+        args.anomaly_sensitivity = found or DEFAULT_SENSITIVITY
+    fits = args.anomaly_method != DEFAULT_METHOD or args.anomaly_sensitivity == DEFAULT_SENSITIVITY
+    if fits or not (method_from_env or sensitivity_from_env):
+        return
+    parts = [
+        f"The anomaly sensitivity {args.anomaly_sensitivity} from the {SENSITIVITY_ENV} variable"
+        if sensitivity_from_env
+        else "--anomaly-sensitivity",
+        (
+            "works only with a local anomaly method, e.g., --anomaly-method weekday-median or "
+            f"{METHOD_ENV}=weekday-median. The adobe method uses the expected range that Adobe "
+            "returned."
+        ),
+    ]
+    if method_from_env:
+        parts.append(f"The method adobe comes from the {METHOD_ENV} variable.")
+    if sensitivity_from_env:
+        parts.append(f"To use adobe, unset {SENSITIVITY_ENV} or set it to normal.")
+    raise _VariableError(" ".join(parts))
 
 
 def _query(args: argparse.Namespace) -> tuple[str, dict[str, str]]:
@@ -274,6 +337,12 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     if bool(args.rsids) == args.all:
         parser.error("give one or more report suite IDs, or --all, but not both")
+    try:
+        _choose_anomaly(args)
+    except _VariableError as e:
+        # No usage here, because no option is wrong.
+        print(e, file=sys.stderr)
+        return 1
     if args.anomaly_method == DEFAULT_METHOD and args.anomaly_sensitivity != DEFAULT_SENSITIVITY:
         parser.error(SENSITIVITY_NEEDS_LOCAL)
     if not Path(args.database).is_file():

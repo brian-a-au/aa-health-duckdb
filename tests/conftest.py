@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import socket
 
 import pytest
@@ -39,7 +40,12 @@ def block_network(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def isolated_settings(monkeypatch, tmp_path_factory):
-    """No credential variables, no AA_PROFILE, and a HOME with no ~/.aa profiles in it."""
-    for key in ("AA_PROFILE", "AHD_ORG_ID", "AHD_CLIENT_ID", "AHD_SECRET", "AHD_SCOPES"):
-        monkeypatch.delenv(key, raising=False)
+    """No AA_PROFILE, no AHD_* variable, and a HOME with no ~/.aa profiles in it.
+
+    The AHD_* variables hold the credential and the defaults of the anomaly options, e.g.,
+    AHD_ANOMALY_METHOD. AHD_CHROME stays, because it only chooses the Chrome of the page tests.
+    """
+    for key in list(os.environ):
+        if key == "AA_PROFILE" or (key.startswith("AHD_") and key != "AHD_CHROME"):
+            monkeypatch.delenv(key)
     monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
