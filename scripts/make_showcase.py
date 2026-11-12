@@ -293,7 +293,7 @@ SCENES = [
         "Trend",
         "Spot the<br>outliers.",
         "Each chart shows 90 days of values against the range Adobe expected. Flagged days stand out.",
-        "Adobe anomaly detection<br>Chosen day and weekday average",
+        "Adobe's method or a local one<br>Chosen day and weekday average",
         (
             "var s=document.getElementById('metric-pick');s.value='metrics/event5';"
             "s.dispatchEvent(new Event('change'));"
@@ -343,6 +343,7 @@ SCENES = [
     ),
 ]
 SECONDS = 4.5
+SCREENSHOT_TRIES = 5
 
 # Keep only the chosen parts of the page, in order, at the top of the body.
 KEEP_JS = """
@@ -431,6 +432,10 @@ def screenshot(
         browser,
         "--headless=new",
         "--disable-gpu",
+        "--no-first-run",
+        "--no-default-browser-check",
+        # Its own profile, so a Chrome that is already open does not get in the way.
+        f"--user-data-dir={out.parent / 'profile'}",
         "--hide-scrollbars",
         "--allow-file-access-from-files",
         f"--force-device-scale-factor={scale}",
@@ -442,7 +447,12 @@ def screenshot(
         if dark
         else ["--blink-settings=preferredColorScheme=1"]
     )
-    subprocess.run(cmd + [page.as_uri()], check=True, capture_output=True)
+    # Chrome sometimes fails to take a screenshot, e.g., while the screen is locked. Try again.
+    for attempt in range(SCREENSHOT_TRIES):
+        done = subprocess.run(cmd + [page.as_uri()], check=False, capture_output=True)
+        if done.returncode == 0 and out.exists():
+            return
+    raise RuntimeError(f"Chrome could not take the screenshot {out.name} (exit {done.returncode})")
 
 
 def excerpt_html(html: str, scene: tuple) -> str:

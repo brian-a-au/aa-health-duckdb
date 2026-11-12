@@ -21,7 +21,7 @@ It is an unofficial alternative to Adobe's Excel workbook ["Analytics Health Das
 ## What it does
 
 - **One report you can open anywhere.** Each run writes one HTML file that works in any browser, offline. It has three tabs: Components Summary, Individual Component Summary and Alerts Summary. [The report](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/report.md) walks through it.
-- **Alerts that matter.** It lists Adobe's anomaly flags, drops and spikes larger than percents you set with two sliders, and components that dropped to zero. Components that never collected data are listed apart, so they don't hide real problems. In place of Adobe's flags, it can use one of two simpler methods that it computes from the run's own data.
+- **Alerts that matter.** It lists Adobe's anomaly flags, drops and spikes larger than percents you set with two sliders, and components that dropped to zero. Components that never collected data are listed apart, so they don't hide real problems. In place of Adobe's flags, it can use one of three simpler methods that it computes from the run's own data.
 - **Every run kept.** It stores each run in a local DuckDB file, so you can compare runs, report suites and organizations with SQL, and send alert emails only when something is new. See the [DuckDB guide](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/duckdb.md).
 - **Any dimension by any metric.** The Individual Component Summary can hold several pairs, e.g., Internal Search Term by Cart Additions, and you add one in a few seconds.
 - **Plain errors.** When sign-in or access fails, it names the cause and the fix.

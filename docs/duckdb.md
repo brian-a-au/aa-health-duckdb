@@ -158,7 +158,7 @@ The alerts of one run, by the report's rules. Give the run number first. Give th
 - `spike_threshold`: the percent for a large spike, as a share. The default is `0.50`, the same as the report's spike slider. A value that doubled is a spike of about `1.0`.
 - `min_usual`: a large drop or spike needs a weekday average (`usual`) of at least this much. The default is `10`.
 - `for_day`: the day to check, e.g., `'2026-11-03'`. The default is the day before the run date. A large drop or spike needs one of the last 7 days before the run date. An older day can only have the alerts "unusual" and "dropped to zero", as in the report's calendar.
-- `method`: the anomaly method that finds the unusual values, one of `'adobe'`, `'weekday-median'` and `'weekday-iqr'`. The default is `'adobe'`, which uses Adobe's flags, as `ahd run` does by default. Another name stops the query with an error. [The report](report.md#anomaly-detection-methods) explains the methods. With a local method, `expected` is that method's expected value.
+- `method`: the anomaly method that finds the unusual values, one of `'adobe'`, `'weekday-median'`, `'weekday-iqr'` and `'weekday-trend'`. The default is `'adobe'`, which uses Adobe's flags, as `ahd run` does by default. Another name stops the query with an error. [The report](report.md#anomaly-detection-methods) explains the methods. With a local method, `expected` is that method's expected value.
 
 ```sql
 FROM alerts(2) SELECT alert, name, round(usual) AS usual, value;
@@ -195,7 +195,7 @@ When you query a file through `ATTACH`, run `USE` with its name before you call 
 The expected value, the expected range and the flag of each component and day of one run, by one anomaly method. `alerts()` reads its flags from this macro. It covers the same days as `component_days`, which are the 91 full days of the run. It gives these columns:
 
 - `run_id`, `component_id` and `day`
-- `expected`, `lower` and `upper`: the expected value and the range. With `'adobe'`, they are Adobe's values. With a local method, they are empty on a day with fewer than 8 earlier values of its weekday in the run, e.g., in the first 8 weeks.
+- `expected`, `lower` and `upper`: the expected value and the range. With `'adobe'`, they are Adobe's values. With a local method, they are empty on a day with fewer than 8 values in its sample, e.g., in the first 8 weeks. The sample of `'weekday-median'` and `'weekday-iqr'` is the earlier values of the same weekday. With `'weekday-trend'`, the sample is the earlier days of the same weekday that have a level, so the first 9 weeks have no range, and a day also needs a level of its own. See [The report](report.md#the-rules-of-the-local-methods).
 - `anomaly`: "high" or "low" when the method flagged the value, else empty
 
 `method` takes the same names as in `alerts()`. A local method flags a value only when its expected value is at least `min_usual`. With `'adobe'`, `min_usual` changes nothing.

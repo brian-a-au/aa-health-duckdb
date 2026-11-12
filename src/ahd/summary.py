@@ -31,10 +31,10 @@ DEFAULT_SPIKE_ALERT = 0.50
 MIN_SPIKE_ALERT = 0.10
 # A percent drop alert needs a usual value of at least this much. Small numbers swing a lot.
 MIN_USUAL = 10
-# A local anomaly method gives a day a range only when the run has at least this many earlier
-# values of its weekday. The anomaly_days macro in views.sql cannot read this constant and
-# writes the number itself. The two numbers must match, and test_a_range_needs_8_earlier_values
-# in tests/test_summary.py fails when they do not.
+# A local anomaly method gives a day a range only when its sample has at least this many
+# values, e.g., earlier values of its weekday. The anomaly_days macro in views.sql cannot read
+# this constant and writes the number itself. The two numbers must match, and
+# test_a_range_needs_8_earlier_values in tests/test_summary.py fails when they do not.
 MIN_SAMPLE = 8
 # The earlier runs that a report lists, newest first.
 HISTORY_RUNS = 30
@@ -85,11 +85,16 @@ comps AS (
 
 @dataclass(frozen=True)
 class AnomalyMethod:
-    """A way to find the unusual values of a run. rule says it in plain words for the page."""
+    """A way to find the unusual values of a run. rule says it in plain words for the page.
+
+    sample names the sample of a day for the page, after a number, e.g., "at least 8 earlier
+    values of its weekday". Adobe's method has none.
+    """
 
     key: str
     label: str
     rule: str
+    sample: str | None = None
 
 
 # The anomaly methods, in the order the command line lists them. Adobe's values are stored with
@@ -107,6 +112,7 @@ _METHODS = (
         "Weekday median",
         "A value is unusual when it is far from the median of the earlier values of the same "
         "weekday in this run. Far means more than 3 times the usual spread of those values.",
+        "earlier values of its weekday",
     ),
     AnomalyMethod(
         "weekday-iqr",
@@ -114,6 +120,15 @@ _METHODS = (
         "A value is unusual when it is far outside the middle half of the earlier values of the "
         "same weekday in this run. Far means more than 1.5 times the width of the middle half "
         "past its edge.",
+        "earlier values of its weekday",
+    ),
+    AnomalyMethod(
+        "weekday-trend",
+        "Weekday trend",
+        "A value is unusual when it is far from what its recent level and its weekday suggest. "
+        "The level is the average of the 7 days before it, and far means more than 3 times the "
+        "usual spread of how the earlier values of the same weekday compared with their level.",
+        "earlier values of its weekday that have a level",
     ),
 )
 ANOMALY_METHODS: tuple[str, ...] = tuple(m.key for m in _METHODS)
@@ -124,10 +139,17 @@ DEFAULT_ANOMALY_METHOD = "adobe"
 def _local_dv(source: str) -> str:
     """The dv CTE for a local method, with the CTEs it needs before it.
 
-    source gives the daily values as d and their run as ru. The sample of a day is the finite
-    values of the same component and weekday on the earlier days from today - 91 to
-    today - 1. Each method gives the expected value and the range from the sample, and the
-    same guards then apply to every method:
+    source gives the daily values as d and their run as ru. Only the days from today - 91 to
+    today - 1 count, and a value that is not finite is left out. Each method takes its own
+    sample of a day from the earlier days and gives from it the sample size n, the lowest
+    value of the sample, the expected value and the range:
+
+    - weekday-median and weekday-iqr: the values of the same weekday.
+    - weekday-trend: the ratios of the same weekday. The level of a day is the average of the
+      7 days before it, when all 7 have a value and the average is above 0. The ratio of a day
+      is its value divided by its level. The method multiplies its range by the day's level.
+
+    The same guards then apply to every method:
 
     1. A day with fewer than MIN_SAMPLE values in its sample gets no range and no flag.
     2. When the expected value is above 0, the range reaches at least 5 percent above and
@@ -145,33 +167,48 @@ m_src AS (
         CASE WHEN isfinite(d.value) THEN d.value END AS value
     FROM {source}
 ),
-m_sampled AS (
+m_leveled AS (
     SELECT run_id, component_id, day, value,
-        count(value) OVER w AS n,
-        min(value) OVER w AS lowest,
+        CASE WHEN count(value) OVER w7 = 7 AND avg(value) OVER w7 > 0
+            THEN avg(value) OVER w7 END AS level
+    FROM m_src
+    WHERE day BETWEEN today - 91 AND today - 1
+    WINDOW w7 AS (PARTITION BY run_id, component_id ORDER BY day
+        RANGE BETWEEN INTERVAL 7 DAY PRECEDING AND INTERVAL 1 DAY PRECEDING)
+),
+m_sampled AS (
+    SELECT run_id, component_id, day,
         CASE $method
             WHEN 'weekday-median' THEN {{
+                'n': count(value) OVER w, 'lowest': min(value) OVER w,
                 'expected': median(value) OVER w,
                 'upper': median(value) OVER w + 3 * 1.4826 * mad(value) OVER w,
                 'lower': median(value) OVER w - 3 * 1.4826 * mad(value) OVER w}}
             WHEN 'weekday-iqr' THEN {{
+                'n': count(value) OVER w, 'lowest': min(value) OVER w,
                 'expected': median(value) OVER w,
                 'upper': quantile_cont(value, 0.75) OVER w
                     + 1.5 * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w),
                 'lower': quantile_cont(value, 0.25) OVER w
                     - 1.5 * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w)}}
+            WHEN 'weekday-trend' THEN {{
+                'n': count(value / level) OVER w, 'lowest': min(value / level) OVER w,
+                'expected': level * median(value / level) OVER w,
+                'upper': level * (median(value / level) OVER w
+                    + 3 * 1.4826 * mad(value / level) OVER w),
+                'lower': level * (median(value / level) OVER w
+                    - 3 * 1.4826 * mad(value / level) OVER w)}}
         END AS rng
-    FROM m_src
-    WHERE day BETWEEN today - 91 AND today - 1
+    FROM m_leveled
     WINDOW w AS (PARTITION BY run_id, component_id, dayofweek(day) ORDER BY day
         RANGE BETWEEN UNBOUNDED PRECEDING AND INTERVAL 1 DAY PRECEDING)
 ),
 m_wide AS (
-    SELECT run_id, component_id, day, lowest,
-        CASE WHEN n >= {MIN_SAMPLE} THEN rng.expected END AS expected,
-        CASE WHEN n >= {MIN_SAMPLE} THEN CASE WHEN rng.expected > 0
+    SELECT run_id, component_id, day, rng.lowest AS lowest,
+        CASE WHEN rng.n >= {MIN_SAMPLE} THEN rng.expected END AS expected,
+        CASE WHEN rng.n >= {MIN_SAMPLE} THEN CASE WHEN rng.expected > 0
             THEN greatest(rng.upper, rng.expected * 1.05) ELSE rng.upper END END AS upper,
-        CASE WHEN n >= {MIN_SAMPLE} THEN CASE WHEN rng.expected > 0
+        CASE WHEN rng.n >= {MIN_SAMPLE} THEN CASE WHEN rng.expected > 0
             THEN least(rng.lower, rng.expected * 0.95) ELSE rng.lower END END AS lower
     FROM m_sampled
 ),
@@ -204,7 +241,7 @@ def _method(key: str) -> AnomalyMethod:
 
 
 def method_data(key: str = DEFAULT_ANOMALY_METHOD) -> dict[str, Any]:
-    """The anomaly_method entry of the page data: the method's key, label and rule, and
+    """The anomaly_method entry of the page data: the method's key, label, rule and sample, and
     whether it is Adobe's. The page names the method only through this entry."""
     m = _method(key)
     return {
@@ -212,6 +249,7 @@ def method_data(key: str = DEFAULT_ANOMALY_METHOD) -> dict[str, Any]:
         "label": m.label,
         "adobe": m.key == DEFAULT_ANOMALY_METHOD,
         "rule": m.rule,
+        "sample": m.sample,
     }
 
 

@@ -60,9 +60,16 @@ LEFT JOIN used ON used.run_id = dv.run_id AND used.component_id = dv.component_i
 -- run, by an anomaly method. It covers the same days as component_days.
 --
 -- 'adobe' gives the values that Adobe returned, as component_days does. The other methods
--- judge each day by the earlier days of the same weekday in the run. Their sample is the
--- finite values of those days. Each method gives the expected value and the range from the
--- sample, and the same guards then apply to every method:
+-- judge each day by earlier days in the run. Each takes its own sample of a day and gives from
+-- it the sample size n, the lowest value of the sample, the expected value and the range:
+--
+-- - 'weekday-median' and 'weekday-iqr': the finite values of the same weekday.
+-- - 'weekday-trend': the ratios of the same weekday. The level of a day is the average of the
+--   7 days before it, when all 7 have a finite value and the average is above 0. The ratio of
+--   a day is its value divided by its level. The method multiplies its range by the day's
+--   level.
+--
+-- The same guards then apply to every method:
 --
 -- 1. A day with fewer than 8 values in its sample gets no range and no flag. The number must
 --    match MIN_SAMPLE in src/ahd/summary.py.
@@ -78,9 +85,10 @@ CREATE OR REPLACE MACRO anomaly_days(run_number, method := 'adobe', min_usual :=
 -- it reads any table, so this also happens for a run without values.
 WITH checked AS (
     SELECT method AS chosen
-    FROM range(CASE WHEN method IN ('adobe', 'weekday-median', 'weekday-iqr') THEN 1
+    FROM range(CASE WHEN method IN ('adobe', 'weekday-median', 'weekday-iqr', 'weekday-trend')
+            THEN 1
         ELSE error(concat('Unknown anomaly method: ', method,
-            '. Use adobe, weekday-median or weekday-iqr.')) END)
+            '. Use adobe, weekday-median, weekday-iqr or weekday-trend.')) END)
 ),
 dv AS (
     SELECT d.run_id, d.component_id, d.day,
@@ -92,38 +100,55 @@ dv AS (
     FROM daily_values d JOIN runs r USING (run_id)
     WHERE d.run_id = run_number AND d.day BETWEEN r.today - 91 AND r.today - 1
 ),
+-- The level of each day, for weekday-trend.
+leveled AS (
+    SELECT run_id, component_id, day, value, checked.chosen,
+        CASE WHEN count(value) OVER w7 = 7 AND avg(value) OVER w7 > 0
+            THEN avg(value) OVER w7 END AS level
+    FROM dv, checked
+    WHERE checked.chosen <> 'adobe'
+    WINDOW w7 AS (PARTITION BY run_id, component_id ORDER BY day
+        RANGE BETWEEN INTERVAL 7 DAY PRECEDING AND INTERVAL 1 DAY PRECEDING)
+),
 -- The sample of a day is in the window w. Each method is one branch of the CASE.
 sampled AS (
     SELECT run_id, component_id, day, value,
-        count(value) OVER w AS n,
-        min(value) OVER w AS lowest,
-        CASE checked.chosen
+        CASE chosen
             -- The median, and 3 spreads on each side. The spread is 1.4826 times the median
             -- distance from the median.
             WHEN 'weekday-median' THEN {
+                'n': count(value) OVER w, 'lowest': min(value) OVER w,
                 'expected': median(value) OVER w,
                 'upper': median(value) OVER w + 3 * 1.4826 * mad(value) OVER w,
                 'lower': median(value) OVER w - 3 * 1.4826 * mad(value) OVER w}
             -- The median, and 1.5 times the distance between the quartiles past each quartile.
             WHEN 'weekday-iqr' THEN {
+                'n': count(value) OVER w, 'lowest': min(value) OVER w,
                 'expected': median(value) OVER w,
                 'upper': quantile_cont(value, 0.75) OVER w
                     + 1.5 * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w),
                 'lower': quantile_cont(value, 0.25) OVER w
                     - 1.5 * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w)}
+            -- As weekday-median, with the ratios to the level, times the level of the day.
+            WHEN 'weekday-trend' THEN {
+                'n': count(value / level) OVER w, 'lowest': min(value / level) OVER w,
+                'expected': level * median(value / level) OVER w,
+                'upper': level * (median(value / level) OVER w
+                    + 3 * 1.4826 * mad(value / level) OVER w),
+                'lower': level * (median(value / level) OVER w
+                    - 3 * 1.4826 * mad(value / level) OVER w)}
         END AS rng
-    FROM dv, checked
-    WHERE checked.chosen <> 'adobe'
+    FROM leveled
     WINDOW w AS (PARTITION BY run_id, component_id, dayofweek(day) ORDER BY day
         RANGE BETWEEN UNBOUNDED PRECEDING AND INTERVAL 1 DAY PRECEDING)
 ),
 -- Guards 1 and 2. The 8 of guard 1 must match MIN_SAMPLE in src/ahd/summary.py.
 wide AS (
-    SELECT run_id, component_id, day, value, lowest,
-        CASE WHEN n >= 8 THEN rng.expected END AS expected,
-        CASE WHEN n >= 8 THEN CASE WHEN rng.expected > 0
+    SELECT run_id, component_id, day, value, rng.lowest AS lowest,
+        CASE WHEN rng.n >= 8 THEN rng.expected END AS expected,
+        CASE WHEN rng.n >= 8 THEN CASE WHEN rng.expected > 0
             THEN greatest(rng.upper, rng.expected * 1.05) ELSE rng.upper END END AS upper,
-        CASE WHEN n >= 8 THEN CASE WHEN rng.expected > 0
+        CASE WHEN rng.n >= 8 THEN CASE WHEN rng.expected > 0
             THEN least(rng.lower, rng.expected * 0.95) ELSE rng.lower END END AS lower
     FROM sampled
 ),

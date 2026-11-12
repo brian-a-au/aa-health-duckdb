@@ -32,10 +32,11 @@ from ahd.summary import (
 )
 
 NO_BANDS_NOTE = "Anomaly bands are not available. See the status section."
-# The same note for a local anomaly method, which needs earlier values of the same weekday.
+# The same note for a local anomaly method, which needs a sample of MIN_SAMPLE values. {sample}
+# names the sample of the method, e.g., "earlier values of its weekday".
 LOCAL_NO_BANDS_NOTE = (
-    f"This chart has no expected range, because no day has at least {MIN_SAMPLE} earlier "
-    "values of its weekday in this run."
+    f"This chart has no expected range, because no day has at least {MIN_SAMPLE} {{sample}} "
+    "in this run."
 )
 WEEK_NOTE = "This week is the 7 days ending yesterday."
 
@@ -351,7 +352,11 @@ def render_html(view: dict[str, Any]) -> str:
         decline_pct=round(-DECLINE_PER_WEEK * 100),
         decline_fit=DECLINE_MIN_FIT,
         component_drop_cause=view.get("component_drop_cause", ""),
-        no_bands_note=NO_BANDS_NOTE if method.get("adobe") else LOCAL_NO_BANDS_NOTE,
+        no_bands_note=(
+            NO_BANDS_NOTE
+            if method.get("adobe")
+            else LOCAL_NO_BANDS_NOTE.format(sample=method["sample"])
+        ),
         week_note=WEEK_NOTE.replace("ending yesterday", f"ending {day_words}"),
         last_day=last_day,
         day_words=day_words,

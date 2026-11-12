@@ -74,8 +74,14 @@ An unusual value is a value outside the expected range for its day. By default, 
 | `adobe` | Adobe | Adobe's anomaly detection. This is the default. |
 | `weekday-median` | Weekday median | ahd computes it from the median of the earlier values of the same weekday in the run. |
 | `weekday-iqr` | Weekday quartile range | ahd computes it from the quartiles of the earlier values of the same weekday in the run. |
+| `weekday-trend` | Weekday trend | ahd computes it from the recent level of the component, and from how the earlier values of the same weekday compared with their level. |
 
-The two local methods are much simpler than Adobe's anomaly detection, and they will flag different days. They are useful when Adobe's anomaly detection is not available for a run, or as a second look at the same run. ahd computes them in DuckDB from the daily values that the run stored, so they make no requests to Adobe.
+The three local methods are much simpler than Adobe's anomaly detection, and they will flag different days. They are useful when Adobe's anomaly detection is not available for a run, or as a second look at the same run. ahd computes them in DuckDB from the daily values that the run stored, so they make no requests to Adobe.
+
+### Which local method to choose
+
+- Choose `weekday-median` or `weekday-iqr` for a component whose level stays about the same over the weeks. They compare a day with the same weekday in earlier weeks. They have a range for the last 5 weeks.
+- Choose `weekday-trend` for a component whose level rises or falls over the weeks, e.g., one that grows a little every day. The other two methods compare such a component with the older values of its weekday, which were lower or higher. Their expected value then lags behind, and their range is wide. `weekday-trend` follows the recent level instead. It has a range only for about the last 4 weeks, and a day after a gap in the data has no range. It suits a slow change. After a sudden large change, e.g., a component that lost most of its data in one week, the level moves with the change, and the method can flag many of the days that follow.
 
 The method is fixed for each report, and the page has no switch for it. The method is not stored with the run, so `ahd render` can write the report of any stored run again with another method. See [render](usage.md#render).
 
@@ -85,14 +91,14 @@ The method changes the expected values, the ranges and the flags. The values and
 
 - The header has the fact "Anomaly detection". It shows one of these:
   - "Adobe", for the default.
-  - "Weekday median" or "Weekday quartile range", with the note "(computed by ahd from the daily values of this run)".
+  - "Weekday median", "Weekday quartile range" or "Weekday trend", with the note "(computed by ahd from the daily values of this run)".
   - "Adobe" with the note "(not available for this run)", when the run could not use Adobe's anomaly detection. See [A run without Adobe's anomaly detection](#a-run-without-adobes-anomaly-detection).
-- "How large drops and spikes are found" has one item that states the rule of the method in use in plain words. For a local method, it also says that a day is flagged only when the run has at least 8 earlier values of its weekday and its expected value is 10 or more. The exact rules are below.
+- "How large drops and spikes are found" has one item that states the rule of the method in use in plain words. For a local method, it also says that a day is flagged only when the run has at least 8 earlier values of its weekday and its expected value is 10 or more. For `weekday-trend`, the 8 earlier values must have a level. The exact rules are below.
 - Every text that says who flagged a value names the method in use, e.g., a tile says "Flagged by the Weekday median method" instead of "Flagged by Adobe".
 
 ### The rules of the local methods
 
-Both local methods judge each day of a component by the earlier days of the same weekday in the run, e.g., a Monday by the Mondays before it. The values of those days are the sample of the day. The sample only holds days from 91 days before the run date to the day before the run date. A day without a value, or with a value that is not a number, is left out of the sample.
+The local methods judge each day of a component by the earlier days of the same weekday in the run, e.g., a Monday by the Mondays before it. For `weekday-median` and `weekday-iqr`, the values of those days are the sample of the day. For `weekday-trend`, the sample holds a ratio for each of those days, as explained below. The sample only holds days from 91 days before the run date to the day before the run date. A day without a value, or with a value that is not a number, is left out of the sample.
 
 Two terms explain the rules:
 
@@ -114,11 +120,22 @@ The page calls this spread the usual spread of the values.
 
 The page calls the values between the two quartiles the middle half, and the quartile range its width. The quartiles are the edges of the middle half.
 
-Then the same four checks apply to both methods, in this order:
+`weekday-trend` computes the range this way:
+
+- The level of a day is the average of the values of the 7 days before it. A day has a level only when all 7 days are in the run's 91 days and have a value that is a number, and the average is above 0.
+- The ratio of a day is its value divided by its level. A day without a level, or without a value, has no ratio.
+- The sample of a day is the ratios of the earlier days of the same weekday.
+- The middle ratio is the median of the sample. The spread is 1.4826 times the median distance of the ratios from the middle ratio.
+- The expected value is the level of the day times the middle ratio.
+- The range goes from the level times the middle ratio minus 3 spreads, to the level times the middle ratio plus 3 spreads.
+
+A day without a level gets no expected value, no range and no flag. The level follows the component when it grows or shrinks, and the ratios keep the pattern of the weekday, e.g., a Saturday that is usually lower than the days before it.
+
+Then the same four checks apply to every local method, in this order:
 
 1. A day with fewer than 8 values in its sample gets no expected value, no range and no flag. Smaller samples flag too many days.
 2. When the expected value is above 0, the range reaches at least 5 percent above it and 5 percent below it. A component that hardly changes is then not flagged for a small change.
-3. When no value in the sample is below 0, the lower end of the range is not below 0.
+3. When no value in the sample is below 0, the lower end of the range is not below 0. For `weekday-trend`, the sample is the ratios, and the level is above 0, so this means that the lower end is not below 0 when no ratio is below 0.
 4. A day is flagged only when its value is a number, its expected value is 10 or more, and its value is above the range or below it. A value that is exactly on the upper or lower end is not flagged.
 
 A value above the range is flagged "Above range", and a value below it "Below range", as with Adobe. A component that never collected data is never an alert, with any method.
@@ -131,11 +148,20 @@ An example for `weekday-median`. A Monday has 8 earlier Mondays in the run, with
 - The range is 77.761 to 122.239. It already reaches more than 5 percent on each side, so check 2 changes nothing.
 - A value of 125 on that Monday is flagged "Above range", and a value of 77 is flagged "Below range". A value of 120 or 78 is not flagged.
 
+An example for `weekday-trend`. The 7 days before a Monday add up to 1,400, so its level is 200. The 8 earlier Mondays in the run had the ratios 1, 1.1, 0.9, 1, 1.05, 0.95, 1 and 1.1:
+
+- Sorted, the ratios are 0.9, 0.95, 1, 1, 1, 1.05, 1.1 and 1.1, so the middle ratio is 1.
+- The distances from 1 are 0, 0.1, 0.1, 0, 0.05, 0.05, 0 and 0.1, so the median distance is 0.05.
+- The spread is 1.4826 times 0.05, which is 0.07413. Three spreads are 0.22239.
+- The expected value is 200 times 1, which is 200. The range is 200 times 0.77761 to 200 times 1.22239, which is 155.522 to 244.478.
+
 ### The first eight weeks have no range
 
 The charts show 91 days, which is 13 weeks. A local method needs 8 earlier days of the same weekday in the run. The days of the first 8 weeks do not have that many, so they get no expected range and no flags. The charts draw the range only for the last 5 weeks. In the same way, a square in the first 8 weeks of the calendar only counts drops to zero. With a local method, the calendar shows flags only for the last 5 weeks.
 
-A day that has no value in the run does not count as an earlier day. A component with missing days therefore gets its first range later.
+`weekday-trend` needs one week more. The days of the first week have no level, because the 7 days before them are not all in the run. Its first range is in week 10, so it has a range only for the last 4 weeks.
+
+A day that has no value in the run does not count as an earlier day. A component with missing days therefore gets its first range later. With `weekday-trend`, a day without a value also leaves the 7 days after it without a level. Those days get no range, and they do not count as earlier days of their weekday.
 
 When no day of a chart has a range, e.g., because the component has too few values, the chart says so under it.
 
@@ -190,7 +216,7 @@ The calendar follows the Day picker. In the weekly view it outlines the week's 7
 
 ### Charts
 
-Two charts show 91 days of one metric and one dimension. Each shows the actual values, the expected value and expected range of the anomaly method, and markers where it flagged a value. With a local method, the first 8 weeks have no range. See [The first eight weeks have no range](#the-first-eight-weeks-have-no-range). Use the arrow keys on a chart to read each day.
+Two charts show 91 days of one metric and one dimension. Each shows the actual values, the expected value and expected range of the anomaly method, and markers where it flagged a value. With a local method, the first 8 weeks have no range, or the first 9 weeks with `weekday-trend`. See [The first eight weeks have no range](#the-first-eight-weeks-have-no-range). Use the arrow keys on a chart to read each day.
 
 The charts follow the Day picker:
 
