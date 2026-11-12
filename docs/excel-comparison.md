@@ -32,7 +32,7 @@ The examples come from a run on Adobe's Demo Data report suite on 2026-11-09, wi
 - **Slow declines.** A component that falls a little each week never has a day that is unusual enough for an alert. The tool fits a line through 12 weekly totals and lists the components that fell by 3 percent or more a week.
 - **Any of the last 7 days.** The Day picker shows the alerts of each of the last 7 days, e.g., the weekend's on a Monday morning.
 - **Days in a row.** Each alert says how many days it has held, so you can tell a new problem from one that started last week.
-- **Flags without Adobe's permission.** A credential without the Anomaly Detection permission gets no flags from Adobe. With `--anomaly-method weekday-median` or `weekday-iqr`, the report still flags values outside the usual range of their weekday. The workbook has no flags in that case.
+- **Flags without Adobe's permission.** A credential without the Anomaly Detection permission gets no flags from Adobe. With `--anomaly-method weekday-median`, `weekday-iqr` or `weekday-trend`, the report still flags values outside the usual range of their weekday. The workbook has no flags in that case.
 - **A weekly view.** It compares the last 7 days with the average week of the 12 weeks before. It counts Adobe's flags by day, e.g., "Below range on 2 days", so a component that Adobe flagged on one day of the week still stands out.
 
 ### Find the cause faster
