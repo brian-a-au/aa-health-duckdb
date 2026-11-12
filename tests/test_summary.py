@@ -1763,6 +1763,28 @@ def test_the_default_method_of_the_macro_is_adobe(tmp_path):
     assert unusual == [("metrics/event6",)]
 
 
+@pytest.mark.parametrize("method", ALL_METHODS)
+def test_anomaly_days_leaves_out_the_individual_component_summary(tmp_path, method):
+    # The pairs of the Individual Component Summary have daily values, e.g., individual/1, but
+    # no row in components. anomaly_days gives the components only, as component_days does.
+    comps, vals = _macro_data()
+    pair = [_dv("individual/1", v.day, v.value, 1.0, 2.0, 0.5, True) for v in vals[:92]]
+    pair += [_dv("individual/2", v.day, v.value * 3, 1.0, 2.0, 0.5, True) for v in vals[:92]]
+    store, rid = _build(tmp_path, comps, vals + pair)
+    found = store.con.execute(
+        "SELECT DISTINCT component_id FROM anomaly_days(?, method := ?) ORDER BY ALL",
+        [rid, method],
+    ).fetchall()
+    assert found == sorted((c.id,) for c in comps)
+    days = store.con.execute(
+        "SELECT component_id, day FROM anomaly_days(?, method := ?) ORDER BY ALL", [rid, method]
+    ).fetchall()
+    every = store.con.execute(
+        "SELECT component_id, day FROM component_days WHERE run_id = ? ORDER BY ALL", [rid]
+    ).fetchall()
+    assert days == every
+
+
 @pytest.mark.parametrize(("method", "sensitivity"), [("adobe", "normal"), *LOCAL_LEVELS])
 def test_page_alerts_match_the_alerts_macro(tmp_path, method, sensitivity):
     store, rid = _build(tmp_path, *_macro_data())

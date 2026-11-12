@@ -220,13 +220,11 @@ When you query a file through `ATTACH`, run `USE` with its name before you call 
 
 ### `anomaly_days(run, method := 'adobe', min_usual := 10, sensitivity := 'normal')`
 
-The expected value, the expected range and the flag of each component and day of one run, by one anomaly method. `alerts()` reads its flags from this macro. It covers the same days as `component_days`, which are the 91 full days of the run. It gives these columns:
+The expected value, the expected range and the flag of each component and day of one run, by one anomaly method. `alerts()` reads its flags from this macro. It covers the same components and days as `component_days`, which are the 91 full days of the run. It gives these columns:
 
 - `run_id`, `component_id` and `day`
 - `expected`, `lower` and `upper`: the expected value and the range. With `'adobe'`, they are Adobe's values. With a local method, they are empty on a day with fewer than 8 values in its sample, e.g., in the first 8 weeks. The sample of `'weekday-median'` and `'weekday-iqr'` is the earlier values of the same weekday. With `'weekday-trend'`, the sample is the earlier days of the same weekday that have a level, so the first 9 weeks have no range, and a day also needs a level of its own. See [The report](report.md#the-rules-of-the-local-methods).
 - `anomaly`: "high" or "low" when the method flagged the value, else empty
-
-The macro also has a row for each day of each Individual Component Summary pair. Its `component_id` is `individual/` with the number of the pair, e.g., `individual/1` for Page by Occurrences. To leave these rows out, join `components`, as `alerts()` does.
 
 `method` and `sensitivity` take the same values as in `alerts()`. A local method flags a value only when its expected value is at least `min_usual`. With `'adobe'`, `min_usual` and `sensitivity` change nothing.
 
@@ -243,17 +241,17 @@ GROUP BY day ORDER BY day DESC LIMIT 7;
 ┌────────────┬───────┬────────────────┐
 │    day     │ adobe │ weekday_median │
 ├────────────┼───────┼────────────────┤
-│ 2026-11-11 │     3 │              9 │
-│ 2026-11-10 │     5 │             15 │
+│ 2026-11-11 │     3 │              8 │
+│ 2026-11-10 │     5 │             14 │
 │ 2026-11-09 │     2 │              0 │
-│ 2026-11-08 │     8 │              9 │
-│ 2026-11-07 │    10 │              9 │
+│ 2026-11-08 │     7 │              8 │
+│ 2026-11-07 │     9 │              8 │
 │ 2026-11-06 │     2 │              0 │
 │ 2026-11-05 │     0 │              0 │
 └────────────┴───────┴────────────────┘
 ```
 
-On 2026-11-11, the Weekday median method flagged 9 values. Eight of them are the unusual values in the list of `alerts(2, method := 'weekday-median')` above. The ninth is the pair `individual/1`.
+On 2026-11-11, the Weekday median method flagged 8 values. They are the 8 unusual values in the list of `alerts(2, method := 'weekday-median')` above.
 
 ## Email recipes
 
