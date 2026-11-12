@@ -41,7 +41,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 | `src/ahd/catalog.py`, `src/ahd/data/` | Decides which components a run checks and how each is counted |
 | `src/ahd/fetch.py` | One run: catalog, anomaly probe, batched trends, and Individual Component Summary pairs |
 | `src/ahd/lookup.py` | Lists suites and segments, and turns names into IDs |
-| `src/ahd/store.py`, `src/ahd/sql/views.sql` | The DuckDB tables, views and the `alerts` table macro |
+| `src/ahd/store.py`, `src/ahd/sql/views.sql` | The DuckDB tables, views and the `alerts` and `anomaly_days` table macros |
 | `src/ahd/transfer.py` | `ahd export` and `ahd import`: copies runs between files by column name, also from an older layout |
 | `src/ahd/summary.py` | Turns a stored run into the data the page shows. Every number is computed in SQL |
 | `src/ahd/render/` | The Jinja template, CSS and JavaScript of the HTML report |
@@ -75,8 +75,8 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 
 - The tables are in `store.py`. When you change a table, raise `SCHEMA_VERSION`. The tool refuses a file with another version and tells the user to start a new file. There is no upgrade code for tables, on purpose. Users keep their runs with `ahd import`, which copies the runs of the old file into the new one by column name.
 - A table change that only adds or removes columns needs no change to `ahd import`. Any other change, e.g., a renamed column or a column whose meaning changed, needs a conversion in `transfer.py` with a test. If the old runs cannot be converted, raise `IMPORT_FROM_VERSION` in `store.py` and say so in `CHANGELOG.md`. Add a test like `test_runs_of_an_older_layout_are_imported_by_column_name` in `tests/test_transfer.py` for every new layout.
-- The views and the `alerts` macro are in `sql/views.sql`. When you change them, raise `VIEWS_VERSION` in `store.py` and put the new version and hash in `test_views_version_is_raised_when_views_sql_changes` in `tests/test_store.py`. The test fails until you do. When the tool opens a file for writing, it replaces the views and the macro of a file with another views version. The views in a file then follow the same rules as the version of the tool that last wrote to it, also after going back to an older version.
-- Every statement in `views.sql` must use `CREATE OR REPLACE`. To remove a view or the macro, add a `DROP ... IF EXISTS` statement for it.
+- The views and the two table macros, `alerts` and `anomaly_days`, are in `sql/views.sql`. When you change them, raise `VIEWS_VERSION` in `store.py` and put the new version and hash in `test_views_version_is_raised_when_views_sql_changes` in `tests/test_store.py`. The test fails until you do. When the tool opens a file for writing, it replaces the views and the macros of a file with another views version. The views in a file then follow the same rules as the version of the tool that last wrote to it, also after going back to an older version.
+- Every statement in `views.sql` must use `CREATE OR REPLACE`. To remove a view or a macro, add a `DROP ... IF EXISTS` statement for it.
 - A view must only use columns the tables already have. If it needs a new column, that is a table change and needs a new `SCHEMA_VERSION`.
 - Every row carries its `run_id`. A run's data never changes after the run, except that `ahd individual` may add a pair.
 - Only the calling thread writes to the store. Worker threads only call the API.
@@ -91,6 +91,8 @@ The rules for unusual values, large drops, large spikes, zero values and compone
 3. `src/ahd/sql/views.sql`, which holds the `alerts` macro for your own SQL
 
 Change all three together. `test_alert_lists_match_the_alerts_macro` and `test_tiles_match_the_alerts_macro` in `tests/test_report_js.py` fail when the page and the macro disagree. `test_alerts_macro` in `tests/test_summary.py` checks the macro on its own.
+
+The anomaly methods, which give the expected value, the range and the flag of each day, live in two places. One is the `anomaly_days` macro in `src/ahd/sql/views.sql`. The other is `_local_dv` with the `_METHODS` table in `src/ahd/summary.py`. `report.js` holds no rule or text of its own for a method. It reads the key, the label and the rule text from the page data. To add a method, add one branch to the `CASE` in each of the two SQL copies, add its name to the names that `anomaly_days` accepts, and add one entry to `_METHODS`, with tests and docs. The guards are shared by every method, so a new method only gives the expected value and the range. The minimum sample of guard 1 is `MIN_SAMPLE` in `summary.py` and a written number in `anomaly_days`, because the SQL file cannot read the Python constant. Change both together. `test_a_range_needs_8_earlier_values` fails when they differ. `test_page_alerts_match_the_alerts_macro` and `test_page_and_macro_agree_on_every_day` in `tests/test_summary.py` fail when the two copies disagree. The two tests in `tests/test_report_js.py` above run for every method.
 
 ### The HTML report
 

@@ -13,6 +13,7 @@ so the page decides them, not this module.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
@@ -30,6 +31,11 @@ DEFAULT_SPIKE_ALERT = 0.50
 MIN_SPIKE_ALERT = 0.10
 # A percent drop alert needs a usual value of at least this much. Small numbers swing a lot.
 MIN_USUAL = 10
+# A local anomaly method gives a day a range only when the run has at least this many earlier
+# values of its weekday. The anomaly_days macro in views.sql cannot read this constant and
+# writes the number itself. The two numbers must match, and test_a_range_needs_8_earlier_values
+# in tests/test_summary.py fails when they do not.
+MIN_SAMPLE = 8
 # The earlier runs that a report lists, newest first.
 HISTORY_RUNS = 30
 # Warn when a run sees more than this share fewer custom components than the run before.
@@ -47,6 +53,8 @@ DROP_CAUSE = (
 INDIVIDUAL_PREFIX = "individual/"
 
 # Daily values for the run, with NaN and Infinity turned into NULL so the output stays JSON-safe.
+# expected, upper, lower and anomaly are Adobe's. With a local anomaly method, the queries that
+# read them use _LOCAL_RUN_DV in its place.
 _DV = """
 dv AS (
     SELECT component_id, day,
@@ -73,6 +81,154 @@ comps AS (
       AND EXISTS (SELECT 1 FROM daily_values d
                   WHERE d.run_id = $run_id AND d.component_id = c.component_id)
 )"""
+
+
+@dataclass(frozen=True)
+class AnomalyMethod:
+    """A way to find the unusual values of a run. rule says it in plain words for the page."""
+
+    key: str
+    label: str
+    rule: str
+
+
+# The anomaly methods, in the order the command line lists them. Adobe's values are stored with
+# the run. The others are computed from the run's daily values: each is one branch of the CASE
+# in _local_dv(), and one branch in the anomaly_days macro of views.sql.
+_METHODS = (
+    AnomalyMethod(
+        "adobe",
+        "Adobe",
+        "A value is unusual when it is outside the range that Adobe's anomaly detection expects "
+        "for that day.",
+    ),
+    AnomalyMethod(
+        "weekday-median",
+        "Weekday median",
+        "A value is unusual when it is far from the median of the earlier values of the same "
+        "weekday in this run. Far means more than 3 times the usual spread of those values.",
+    ),
+    AnomalyMethod(
+        "weekday-iqr",
+        "Weekday quartile range",
+        "A value is unusual when it is far outside the middle half of the earlier values of the "
+        "same weekday in this run. Far means more than 1.5 times the width of the middle half "
+        "past its edge.",
+    ),
+)
+ANOMALY_METHODS: tuple[str, ...] = tuple(m.key for m in _METHODS)
+ANOMALY_LABELS: dict[str, str] = {m.key: m.label for m in _METHODS}
+DEFAULT_ANOMALY_METHOD = "adobe"
+
+
+def _local_dv(source: str) -> str:
+    """The dv CTE for a local method, with the CTEs it needs before it.
+
+    source gives the daily values as d and their run as ru. The sample of a day is the finite
+    values of the same component and weekday on the earlier days from today - 91 to
+    today - 1. Each method gives the expected value and the range from the sample, and the
+    same guards then apply to every method:
+
+    1. A day with fewer than MIN_SAMPLE values in its sample gets no range and no flag.
+    2. When the expected value is above 0, the range reaches at least 5 percent above and
+       below it.
+    3. When no value in the sample is below 0, the lower limit is not below 0.
+    4. A day is flagged only when its value is finite, the expected value is MIN_USUAL or
+       more, and the value is above the upper limit or below the lower limit.
+
+    Days outside the 91 days keep their value but get no range and no flag. The anomaly_days
+    macro in views.sql has the same rules, and tests check that both agree.
+    """
+    return f"""
+m_src AS (
+    SELECT d.run_id, d.component_id, d.day, ru.today,
+        CASE WHEN isfinite(d.value) THEN d.value END AS value
+    FROM {source}
+),
+m_sampled AS (
+    SELECT run_id, component_id, day, value,
+        count(value) OVER w AS n,
+        min(value) OVER w AS lowest,
+        CASE $method
+            WHEN 'weekday-median' THEN {{
+                'expected': median(value) OVER w,
+                'upper': median(value) OVER w + 3 * 1.4826 * mad(value) OVER w,
+                'lower': median(value) OVER w - 3 * 1.4826 * mad(value) OVER w}}
+            WHEN 'weekday-iqr' THEN {{
+                'expected': median(value) OVER w,
+                'upper': quantile_cont(value, 0.75) OVER w
+                    + 1.5 * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w),
+                'lower': quantile_cont(value, 0.25) OVER w
+                    - 1.5 * (quantile_cont(value, 0.75) OVER w - quantile_cont(value, 0.25) OVER w)}}
+        END AS rng
+    FROM m_src
+    WHERE day BETWEEN today - 91 AND today - 1
+    WINDOW w AS (PARTITION BY run_id, component_id, dayofweek(day) ORDER BY day
+        RANGE BETWEEN UNBOUNDED PRECEDING AND INTERVAL 1 DAY PRECEDING)
+),
+m_wide AS (
+    SELECT run_id, component_id, day, lowest,
+        CASE WHEN n >= {MIN_SAMPLE} THEN rng.expected END AS expected,
+        CASE WHEN n >= {MIN_SAMPLE} THEN CASE WHEN rng.expected > 0
+            THEN greatest(rng.upper, rng.expected * 1.05) ELSE rng.upper END END AS upper,
+        CASE WHEN n >= {MIN_SAMPLE} THEN CASE WHEN rng.expected > 0
+            THEN least(rng.lower, rng.expected * 0.95) ELSE rng.lower END END AS lower
+    FROM m_sampled
+),
+m_local AS (
+    SELECT run_id, component_id, day, expected, upper,
+        CASE WHEN lowest >= 0 AND lower < 0 THEN 0 ELSE lower END AS lower
+    FROM m_wide
+),
+dv AS (
+    SELECT s.run_id, s.component_id, s.day, s.today, s.value, g.expected, g.upper, g.lower,
+        coalesce(s.value IS NOT NULL AND g.expected >= {MIN_USUAL}
+            AND (s.value > g.upper OR s.value < g.lower), false) AS anomaly
+    FROM m_src s
+    LEFT JOIN m_local g ON g.run_id = s.run_id AND g.component_id = s.component_id
+        AND g.day = s.day
+)"""
+
+
+# The values of one run for a local method, in place of _DV.
+_LOCAL_RUN_DV = _local_dv(
+    "daily_values d JOIN runs ru ON ru.run_id = d.run_id WHERE d.run_id = $run_id"
+)
+
+
+def _method(key: str) -> AnomalyMethod:
+    for m in _METHODS:
+        if m.key == key:
+            return m
+    raise ValueError(f"Unknown anomaly method: {key!r}. Use one of: {', '.join(ANOMALY_METHODS)}.")
+
+
+def method_data(key: str = DEFAULT_ANOMALY_METHOD) -> dict[str, Any]:
+    """The anomaly_method entry of the page data: the method's key, label and rule, and
+    whether it is Adobe's. The page names the method only through this entry."""
+    m = _method(key)
+    return {
+        "key": m.key,
+        "label": m.label,
+        "adobe": m.key == DEFAULT_ANOMALY_METHOD,
+        "rule": m.rule,
+    }
+
+
+def _for_method(sql: str, method: str, adobe_dv: str, local_dv: str) -> str:
+    """The query with the dv CTE of the method in place of Adobe's.
+
+    The query must hold Adobe's dv CTE exactly once. Otherwise a local method would show
+    Adobe's values under its own name, so this fails instead.
+    """
+    if method == DEFAULT_ANOMALY_METHOD:
+        return sql
+    if sql.count(adobe_dv) != 1:
+        raise RuntimeError(
+            f"The query must hold the dv part exactly once to use the anomaly method {method!r}."
+        )
+    return sql.replace(adobe_dv, local_dv)
+
 
 _ANOMALY = """CASE WHEN {a}.anomaly
     THEN CASE WHEN {a}.value > {a}.upper THEN 'high' ELSE 'low' END END"""
@@ -273,6 +429,18 @@ GROUP BY day
 ORDER BY day
 """
 
+# The daily values of every listed run, with Adobe's flags.
+_HISTORY_DV = """
+dv AS (
+    SELECT d.run_id, d.component_id, d.day, r.today,
+        CASE WHEN isfinite(d.value) THEN d.value END AS value,
+        CASE WHEN isfinite(d.upper) THEN d.upper END AS upper,
+        d.anomaly
+    FROM daily_values d JOIN r ON r.run_id = d.run_id
+)"""
+# The values of every listed run for a local method, in place of _HISTORY_DV.
+_LOCAL_HISTORY_DV = _local_dv("daily_values d JOIN r ru ON ru.run_id = d.run_id")
+
 # The alerts on the last day of each run of the same report suite and segment, by the same
 # rules as the tiles: one query over every run's stored values. Each run uses its own dates.
 # The runs are this one and the runs for earlier run dates, newest date first, and for this
@@ -293,14 +461,7 @@ r AS (
         AND (r.status IN ('ok', 'partial') OR r.run_id = $run_id)
     ORDER BY r.today DESC, r.started_at DESC, r.run_id DESC
     LIMIT {HISTORY_RUNS}
-),
-dv AS (
-    SELECT d.run_id, d.component_id, d.day, r.today,
-        CASE WHEN isfinite(d.value) THEN d.value END AS value,
-        CASE WHEN isfinite(d.upper) THEN d.upper END AS upper,
-        d.anomaly
-    FROM daily_values d JOIN r ON r.run_id = d.run_id
-),
+),{_HISTORY_DV},
 c AS (
     SELECT k.run_id, k.component_id,
         NOT coalesce(bool_or(d.value <> 0)
@@ -582,7 +743,10 @@ def build_view(
     run_id: int,
     change_alert: float = DEFAULT_CHANGE_ALERT,
     spike_alert: float = DEFAULT_SPIKE_ALERT,
+    method: str = DEFAULT_ANOMALY_METHOD,
 ) -> dict[str, Any]:
+    """The page data of a run. method picks the anomaly method, one of ANOMALY_METHODS."""
+    chosen = _method(method)
     run = _run_block(store, run_id)
     w = RunWindow.for_today(date.fromisoformat(run["today"]))
     p: dict[str, Any] = {
@@ -596,26 +760,33 @@ def build_view(
         "week_end": w.week_end,
         "baseline_start": w.baseline_start,
         "baseline_end": w.baseline_end,
+        "method": method,
     }
 
+    def flagged(sql: str) -> str:
+        """A query that reads the expected values or the flags, for the chosen method."""
+        return _for_method(sql, method, _DV, _LOCAL_RUN_DV)
+
     views: dict[str, list[dict[str, Any]]] = {f"day:{d.isoformat()}": [] for d in w.selectable_days}
-    for row in _rows(store, _DAY_SQL, p):
+    for row in _rows(store, flagged(_DAY_SQL), p):
         views[f"day:{row.pop('sel_day')}"].append(row)
     views["week"] = _rows(store, _WEEK_SQL, p)
 
     series: dict[str, list[list[Any]]] = {}
-    for row in _rows(store, _SERIES_SQL, p):
+    for row in _rows(store, flagged(_SERIES_SQL), p):
         series.setdefault(row["component_id"], []).append(
             [row["day"], row["value"], row["expected"], row["upper"], row["lower"], row["anomaly"]]
         )
 
+    history_sql = _for_method(_HISTORY_SQL, method, _HISTORY_DV, _LOCAL_HISTORY_DV)
     return {
         "run": run,
+        "anomaly_method": method_data(chosen.key),
         "views": views,
         "series": series,
-        "alerts": _rows(store, _ALERTS_SQL, p),
-        "calendar": _rows(store, _CALENDAR_SQL, p),
-        "history": _rows(store, _HISTORY_SQL, p),
+        "alerts": _rows(store, flagged(_ALERTS_SQL), p),
+        "calendar": _rows(store, flagged(_CALENDAR_SQL), p),
+        "history": _rows(store, history_sql, p),
         "declines": _rows(store, _DECLINE_SQL, p),
         "pairs": _pairs(store, run_id, p),
         "issues": _rows(store, _ISSUES_SQL, p),

@@ -12,6 +12,7 @@ aa-health-duckdb is an unofficial alternative to Adobe's Excel workbook ["Analyt
 - **Arrows** show when the change is past a slider's percent: a down arrow past the drop slider, 30 percent by default, and an up arrow past the spike slider, 50 percent by default. The workbook uses a fixed 20 percent. When the baseline is zero, there is no percent change and no arrow.
 - **Zero values.** The workbook alerts on every component with a value of 0. The tool alerts on a component that dropped to 0, and it lists a component that was 0 on every day separately, as never collected data.
 - **Large drops and spikes.** The workbook alerts only on Adobe's anomaly flags and on zero values. The tool also alerts on drops and spikes larger than the sliders' percents.
+- **The anomaly method.** The workbook shows only Adobe's anomaly flags. The tool uses them by default, and `--anomaly-method` can choose one of two simpler methods that the tool computes from the run's own daily values. They flag different days than Adobe. See [The report](report.md#anomaly-detection-methods).
 - **Unreadable data.** A column the credential cannot read is listed as a problem. It is never shown as 0.
 - **Currency.** A currency metric shows in the report suite's currency, e.g., $1,234.56.
 - **eVars** are treated as dimensions, like props, so they appear in the Dimension chart. The workbook filed them under events. Each eVar is still counted with its instances metric, as in the workbook.
@@ -31,6 +32,7 @@ The examples come from a run on Adobe's Demo Data report suite on 2026-11-09, wi
 - **Slow declines.** A component that falls a little each week never has a day that is unusual enough for an alert. The tool fits a line through 12 weekly totals and lists the components that fell by 3 percent or more a week.
 - **Any of the last 7 days.** The Day picker shows the alerts of each of the last 7 days, e.g., the weekend's on a Monday morning.
 - **Days in a row.** Each alert says how many days it has held, so you can tell a new problem from one that started last week.
+- **Flags without Adobe's permission.** A credential without the Anomaly Detection permission gets no flags from Adobe. With `--anomaly-method weekday-median` or `weekday-iqr`, the report still flags values outside the usual range of their weekday. The workbook has no flags in that case.
 - **A weekly view.** It compares the last 7 days with the average week of the 12 weeks before. It counts Adobe's flags by day, e.g., "Below range on 2 days", so a component that Adobe flagged on one day of the week still stands out.
 
 ### Find the cause faster
@@ -52,7 +54,7 @@ The examples come from a run on Adobe's Demo Data report suite on 2026-11-09, wi
 
 - **Several suites in one command.** `ahd run --all-suites` checks every suite the credential can see, and writes one report for each. The workbook checks one suite at a time. A suite with 410 components takes about 1 minute.
 - **Segments.** `--segment` applies a segment to every request, e.g., to check mobile traffic on its own.
-- **Reports without new requests.** `ahd render` writes a report again from a stored run, e.g., with other slider settings, and makes no API calls.
+- **Reports without new requests.** `ahd render` writes a report again from a stored run, e.g., with other slider settings or another anomaly method, and makes no API calls.
 
 ### Share the results
 

@@ -15,7 +15,7 @@ from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
 from ahd.render.html import render_html
 from ahd.store import Store
-from ahd.summary import build_view
+from ahd.summary import ANOMALY_LABELS, ANOMALY_METHODS, build_view
 
 TODAY = date(2026, 11, 7)
 YESTERDAY = date(2026, 11, 6)  # a Friday
@@ -166,10 +166,11 @@ return out;
 """
 
 
-def _macro(store, rid, threshold, spike=0.5):
+def _macro(store, rid, threshold, spike=0.5, method="adobe"):
     rows = store.con.execute(
-        "select component_id, alert, anomaly from alerts(?, threshold := ?, spike_threshold := ?)",
-        [rid, threshold, spike],
+        "select component_id, alert, anomaly from alerts(?, threshold := ?, spike_threshold := ?,"
+        " method := ?)",
+        [rid, threshold, spike, method],
     ).fetchall()
     return {cid: (alert, anomaly) for cid, alert, anomaly in rows}
 
@@ -184,19 +185,34 @@ def _never_collected(store, rid):
 
 
 @pytest.fixture(scope="module")
-def alert_pages(chrome, edges, tmp_path_factory):
+def pages_by_method(chrome, edges, tmp_path_factory):
+    """The alert lists and tiles of the edge cases, read once for each anomaly method."""
     store, rid = edges
     probe = ALERTS_PROBE.replace("SLIDER", json.dumps(list(SLIDER)))
-    folder = tmp_path_factory.mktemp("alerts")
-    return run_probe(chrome, render_html(build_view(store, rid)), probe, folder)
+    pages = {}
+
+    def read(method):
+        if method not in pages:
+            folder = tmp_path_factory.mktemp("alerts")
+            page = render_html(build_view(store, rid, method=method))
+            pages[method] = run_probe(chrome, page, probe, folder)
+        return pages[method]
+
+    return read
 
 
+@pytest.fixture(scope="module")
+def alert_pages(pages_by_method):
+    return pages_by_method("adobe")
+
+
+@pytest.mark.parametrize("method", ANOMALY_METHODS)
 @pytest.mark.parametrize("pct", (30, *SLIDER))
-def test_alert_lists_match_the_alerts_macro(alert_pages, edges, pct):
+def test_alert_lists_match_the_alerts_macro(pages_by_method, edges, pct, method):
     store, rid = edges
-    page = alert_pages[str(pct)]
+    page = pages_by_method(method)[str(pct)]
     spike = int(page["spikeShown"].strip("+%")) / 100
-    macro = _macro(store, rid, pct / 100, spike)
+    macro = _macro(store, rid, pct / 100, spike, method)
 
     def where(kind):
         return sorted(cid for cid, (alert, _) in macro.items() if alert == kind)
@@ -278,12 +294,13 @@ def test_alert_edge_cases(alert_pages):
     assert p30["zero"] == ["metrics/event6"]
 
 
+@pytest.mark.parametrize("method", ANOMALY_METHODS)
 @pytest.mark.parametrize("pct", (30, *SLIDER))
-def test_tiles_match_the_alerts_macro(alert_pages, edges, pct):
+def test_tiles_match_the_alerts_macro(pages_by_method, edges, pct, method):
     store, rid = edges
-    tiles = alert_pages[str(pct)]["tiles"]
-    spike = int(alert_pages[str(pct)]["spikeShown"].strip("+%"))
-    macro = _macro(store, rid, pct / 100, spike / 100).values()
+    tiles = pages_by_method(method)[str(pct)]["tiles"]
+    spike = int(pages_by_method(method)[str(pct)]["spikeShown"].strip("+%"))
+    macro = _macro(store, rid, pct / 100, spike / 100, method).values()
 
     def count(alert, anomaly=None):
         return str(sum(1 for a, f in macro if a == alert and (anomaly is None or f == anomaly)))
@@ -2103,3 +2120,143 @@ def test_a_trend_line_shows_a_day_that_has_no_day_next_to_it(chrome, with_proble
     # A lone day gets a very short line, which draws a dot. Two days in a row get a line.
     assert parts[0].endswith("l0.01 0") and parts[2].endswith("l0.01 0")
     assert "L" in parts[1] and "l0.01" not in parts[1]
+
+
+# ---- the anomaly method ------------------------------------------------------------------
+
+# Every text of the page a reader can see or hear, in the daily and the weekly view, and the
+# copied alerts.
+METHOD_PROBE = """
+var copied = null;
+Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+  write: function (items) {
+    return items[0].getType("text/html").then(function (b) { return b.text(); })
+      .then(function (t) { copied = t; });
+  },
+  writeText: function () { return Promise.resolve(); }
+}});
+function texts() {
+  var out = [document.body.innerText];
+  [].forEach.call(document.querySelectorAll("[title], [aria-label]"), function (n) {
+    out.push(n.getAttribute("title") || "", n.getAttribute("aria-label") || "");
+  });
+  return out.join("\\n");
+}
+function titles(selector) {
+  return [].map.call(document.querySelectorAll(selector), function (n) {
+    return n.getAttribute("title");
+  });
+}
+// The flag badges, without the badges of large drops and spikes.
+function flags(selector) {
+  return titles(selector).filter(function (t) { return t.indexOf("weekday average") < 0; });
+}
+var out = { badges: flags("#tables .badge-flag[title]") };
+var tiles = {};
+[].forEach.call(document.querySelectorAll("#tiles .tile"), function (t) {
+  var note = t.querySelector(".tile-note");
+  tiles[t.querySelector(".tile-label").lastChild.textContent] = [
+    t.querySelector(".tile-value").textContent, note ? note.textContent : ""];
+});
+out.tiles = tiles;
+out.muted = [].map.call(document.querySelectorAll("#tables .muted"), function (n) {
+  return n.textContent;
+});
+document.getElementById("tab-alerts").click();
+out.unusualHint = (document.querySelector(
+  "#alerts section[aria-labelledby=unusual-title] .hint") || {}).textContent || null;
+out.unusualEmpty = (document.querySelector(
+  "#alerts section[aria-labelledby=unusual-title] .empty") || {}).textContent || null;
+out.dropNote = (document.querySelector(
+  "#alerts section[aria-labelledby=drops-title] .empty") || {}).textContent || null;
+out.daily = texts();
+var gran = document.getElementById("granularity");
+gran.value = "week";
+gran.dispatchEvent(new Event("change"));
+document.getElementById("tab-components").click();
+out.weekBadges = flags("#tables .week-flags .badge[title]");
+out.weekly = texts();
+document.getElementById("copy-alerts").click();
+function wait(tries) {
+  if (copied !== null || tries > 200) return Promise.resolve();
+  return new Promise(function (r) { setTimeout(r, 0); }).then(function () { return wait(tries + 1); });
+}
+return wait(0).then(function () { out.copied = copied; return out; });
+"""
+
+LOCAL_METHODS = [m for m in ANOMALY_METHODS if m != "adobe"]
+
+
+def _blocked(view, code="anomaly_not_allowed"):
+    view["issues"].append(
+        {"scope": "permissions", "component_id": None, "code": code, "message": "m"}
+    )
+    return view
+
+
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+def test_a_local_method_names_itself_and_never_adobe(chrome, edges, tmp_path, method):
+    label = ANOMALY_LABELS[method]
+    got = run_probe(chrome, render_html(build_view(*edges, method=method)), METHOD_PROBE, tmp_path)
+    for text in (got["daily"], got["weekly"], got["copied"]):
+        # Two component names of the edge cases name Adobe. The page shows them as they are.
+        for name in sorted((n for n, _ in CASES.values()), key=len, reverse=True):
+            text = text.replace(name, "")
+        assert "Adobe" not in text
+    assert got["badges"] and set(got["badges"]) <= {
+        f"The {label} method flagged this value as above the expected range.",
+        f"The {label} method flagged this value as below the expected range.",
+    }
+    assert got["weekBadges"] and all(
+        t.startswith(f"The {label} method flagged this value ") for t in got["weekBadges"]
+    )
+    assert got["unusualHint"].startswith(
+        f"The {label} method flagged these values as outside the expected range."
+    )
+    assert got["tiles"]["Above expected range"][1] == f"Flagged by the {label} method"
+    assert got["tiles"]["Below expected range"][1] == f"Flagged by the {label} method"
+    # The 50 percent drop of event5 is also below the local range.
+    assert f"and the {label} method also flagged it." in got["dropNote"]
+    assert f"Unusual values, flagged by the {label} method (" in got["copied"]
+
+
+def test_adobe_keeps_its_words(chrome, edges, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*edges)), METHOD_PROBE, tmp_path)
+    assert set(got["badges"]) == {
+        "Adobe flagged this value as above the expected range.",
+        "Adobe flagged this value as below the expected range.",
+    }
+    assert got["unusualHint"].startswith(
+        "Adobe flagged these values as outside the expected range."
+    )
+    assert got["tiles"]["Above expected range"][1] == "Flagged by Adobe"
+    assert "Unusual values, flagged by Adobe (" in got["copied"]
+    assert "ahd render" not in got["daily"]
+
+
+@pytest.mark.parametrize("code", ["anomaly_not_allowed", "anomaly_probe_failed"])
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+def test_a_blocked_run_with_a_local_method_shows_flags(chrome, edges, tmp_path, method, code):
+    view = _blocked(build_view(*edges, method=method), code)
+    got = run_probe(chrome, render_html(view), METHOD_PROBE, tmp_path)
+    macro = _macro(*edges, 0.3, method=method).values()
+    high = sum(1 for a, f in macro if a == "unusual" and f == "high")
+    low = sum(1 for a, f in macro if a == "unusual" and f == "low")
+    assert low and got["tiles"]["Below expected range"][0] == str(low)
+    assert got["tiles"]["Above expected range"][0] == str(high)
+    assert "Not available" not in got["muted"]
+    assert "Anomaly detection is not available" not in got["daily"]
+    assert "Anomaly detection not available" not in got["daily"]
+    assert got["badges"]
+
+
+@pytest.mark.parametrize("code", ["anomaly_not_allowed", "anomaly_probe_failed"])
+def test_a_blocked_run_with_adobe_suggests_a_local_method(chrome, with_problem, tmp_path, code):
+    view = _blocked(build_view(*with_problem), code)
+    got = run_probe(chrome, render_html(view), METHOD_PROBE, tmp_path)
+    run = view["run"]["id"]
+    assert got["unusualEmpty"] == (
+        "Anomaly detection is not available for this run, so no values could be flagged. "
+        "See the status section. To flag unusual values without it, write this report again "
+        f"with ahd render --run {run} --anomaly-method weekday-median."
+    )

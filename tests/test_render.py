@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from fakes import fake_for, restricted_dimensions, restricted_metrics
+from markupsafe import escape
 
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
@@ -21,7 +22,7 @@ from ahd.render.html import (
     write_report,
 )
 from ahd.store import Store
-from ahd.summary import build_view
+from ahd.summary import ANOMALY_LABELS, ANOMALY_METHODS, build_view
 
 TODAY = date(2026, 11, 7)
 YESTERDAY = date(2026, 11, 6)
@@ -150,11 +151,11 @@ def sample_store(path: Path, bands: bool = True) -> tuple[Store, int]:
     return store, rid
 
 
-def sample_view(bands: bool = True) -> dict:
+def sample_view(bands: bool = True, method: str = "adobe") -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         store, rid = sample_store(Path(tmp) / "s.duckdb", bands)
         try:
-            return build_view(store, rid)
+            return build_view(store, rid, method=method)
         finally:
             store.con.close()
 
@@ -739,3 +740,102 @@ def test_earlier_runs_hint_names_the_segment():
     v["run"]["segment_id"] = None
     html = render_html(v)
     assert "of this report suite in the database, newest first, up to 30 runs." in html
+
+
+# ---- the anomaly method ---------------------------------------------------------
+
+
+def _fact(html: str) -> str:
+    return re.search(r"<div><dt>Anomaly detection</dt><dd>(.*?)</dd></div>", html).group(1)
+
+
+def test_the_header_names_the_anomaly_method():
+    assert _fact(render_html(sample_view())) == "Adobe"
+    for method, label in (
+        ("weekday-median", "Weekday median"),
+        ("weekday-iqr", "Weekday quartile range"),
+    ):
+        for bands in (True, False):
+            assert _fact(render_html(sample_view(bands, method))) == (
+                f'{label} <span class="muted">(computed by ahd from the daily values of this run)</span>'
+            )
+    # The run has the issue anomaly_not_allowed, so Adobe's detection was not available.
+    assert _fact(render_html(sample_view(bands=False))) == (
+        'Adobe <span class="muted">(not available for this run)</span>'
+    )
+    view = sample_view()
+    view["issues"].append(
+        {
+            "scope": "permissions",
+            "component_id": None,
+            "code": "anomaly_probe_failed",
+            "message": "m",
+        }
+    )
+    assert "(not available for this run)" in _fact(render_html(view))
+
+
+def _rule(html: str) -> str:
+    return html[html.index('<details class="rule"') : html.index("</details>")]
+
+
+def test_the_rule_list_states_the_rule_of_the_method():
+    for method in ANOMALY_METHODS:
+        view = sample_view(method=method)
+        rule = _rule(render_html(view))
+        assert f"<li>{escape(view['anomaly_method']['rule'])}" in rule
+        needs = (
+            "A day is flagged only when this run has at least 8 earlier values of its weekday "
+            "and its expected value is 10 or more."
+        )
+        assert (needs in rule) is (method != "adobe")
+
+
+def test_a_local_method_does_not_say_adobe_flagged_a_value():
+    adobe = render_html(sample_view())
+    assert "A value that Adobe flagged is listed as an unusual value" in adobe
+    assert "more components that Adobe flagged or that dropped to zero" in adobe
+    assert "Components that Adobe flagged as unusual" in adobe
+    for method in ("weekday-median", "weekday-iqr"):
+        html = render_html(sample_view(bands=False, method=method))
+        label = ANOMALY_LABELS[method]
+        markup = html[: html.index('<script type="application/json"')]
+        assert "Adobe flagged" not in markup
+        assert f"A value that the {label} method flagged is listed as an unusual value" in markup
+        assert f"more components that the {label} method flagged or that dropped" in markup
+        assert f"Components that the {label} method flagged as unusual" in markup
+
+
+def test_a_local_method_has_its_own_note_for_a_chart_without_a_range():
+    assert NO_BANDS_NOTE in render_html(sample_view())
+    html = render_html(sample_view(method="weekday-median"))
+    assert NO_BANDS_NOTE not in html
+    assert (
+        "This chart has no expected range, because no day has at least 8 earlier values of its "
+        "weekday in this run."
+    ) in html
+
+
+def test_a_local_method_says_it_does_not_need_adobes_anomaly_detection():
+    blocked = render_html(sample_view(bands=False))
+    assert str(escape(ISSUE_HEADINGS["anomaly_not_allowed"])) in blocked
+    html = render_html(sample_view(bands=False, method="weekday-iqr"))
+    assert str(escape(ISSUE_HEADINGS["anomaly_not_allowed"])) not in html
+    assert (
+        "Adobe&#39;s anomaly detection is not available, because the API credential&#39;s "
+        "product profile does not include the Anomaly Detection permission (Report Suite Tools). "
+        "This report does not need it, because it uses the Weekday quartile range method."
+    ) in html
+    view = sample_view(method="weekday-median")
+    view["issues"].append(
+        {
+            "scope": "permissions",
+            "component_id": None,
+            "code": "anomaly_probe_failed",
+            "message": "m",
+        }
+    )
+    assert (
+        "Adobe&#39;s anomaly detection could not be tested, because the test request failed. "
+        "This report does not need it, because it uses the Weekday median method."
+    ) in render_html(view)

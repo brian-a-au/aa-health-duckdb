@@ -108,7 +108,7 @@ The credential's technical account must be added to an [Adobe Analytics product 
 - **The report suite's metrics and dimensions**, so that the custom events, eVars and props are visible.
 - **The Report Suite Tools item "Anomaly Detection"**, so that the expected values and anomaly flags can be fetched.
 
-If the product profile hides the custom components, the report shows no custom data. If "Anomaly Detection" is missing, the run still finishes, but the report has no expected values and no anomaly flags, and it says so.
+If the product profile hides the custom components, the report shows no custom data. If "Anomaly Detection" is missing, the run still finishes, but the report has no expected values and no anomaly flags from Adobe, and it says so. A local anomaly method can still flag unusual values. See [Limited access](troubleshooting.md#limited-access).
 
 Changes in the Admin Console can take a while to reach Analytics. Run `ahd check --rsid <suite>` to test the setup. It names anything that is missing and explains the fix.
 

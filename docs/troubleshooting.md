@@ -41,6 +41,8 @@ A message that says "This is a problem at Adobe, not with the credential" means 
 - **"Anomaly detection: not allowed"** means the product profile lacks the Report Suite Tools item "Anomaly Detection". Runs still work, but the report has no expected values and no anomaly flags.
 - **"could not be tested"** means the test request failed, e.g., because of a network problem. Run the check again.
 
+In both cases, a run stores no expected values and no flags from Adobe. The report can still flag unusual values with a local anomaly method, which ahd computes from the run's own daily values and which needs no permission in Adobe. Give the option to the run, e.g., `ahd run --rsid my_suite --anomaly-method weekday-median`. For a run that is already stored, write its report again, e.g., `ahd render --run 3 --anomaly-method weekday-median`. This makes no requests to Adobe. The local methods are simpler than Adobe's anomaly detection and will flag different days. See [The report](report.md#anomaly-detection-methods).
+
 See [Configuration](configuration.md#permissions) for the full list of permissions.
 
 ## Fewer components than last time
@@ -63,6 +65,7 @@ A run that finished with status "partial" lists what it could not read. `ahd run
 - **"Adobe sent an answer that could not be read for some requests."** Adobe answered with valid JSON that was not a report, e.g., with an empty value where a number belongs. Running again may fix it.
 - **"Adobe returned an error for some requests."** Adobe answered with an error that has no code of its own. The list under the heading gives the HTTP status of each.
 - **"Anomaly detection could not be tested"** or **"Anomaly bands are not available."** See [Limited access](#limited-access).
+- A report with a local anomaly method says about the same cases that **"This report does not need it, because it uses"** that method, e.g., "the Weekday median method". The report still has flags, so nothing needs a fix.
 
 A command can also stop with one line that says "Adobe sent an answer for ... in a form that the tool could not read", e.g., for the list of metrics. Adobe then sent a whole answer in a form that the tool does not know, before the run stored anything. Run the command again. In a run of several suites, only that suite fails.
 

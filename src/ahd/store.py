@@ -25,7 +25,7 @@ IMPORT_FROM_VERSION = 7
 # the macro of a file with another views version, or with none. The views in a file then follow
 # the same rules as the ahd that last wrote to it, so the alert line of ahd run agrees with its
 # report, also after going back to an older ahd.
-VIEWS_VERSION = 2
+VIEWS_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE schema_version (version INTEGER);

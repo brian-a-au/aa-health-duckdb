@@ -212,9 +212,19 @@
     s: typeof data.spike_alert === "number" ? data.spike_alert : 0.5 };
   var MIN_USUAL = typeof data.min_usual === "number" ? data.min_usual : 10;
   var sortState = {};
-  // The two codes that fetch.py records when a run was made without anomaly detection: the
-  // credential may not use it, or the request that tests it failed.
-  var anomalyBlocked = (data.issues || []).some(function (i) {
+  // The anomaly method that found the unusual values: Adobe's, or one that ahd computed from the
+  // run's daily values. The page names it only through flaggedBy, and branches only on .adobe.
+  var anomalyMethod = data.anomaly_method || { adobe: true };
+  // Who flagged a value: "Adobe", or e.g. "the Weekday median method". start: at the start of a
+  // sentence. html.py has the same words for the template.
+  function flaggedBy(start) {
+    if (anomalyMethod.adobe) return "Adobe";
+    return (start ? "The " : "the ") + anomalyMethod.label + " method";
+  }
+  // The two codes that fetch.py records when a run was made without Adobe's anomaly detection:
+  // the credential may not use it, or the request that tests it failed. A local method does not
+  // need it.
+  var anomalyBlocked = !!anomalyMethod.adobe && (data.issues || []).some(function (i) {
     return i.code === "anomaly_not_allowed" || i.code === "anomaly_probe_failed";
   });
 
@@ -449,8 +459,8 @@
     return b;
   }
   function flagBadge(a) {
-    if (a === "high") return badge("flag", "▲", "Above range", "Adobe flagged this value as above the expected range.");
-    if (a === "low") return badge("flag", "▼", "Below range", "Adobe flagged this value as below the expected range.");
+    if (a === "high") return badge("flag", "▲", "Above range", flaggedBy(true) + " flagged this value as above the expected range.");
+    if (a === "low") return badge("flag", "▼", "Below range", flaggedBy(true) + " flagged this value as below the expected range.");
     return null;
   }
   function zeroBadge() {
@@ -551,13 +561,13 @@
     return { c: anomalyBlocked ? el("span", { "class": "muted" }, "Not available") : "", k: null };
   }
 
-  // The Flag column: Adobe's anomaly flag (daily only), else a large drop from the slider.
+  // The Flag column: the anomaly flag (daily only), else a large drop from the slider.
   function weekFlagBadges(row) {
     var f = weekFlags(row), span = el("span", { "class": "week-flags" });
     function one(kind, n, icon, words) {
       if (!n) return;
       span.appendChild(badge("flag", icon, words + " on " + n + (n === 1 ? " day" : " days"),
-        "Adobe flagged this value " + words.toLowerCase() + " on " + n + " of the 7 days."));
+        flaggedBy(true) + " flagged this value " + words.toLowerCase() + " on " + n + " of the 7 days."));
     }
     one("high", f.high, "▲", "Above range");
     one("low", f.low, "▼", "Below range");
@@ -1142,7 +1152,7 @@
     host.appendChild(svg);
     host.appendChild(readout);
     // The key has two rows: the lines, the band and the chosen day with its weekday average, then
-    // Adobe's flags. A row with nothing in it is left out.
+    // the anomaly flags. A row with nothing in it is left out.
     var legend = el("div", { "class": "legend" });
     function row(items) {
       var ul = el("ul", { "class": "legend-row" });
@@ -1172,7 +1182,7 @@
     return fmtShortDay(weekDays[0]) + " to " + fmtShortDay(weekDays[6]) + ", " +
       weekDays[6].slice(0, 4);
   }
-  // How many of the week's days Adobe flagged above and below the expected range. A component
+  // How many of the week's days were flagged above and below the expected range. A component
   // that never collected data has no flags, as in the daily view.
   var weekFlagCache = {};
   function weekFlags(row) {
@@ -1511,7 +1521,8 @@
     topBox.appendChild(el("h3", { id: "calendar-top-title" }, "Days with the most alerts"));
     if (!top.length) {
       topBox.appendChild(el("p", { "class": "empty" },
-        "No day in the last 13 weeks had a component that Adobe flagged or that dropped to zero."));
+        "No day in the last 13 weeks had a component that " + flaggedBy(false) +
+        " flagged or that dropped to zero."));
     } else {
       topBox.appendChild(table(
         [{ label: "Day" }, { label: "Below range", num: true, cls: "days" },
@@ -1810,7 +1821,7 @@
     var pct = Math.round(state.t * 100) + "%";
     var drops = rows.filter(function (r) { return isLargeDrop(r.value, r.baseline, r.pct, week); });
     var flagged = drops.length;
-    var byAdobe = drops.filter(function (r) { return !!r.anomaly; }).length;
+    var byMethod = drops.filter(function (r) { return !!r.anomaly; }).length;
     var worst = null;
     rows.forEach(function (r) {
       if (r.zero || r.pct === null || r.pct === undefined || r.pct >= 0) return;
@@ -1819,8 +1830,8 @@
     });
     var head = flagged ?
       when + ": " + flagged + (flagged === 1 ? " component is" : " components are") +
-        " more than " + pct + " below " + base + (byAdobe ? ", and Adobe also flagged " +
-        (byAdobe === flagged ? (flagged === 1 ? "it" : "all of them") : byAdobe + " of them") :
+        " more than " + pct + " below " + base + (byMethod ? ", and " + flaggedBy(false) + " also flagged " +
+        (byMethod === flagged ? (flagged === 1 ? "it" : "all of them") : byMethod + " of them") :
         "") + "." :
       when + ": no component is more than " + pct + " below " + base + ".";
     if (!worst) return head + " No component is below " + base + ".";
@@ -1834,7 +1845,7 @@
     var pct = Math.round(state.s * 100) + "%";
     var spikes = rows.filter(function (r) { return isLargeSpike(r.value, r.baseline, r.pct, week); });
     var flagged = spikes.length;
-    var byAdobe = spikes.filter(function (r) { return !!r.anomaly; }).length;
+    var byMethod = spikes.filter(function (r) { return !!r.anomaly; }).length;
     var best = null;
     rows.forEach(function (r) {
       if (r.pct === null || r.pct === undefined || r.pct <= 0) return;
@@ -1843,8 +1854,8 @@
     });
     var head = flagged ?
       when + ": " + flagged + (flagged === 1 ? " component is" : " components are") +
-        " more than " + pct + " above " + base + (byAdobe ? ", and Adobe also flagged " +
-        (byAdobe === flagged ? (flagged === 1 ? "it" : "all of them") : byAdobe + " of them") :
+        " more than " + pct + " above " + base + (byMethod ? ", and " + flaggedBy(false) + " also flagged " +
+        (byMethod === flagged ? (flagged === 1 ? "it" : "all of them") : byMethod + " of them") :
         "") + "." :
       when + ": no component is more than " + pct + " above " + base + ".";
     if (!best) return head + " No component is above " + base + ".";
@@ -1862,7 +1873,7 @@
     g1.appendChild(groupHeading("unusual-title", "Unusual values", parts.unusual.length));
     if (parts.unusual.length) {
       g1.appendChild(el("p", { "class": "hint" },
-        "Adobe flagged these values as outside the expected range. The bar shows the size of " +
+        flaggedBy(true) + " flagged these values as outside the expected range. The bar shows the size of " +
         "the change from the expected value, up to 100 percent."));
       g1.appendChild(table(
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" }, { label: "Flag" },
@@ -1876,7 +1887,9 @@
     } else {
       g1.appendChild(el("p", { "class": "empty" }, anomalyBlocked ?
         "Anomaly detection is not available for this run, so no values could be flagged. " +
-        "See the status section." : "Adobe flagged no unusual values on " + alertDayText() + "."));
+        "See the status section. To flag unusual values without it, write this report again " +
+        "with " + host.getAttribute("data-render-command") + "." :
+        flaggedBy(true) + " flagged no unusual values on " + alertDayText() + "."));
     }
     host.appendChild(g1);
 
@@ -1885,7 +1898,7 @@
     if (parts.drops.length) {
       g2.appendChild(el("p", { "class": "hint" },
         "These values were more than " + pct + " below their weekday average, but " +
-        "Adobe did not flag them. Move the slider at the top of the page to change the percent."));
+        flaggedBy(false) + " did not flag them. Move the slider at the top of the page to change the percent."));
       g2.appendChild(table(
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
          { label: "Weekday average", num: true }, { label: "Actual", num: true },
@@ -1908,7 +1921,7 @@
     if (parts.spikes.length) {
       g2b.appendChild(el("p", { "class": "hint" },
         "These values were more than " + spct + " above their weekday average, but " +
-        "Adobe did not flag them. A value that doubled, e.g., from a tag that fires twice, is " +
+        flaggedBy(false) + " did not flag them. A value that doubled, e.g., from a tag that fires twice, is " +
         "about +100%. Move the spike slider at the top of the page to change the percent."));
       g2b.appendChild(table(
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
@@ -2128,7 +2141,7 @@
     if (!anyAlert(parts)) {
       box.appendChild(el("p", { style: MAIL.p }, "No alerts for this day."));
     }
-    section("Unusual values, flagged by Adobe", parts.unusual,
+    section("Unusual values, flagged by " + flaggedBy(false), parts.unusual,
       [{ label: "Component" }, { label: "Flag" }, { label: "Expected", num: true },
        { label: "Actual", num: true }, { label: "Change", num: true },
        { label: "Days in a row", num: true, cls: "days" }],
@@ -2233,7 +2246,7 @@
     var rows = data.views["day:" + yesterday] || [];
     var high = rows.filter(function (r) { return r.anomaly === "high"; }).length;
     var low = rows.filter(function (r) { return r.anomaly === "low"; }).length;
-    // Each alert counts once: a zero that Adobe flagged is in the "Below expected range" tile.
+    // Each alert counts once: a zero that was flagged is in the "Below expected range" tile.
     var zero = rows.filter(function (r) { return r.zero && !r.unused && !r.anomaly; }).length;
     var unused = rows.filter(function (r) { return r.zero && r.unused; }).length;
     var drops = rows.filter(function (r) {
@@ -2275,8 +2288,8 @@
       tile("flag", "▲", "Above expected range", "–", "Anomaly detection not available");
       tile("flag", "▼", "Below expected range", "–", "Anomaly detection not available");
     } else {
-      tile("flag", "▲", "Above expected range", numFmt.format(high), "Flagged by Adobe", toAlerts);
-      tile("flag", "▼", "Below expected range", numFmt.format(low), "Flagged by Adobe", toAlerts);
+      tile("flag", "▲", "Above expected range", numFmt.format(high), "Flagged by " + flaggedBy(false), toAlerts);
+      tile("flag", "▼", "Below expected range", numFmt.format(low), "Flagged by " + flaggedBy(false), toAlerts);
     }
     tile("flag", "▼", "Large drops", numFmt.format(drops),
       "More than " + Math.round(state.t * 100) + "% below the weekday average", toAlerts);

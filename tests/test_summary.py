@@ -7,7 +7,7 @@ import pytest
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
 from ahd.store import Store
-from ahd.summary import build_view
+from ahd.summary import MIN_SAMPLE, build_view
 
 TODAY = date(2026, 11, 7)
 YESTERDAY = date(2026, 11, 6)  # a Friday
@@ -1056,3 +1056,414 @@ def test_history_keeps_the_newest_runs(tmp_path, monkeypatch):
     )
     history = build_view(store, runs[-1])["history"]
     assert [h["run_id"] for h in history] == [runs[3], runs[2]]
+
+
+# The local anomaly methods. Each rule is checked on the page data and on the alerts macro's
+# helper, anomaly_days, so the two copies of the rules in summary.py and views.sql agree.
+LOCAL_METHODS = ("weekday-median", "weekday-iqr")
+# The 12 Fridays before yesterday that the report can use as the sample for yesterday.
+EARLIER_FRIDAYS = [d for d in _days(START, YESTERDAY - timedelta(days=1)) if d.weekday() == 4]
+MISSING = object()  # no stored row for that day
+
+
+def _fridays(cid, sample, last, other=0.0):
+    """sample on the 12 earlier Fridays, oldest first, last yesterday, other on other days.
+
+    A sample entry of MISSING stores no row, and None stores a row without a value.
+    """
+    assert len(sample) == len(EARLIER_FRIDAYS) == 12
+    on = dict(zip(EARLIER_FRIDAYS, sample, strict=True))
+    out = []
+    for d in _days(START, TODAY):
+        v = last if d == YESTERDAY else on.get(d, other)
+        if v is not MISSING:
+            out.append(_dv(cid, d, v))
+    return out
+
+
+def _yesterday(store, rid, method, cid):
+    """(expected, upper, lower, anomaly) of yesterday on the page and in the macro.
+
+    It checks that both agree and returns the page's values.
+    """
+    view = build_view(store, rid, method=method)
+    day = YESTERDAY.isoformat()
+    [point] = [p for p in view["series"][cid] if p[0] == day]
+    page = tuple(point[2:])
+    row = store.con.execute(
+        "SELECT round(expected, 4), round(upper, 4), round(lower, 4), anomaly"
+        " FROM anomaly_days(?, method := ?) WHERE component_id = ? AND day = ?",
+        [rid, method, cid, YESTERDAY],
+    ).fetchone()
+    assert row == pytest.approx(page), (page, row)
+    assert _row(view["views"][f"day:{day}"], cid)["anomaly"] == page[3]
+    return page
+
+
+S12 = [100.0, 110.0, 90.0, 100.0, 120.0, 80.0, 100.0, 105.0, 95.0, 100.0, 130.0, 70.0]
+
+
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+def test_local_method_flags_a_high_and_a_low_value(tmp_path, method):
+    comps = [_comp(f"metrics/event{i}", f"E{i}", number=i) for i in (1, 2, 3)]
+    vals = (
+        _fridays("metrics/event1", [100.0] * 12, 200.0)
+        + _fridays("metrics/event2", [100.0] * 12, 50.0)
+        + _fridays("metrics/event3", [100.0] * 12, 100.0)
+    )
+    store, rid = _build(tmp_path, comps, vals)
+    assert _yesterday(store, rid, method, "metrics/event1")[3] == "high"
+    assert _yesterday(store, rid, method, "metrics/event2")[3] == "low"
+    assert _yesterday(store, rid, method, "metrics/event3")[3] is None
+    alerts = store.con.execute(
+        "SELECT component_id, alert, anomaly FROM alerts(?, method := ?)", [rid, method]
+    ).fetchall()
+    assert sorted(alerts) == [
+        ("metrics/event1", "unusual", "high"),
+        ("metrics/event2", "unusual", "low"),
+    ]
+    # Adobe flagged nothing, so by default both are only a large spike and a large drop.
+    assert sorted(
+        store.con.execute("SELECT component_id, alert FROM alerts(?)", [rid]).fetchall()
+    ) == [
+        ("metrics/event1", "large spike"),
+        ("metrics/event2", "large drop"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("method", "sample", "expected", "upper", "lower"),
+    [
+        # median 100, median distance 7.5, so 3 * 1.4826 * 7.5 = 33.3585 on each side
+        ("weekday-median", S12, 100, 133.3585, 66.6415),
+        # quartiles 93.75 and 106.25, range 12.5, so 1.5 * 12.5 = 18.75 past each quartile
+        ("weekday-iqr", S12, 100, 125, 75),
+        # No spread: the range is at least 5 percent on each side of the median.
+        ("weekday-median", [100.0] * 10 + [101.0, 99.0], 100, 105, 95),
+        ("weekday-iqr", [100.0] * 10 + [101.0, 99.0], 100, 105, 95),
+        # A sample of 0 or more: the lower limit stops at 0.
+        ("weekday-median", [10.0] * 6 + [100.0] * 6, 55, 255.151, 0),
+        ("weekday-iqr", [10.0] * 6 + [100.0] * 6, 55, 235, 0),
+        # A sample with negative values keeps a negative lower limit.
+        ("weekday-median", [-v for v in S12], -100, -66.6415, -133.3585),
+        ("weekday-iqr", [-v for v in S12], -100, -75, -125),
+        ("weekday-median", [-100.0 + 50 * n for n in range(12)], 175, 842.17, -492.17),
+        ("weekday-iqr", [-100.0 + 50 * n for n in range(12)], 175, 725, -375),
+    ],
+)
+def test_local_range_matches_hand_computed_numbers(
+    tmp_path, method, sample, expected, upper, lower
+):
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _fridays(cid, sample, expected))
+    got = _yesterday(store, rid, method, cid)
+    assert got[:3] == pytest.approx((expected, upper, lower))
+    assert got[3] is None
+
+
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+@pytest.mark.parametrize(
+    ("sample", "has_range"),
+    [
+        # The page and the macro must agree on the sample size. A sample of 4 to 7 values
+        # would find a macro that still needs fewer values than MIN_SAMPLE, or more.
+        ([MISSING] * 8 + [100.0] * 4, False),  # 4 earlier values
+        ([MISSING] * 5 + [100.0] * 7, False),  # 7 earlier values
+        ([MISSING] * 4 + [100.0] * 8, True),  # 8 earlier values
+        # NULL, NaN and Infinity are left out of the sample.
+        ([None, math.nan, math.inf, -math.inf, None] + [100.0] * 7, False),
+        ([None, math.nan, math.inf, -math.inf] + [100.0] * 8, True),
+    ],
+)
+def test_a_range_needs_8_earlier_values(tmp_path, method, sample, has_range):
+    assert MIN_SAMPLE == 8
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _fridays(cid, sample, 1000.0))
+    got = _yesterday(store, rid, method, cid)
+    if has_range:
+        assert got == pytest.approx((100, 105, 95, "high"))
+    else:
+        assert got == (None, None, None, None)
+
+
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+def test_only_the_last_5_weeks_have_a_range(tmp_path, method):
+    # docs/report.md says that the first 8 of the 13 weeks have no range and no flags.
+    cid = "metrics/event1"
+    vals = [_dv(cid, d, 100.0) for d in _days(START, YESTERDAY)]
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], vals)
+    series = build_view(store, rid, method=method)["series"][cid]
+    assert len(series) == 91
+    with_range = [p[0] for p in series if p[2] is not None]
+    assert with_range == [d.isoformat() for d in _days(START + timedelta(weeks=8), YESTERDAY)]
+    assert len(with_range) == 35
+    macro = store.con.execute(
+        "SELECT count(expected) FROM anomaly_days(?, method := ?)", [rid, method]
+    ).fetchone()[0]
+    assert macro == 35
+
+
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+def test_a_value_that_is_not_finite_is_not_flagged(tmp_path, method):
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _fridays(cid, [100.0] * 12, None))
+    assert _yesterday(store, rid, method, cid) == pytest.approx((100, 105, 95, None))
+
+
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+@pytest.mark.parametrize(("usual", "flagged"), [(9.0, False), (10.0, True)])
+def test_a_median_below_10_gives_no_flag(tmp_path, method, usual, flagged):
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _fridays(cid, [usual] * 12, 1000.0))
+    got = _yesterday(store, rid, method, cid)
+    assert got[:3] == pytest.approx((usual, usual * 1.05, usual * 0.95))
+    assert got[3] == ("high" if flagged else None)
+
+
+@pytest.mark.parametrize(
+    ("method", "sample", "value", "flag"),
+    [
+        (m, [100.0] * 12, v, f)
+        for m in LOCAL_METHODS
+        for v, f in ((105.0, None), (95.0, None), (105.01, "high"), (94.99, "low"))
+    ]
+    + [
+        # quartiles 80 and 120, range 40, so the limits are 20 and 180
+        ("weekday-iqr", [80.0] * 4 + [100.0] * 4 + [120.0] * 4, v, f)
+        for v, f in ((180.0, None), (20.0, None), (180.5, "high"), (19.5, "low"))
+    ],
+)
+def test_a_value_on_a_limit_is_not_flagged(tmp_path, method, sample, value, flag):
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _fridays(cid, sample, value))
+    assert _yesterday(store, rid, method, cid)[3] == flag
+
+
+@pytest.mark.parametrize("method", ["nope", "Adobe", ""])
+def test_an_unknown_method_raises(tmp_path, method):
+    import duckdb
+
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _fridays(cid, [100.0] * 12, 1.0))
+    with pytest.raises(ValueError, match="anomaly method"):
+        build_view(store, rid, method=method)
+    for sql in ("FROM alerts(?, method := ?)", "FROM anomaly_days(?, method := ?)"):
+        with pytest.raises(duckdb.Error, match="anomaly method"):
+            store.con.execute(sql, [rid, method]).fetchall()
+        # The same for a run without any value.
+        with pytest.raises(duckdb.Error, match="anomaly method"):
+            store.con.execute(sql, [999, method]).fetchall()
+    with pytest.raises(duckdb.Error, match="anomaly method"):
+        store.con.execute("FROM alerts(?, method := NULL)", [rid]).fetchall()
+
+
+def test_methods_have_keys_and_labels(tmp_path):
+    from ahd.summary import ANOMALY_LABELS, ANOMALY_METHODS
+
+    assert ANOMALY_METHODS == ("adobe", "weekday-median", "weekday-iqr")
+    assert ANOMALY_LABELS == {
+        "adobe": "Adobe",
+        "weekday-median": "Weekday median",
+        "weekday-iqr": "Weekday quartile range",
+    }
+    store, rid = _build(tmp_path, [], [])
+    for method in ANOMALY_METHODS:
+        got = build_view(store, rid, method=method)["anomaly_method"]
+        assert set(got) == {"key", "label", "adobe", "rule"}
+        assert (got["key"], got["label"], got["adobe"]) == (
+            method,
+            ANOMALY_LABELS[method],
+            method == "adobe",
+        )
+        assert got["rule"].endswith(".")
+    assert build_view(store, rid)["anomaly_method"]["key"] == "adobe"
+    # docs/report.md quotes these two rules.
+    assert build_view(store, rid, method="weekday-median")["anomaly_method"]["rule"] == (
+        "A value is unusual when it is far from the median of the earlier values of the same "
+        "weekday in this run. Far means more than 3 times the usual spread of those values."
+    )
+    assert build_view(store, rid, method="weekday-iqr")["anomaly_method"]["rule"] == (
+        "A value is unusual when it is far outside the middle half of the earlier values of the "
+        "same weekday in this run. Far means more than 1.5 times the width of the middle half "
+        "past its edge."
+    )
+
+
+def _macro_data():
+    """The components of test_alerts_macro, and two that only a local method flags."""
+    comps = [_comp(f"metrics/event{i}", f"E{i}", number=i) for i in range(1, 13)]
+    vals = (
+        _series("metrics/event1", 100.0, 85.0)  # 15 percent drop
+        + _series("metrics/event2", 100.0, 50.0)  # 50 percent drop
+        + _series("metrics/event3", 100.0, 0.0)  # dropped to zero
+        + _series("metrics/event4", 0.0, 0.0)  # never collected data
+        + _series("metrics/event5", 8.0, 1.0)  # small usual value: skipped
+        + [v for v in _series("metrics/event6", 100.0, 100.0) if v.day != YESTERDAY]
+        + [_dv("metrics/event6", YESTERDAY, 140.0, 100.0, 120.0, 80.0, True)]  # Adobe flag
+        + [v for v in _series("metrics/event7", 0.0, 0.0) if v.day != YESTERDAY]
+        + [_dv("metrics/event7", YESTERDAY, 0.0, 50.0, 80.0, 20.0, True)]
+        + _series("metrics/event8", 100.0, 160.0)  # 60 percent spike
+        + _series("metrics/event9", 100.0, 130.0)  # 30 percent spike
+        + _series("metrics/event10", 8.0, 30.0)  # small usual value: skipped
+        + _fridays("metrics/event11", S12, 140.0, other=50.0)  # local high
+        + _fridays("metrics/event12", S12, 60.0, other=50.0)  # local low
+    )
+    return comps, vals
+
+
+def test_the_default_method_of_the_macro_is_adobe(tmp_path):
+    store, rid = _build(tmp_path, *_macro_data())
+    every = "SELECT * FROM alerts(?, for_day := ?{})"
+    for day in _days(TODAY - timedelta(days=91), YESTERDAY):
+        plain = store.con.execute(every.format(""), [rid, day]).fetchall()
+        adobe = store.con.execute(every.format(", method := 'adobe'"), [rid, day]).fetchall()
+        assert plain == adobe
+    unusual = store.con.execute(
+        "SELECT component_id FROM alerts(?) WHERE alert = 'unusual'", [rid]
+    ).fetchall()
+    assert unusual == [("metrics/event6",)]
+
+
+@pytest.mark.parametrize("method", ["adobe", *LOCAL_METHODS])
+def test_page_alerts_match_the_alerts_macro(tmp_path, method):
+    store, rid = _build(tmp_path, *_macro_data())
+    view = build_view(store, rid, method=method)
+    for day in [YESTERDAY - timedelta(days=n) for n in range(7)]:
+        page = {}
+        for a in view["alerts"]:
+            if a["day"] != day.isoformat() or (a["zero"] and a["unused"]):
+                continue
+            if a["anomaly"]:
+                kind = "unusual"
+            elif a["zero"]:
+                kind = "dropped to zero"
+            else:
+                kind = "large spike" if a["pct_vs_usual"] > 0 else "large drop"
+            page[a["component_id"]] = (kind, a["anomaly"], a["expected"])
+        rows = store.con.execute(
+            "SELECT component_id, alert, anomaly, expected FROM alerts(?, threshold := 0.10,"
+            " spike_threshold := 0.10, for_day := ?, method := ?)",
+            [rid, day, method],
+        ).fetchall()
+        macro = {r[0]: r[1:] for r in rows}
+        assert set(macro) == set(page), day
+        for cid, want in page.items():
+            assert macro[cid] == pytest.approx(want), (day, cid)
+    flags = {a["component_id"]: a["anomaly"] for a in view["alerts"] if a["anomaly"]}
+    if method == "adobe":
+        assert flags == {"metrics/event6": "high"}
+    else:
+        assert flags["metrics/event11"] == "high" and flags["metrics/event12"] == "low"
+        assert "metrics/event7" not in flags  # never collected data
+
+
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+def test_page_and_macro_agree_on_every_day(tmp_path, method):
+    import random
+
+    rnd = random.Random(7)
+    comps = [_comp(f"metrics/event{i}", f"E{i}", number=i) for i in range(1, 9)]
+    vals = []
+    for i in range(1, 9):
+        for d in _days(START - timedelta(days=5), TODAY):
+            pick = rnd.random()
+            if pick < 0.05:
+                continue
+            v = rnd.choice([math.nan, math.inf, None]) if pick < 0.1 else rnd.gauss(50, 30)
+            if i == 2 and v is not None:
+                v = abs(v)  # a sample of 0 or more
+            if i == 3:
+                v = 0.0 if pick < 0.8 else 40.0  # mostly 0
+            vals.append(_dv(f"metrics/event{i}", d, v))
+    store, rid = _build(tmp_path, comps, vals)
+    view = build_view(store, rid, method=method)
+    page = {(cid, p[0]): tuple(p[2:]) for cid, points in view["series"].items() for p in points}
+    macro = {
+        (cid, day.isoformat()): rest
+        for cid, day, *rest in store.con.execute(
+            "SELECT component_id, day, round(expected, 4), round(upper, 4), round(lower, 4),"
+            " anomaly FROM anomaly_days(?, method := ?)",
+            [rid, method],
+        ).fetchall()
+    }
+    assert set(page) == set(macro)
+    for key, want in page.items():
+        assert tuple(macro[key]) == pytest.approx(want), key
+    assert any(p[3] for p in page.values()), "the data should give some flags"
+    # Days before the 91 days get no range, and today is not in the series.
+    assert min(day for _, day in page) == START.isoformat()
+
+
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+def test_a_local_method_reaches_every_part_of_the_page(tmp_path, method):
+    # A run that may not use Adobe's anomaly detection has no flags from Adobe.
+    store = Store.open(tmp_path / "h.duckdb")
+    before = _run(store, date(2026, 11, 5))
+    rid = _run(store, date(2026, 11, 6), last={"metrics/event2": 500.0})
+    store.con.execute(
+        "INSERT INTO issues VALUES (?, 'run', NULL, 'anomaly_not_allowed', 'not allowed')", [rid]
+    )
+    day = "2026-11-05"
+    adobe = build_view(store, rid)
+    view = build_view(store, rid, method=method)
+    assert _row(adobe["views"][f"day:{day}"], "metrics/event2")["anomaly"] is None
+    assert _row(view["views"][f"day:{day}"], "metrics/event2")["anomaly"] == "high"
+    assert [a["anomaly"] for a in view["alerts"] if a["component_id"] == "metrics/event2"] == [
+        "high"
+    ]
+    point = [p for p in view["series"]["metrics/event2"] if p[0] == day]
+    assert point == [[day, 500, 100, 105, 95, "high"]]
+    [cal] = [c for c in view["calendar"] if c["day"] == day]
+    assert cal["high"] == ["metrics/event2"]
+    assert [(h["run_id"], h["high"]) for h in view["history"]] == [(rid, 1), (before, 0)]
+    assert [h["high"] for h in adobe["history"]] == [0, 0]
+    for h in view["history"]:
+        want = _tile_counts(build_view(store, h["run_id"], method=method))
+        drops = want.pop("drops")
+        assert drops == pytest.approx(h["drops"])
+        assert {k: h[k] for k in want} == want
+    # component_days keeps Adobe's values.
+    flags = store.con.execute(
+        "SELECT count(*) FROM component_days WHERE run_id = ? AND anomaly IS NOT NULL", [rid]
+    ).fetchone()[0]
+    assert flags == 0
+
+
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+def test_a_local_method_keeps_every_count(tmp_path, method):
+    comps, vals = _macro_data()
+    store, rid = _build(
+        tmp_path,
+        comps,
+        vals,
+        top={"current": [(1, "x", 1.0)]},
+        issues=[("run", None, "anomaly_not_allowed", "not allowed")],
+    )
+    adobe = build_view(store, rid)
+    view = build_view(store, rid, method=method)
+    for key, rows in adobe["views"].items():
+        for a, b in zip(rows, view["views"][key], strict=True):
+            assert {**a, "anomaly": None} == {**b, "anomaly": None}
+    for a, b in zip(adobe["series"].items(), view["series"].items(), strict=True):
+        assert a[0] == b[0] and [p[:2] for p in a[1]] == [p[:2] for p in b[1]]
+    for key in ("run", "declines", "pairs", "issues", "component_drops", "change_alert"):
+        assert adobe[key] == view[key]
+    assert [c["day"] for c in adobe["calendar"]] == [c["day"] for c in view["calendar"]]
+
+
+def test_the_default_method_is_adobe(tmp_path):
+    comps, vals = _macro_data()
+    store, rid = _build(tmp_path, comps, vals)
+    assert build_view(store, rid) == build_view(store, rid, method="adobe")
+
+
+def test_a_query_without_the_part_to_replace_fails_for_a_local_method():
+    # Without the check, the page would show Adobe's values under the name of a local method.
+    from ahd.summary import _DV, _LOCAL_RUN_DV, _for_method
+
+    assert _for_method("SELECT 1", "adobe", _DV, _LOCAL_RUN_DV) == "SELECT 1"
+    for sql in ("SELECT 1", f"WITH {_DV}, {_DV} SELECT 1"):
+        with pytest.raises(RuntimeError, match="exactly once"):
+            _for_method(sql, "weekday-median", _DV, _LOCAL_RUN_DV)
+    sql = f"WITH {_DV} SELECT 1"
+    assert _for_method(sql, "weekday-iqr", _DV, _LOCAL_RUN_DV) == f"WITH {_LOCAL_RUN_DV} SELECT 1"
