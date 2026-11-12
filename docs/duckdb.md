@@ -116,7 +116,7 @@ To see every column of a table, run `DESCRIBE daily_values`. To see a quick prof
 
 Every file comes with two views and two table macros. A view is a saved query that you use like a table. A table macro is a saved query that takes options. They use the same rules as the report, and the tests check that they agree.
 
-When a new version of `ahd` changes these rules, the next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces the views and the macros in your file. Until then, your own SQL and the [alert email script](#email-recipes) use the old rules. If you built your own views on top of `component_days`, they follow the new rules after the update.
+When a new version of `ahd` changes these rules, the next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces the views and the macros in your file. Until then, your own SQL uses the old rules. If you built your own views on top of `component_days`, they follow the new rules after the update. [`ahd alerts`](#print-the-alerts-with-ahd-alerts) and the [alert email script](#send-an-alert-email-every-morning) always use the rules of the `ahd` that you run, also on a file with older views.
 
 ### `latest_runs`
 
@@ -287,11 +287,34 @@ For the Adobe Store suite, `dgeo1xxpnwcidadobestore`, it prints:
 | large spike | Product Views         | 2850.0 | 4499.0 | 58.0  |
 ```
 
+### Print the alerts with ahd alerts
+
+`ahd alerts` prints the alerts of the latest run of a suite, or of any stored run, with no SQL. It uses the `alerts()` macro of the `ahd` that you run, so it gives the same alerts as the queries above. It opens the file read-only.
+
+```
+ahd alerts --db data/ahd.duckdb --rsid dgeo1xxpnwcidadobestore
+```
+
+```
+A large drop is more than 30% below the weekday average, and a large spike is more than 50% above it. The weekday average is the average of the same weekday in the 12 weeks before. Adobe's anomaly detection flags the unusual values.
+
+Run 2, Adobe Store (dgeo1xxpnwcidadobestore), status ok
+Alerts for 2026-11-11: 3 unusual values, 0 large drops, 10 large spikes, 0 drops to zero
+- unusual: Exit Link Instances (metrics/exitlinkinstances), weekday average 2.42, actual 8, expected 2.51, change +231.0%
+- unusual: Cart Additions (metrics/cartadditions), weekday average 140.08, actual 230, expected 77.06, change +64.2%
+- unusual: Orders (metrics/orders), weekday average 18.33, actual 35, expected 20.91, change +90.9%
+- large spike: Custom Link Instances (metrics/customlinkinstances), weekday average 12.08, actual 41, change +239.3%
+- large spike: Page (variables/page), weekday average 4,848.50, actual 8,172, change +68.5%
+(Shortened: 8 more large spikes follow.)
+```
+
+`--all-suites` prints every suite with a finished run. `--format json` and `--format csv` give the same alerts to another program. The command exits with 0 when it printed an alert and with 4 when there was none, so a scheduled job can send an email only on a day with alerts. [Usage](usage.md#alerts) gives every option, the fields of the JSON and the exit codes.
+
 ### Send an alert email every morning
 
 [`examples/send_alerts.py`](examples/send_alerts.py) emails the latest alerts for one or more report suites, with an HTML table and a plain text part. The email has one section for each suite that has alerts. It sends nothing when no suite has alerts. That way an empty inbox means healthy suites.
 
-The script is in this repository. Run it from a clone, as below. Without a clone, download the file and run it with DuckDB added, e.g., `uv run --with 'duckdb>=2.0' python send_alerts.py ...`.
+The script gets its alerts from `ahd alerts --format json`, and builds and sends the email itself. So it needs `ahd` 0.1.11 or newer. Before 0.1.11, it needed only DuckDB, and it read the file with its own copy of the rules for the anomaly options. The script is in this repository. Run it from a clone, as below, where `uv run` already has `ahd`. Without a clone, download the file and run it with `ahd` added, e.g., `uv run --with aa-health-duckdb python send_alerts.py ...`. The script looks for `ahd` in the Python that runs it first, then for the `ahd` program on your `PATH`. Without either, it stops with exit code 1 and says how to install it.
 
 ```
 uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
@@ -299,13 +322,13 @@ uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite o
 uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb --all
 ```
 
-It reads the latest run of each suite without a segment, from `latest_runs`. `--all` uses every suite that has such a run in the file. Add `--segment ID` for the latest runs with that segment. The script takes only report suite IDs and segment IDs, not names, and they must match exactly. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`. `--spike-threshold` sets the large spike percent the same way, up to `2`. The default is `0.50`.
+It reads the latest run of each suite without a segment, from `latest_runs`. `--all` uses every suite that has such a run in the file. Add `--segment ID` for the latest runs with that segment. The script takes only report suite IDs and segment IDs, not names, and they must match exactly. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`. `--spike-threshold` sets the large spike percent the same way, up to `2`. The default is `0.50`. The script gives each share to `ahd alerts` as the exact percent, e.g., `0.275` as `--change-alert 27.5`, so the email lists the same alerts as before.
 
-`--anomaly-method` chooses the anomaly method that flags the unusual values, and `--anomaly-sensitivity` sets how wide the range of a local method is. They take the same values as on `ahd run`, and the defaults are the same, `adobe` and `normal`. So by default the script uses Adobe's flags. With `adobe`, `low` or `high` stops the script with exit code 1, as on the command line, because Adobe returns its own range. The email says which method flagged the unusual values, and it names the sensitivity when it is not `normal`, e.g., "The Weekday median method with high sensitivity flagged the unusual values."
+`--anomaly-method` chooses the anomaly method that flags the unusual values, and `--anomaly-sensitivity` sets how wide the range of a local method is. The script gives both to `ahd alerts`, so they take the same values as on `ahd run`, and the defaults are the same, `adobe` and `normal`. So by default the script uses Adobe's flags. With `adobe`, `low` or `high` stops the script with exit code 1 and the message of `ahd`, because Adobe returns its own range. The email says which method flagged the unusual values, and it names the sensitivity when it is not `normal`, e.g., "The Weekday median method with high sensitivity flagged the unusual values."
 
-Without these two options, the script reads the variables `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`, as `ahd run` does. Set them once for a scheduled job, and the reports and the email use the same method. An option wins over its variable, and an empty variable counts as not set. A value that is not a method or a sensitivity stops the script with exit code 1, and the message names the variable. See [Set the anomaly method once](usage.md#set-the-anomaly-method-once).
+Without these two options, `ahd alerts` reads the variables `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`, as `ahd run` does. Set them once for a scheduled job, and the reports and the email use the same method. An option wins over its variable, and an empty variable counts as not set. A value that is not a method or a sensitivity stops the script with exit code 1, and the message names the variable. See [Set the anomaly method once](usage.md#set-the-anomaly-method-once).
 
-The script uses the `alerts()` macro in the file. The file keeps the macro of the version of `ahd` that last wrote to it. If that version does not know the chosen method or sensitivity, the script stops with exit code 1 and says to run `ahd run` once. The defaults work with the macro of any version.
+`ahd alerts` uses the rules of the installed `ahd`, also on a file that an older version wrote, so every method and sensitivity works on any file. Before 0.1.11, the script used the macro in the file, and on a file that an older version had written last, it stopped and said to run `ahd run` once.
 
 Without `SMTP_HOST`, it writes `alerts.eml` in the current folder, which you can open and check first. To send, set `SMTP_HOST`, `MAIL_FROM` and `MAIL_TO`. Set `SMTP_PORT` when the server does not use 587. Set `SMTP_USER` and `SMTP_PASSWORD` when the server needs a login. The script connects without encryption and then turns it on with the STARTTLS command. It does not work with a server that needs encryption from the start, e.g., on port 465.
 

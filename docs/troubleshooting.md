@@ -136,7 +136,7 @@ Only one program can write to a DuckDB file at a time. While a program writes to
 
 - While `ahd run`, `ahd individual`, `ahd prune` or `ahd import` works on the file, wait for it to finish.
 - A `duckdb` session that is still open on the file also blocks `ahd run`. Close it, then try again. `ahd runs`, `ahd render` and `ahd alerts` only read, so they work while a `duckdb -readonly` session is open.
-- A scheduled `ahd alerts` that starts while `ahd run` still writes to the file stops with this message and exit code 1. Start it after `ahd run` has finished, as the jobs in [Run it every day](scheduling.md) do.
+- A scheduled `ahd alerts` or `send_alerts.py` that starts while `ahd run` still writes to the file stops with this message and exit code 1. Start it after `ahd run` has finished, as the jobs in [Run it every day](scheduling.md) do.
 
 DuckDB's own message for this is "Could not set lock on file".
 

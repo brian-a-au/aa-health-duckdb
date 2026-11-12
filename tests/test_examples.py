@@ -3,16 +3,20 @@
 import email
 import email.policy
 import importlib.util
+import json
+import math
+import random
+import subprocess
+import sys
 from datetime import date, timedelta
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
-from ahd.cli import METHOD_ENV, SENSITIVITY_ENV
 from ahd.store import Store
-from ahd.summary import ANOMALY_METHODS, SENSITIVITIES
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "docs" / "examples"
 TODAY = date(2026, 11, 7)
@@ -266,12 +270,10 @@ def test_send_alerts_refuses_a_sensitivity_with_adobe(tmp_path, monkeypatch, cap
     monkeypatch.chdir(tmp_path)
     mod = _load("send_alerts")
     db = _weeks_db(tmp_path, 16_000_000.0)
-    with pytest.raises(SystemExit) as e:
-        mod.main([db, "rs1", "--anomaly-sensitivity", "high"])
-    assert e.value.code == 1
+    # ahd alerts refuses it, as every ahd command does, with exit code 1 and without the usage.
+    assert mod.main([db, "rs1", "--anomaly-sensitivity", "high"]) == 1
     err = capsys.readouterr().err
-    assert "usage:" in err
-    assert "--anomaly-sensitivity works only with a local anomaly method" in err
+    assert "Error: --anomaly-sensitivity works only with a local anomaly method" in err
     assert not (tmp_path / "alerts.eml").exists()
     # normal is the default, so it is accepted with adobe, as on the command line.
     assert mod.main([db, "rs1", "--anomaly-sensitivity", "normal"]) == 0
@@ -312,17 +314,17 @@ def test_send_alerts_reads_the_anomaly_variables_of_ahd(tmp_path, monkeypatch):
             "AHD_ANOMALY_METHOD",
             "weekday_median",
             (
-                "The AHD_ANOMALY_METHOD variable is set to 'weekday_median', which is not an anomaly "
-                "method. Use adobe, weekday-median, weekday-iqr or weekday-trend, or unset the "
-                "variable.\n"
+                "Error: The AHD_ANOMALY_METHOD variable is set to 'weekday_median', which is not an "
+                "anomaly method. Use adobe, weekday-median, weekday-iqr or weekday-trend, or unset "
+                "the variable.\n"
             ),
         ),
         (
             "AHD_ANOMALY_SENSITIVITY",
             "Medium",
             (
-                "The AHD_ANOMALY_SENSITIVITY variable is set to 'Medium', which is not an anomaly "
-                "sensitivity. Use low, normal or high, or unset the variable.\n"
+                "Error: The AHD_ANOMALY_SENSITIVITY variable is set to 'Medium', which is not an "
+                "anomaly sensitivity. Use low, normal or high, or unset the variable.\n"
             ),
         ),
     ],
@@ -352,20 +354,21 @@ def test_send_alerts_stops_for_an_unknown_value_in_a_variable(
             {"AHD_ANOMALY_SENSITIVITY": "high"},
             [],
             (
-                "The anomaly sensitivity high from the AHD_ANOMALY_SENSITIVITY variable works only "
-                "with a local anomaly method, e.g., --anomaly-method weekday-median or "
+                "Error: The anomaly sensitivity high from the AHD_ANOMALY_SENSITIVITY variable works "
+                "only with a local anomaly method, e.g., --anomaly-method weekday-median or "
                 "AHD_ANOMALY_METHOD=weekday-median. The adobe method uses the expected range that "
-                "Adobe returned. To use adobe, unset AHD_ANOMALY_SENSITIVITY or set it to normal.\n"
+                "Adobe returned, which ahd does not change. To use adobe, unset "
+                "AHD_ANOMALY_SENSITIVITY or set it to normal.\n"
             ),
         ),
         (
             {"AHD_ANOMALY_METHOD": "adobe"},
             ["--anomaly-sensitivity", "low"],
             (
-                "--anomaly-sensitivity works only with a local anomaly method, e.g., "
+                "Error: --anomaly-sensitivity works only with a local anomaly method, e.g., "
                 "--anomaly-method weekday-median or AHD_ANOMALY_METHOD=weekday-median. The adobe "
-                "method uses the expected range that Adobe returned. The method adobe comes from the "
-                "AHD_ANOMALY_METHOD variable.\n"
+                "method uses the expected range that Adobe returned, which ahd does not change. The "
+                "method adobe comes from the AHD_ANOMALY_METHOD variable.\n"
             ),
         ),
     ],
@@ -384,22 +387,11 @@ def test_send_alerts_refuses_a_sensitivity_with_adobe_from_a_variable(
     assert not (tmp_path / "alerts.eml").exists()
 
 
-def test_send_alerts_knows_the_methods_and_sensitivities_of_ahd():
-    # The script runs without ahd installed, so it keeps its own lists.
-    mod = _load("send_alerts")
-    assert tuple(mod.METHODS) == ANOMALY_METHODS
-    assert mod.SENSITIVITIES == SENSITIVITIES
-    assert (mod.METHOD_ENV, mod.SENSITIVITY_ENV) == (METHOD_ENV, SENSITIVITY_ENV)
-
-
-def test_send_alerts_with_the_defaults_reads_a_file_with_older_macros(
+def test_send_alerts_uses_the_rules_of_ahd_also_on_a_file_with_older_macros(
     tmp_path, monkeypatch, capsys
 ):
-    """Until ahd writes to a file again, the file keeps the alerts() macro of the version that
-    last wrote to it. The defaults must still work with a macro without method or sensitivity.
-    Another method or sensitivity needs the new macro, and the message says how to get it."""
-    import duckdb
-
+    """The file keeps the alerts() macro of the version of ahd that last wrote to it. ahd alerts
+    uses the macros of the installed ahd instead, so every method works on such a file."""
     monkeypatch.delenv("SMTP_HOST", raising=False)
     monkeypatch.chdir(tmp_path)
     mod = _load("send_alerts")
@@ -411,18 +403,10 @@ def test_send_alerts_with_the_defaults_reads_a_file_with_older_macros(
             "SELECT 'large drop' AS alert, 'Old macro' AS name, 'metrics/event1' AS component_id, "
             "1.0 AS usual, 0.5 AS value, -0.5 AS pct_vs_usual, DATE '2026-11-06' AS day"
         )
-    assert mod.main([str(db), "rs1"]) == 0
-    text, _page = _mail(tmp_path)
-    assert "- large drop: Old macro" in text
-    capsys.readouterr()
-    for options in (
-        ["--anomaly-method", "weekday-iqr"],
-        ["--anomaly-method", "weekday-trend", "--anomaly-sensitivity", "low"],
-    ):
-        assert mod.main([str(db), "rs1", *options]) == 1
-        err = capsys.readouterr().err
-        assert f"The alerts() macro in {db} is from an older version of ahd" in err
-        assert "Binder" not in err
+    for options in ([], ["--anomaly-method", "weekday-trend", "--anomaly-sensitivity", "low"]):
+        assert mod.main([str(db), "rs1", *options]) == 0
+        text, _page = _mail(tmp_path)
+        assert "Old macro" not in text and "Big <event>" in text
 
 
 def _suites_db(tmp_path, values):
@@ -479,11 +463,9 @@ def test_send_alerts_sends_the_others_when_one_suite_is_missing(tmp_path, monkey
 
 
 def test_send_alerts_missing_or_locked_database(tmp_path, capsys):
-    import subprocess
-    import sys
-
     mod = _load("send_alerts")
     assert mod.main([str(tmp_path / "none.duckdb"), "rs1"]) == 1
+    assert "There is no database at" in capsys.readouterr().err
     db = _db(tmp_path, 5_000_000.0)
     with subprocess.Popen(
         [
@@ -498,9 +480,10 @@ def test_send_alerts_missing_or_locked_database(tmp_path, capsys):
         text=True,
     ) as holder:
         try:
-            assert holder.stdout.readline().strip() == "ready"
+            ready = holder.stdout.readline().strip()
+            assert ready == "ready"
             assert mod.main([str(db), "rs1"]) == 1
-            assert "Could not read" in capsys.readouterr().err
+            assert "is in use by another program" in capsys.readouterr().err
         finally:
             holder.kill()
 
@@ -560,8 +543,6 @@ def test_every_sql_example_in_the_duckdb_guide_runs(tmp_path, monkeypatch):
     Two kinds of block are left out. A block with INSTALL needs the network, and a block with
     ATTACH needs the files of other profiles.
     """
-    import duckdb
-
     monkeypatch.chdir(tmp_path)
     db = tmp_path / "ahd.duckdb"
     s = Store.open(db)
@@ -596,3 +577,264 @@ def test_the_notebook_command_in_the_guide_does_not_open_the_session_read_only()
     assert commands, "the guide should show how to start the notebook"
     for command in commands:
         assert "-readonly" not in command and "(READ_ONLY)" in command
+
+
+# ---- the script gets its alerts from ahd alerts ------------------------------------------
+
+
+def test_send_alerts_runs_ahd_alerts_with_its_options(tmp_path, monkeypatch):
+    """The script passes its own options on, and the shares as exact percents."""
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    calls = []
+    real = mod.subprocess.run
+
+    def run(argv, **kw):
+        calls.append(argv)
+        return real(argv, **kw)
+
+    monkeypatch.setattr(mod.subprocess, "run", run)
+    db = str(_db(tmp_path, 5_000_000.0))
+    argv = [db, "rs1", "rs1", "--segment", "s1", "--threshold", "0.275"]
+    argv += ["--spike-threshold", "1.5", "--anomaly-method", "weekday-iqr"]
+    assert mod.main(argv) == 1  # no run with the segment s1
+    [call] = calls
+    assert call[:3] == [sys.executable, "-m", "ahd.cli"]
+    assert call[3:] == [
+        "alerts",
+        f"--db={db}",
+        "--format=json",
+        "--change-alert=27.5",
+        "--spike-alert=150",
+        "--rsid=rs1",
+        "--rsid=rs1",
+        "--segment=s1",
+        "--anomaly-method=weekday-iqr",
+    ]
+    calls.clear()
+    assert mod.main([db, "--all"]) == 0
+    assert calls[0][5:] == [
+        "--format=json",
+        "--change-alert=30",
+        "--spike-alert=50",
+        "--all-suites",
+    ]
+
+
+@pytest.mark.parametrize(
+    "share",
+    [
+        "0.3",
+        "0.30",
+        ".3",
+        "3e-1",
+        "0.275",
+        "1",
+        "0.05",
+        "0.333333333333333333333333333333333",
+        "0.1_5",
+        " 0.4 ",
+        "0.0000001",
+    ],
+)
+def test_a_share_becomes_a_percent_that_gives_the_same_share_in_ahd(share):
+    from ahd.cli import _percent_share
+
+    mod = _load("send_alerts")
+    percent = mod._percent_text(share)
+    assert _percent_share(100)(percent) == float(share)
+
+
+def test_the_percent_of_any_share_gives_the_same_share_in_ahd():
+    from ahd.cli import _percent_share
+
+    mod = _load("send_alerts")
+    rng = random.Random(7)
+    for _ in range(2000):
+        share = repr(rng.uniform(1e-9, 2.0))
+        assert _percent_share(200)(mod._percent_text(share)) == float(share), share
+
+
+def test_the_rounding_of_the_script_is_the_rounding_of_duckdb():
+    """The email showed values that DuckDB rounded, e.g., round(usual). The script rounds them
+    itself now, in the same way: half away from zero."""
+    mod = _load("send_alerts")
+    rng = random.Random(11)
+    values = [0.5, 1.5, 2.5, -0.5, -2.5, 0.49999999999999994, 12.25, 12.35, -12.25, 4849.25]
+    values += [rng.uniform(-1e6, 1e6) for _ in range(500)]
+    values += [round(rng.uniform(-1000, 1000), 2) + 0.05 for _ in range(500)]
+    with duckdb.connect() as con:
+        for v in values:
+            query = "SELECT round(?::DOUBLE), round(?::DOUBLE, 1)"
+            whole, tenth = con.execute(query, [v, v]).fetchone()
+            assert (mod._round(v), mod._round(v, 1)) == (whole, tenth), v
+    assert mod._round(math.inf) == math.inf and mod._round(None) is None
+
+
+OLD_QUERY = """
+FROM alerts($run, threshold := $threshold, spike_threshold := $spike, method := $method,
+    sensitivity := $sensitivity)
+SELECT alert, name, component_id, round(usual) AS usual, value,
+    round(pct_vs_usual * 100, 1) AS pct, day
+ORDER BY alert DESC, pct
+"""
+
+
+def _rich_db(tmp_path):
+    """Two suites, each with 40 metrics that vary from day to day, so that every kind of alert
+    turns up and the values have fractions."""
+    db = tmp_path / "ahd.duckdb"
+    s = Store.open(db)
+    rng = random.Random(3)
+    for rsid in ("rs1", "rs2"):
+        rid = s.create_run(rsid, f"Suite {rsid}", None, TODAY, "UTC", "0.1")
+        comps, values = [], []
+        for n in range(1, 41):
+            cid = f"metrics/event{n}"
+            comps.append(
+                Component(cid, f"Event {n}", "metric", "custom_events", n, Column(cid, cid), None)
+            )
+            base = rng.choice([0.0, 5.0, 40.0, 1000.0])
+            for d in range(91):
+                day = TODAY - timedelta(days=91 - d)
+                v = base * rng.uniform(0.6, 1.4)
+                if d == 90:
+                    v = rng.choice([0.0, base * 0.3, base * 2.5, v])
+                flagged = d == 90 and n % 7 == 0
+                values.append(
+                    DailyValue(cid, day, round(v, 2), base, base * 1.3, base * 0.7, flagged)
+                )
+        s.add_components(rid, comps)
+        s.add_daily_values(rid, values)
+        s.finish_run(rid, "ok")
+    s.con.close()
+    return db
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"threshold": 0.3, "spike": 0.5, "method": "adobe", "sensitivity": "normal"},
+        {"threshold": 0.275, "spike": 1.2, "method": "weekday-median", "sensitivity": "high"},
+    ],
+)
+def test_the_email_lists_the_same_rows_as_the_old_query(tmp_path, monkeypatch, options):
+    """Before 0.1.11 the script read the rows with OLD_QUERY. The rows from ahd alerts, rounded
+    and ordered by the script, are the same, so the email does not change."""
+    mod = _load("send_alerts")
+    db = _rich_db(tmp_path)
+    argv = [str(db), "rs1", "rs2", "--threshold", str(options["threshold"])]
+    argv += ["--spike-threshold", str(options["spike"]), "--anomaly-method", options["method"]]
+    argv += ["--anomaly-sensitivity", options["sensitivity"]]
+    built = []
+    monkeypatch.setattr(mod, "_send", lambda msg, count: None)
+    real_build = mod.build
+
+    def build(sections, *a, **k):
+        built.append(sections)
+        return real_build(sections, *a, **k)
+
+    monkeypatch.setattr(mod, "build", build)
+    assert mod.main(argv) == 0
+    [sections] = built
+    with duckdb.connect(str(db), read_only=True) as con:
+        for rsid, name, rows in sections:
+            run = 1 if rsid == "rs1" else 2
+            # The email writes the day as YYYY-MM-DD, which is how the JSON gives it.
+            old = [
+                (*r[:-1], r[-1].isoformat())
+                for r in con.execute(OLD_QUERY, {"run": run, **options}).fetchall()
+            ]
+            assert name == f"Suite {rsid}"
+            assert len(rows) == len(old) > 0
+            # Rows with the same alert and change may come in either order in the old query.
+            assert sorted(rows, key=repr) == sorted(old, key=repr)
+            assert [(r[0], r[5]) for r in rows] == [(r[0], r[5]) for r in old]
+    if options["method"] == "adobe":
+        # With a local method, most large drops and spikes are unusual values instead.
+        kinds = {r[0] for _, _, rows in sections for r in rows}
+        assert kinds == {"unusual", "large spike", "large drop", "dropped to zero"}
+
+
+def test_send_alerts_without_ahd_says_how_to_get_it(tmp_path, monkeypatch, capsys):
+    mod = _load("send_alerts")
+    monkeypatch.setattr(mod, "_ahd_command", lambda: None)
+    assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs1"]) == 1
+    assert capsys.readouterr().err == (
+        "This script needs ahd 0.1.11 or newer, from the package aa-health-duckdb. Install it, "
+        "e.g., with uv tool install aa-health-duckdb, or run the script with it added, e.g., "
+        "uv run --with aa-health-duckdb python send_alerts.py.\n"
+    )
+
+
+def test_the_script_finds_ahd_in_its_python_first_then_on_the_path(monkeypatch):
+    mod = _load("send_alerts")
+    assert mod._ahd_command() == [sys.executable, "-m", "ahd.cli"]
+
+    def missing(name):
+        raise mod.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(mod.metadata, "version", missing)
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/opt/bin/ahd" if name == "ahd" else None)
+    assert mod._ahd_command() == ["/opt/bin/ahd"]
+    monkeypatch.setattr(mod.shutil, "which", lambda name: None)
+    assert mod._ahd_command() is None
+
+
+OLD_AHD = (
+    "import sys; sys.stderr.write('usage: ahd [-h]\\nahd: error: argument command: invalid "
+    "choice: \\'alerts\\' (choose from check, run)\\n'); sys.exit(2)"
+)
+
+
+def test_an_ahd_without_the_alerts_command_is_named(tmp_path, monkeypatch, capsys):
+    mod = _load("send_alerts")
+    monkeypatch.setattr(mod, "_ahd_command", lambda: [sys.executable, "-c", OLD_AHD])
+    assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs1"]) == 1
+    assert capsys.readouterr().err == (
+        "The ahd that this script found has no alerts command, so it is older than 0.1.11. "
+        "Update it, e.g., with uv tool upgrade aa-health-duckdb.\n"
+    )
+
+
+@pytest.mark.parametrize("code", [0, 1, 4])
+def test_an_answer_that_is_not_json_is_an_error(tmp_path, monkeypatch, capsys, code):
+    mod = _load("send_alerts")
+    odd = [sys.executable, "-c", f"import sys; print('not json'); sys.exit({code})"]
+    monkeypatch.setattr(mod, "_ahd_command", lambda: odd)
+    assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs1"]) == 1
+    assert "ahd alerts did not give its alerts as JSON" in capsys.readouterr().err
+
+
+def test_another_exit_code_of_ahd_is_an_error(tmp_path, monkeypatch, capsys):
+    mod = _load("send_alerts")
+    stopped = [sys.executable, "-c", "import sys; sys.stderr.write('Stopped.\\n'); sys.exit(130)"]
+    monkeypatch.setattr(mod, "_ahd_command", lambda: stopped)
+    assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs1"]) == 1
+    assert capsys.readouterr().err == "Stopped.\n"
+
+
+def test_the_script_reads_the_json_of_ahd_alerts(tmp_path, capsys):
+    """The fields that the script reads are in the JSON that ahd alerts writes."""
+    from ahd.cli import main as ahd
+
+    db = _suites_db(tmp_path, {"rs1": 5_000_000.0})
+    assert ahd(["alerts", "--db", db, "--rsid", "rs1", "--format", "json"]) == 0
+    [run] = json.loads(capsys.readouterr().out)["runs"]
+    for key in ("rsid", "rsid_name", "day", "method", "method_name", "sensitivity", "alerts"):
+        assert key in run
+    for key in ("alert", "name", "component_id", "usual", "value", "pct_vs_usual"):
+        assert key in run["alerts"][0]
+
+
+def test_the_script_writes_nothing_into_the_folder_it_is_not_run_in(tmp_path, monkeypatch):
+    """alerts.eml goes into the current folder only."""
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    here = tmp_path / "here"
+    here.mkdir()
+    monkeypatch.chdir(here)
+    mod = _load("send_alerts")
+    assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs1"]) == 0
+    assert [p.name for p in here.iterdir()] == ["alerts.eml"]
+    assert not (EXAMPLES / "alerts.eml").exists()

@@ -159,7 +159,7 @@ export AHD_ANOMALY_SENSITIVITY=high
 ahd run --rsid my_suite
 ```
 
-- `ahd run`, `ahd individual`, `ahd render` and `ahd alerts` read them, and so does the alert email script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning). A scheduled job that sets them once gives the reports and the email the same method. See [Run it every day](scheduling.md).
+- `ahd run`, `ahd individual`, `ahd render` and `ahd alerts` read them. The alert email script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning) gets its alerts from `ahd alerts`, so it uses them too. A scheduled job that sets them once gives the reports and the email the same method. See [Run it every day](scheduling.md).
 - An option on the command line wins over its variable, e.g., `--anomaly-sensitivity normal` with `AHD_ANOMALY_SENSITIVITY=high` gives `normal`.
 - Without the option and the variable, the defaults are `adobe` and `normal`. An empty variable counts as not set.
 - A value that is not in the list stops the command with exit code 1, before it signs in or opens the database. The message names the variable and the values it takes.
@@ -331,6 +331,8 @@ So a scheduled job can send the alerts only when there are any, e.g., with a `ma
 ```
 ahd alerts --profile prod --all-suites > alerts.txt && mail -s "Analytics Health alerts" team@example.com < alerts.txt
 ```
+
+The example script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning) builds an HTML email from `ahd alerts --format json`.
 
 ## runs
 
