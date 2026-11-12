@@ -128,6 +128,7 @@ ahd run --all-suites
 | `--change-alert` | Where the report's large drop slider starts: 10 to 100, in steps of 5. The default is 30. The slider shows it as a negative change, e.g., 30 is -30%. See [The report](report.md#the-large-drop-and-spike-sliders). |
 | `--spike-alert` | Where the report's large spike slider starts: 10 to 200, in steps of 10. The default is 50. See [The report](report.md#the-large-drop-and-spike-sliders). |
 | `--anomaly-method` | How the report finds unusual values: `adobe`, `weekday-median`, `weekday-iqr` or `weekday-trend`. The default is `adobe`, which uses Adobe's anomaly detection. The other three compute the expected range from the daily values of the run, with no extra requests to Adobe. See [The report](report.md#anomaly-detection-methods). |
+| `--anomaly-sensitivity` | How wide the expected range of a local anomaly method is: `low`, `normal` or `high`. The default is `normal`. `low` makes the range wider, so fewer values are flagged. `high` makes it narrower, so more values are flagged. It works only with `weekday-median`, `weekday-iqr` or `weekday-trend`. With `adobe`, any value other than `normal` stops the command with an error, because Adobe returns its own range. See [The report](report.md#the-sensitivity-of-the-local-methods). |
 | `--out` | The folder for the HTML report. The default is `./reports/`. |
 | `--batch-size` | How many columns go into one trend request, from 1 to 100. The default is 20. |
 | `--workers` | How many requests run at the same time, from 1 to 16. The default is 8. The tool starts no more than 12 requests in any 6 seconds, which is Adobe's limit. |
@@ -140,7 +141,7 @@ Run 12 for my_suite finished with status: ok
 Alerts for 2026-11-07: 2 unusual values, 1 large drop, 0 large spikes, 0 drops to zero
 ```
 
-The alerts line uses the `--change-alert` percent for large drops, the `--spike-alert` percent for large spikes and the `--anomaly-method` for unusual values. It is left out after a failed run.
+The alerts line uses the `--change-alert` percent for large drops, the `--spike-alert` percent for large spikes and the `--anomaly-method` and `--anomaly-sensitivity` for unusual values. It is left out after a failed run.
 
 If the run sees more than 20 percent fewer custom events, eVars or props than the run before it for the same suite, it prints a warning. The run before is the run of that suite that was made last before this one, also when its run number is higher, e.g., after `ahd import`. The warning gives both counts and the usual cause. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 
@@ -168,7 +169,7 @@ ahd individual --run 3 --dimension evar17 --metric revenue
 ahd individual --run 3 --dimension "Internal Search Term" --metric "Cart Additions"
 ```
 
-`--run`, `--dimension` and `--metric` are required. `--dimension` and `--metric` work as in `run`. The report's Dimension and Metric dropdowns then switch between all the pairs of the run. `--out`, `--change-alert`, `--spike-alert` and `--anomaly-method` work as in `run`.
+`--run`, `--dimension` and `--metric` are required. `--dimension` and `--metric` work as in `run`. The report's Dimension and Metric dropdowns then switch between all the pairs of the run. `--out`, `--change-alert`, `--spike-alert`, `--anomaly-method` and `--anomaly-sensitivity` work as in `run`.
 
 It stops with an error in these cases:
 
@@ -184,11 +185,12 @@ Rebuilds the report of a stored run from the database, with no calls to Adobe. A
 ahd render --run 3
 ahd render --run 3 --change-alert 50 --out ./shared/
 ahd render --run 3 --anomaly-method weekday-median
+ahd render --run 3 --anomaly-method weekday-median --anomaly-sensitivity low
 ```
 
-`--run` is required. `--out`, `--change-alert`, `--spike-alert` and `--anomaly-method` work as in `run`.
+`--run` is required. `--out`, `--change-alert`, `--spike-alert`, `--anomaly-method` and `--anomaly-sensitivity` work as in `run`.
 
-The anomaly method is chosen each time a report is written. It is not stored with the run. So you can write the report of any stored run again with another method, e.g., to compare the flags of `weekday-median` with Adobe's, and no new requests go to Adobe. This also works for a run whose credential may not use Adobe's anomaly detection. See [Troubleshooting](troubleshooting.md#limited-access). `render` only reads the database, so it works while a `duckdb -readonly` session has the file open.
+The anomaly method and its sensitivity are chosen each time a report is written. They are not stored with the run. So you can write the report of any stored run again with another method or sensitivity, e.g., to compare the flags of `weekday-median` with Adobe's, and no new requests go to Adobe. This also works for a run whose credential may not use Adobe's anomaly detection. See [Troubleshooting](troubleshooting.md#limited-access). `render` only reads the database, so it works while a `duckdb -readonly` session has the file open.
 
 ## runs
 
@@ -252,5 +254,6 @@ ahd import backup/2026-11 --db data/other.duckdb
 | Large drop slider | 30 percent |
 | Large spike slider | 50 percent |
 | Anomaly method | `adobe`, Adobe's anomaly detection |
+| Anomaly sensitivity | `normal` |
 | Columns per trend request | 20 |
 | Requests at the same time | 8 |

@@ -6,6 +6,9 @@ outer page, because headless Chrome will not make its window narrower than 500 p
 sends the result to the outer page with postMessage, and the outer page writes it into a <pre>
 element. Chrome prints the outer page with --dump-dom when the page is done.
 
+Rarely, Chrome runs on and never prints the page. Then run_probe kills it with every process it
+started and starts it again, up to ATTEMPTS times. It warns about each new start.
+
 Set AHD_CHROME to the path of Chrome or Chromium to choose the program. Without Chrome the tests
 skip, except when the CI variable is set, e.g., on GitHub Actions. There they fail.
 """
@@ -17,10 +20,13 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
+import warnings
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 import pytest
 
@@ -33,8 +39,12 @@ WINDOWS_APP = Path("Google") / "Chrome" / "Application" / "chrome.exe"
 # Chrome stops when the page has had this much time. It is Chrome's own page clock, which runs
 # as fast as the page allows, so the tests do not wait for it.
 VIRTUAL_TIME_MS = 10000
-# Only a guard against a Chrome that hangs. A normal page takes about a second.
-HANG_GUARD_S = 120
+# A normal page takes about a second. On GitHub Actions, headless Chrome has twice run for the
+# full guard of 120 seconds without printing the page, and the same test passed when it ran
+# again. So a Chrome that runs longer than this is killed and started again with a new profile,
+# up to ATTEMPTS starts in all. Any other failure fails the test at once.
+ATTEMPT_TIMEOUT_S = 40
+ATTEMPTS = 3
 # A script that marks every error and every request the CSP blocked, before the page script runs.
 CATCHER = (
     "<script>window.__probeErrors=[];"
@@ -101,20 +111,8 @@ def without_csp(page: str) -> str:
     return out
 
 
-def run_probe(
-    chrome: str, page: str, probe: str, folder: Path, width: int = 1280, height: int = 900
-) -> Any:
-    """Load the page at this width, run the probe and return its result.
-
-    Fails the test when the page or the probe raised a JavaScript error.
-    """
-    folder.mkdir(parents=True, exist_ok=True)
-    assert page.count("<body>") == 1 and page.count("</body>") == 1
-    page = page.replace("<body>", "<body>" + CATCHER, 1)
-    page = page.replace("</body>", PROBE.format(probe=probe) + "</body>", 1)
-    (folder / "report.html").write_text(page, encoding="utf-8")
-    outer = folder / "outer.html"
-    outer.write_text(OUTER.format(width=width, height=height), encoding="utf-8")
+def chrome_command(chrome: str, outer: Path, profile: Path, width: int, height: int) -> list[str]:
+    """The command that opens the outer page in headless Chrome and prints it when done."""
     cmd = [
         chrome,
         "--headless=new",
@@ -129,7 +127,7 @@ def run_probe(
         # and without this flag each start took about 10 seconds longer.
         "--use-mock-keychain",
         "--allow-file-access-from-files",
-        f"--user-data-dir={folder / 'profile'}",
+        f"--user-data-dir={profile}",
         f"--window-size={max(width, 500) + 100},{height + 100}",
         f"--virtual-time-budget={VIRTUAL_TIME_MS}",
         "--dump-dom",
@@ -137,9 +135,97 @@ def run_probe(
     ]
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         cmd.insert(1, "--no-sandbox")  # Chrome refuses to start as root with its sandbox on
-    done = subprocess.run(
-        cmd, check=False, capture_output=True, encoding="utf-8", timeout=HANG_GUARD_S
+    return cmd
+
+
+def launch(cmd: list[str], out: IO[str], err: IO[str]) -> subprocess.Popen[bytes]:
+    """Start a program in a process group of its own, so that kill_tree can stop all of it."""
+    if sys.platform == "win32":
+        return subprocess.Popen(
+            cmd, stdout=out, stderr=err, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+        )
+    return subprocess.Popen(cmd, stdout=out, stderr=err, start_new_session=True)
+
+
+def kill_tree(proc: subprocess.Popen[bytes]) -> None:
+    """Kill a program that launch started, and every process it started."""
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(proc.pid)], check=False, capture_output=True
+        )
+        proc.kill()  # in case taskkill could not stop it
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass  # every process of the group has stopped already
+
+
+def start_chrome(cmd: list[str], folder: Path, timeout: float) -> subprocess.CompletedProcess[str]:
+    """Run Chrome once and return its exit code and what it printed.
+
+    Chrome writes to files in the folder, not to pipes. A process that Chrome started and that
+    is still running then cannot keep this function waiting. When Chrome runs longer than the
+    timeout, this kills it with every process it started and raises subprocess.TimeoutExpired.
+    """
+    out_path, err_path = folder / "stdout.txt", folder / "stderr.txt"
+    with (
+        out_path.open("w", encoding="utf-8") as out,
+        err_path.open("w", encoding="utf-8") as err,
+    ):
+        proc = launch(cmd, out, err)
+        try:
+            code = proc.wait(timeout)
+        except subprocess.TimeoutExpired:
+            kill_tree(proc)
+            proc.wait()
+            stderr = err_path.read_text(encoding="utf-8", errors="replace")
+            raise subprocess.TimeoutExpired(cmd, timeout, stderr=stderr) from None
+    return subprocess.CompletedProcess(
+        cmd,
+        code,
+        out_path.read_text(encoding="utf-8", errors="replace"),
+        err_path.read_text(encoding="utf-8", errors="replace"),
     )
+
+
+def run_probe(
+    chrome: str, page: str, probe: str, folder: Path, width: int = 1280, height: int = 900
+) -> Any:
+    """Load the page at this width, run the probe and return its result.
+
+    Fails the test when the page or the probe raised a JavaScript error.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    assert page.count("<body>") == 1 and page.count("</body>") == 1
+    page = page.replace("<body>", "<body>" + CATCHER, 1)
+    page = page.replace("</body>", PROBE.format(probe=probe) + "</body>", 1)
+    (folder / "report.html").write_text(page, encoding="utf-8")
+    outer = folder / "outer.html"
+    outer.write_text(OUTER.format(width=width, height=height), encoding="utf-8")
+    hung: list[str] = []
+    for attempt in range(1, ATTEMPTS + 1):
+        # Each start has a new folder for the profile and the output, also when a test calls
+        # run_probe twice with one folder. A Chrome that hung may have left a lock or half
+        # written files in its profile.
+        start = Path(tempfile.mkdtemp(prefix=f"chrome{attempt}-", dir=folder))
+        cmd = chrome_command(chrome, outer, start / "profile", width, height)
+        try:
+            done = start_chrome(cmd, start, ATTEMPT_TIMEOUT_S)
+            break
+        except subprocess.TimeoutExpired as e:
+            hung.append(f"attempt {attempt} stderr: {str(e.stderr or '')[-2000:]}")
+            if attempt < ATTEMPTS:
+                warnings.warn(
+                    f"Chrome ran for {ATTEMPT_TIMEOUT_S} s without printing the page and was "
+                    f"started again.\n{hung[-1]}",
+                    stacklevel=2,
+                )
+    else:
+        pytest.fail(
+            f"Chrome ran for {ATTEMPT_TIMEOUT_S} s without printing the page on all "
+            f"{ATTEMPTS} attempts.\n" + "\n".join(hung)
+        )
     found = re.search(r'<pre id="probe">(.*?)</pre>', done.stdout, re.DOTALL)
     if not found or not found.group(1):
         pytest.fail(

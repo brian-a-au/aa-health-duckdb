@@ -20,6 +20,7 @@ These steps run from a clone of this repository, because the email script is in 
   ```
 
 - **Check the email first.** Without `SMTP_HOST`, the script writes `alerts.eml` in the current folder. Open it, and set the mail settings when it looks right. See [Send an alert email every morning](duckdb.md#send-an-alert-email-every-morning).
+- **Give both commands the same anomaly method.** By default, both use Adobe's anomaly detection. If you choose a local method, e.g., `--anomaly-method weekday-median --anomaly-sensitivity high`, add the same two options to `ahd run` and to `send_alerts.py`. Otherwise the reports and the email flag different values. See [The report](report.md#anomaly-detection-methods).
 - **Keep the reports where you want them.** Reports go to `./reports/` in the folder the schedule starts in. To choose another folder, add `--out`, e.g., `--out ~/ahd-reports`.
 
 The script with the commands holds your mail password when your server needs a login. Only your user account should be able to read it. The steps below show how.

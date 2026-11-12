@@ -42,8 +42,10 @@ from ahd.summary import (
     ANOMALY_METHODS,
     DEFAULT_ANOMALY_METHOD,
     DEFAULT_CHANGE_ALERT,
+    DEFAULT_SENSITIVITY,
     DEFAULT_SPIKE_ALERT,
     DROP_CAUSE,
+    SENSITIVITIES,
     build_view,
     component_drops,
     duration_text,
@@ -82,6 +84,12 @@ ACCESS_FIX = (
     "account to a product profile that includes this report suite's metrics and dimensions "
     'and the Report Suite Tools item "Anomaly Detection". Changes in the Admin Console can '
     "take a while to reach Analytics, so wait a little and run this check again."
+)
+
+SENSITIVITY_NEEDS_LOCAL = (
+    "--anomaly-sensitivity works only with a local anomaly method, e.g., --anomaly-method "
+    "weekday-median. The adobe method uses the expected range that Adobe returned, which ahd "
+    "does not change."
 )
 
 
@@ -185,6 +193,14 @@ def _parser() -> argparse.ArgumentParser:
             help="How the report finds unusual values. adobe uses the expected range that "
             "Adobe's anomaly detection returned. The other methods compute the range from the "
             f"run's own daily values (default {DEFAULT_ANOMALY_METHOD}).",
+        )
+        sp.add_argument(
+            "--anomaly-sensitivity",
+            choices=SENSITIVITIES,
+            default=DEFAULT_SENSITIVITY,
+            help="How wide the expected range of a local anomaly method is. low widens it, so "
+            "fewer values are flagged, and high narrows it, so more values are flagged. It does "
+            f"not apply to adobe (default {DEFAULT_SENSITIVITY}).",
         )
 
     check = sub.add_parser("check", help="Sign in and check what this credential can see.")
@@ -476,14 +492,16 @@ def _alert_line(
     threshold: float,
     spike: float,
     method: str = DEFAULT_ANOMALY_METHOD,
+    sensitivity: str = DEFAULT_SENSITIVITY,
 ) -> str:
     """For example "Alerts for 2026-11-07: 2 unusual values, 1 large drop, 0 large spikes,
-    0 drops to zero". method is the anomaly method that finds the unusual values."""
+    0 drops to zero". method is the anomaly method that finds the unusual values, and
+    sensitivity sets the width of its range."""
     counts = dict(
         store.con.execute(
             "SELECT alert, count(*) FROM alerts(?, threshold := ?, spike_threshold := ?, "
-            "method := ?) GROUP BY alert",
-            [run_id, threshold, spike, method],
+            "method := ?, sensitivity := ?) GROUP BY alert",
+            [run_id, threshold, spike, method, sensitivity],
         ).fetchall()
     )
     day = date.fromisoformat(str(store.get_run(run_id)["today"])) - timedelta(days=1)
@@ -532,12 +550,12 @@ def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -
     status = store.get_run(run_id)["status"]
     threshold = args.change_alert / 100
     spike = args.spike_alert / 100
-    method = args.anomaly_method
-    path = _write(build_view(store, run_id, threshold, spike, method=method), args.out)
+    anomaly = {"method": args.anomaly_method, "sensitivity": args.anomaly_sensitivity}
+    path = _write(build_view(store, run_id, threshold, spike, **anomaly), args.out)
     print(path)
     print(f"Run {run_id} for {rsid} finished with status: {status}")
     if status != "failed":
-        print(_alert_line(store, run_id, threshold, spike, method=method))
+        print(_alert_line(store, run_id, threshold, spike, **anomaly))
     drops = component_drops(store, run_id)
     if drops:
         print("Warning: this run sees fewer components than the run before it.")
@@ -619,6 +637,7 @@ def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
                 args.change_alert / 100,
                 args.spike_alert / 100,
                 method=args.anomaly_method,
+                sensitivity=args.anomaly_sensitivity,
             ),
             args.out,
         )
@@ -644,11 +663,19 @@ def _render(args: argparse.Namespace) -> int:
                 args.change_alert / 100,
                 args.spike_alert / 100,
                 method=args.anomaly_method,
+                sensitivity=args.anomaly_sensitivity,
             ),
             args.out,
         )
     )
     return 0
+
+
+def _check_anomaly_options(args: argparse.Namespace) -> None:
+    """Stop before any other work when the sensitivity cannot apply to the anomaly method."""
+    sensitivity = getattr(args, "anomaly_sensitivity", DEFAULT_SENSITIVITY)
+    if sensitivity != DEFAULT_SENSITIVITY and args.anomaly_method == DEFAULT_ANOMALY_METHOD:
+        raise ConfigError(SENSITIVITY_NEEDS_LOCAL)
 
 
 def _print_runs(rows: list[dict]) -> None:
@@ -768,6 +795,7 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
         force=True,
     )
     try:
+        _check_anomaly_options(args)
         if args.command == "check":
             return _check(args, client_factory)
         if args.command == "run":

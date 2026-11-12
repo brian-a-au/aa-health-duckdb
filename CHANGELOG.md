@@ -2,6 +2,24 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## 0.1.9 (unreleased)
+
+This release adds a sensitivity for the local anomaly methods. The database layout stays at version 7, so files made by 0.1.2 to 0.1.8 keep working. The views version changes from 4 to 5, because the `alerts()` and `anomaly_days()` macros take a new option. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces them in your file. `ahd render` opens the file read-only, so it does not replace them. Until a command replaces them, your own SQL that gives `sensitivity` to a macro stops with an error.
+
+- `ahd run`, `ahd individual` and `ahd render` take `--anomaly-sensitivity` with `low`, `normal` or `high`. It sets how wide the range of `weekday-median`, `weekday-iqr` and `weekday-trend` is. The default is `normal`, which gives the same ranges and flags as 0.1.8.
+  - `weekday-median` and `weekday-trend` use 4 spreads with `low`, 3 with `normal` and 2 with `high`.
+  - `weekday-iqr` uses 2 quartile ranges with `low`, 1.5 with `normal` and 1 with `high`.
+  - The other rules stay the same, e.g., a range still reaches at least 5 percent on each side of the expected value.
+- The sensitivity does not apply to `adobe`, because Adobe returns its own range. With `adobe`, `low` or `high` stops the command with an error.
+- The sensitivity is not stored with the run, like the method. `ahd render` can write the report of any stored run again with another sensitivity.
+- The header fact "Anomaly detection" names a sensitivity other than `normal`, e.g., "Weekday median, high sensitivity". "How large drops and spikes are found" states the factor in use.
+- The alert line that `ahd run` prints uses the chosen sensitivity.
+- The `alerts()` and `anomaly_days()` macros take `sensitivity := 'normal'`, `'low'` or `'high'`. Another value stops the query with an error. With `method := 'adobe'`, each of the three values changes nothing. See the [DuckDB guide](docs/duckdb.md#anomaly_daysrun-method--adobe-min_usual--10-sensitivity--normal).
+- The alert email script `send_alerts.py` takes `--anomaly-method` and `--anomaly-sensitivity`, with the same values and defaults as `ahd run`. Before, it always used Adobe's flags, and the DuckDB guide said to change its query by hand for another method. With `adobe`, `low` or `high` stops the script with exit code 1, as on the command line. The email now says which method flagged the unusual values, and it names a sensitivity other than `normal`. See [Send an alert email every morning](docs/duckdb.md#send-an-alert-email-every-morning).
+- [The report](docs/report.md#which-sensitivity-to-choose) has advice on which sensitivity to choose, with counts from four of Adobe's demo report suites.
+- The DuckDB guide shows real output for the examples with `weekday-median`. It now says that `anomaly_days()` also has rows for the Individual Component Summary pairs, e.g., `individual/1`, and how to leave them out.
+- The 0.1.8 entry below now links to the new heading of `anomaly_days()` in the DuckDB guide.
+
 ## 0.1.8 (2026-11-12)
 
 This release adds a choice of anomaly method. The database layout stays at version 7, so files made by 0.1.2 to 0.1.7 keep working. The views version changes from 2 to 4, because the `alerts()` macro takes a new option and the file gets a new macro, `anomaly_days()`. Version 3 was only used before this release, by the development version without `weekday-trend`. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces them in your file. `ahd render` opens the file read-only, so it does not replace them. Until a command replaces them, your own SQL that gives `method` to `alerts()` stops with an error.
@@ -13,7 +31,7 @@ This release adds a choice of anomaly method. The database layout stays at versi
 - A run whose credential may not use Adobe's anomaly detection, or whose test of it failed, can now get flags with a local method. With `adobe`, the Alerts tab of such a run suggests the `ahd render` command that does this.
 - The report's header has a new fact, "Anomaly detection", which names the method. "How large drops and spikes are found" states the rule of the method in use. With a local method, every text that said that Adobe flagged a value names the method instead, and the list of earlier runs counts every run with that method.
 - The alert line that `ahd run` prints uses the chosen method.
-- The `alerts()` macro takes `method := 'adobe'`, `'weekday-median'`, `'weekday-iqr'` or `'weekday-trend'`. The default is `'adobe'`, so your existing SQL gives the same rows as before. The new macro `anomaly_days()` gives the expected value, the range and the flag of each component and day by the chosen method. See the [DuckDB guide](docs/duckdb.md#anomaly_daysrun-method--adobe-min_usual--10).
+- The `alerts()` macro takes `method := 'adobe'`, `'weekday-median'`, `'weekday-iqr'` or `'weekday-trend'`. The default is `'adobe'`, so your existing SQL gives the same rows as before. The new macro `anomaly_days()` gives the expected value, the range and the flag of each component and day by the chosen method. See the [DuckDB guide](docs/duckdb.md#anomaly_daysrun-method--adobe-min_usual--10-sensitivity--normal).
 
 ## 0.1.7 (2026-11-11)
 
