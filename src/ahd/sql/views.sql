@@ -64,7 +64,8 @@ LEFT JOIN used ON used.run_id = dv.run_id AND used.component_id = dv.component_i
 -- finite values of those days. Each method gives the expected value and the range from the
 -- sample, and the same guards then apply to every method:
 --
--- 1. A day with fewer than 4 values in its sample gets no range and no flag.
+-- 1. A day with fewer than 8 values in its sample gets no range and no flag. The number must
+--    match MIN_SAMPLE in src/ahd/summary.py.
 -- 2. When the expected value is above 0, the range reaches at least 5 percent above and
 --    below it.
 -- 3. When no value in the sample is below 0, the lower limit is not below 0.
@@ -116,13 +117,13 @@ sampled AS (
     WINDOW w AS (PARTITION BY run_id, component_id, dayofweek(day) ORDER BY day
         RANGE BETWEEN UNBOUNDED PRECEDING AND INTERVAL 1 DAY PRECEDING)
 ),
--- Guards 1 and 2.
+-- Guards 1 and 2. The 8 of guard 1 must match MIN_SAMPLE in src/ahd/summary.py.
 wide AS (
     SELECT run_id, component_id, day, value, lowest,
-        CASE WHEN n >= 4 THEN rng.expected END AS expected,
-        CASE WHEN n >= 4 THEN CASE WHEN rng.expected > 0
+        CASE WHEN n >= 8 THEN rng.expected END AS expected,
+        CASE WHEN n >= 8 THEN CASE WHEN rng.expected > 0
             THEN greatest(rng.upper, rng.expected * 1.05) ELSE rng.upper END END AS upper,
-        CASE WHEN n >= 4 THEN CASE WHEN rng.expected > 0
+        CASE WHEN n >= 8 THEN CASE WHEN rng.expected > 0
             THEN least(rng.lower, rng.expected * 0.95) ELSE rng.lower END END AS lower
     FROM sampled
 ),

@@ -195,7 +195,7 @@ When you query a file through `ATTACH`, run `USE` with its name before you call 
 The expected value, the expected range and the flag of each component and day of one run, by one anomaly method. `alerts()` reads its flags from this macro. It covers the same days as `component_days`, which are the 91 full days of the run. It gives these columns:
 
 - `run_id`, `component_id` and `day`
-- `expected`, `lower` and `upper`: the expected value and the range. With `'adobe'`, they are Adobe's values. With a local method, they are empty on a day with fewer than 4 earlier values of its weekday in the run, e.g., in the first 4 weeks.
+- `expected`, `lower` and `upper`: the expected value and the range. With `'adobe'`, they are Adobe's values. With a local method, they are empty on a day with fewer than 8 earlier values of its weekday in the run, e.g., in the first 8 weeks.
 - `anomaly`: "high" or "low" when the method flagged the value, else empty
 
 `method` takes the same names as in `alerts()`. A local method flags a value only when its expected value is at least `min_usual`. With `'adobe'`, `min_usual` changes nothing.

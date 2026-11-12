@@ -32,8 +32,10 @@ MIN_SPIKE_ALERT = 0.10
 # A percent drop alert needs a usual value of at least this much. Small numbers swing a lot.
 MIN_USUAL = 10
 # A local anomaly method gives a day a range only when the run has at least this many earlier
-# values of its weekday. The anomaly_days macro in views.sql has the same number.
-MIN_SAMPLE = 4
+# values of its weekday. The anomaly_days macro in views.sql cannot read this constant and
+# writes the number itself. The two numbers must match, and test_a_range_needs_8_earlier_values
+# in tests/test_summary.py fails when they do not.
+MIN_SAMPLE = 8
 # The earlier runs that a report lists, newest first.
 HISTORY_RUNS = 30
 # Warn when a run sees more than this share fewer custom components than the run before.
@@ -83,7 +85,7 @@ comps AS (
 
 @dataclass(frozen=True)
 class AnomalyMethod:
-    """A way to find the unusual values of a run. rule says it in one sentence for the page."""
+    """A way to find the unusual values of a run. rule says it in plain words for the page."""
 
     key: str
     label: str
@@ -103,16 +105,15 @@ _METHODS = (
     AnomalyMethod(
         "weekday-median",
         "Weekday median",
-        "A value is unusual when it is more than 3 spreads away from the median of the earlier "
-        "values of the same weekday in this run, where the spread is 1.4826 times the median "
-        "distance of those values from their median.",
+        "A value is unusual when it is far from the median of the earlier values of the same "
+        "weekday in this run. Far means more than 3 times the usual spread of those values.",
     ),
     AnomalyMethod(
         "weekday-iqr",
         "Weekday quartile range",
-        "A value is unusual when it is more than 1.5 times the distance between the quartiles "
-        "above the upper quartile or below the lower quartile of the earlier values of the same "
-        "weekday in this run.",
+        "A value is unusual when it is far outside the middle half of the earlier values of the "
+        "same weekday in this run. Far means more than 1.5 times the width of the middle half "
+        "past its edge.",
     ),
 )
 ANOMALY_METHODS: tuple[str, ...] = tuple(m.key for m in _METHODS)

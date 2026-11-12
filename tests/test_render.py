@@ -757,7 +757,7 @@ def test_the_header_names_the_anomaly_method():
     ):
         for bands in (True, False):
             assert _fact(render_html(sample_view(bands, method))) == (
-                f'{label} <span class="muted">(computed by ahd from the 92 days of this run)</span>'
+                f'{label} <span class="muted">(computed by ahd from the daily values of this run)</span>'
             )
     # The run has the issue anomaly_not_allowed, so Adobe's detection was not available.
     assert _fact(render_html(sample_view(bands=False))) == (
@@ -785,7 +785,7 @@ def test_the_rule_list_states_the_rule_of_the_method():
         rule = _rule(render_html(view))
         assert f"<li>{escape(view['anomaly_method']['rule'])}" in rule
         needs = (
-            "A day is flagged only when this run has at least 4 earlier values of its weekday "
+            "A day is flagged only when this run has at least 8 earlier values of its weekday "
             "and its expected value is 10 or more."
         )
         assert (needs in rule) is (method != "adobe")
@@ -811,7 +811,7 @@ def test_a_local_method_has_its_own_note_for_a_chart_without_a_range():
     html = render_html(sample_view(method="weekday-median"))
     assert NO_BANDS_NOTE not in html
     assert (
-        "This chart has no expected range, because no day has at least 4 earlier values of its "
+        "This chart has no expected range, because no day has at least 8 earlier values of its "
         "weekday in this run."
     ) in html
 

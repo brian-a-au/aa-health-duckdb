@@ -85,9 +85,9 @@ The method changes the expected values, the ranges and the flags. The values and
 
 - The header has the fact "Anomaly detection". It shows one of these:
   - "Adobe", for the default.
-  - "Weekday median" or "Weekday quartile range", with the note "(computed by ahd from the 92 days of this run)".
+  - "Weekday median" or "Weekday quartile range", with the note "(computed by ahd from the daily values of this run)".
   - "Adobe" with the note "(not available for this run)", when the run could not use Adobe's anomaly detection. See [A run without Adobe's anomaly detection](#a-run-without-adobes-anomaly-detection).
-- "How large drops and spikes are found" has one item that states the rule of the method in use.
+- "How large drops and spikes are found" has one item that states the rule of the method in use in plain words. For a local method, it also says that a day is flagged only when the run has at least 8 earlier values of its weekday and its expected value is 10 or more. The exact rules are below.
 - Every text that says who flagged a value names the method in use, e.g., a tile says "Flagged by the Weekday median method" instead of "Flagged by Adobe".
 
 ### The rules of the local methods
@@ -105,31 +105,37 @@ Two terms explain the rules:
 - The spread is 1.4826 times the median distance of the sample values from their median.
 - The range goes from 3 spreads below the expected value to 3 spreads above it.
 
+The page calls this spread the usual spread of the values.
+
 `weekday-iqr` computes the range this way:
 
 - The expected value is the median of the sample.
 - The range goes from 1.5 quartile ranges below the lower quartile to 1.5 quartile ranges above the upper quartile.
 
+The page calls the values between the two quartiles the middle half, and the quartile range its width. The quartiles are the edges of the middle half.
+
 Then the same four checks apply to both methods, in this order:
 
-1. A day with fewer than 4 values in its sample gets no expected value, no range and no flag.
+1. A day with fewer than 8 values in its sample gets no expected value, no range and no flag. Smaller samples flag too many days.
 2. When the expected value is above 0, the range reaches at least 5 percent above it and 5 percent below it. A component that hardly changes is then not flagged for a small change.
 3. When no value in the sample is below 0, the lower end of the range is not below 0.
 4. A day is flagged only when its value is a number, its expected value is 10 or more, and its value is above the range or below it. A value that is exactly on the upper or lower end is not flagged.
 
 A value above the range is flagged "Above range", and a value below it "Below range", as with Adobe. A component that never collected data is never an alert, with any method.
 
-An example for `weekday-median`. A Monday has 4 earlier Mondays in the run, with the values 100, 110, 90 and 100:
+An example for `weekday-median`. A Monday has 8 earlier Mondays in the run, with the values 100, 110, 90, 100, 105, 95, 100 and 110:
 
-- The median is 100.
-- The distances from 100 are 0, 10, 10 and 0, so the median distance is 5.
-- The spread is 1.4826 times 5, which is 7.413. Three spreads are about 22.2.
-- The range is about 77.8 to 122.2. It already reaches more than 5 percent on each side, so check 2 changes nothing.
-- A value of 125 on that Monday is flagged "Above range". A value of 120 is not flagged.
+- Sorted, the values are 90, 95, 100, 100, 100, 105, 110 and 110. The two middle values are both 100, so the median is 100.
+- The distances from 100 are 0, 10, 10, 0, 5, 5, 0 and 10. Sorted, they are 0, 0, 0, 5, 5, 10, 10 and 10, so the median distance is 5.
+- The spread is 1.4826 times 5, which is 7.413. Three spreads are 22.239.
+- The range is 77.761 to 122.239. It already reaches more than 5 percent on each side, so check 2 changes nothing.
+- A value of 125 on that Monday is flagged "Above range", and a value of 77 is flagged "Below range". A value of 120 or 78 is not flagged.
 
-### The first four weeks have no range
+### The first eight weeks have no range
 
-The charts show 91 days, which is 13 weeks. A local method needs 4 earlier days of the same weekday in the run. The days of the first 4 weeks do not have that many, so they get no expected range and no flags. The charts draw the range from the fifth week on. In the same way, a square in the first 4 weeks of the calendar only counts drops to zero.
+The charts show 91 days, which is 13 weeks. A local method needs 8 earlier days of the same weekday in the run. The days of the first 8 weeks do not have that many, so they get no expected range and no flags. The charts draw the range only for the last 5 weeks. In the same way, a square in the first 8 weeks of the calendar only counts drops to zero. With a local method, the calendar shows flags only for the last 5 weeks.
+
+A day that has no value in the run does not count as an earlier day. A component with missing days therefore gets its first range later.
 
 When no day of a chart has a range, e.g., because the component has too few values, the chart says so under it.
 
@@ -184,7 +190,7 @@ The calendar follows the Day picker. In the weekly view it outlines the week's 7
 
 ### Charts
 
-Two charts show 91 days of one metric and one dimension. Each shows the actual values, the expected value and expected range of the anomaly method, and markers where it flagged a value. With a local method, the first 4 weeks have no range. See [The first four weeks have no range](#the-first-four-weeks-have-no-range). Use the arrow keys on a chart to read each day.
+Two charts show 91 days of one metric and one dimension. Each shows the actual values, the expected value and expected range of the anomaly method, and markers where it flagged a value. With a local method, the first 8 weeks have no range. See [The first eight weeks have no range](#the-first-eight-weeks-have-no-range). Use the arrow keys on a chart to read each day.
 
 The charts follow the Day picker:
 

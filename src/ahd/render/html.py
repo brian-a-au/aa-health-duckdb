@@ -88,7 +88,7 @@ LOCAL_ISSUE_HEADINGS = {
     ),
 }
 # The note after the method's name in the header.
-LOCAL_METHOD_NOTE = "computed by ahd from the 92 days of this run"
+LOCAL_METHOD_NOTE = "computed by ahd from the daily values of this run"
 BLOCKED_METHOD_NOTE = "not available for this run"
 # The local method that the page suggests for a run without Adobe's anomaly detection.
 SUGGESTED_METHOD = next(m for m in ANOMALY_METHODS if m != DEFAULT_ANOMALY_METHOD)

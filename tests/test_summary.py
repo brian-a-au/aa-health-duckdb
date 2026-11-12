@@ -7,7 +7,7 @@ import pytest
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
 from ahd.store import Store
-from ahd.summary import build_view
+from ahd.summary import MIN_SAMPLE, build_view
 
 TODAY = date(2026, 11, 7)
 YESTERDAY = date(2026, 11, 6)  # a Friday
@@ -1165,18 +1165,18 @@ def test_local_range_matches_hand_computed_numbers(
 @pytest.mark.parametrize(
     ("sample", "has_range"),
     [
-        ([MISSING] * 9 + [100.0] * 3, False),  # 3 earlier values
-        ([MISSING] * 8 + [100.0] * 4, True),  # 4 earlier values
+        # The page and the macro must agree on the sample size. A sample of 4 to 7 values
+        # would find a macro that still needs fewer values than MIN_SAMPLE, or more.
+        ([MISSING] * 8 + [100.0] * 4, False),  # 4 earlier values
+        ([MISSING] * 5 + [100.0] * 7, False),  # 7 earlier values
+        ([MISSING] * 4 + [100.0] * 8, True),  # 8 earlier values
         # NULL, NaN and Infinity are left out of the sample.
-        (
-            [None, math.nan, math.inf, -math.inf, None, math.nan, None, math.nan, math.inf]
-            + [100.0] * 3,
-            False,
-        ),
-        ([None, math.nan, math.inf, -math.inf, None, math.nan, None, math.nan] + [100.0] * 4, True),
+        ([None, math.nan, math.inf, -math.inf, None] + [100.0] * 7, False),
+        ([None, math.nan, math.inf, -math.inf] + [100.0] * 8, True),
     ],
 )
-def test_a_range_needs_4_earlier_values(tmp_path, method, sample, has_range):
+def test_a_range_needs_8_earlier_values(tmp_path, method, sample, has_range):
+    assert MIN_SAMPLE == 8
     cid = "metrics/event1"
     store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _fridays(cid, sample, 1000.0))
     got = _yesterday(store, rid, method, cid)
@@ -1184,6 +1184,23 @@ def test_a_range_needs_4_earlier_values(tmp_path, method, sample, has_range):
         assert got == pytest.approx((100, 105, 95, "high"))
     else:
         assert got == (None, None, None, None)
+
+
+@pytest.mark.parametrize("method", LOCAL_METHODS)
+def test_only_the_last_5_weeks_have_a_range(tmp_path, method):
+    # docs/report.md says that the first 8 of the 13 weeks have no range and no flags.
+    cid = "metrics/event1"
+    vals = [_dv(cid, d, 100.0) for d in _days(START, YESTERDAY)]
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], vals)
+    series = build_view(store, rid, method=method)["series"][cid]
+    assert len(series) == 91
+    with_range = [p[0] for p in series if p[2] is not None]
+    assert with_range == [d.isoformat() for d in _days(START + timedelta(weeks=8), YESTERDAY)]
+    assert len(with_range) == 35
+    macro = store.con.execute(
+        "SELECT count(expected) FROM anomaly_days(?, method := ?)", [rid, method]
+    ).fetchone()[0]
+    assert macro == 35
 
 
 @pytest.mark.parametrize("method", LOCAL_METHODS)
@@ -1260,6 +1277,16 @@ def test_methods_have_keys_and_labels(tmp_path):
         )
         assert got["rule"].endswith(".")
     assert build_view(store, rid)["anomaly_method"]["key"] == "adobe"
+    # docs/report.md quotes these two rules.
+    assert build_view(store, rid, method="weekday-median")["anomaly_method"]["rule"] == (
+        "A value is unusual when it is far from the median of the earlier values of the same "
+        "weekday in this run. Far means more than 3 times the usual spread of those values."
+    )
+    assert build_view(store, rid, method="weekday-iqr")["anomaly_method"]["rule"] == (
+        "A value is unusual when it is far outside the middle half of the earlier values of the "
+        "same weekday in this run. Far means more than 1.5 times the width of the middle half "
+        "past its edge."
+    )
 
 
 def _macro_data():
