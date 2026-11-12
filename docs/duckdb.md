@@ -129,12 +129,14 @@ FROM latest_runs SELECT run_id, rsid_name, today, status ORDER BY run_id DESC;
 ```
 
 ```
-┌────────┬─────────────┬────────────┬─────────┐
-│ run_id │  rsid_name  │   today    │ status  │
-├────────┼─────────────┼────────────┼─────────┤
-│      2 │ Adobe Store │ 2026-11-08 │ ok      │
-│      1 │ Demo Data   │ 2026-11-08 │ ok      │
-└────────┴─────────────┴────────────┴─────────┘
+┌────────┬───────────────────────┬────────────┬─────────┐
+│ run_id │       rsid_name       │   today    │ status  │
+├────────┼───────────────────────┼────────────┼─────────┤
+│      4 │ Demo Data Evangelists │ 2026-11-12 │ partial │
+│      3 │ Demo Data CJA         │ 2026-11-12 │ partial │
+│      2 │ Adobe Store           │ 2026-11-12 │ ok      │
+│      1 │ Demo Data             │ 2026-11-12 │ ok      │
+└────────┴───────────────────────┴────────────┴─────────┘
 ```
 
 ### `component_days`
@@ -166,17 +168,23 @@ FROM alerts(2) SELECT alert, name, round(usual) AS usual, value;
 ```
 
 ```
-┌─────────────┬─────────────────┬───────┬────────┐
-│    alert    │      name       │ usual │ value  │
-├─────────────┼─────────────────┼───────┼────────┤
-│ unusual     │ Page            │ 650.0 │ 2714.0 │
-│ unusual     │ Checkouts       │   8.0 │   68.0 │
-│ unusual     │ Unique Visitors │  77.0 │  252.0 │
-│ unusual     │ Visits          │  82.0 │  276.0 │
-│ large spike │ Cart Additions  │  17.0 │   93.0 │
-│ large spike │ Revenue         │ 188.0 │  301.0 │
-│ large drop  │ Units           │  24.0 │   16.0 │
-└─────────────┴─────────────────┴───────┴────────┘
+┌─────────────┬───────────────────────┬────────┬────────┐
+│    alert    │         name          │ usual  │ value  │
+├─────────────┼───────────────────────┼────────┼────────┤
+│ unusual     │ Exit Link Instances   │    2.0 │    8.0 │
+│ unusual     │ Cart Additions        │  140.0 │  230.0 │
+│ unusual     │ Orders                │   18.0 │   35.0 │
+│ large spike │ Custom Link Instances │   12.0 │   41.0 │
+│ large spike │ Page                  │ 4849.0 │ 8172.0 │
+│ large spike │ Cart Views            │  142.0 │  270.0 │
+│ large spike │ Checkouts             │   67.0 │  203.0 │
+│ large spike │ Units                 │  491.0 │  838.0 │
+│ large spike │ Occurrences           │ 4863.0 │ 8221.0 │
+│ large spike │ Page Views            │ 4849.0 │ 8172.0 │
+│ large spike │ Unique Visitors       │  341.0 │  738.0 │
+│ large spike │ Visits                │  401.0 │  859.0 │
+│ large spike │ Product Views         │ 2850.0 │ 4499.0 │
+└─────────────┴───────────────────────┴────────┴────────┘
 ```
 
 Each alert is one of these: "unusual" (the anomaly method flagged it, Adobe by default), "large spike", "large drop" or "dropped to zero".
@@ -185,6 +193,25 @@ The same alerts with the Weekday median method, which ahd computes from the run'
 
 ```sql
 FROM alerts(2, method := 'weekday-median') SELECT alert, name, round(expected) AS expected, value;
+```
+
+```
+┌─────────────┬───────────────────────┬──────────┬────────┐
+│    alert    │         name          │ expected │ value  │
+├─────────────┼───────────────────────┼──────────┼────────┤
+│ unusual     │ Custom Link Instances │     11.0 │   41.0 │
+│ unusual     │ Page                  │   3614.0 │ 8172.0 │
+│ unusual     │ Checkouts             │     57.0 │  203.0 │
+│ unusual     │ Occurrences           │   3625.0 │ 8221.0 │
+│ unusual     │ Page Views            │   3614.0 │ 8172.0 │
+│ unusual     │ Unique Visitors       │    271.0 │  738.0 │
+│ unusual     │ Visits                │    312.0 │  859.0 │
+│ unusual     │ Product Views         │   2131.0 │ 4499.0 │
+│ large spike │ Cart Additions        │    126.0 │  230.0 │
+│ large spike │ Cart Views            │    122.0 │  270.0 │
+│ large spike │ Orders                │     17.0 │   35.0 │
+│ large spike │ Units                 │    393.0 │  838.0 │
+└─────────────┴───────────────────────┴──────────┴────────┘
 ```
 
 This works for a run whose credential may not use Adobe's anomaly detection, too. Adobe's flags of such a run are empty, so `alerts()` with the default method lists no unusual values.
@@ -199,6 +226,8 @@ The expected value, the expected range and the flag of each component and day of
 - `expected`, `lower` and `upper`: the expected value and the range. With `'adobe'`, they are Adobe's values. With a local method, they are empty on a day with fewer than 8 values in its sample, e.g., in the first 8 weeks. The sample of `'weekday-median'` and `'weekday-iqr'` is the earlier values of the same weekday. With `'weekday-trend'`, the sample is the earlier days of the same weekday that have a level, so the first 9 weeks have no range, and a day also needs a level of its own. See [The report](report.md#the-rules-of-the-local-methods).
 - `anomaly`: "high" or "low" when the method flagged the value, else empty
 
+The macro also has a row for each day of each Individual Component Summary pair. Its `component_id` is `individual/` with the number of the pair, e.g., `individual/1` for Page by Occurrences. To leave these rows out, join `components`, as `alerts()` does.
+
 `method` and `sensitivity` take the same values as in `alerts()`. A local method flags a value only when its expected value is at least `min_usual`. With `'adobe'`, `min_usual` and `sensitivity` change nothing.
 
 This query counts, for each of the last 7 days, the values that Adobe flagged and the values that the Weekday median method flagged. The two methods often flag different days:
@@ -209,6 +238,22 @@ FROM anomaly_days(2) a
 JOIN anomaly_days(2, method := 'weekday-median') m USING (run_id, component_id, day)
 GROUP BY day ORDER BY day DESC LIMIT 7;
 ```
+
+```
+┌────────────┬───────┬────────────────┐
+│    day     │ adobe │ weekday_median │
+├────────────┼───────┼────────────────┤
+│ 2026-11-11 │     3 │              9 │
+│ 2026-11-10 │     5 │             15 │
+│ 2026-11-09 │     2 │              0 │
+│ 2026-11-08 │     8 │              9 │
+│ 2026-11-07 │    10 │              9 │
+│ 2026-11-06 │     2 │              0 │
+│ 2026-11-05 │     0 │              0 │
+└────────────┴───────┴────────────────┘
+```
+
+On 2026-11-11, the Weekday median method flagged 9 values. Eight of them are the unusual values in the list of `alerts(2, method := 'weekday-median')` above. The ninth is the pair `individual/1`.
 
 ## Email recipes
 
