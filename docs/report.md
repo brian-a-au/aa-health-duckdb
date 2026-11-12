@@ -83,7 +83,9 @@ The three local methods are much simpler than Adobe's anomaly detection, and the
 - Choose `weekday-median` or `weekday-iqr` for a component whose level stays about the same over the weeks. They compare a day with the same weekday in earlier weeks. They have a range for the last 5 weeks.
 - Choose `weekday-trend` for a component whose level rises or falls over the weeks, e.g., one that grows a little every day. The other two methods compare such a component with the older values of its weekday, which were lower or higher. Their expected value then lags behind, and their range is wide. `weekday-trend` follows the recent level instead. It has a range only for about the last 4 weeks, and a day after a gap in the data has no range. It suits a slow change. After a sudden large change, e.g., a component that lost most of its data in one week, the level moves with the change, and the method can flag many of the days that follow.
 
-The method is fixed for each report, and the page has no switch for it. The method is not stored with the run, so `ahd render` can write the report of any stored run again with another method. See [render](usage.md#render).
+The option `--anomaly-sensitivity` makes the range of a local method wider or narrower. See [The sensitivity of the local methods](#the-sensitivity-of-the-local-methods).
+
+The method and its sensitivity are fixed for each report, and the page has no switch for them. They are not stored with the run, so `ahd render` can write the report of any stored run again with another method or sensitivity. See [render](usage.md#render).
 
 The method changes the expected values, the ranges and the flags. The values and the weekday averages stay the same. Which values are listed as large drops, large spikes or drops to zero can change, because a flagged value is listed as an unusual value instead.
 
@@ -91,10 +93,10 @@ The method changes the expected values, the ranges and the flags. The values and
 
 - The header has the fact "Anomaly detection". It shows one of these:
   - "Adobe", for the default.
-  - "Weekday median", "Weekday quartile range" or "Weekday trend", with the note "(computed by ahd from the daily values of this run)".
+  - "Weekday median", "Weekday quartile range" or "Weekday trend", with the note "(computed by ahd from the daily values of this run)". With a sensitivity other than `normal`, the name also says it, e.g., "Weekday median, high sensitivity".
   - "Adobe" with the note "(not available for this run)", when the run could not use Adobe's anomaly detection. See [A run without Adobe's anomaly detection](#a-run-without-adobes-anomaly-detection).
-- "How large drops and spikes are found" has one item that states the rule of the method in use in plain words. For a local method, it also says that a day is flagged only when the run has at least 8 earlier values of its weekday and its expected value is 10 or more. For `weekday-trend`, the 8 earlier values must have a level. The exact rules are below.
-- Every text that says who flagged a value names the method in use, e.g., a tile says "Flagged by the Weekday median method" instead of "Flagged by Adobe".
+- "How large drops and spikes are found" has one item that states the rule of the method in use in plain words. For a local method, it names the factor of the sensitivity in use, e.g., "more than 2 times the usual spread" with `high`. For a local method, it also says that a day is flagged only when the run has at least 8 earlier values of its weekday and its expected value is 10 or more. For `weekday-trend`, the 8 earlier values must have a level. The exact rules are below.
+- Every text that says who flagged a value names the method in use, e.g., a tile says "Flagged by the Weekday median method" instead of "Flagged by Adobe". These texts do not name the sensitivity.
 
 ### The rules of the local methods
 
@@ -109,14 +111,14 @@ Two terms explain the rules:
 
 - The expected value is the median of the sample.
 - The spread is 1.4826 times the median distance of the sample values from their median.
-- The range goes from 3 spreads below the expected value to 3 spreads above it.
+- The range goes from 3 spreads below the expected value to 3 spreads above it. The sensitivity changes the 3. See [The sensitivity of the local methods](#the-sensitivity-of-the-local-methods).
 
 The page calls this spread the usual spread of the values.
 
 `weekday-iqr` computes the range this way:
 
 - The expected value is the median of the sample.
-- The range goes from 1.5 quartile ranges below the lower quartile to 1.5 quartile ranges above the upper quartile.
+- The range goes from 1.5 quartile ranges below the lower quartile to 1.5 quartile ranges above the upper quartile. The sensitivity changes the 1.5.
 
 The page calls the values between the two quartiles the middle half, and the quartile range its width. The quartiles are the edges of the middle half.
 
@@ -127,7 +129,7 @@ The page calls the values between the two quartiles the middle half, and the qua
 - The sample of a day is the ratios of the earlier days of the same weekday.
 - The middle ratio is the median of the sample. The spread is 1.4826 times the median distance of the ratios from the middle ratio.
 - The expected value is the level of the day times the middle ratio.
-- The range goes from the level times the middle ratio minus 3 spreads, to the level times the middle ratio plus 3 spreads.
+- The range goes from the level times the middle ratio minus 3 spreads, to the level times the middle ratio plus 3 spreads. The sensitivity changes the 3.
 
 A day without a level gets no expected value, no range and no flag. The level follows the component when it grows or shrinks, and the ratios keep the pattern of the weekday, e.g., a Saturday that is usually lower than the days before it.
 
@@ -154,6 +156,22 @@ An example for `weekday-trend`. The 7 days before a Monday add up to 1,400, so i
 - The distances from 1 are 0, 0.1, 0.1, 0, 0.05, 0.05, 0 and 0.1, so the median distance is 0.05.
 - The spread is 1.4826 times 0.05, which is 0.07413. Three spreads are 0.22239.
 - The expected value is 200 times 1, which is 200. The range is 200 times 0.77761 to 200 times 1.22239, which is 155.522 to 244.478.
+
+### The sensitivity of the local methods
+
+The option `--anomaly-sensitivity` on `ahd run`, `ahd individual` and `ahd render` sets how wide the range of a local method is. It takes `low`, `normal` or `high`. The default is `normal`, which gives the ranges described above. The sensitivity changes the number of spreads or quartile ranges in each rule. This number is the factor of the method:
+
+| `--anomaly-sensitivity` | `weekday-median` and `weekday-trend` | `weekday-iqr` |
+|---|---|---|
+| `low` | 4 spreads | 2 quartile ranges |
+| `normal` | 3 spreads | 1.5 quartile ranges |
+| `high` | 2 spreads | 1 quartile range |
+
+`low` multiplies the factor of `normal` by 4/3, so the range is wider and fewer values are flagged. `high` multiplies it by 2/3, so the range is narrower and more values are flagged. The expected value stays the same. The four checks above stay the same too. A range still reaches at least 5 percent on each side of the expected value, so `high` does not flag a change of 5 percent or less.
+
+In the example for `weekday-median` above, the spread is 7.413. With `high`, the range is 2 spreads on each side, which is 85.174 to 114.826. A value of 120 on that Monday is then flagged "Above range". With `low`, the range is 4 spreads on each side, which is 70.348 to 129.652, and a value of 125 is not flagged.
+
+The sensitivity does not apply to `adobe`, because Adobe returns its own range. With `adobe`, `low` or `high` stops the command with an error. See [Troubleshooting](troubleshooting.md#anomaly-detection-options).
 
 ### The first eight weeks have no range
 

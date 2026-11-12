@@ -56,6 +56,19 @@ def _flagged(cid, usual, yesterday, expected, upper, lower):
     return out + [_dv(cid, YESTERDAY, yesterday, expected, upper, lower, True)]
 
 
+# Values that vary around 100 on the 12 Fridays before yesterday.
+SPREAD = [100.0, 110.0, 90.0, 100.0, 120.0, 80.0, 100.0, 105.0, 95.0, 100.0, 130.0, 70.0]
+
+
+def _spread(cid, yesterday):
+    """SPREAD on the 12 Fridays before yesterday, 100 on the other days, and yesterday."""
+    fridays = iter(SPREAD)
+    return [
+        _dv(cid, d, yesterday if d == YESTERDAY else next(fridays) if d.weekday() == 4 else 100.0)
+        for d in _days()
+    ]
+
+
 # Each case is (name, daily values). The cases are the edge cases of the alert rules.
 CASES = {
     "event1": ("Weekday average exactly 10, yesterday 7", lambda c: _series(c, 10.0, 7.0)),
@@ -86,6 +99,8 @@ CASES = {
     "event14": ("Spike of 60 percent", lambda c: _series(c, 100.0, 160.0)),
     "event15": ("Spike of 20 percent", lambda c: _series(c, 100.0, 120.0)),
     "event16": ("Weekday average 8, yesterday 30", lambda c: _series(c, 8.0, 30.0)),
+    # Inside the range of normal and outside the narrower range of high, for every local method.
+    "event17": ("Values that vary, yesterday 25 percent up", lambda c: _spread(c, 125.0)),
 }
 
 
@@ -166,11 +181,11 @@ return out;
 """
 
 
-def _macro(store, rid, threshold, spike=0.5, method="adobe"):
+def _macro(store, rid, threshold, spike=0.5, method="adobe", sensitivity="normal"):
     rows = store.con.execute(
         "select component_id, alert, anomaly from alerts(?, threshold := ?, spike_threshold := ?,"
-        " method := ?)",
-        [rid, threshold, spike, method],
+        " method := ?, sensitivity := ?)",
+        [rid, threshold, spike, method, sensitivity],
     ).fetchall()
     return {cid: (alert, anomaly) for cid, alert, anomaly in rows}
 
@@ -184,19 +199,26 @@ def _never_collected(store, rid):
     return [r[0] for r in rows]
 
 
+# Each anomaly method with each sensitivity it takes. Adobe's method takes only normal.
+METHOD_LEVELS = [("adobe", "normal")] + [
+    (m, s) for m in ANOMALY_METHODS if m != "adobe" for s in ("low", "normal", "high")
+]
+
+
 @pytest.fixture(scope="module")
 def pages_by_method(chrome, edges, tmp_path_factory):
-    """The alert lists and tiles of the edge cases, read once for each anomaly method."""
+    """The alert lists and tiles of the edge cases, read once for each anomaly method and
+    sensitivity."""
     store, rid = edges
     probe = ALERTS_PROBE.replace("SLIDER", json.dumps(list(SLIDER)))
     pages = {}
 
-    def read(method):
-        if method not in pages:
+    def read(method, sensitivity="normal"):
+        if (method, sensitivity) not in pages:
             folder = tmp_path_factory.mktemp("alerts")
-            page = render_html(build_view(store, rid, method=method))
-            pages[method] = run_probe(chrome, page, probe, folder)
-        return pages[method]
+            page = render_html(build_view(store, rid, method=method, sensitivity=sensitivity))
+            pages[method, sensitivity] = run_probe(chrome, page, probe, folder)
+        return pages[method, sensitivity]
 
     return read
 
@@ -206,13 +228,13 @@ def alert_pages(pages_by_method):
     return pages_by_method("adobe")
 
 
-@pytest.mark.parametrize("method", ANOMALY_METHODS)
+@pytest.mark.parametrize(("method", "sensitivity"), METHOD_LEVELS)
 @pytest.mark.parametrize("pct", (30, *SLIDER))
-def test_alert_lists_match_the_alerts_macro(pages_by_method, edges, pct, method):
+def test_alert_lists_match_the_alerts_macro(pages_by_method, edges, pct, method, sensitivity):
     store, rid = edges
-    page = pages_by_method(method)[str(pct)]
+    page = pages_by_method(method, sensitivity)[str(pct)]
     spike = int(page["spikeShown"].strip("+%")) / 100
-    macro = _macro(store, rid, pct / 100, spike, method)
+    macro = _macro(store, rid, pct / 100, spike, method, sensitivity)
 
     def where(kind):
         return sorted(cid for cid, (alert, _) in macro.items() if alert == kind)
@@ -294,13 +316,14 @@ def test_alert_edge_cases(alert_pages):
     assert p30["zero"] == ["metrics/event6"]
 
 
-@pytest.mark.parametrize("method", ANOMALY_METHODS)
+@pytest.mark.parametrize(("method", "sensitivity"), METHOD_LEVELS)
 @pytest.mark.parametrize("pct", (30, *SLIDER))
-def test_tiles_match_the_alerts_macro(pages_by_method, edges, pct, method):
+def test_tiles_match_the_alerts_macro(pages_by_method, edges, pct, method, sensitivity):
     store, rid = edges
-    tiles = pages_by_method(method)[str(pct)]["tiles"]
-    spike = int(pages_by_method(method)[str(pct)]["spikeShown"].strip("+%"))
-    macro = _macro(store, rid, pct / 100, spike / 100, method).values()
+    page = pages_by_method(method, sensitivity)[str(pct)]
+    tiles = page["tiles"]
+    spike = int(page["spikeShown"].strip("+%"))
+    macro = _macro(store, rid, pct / 100, spike / 100, method, sensitivity).values()
 
     def count(alert, anomaly=None):
         return str(sum(1 for a, f in macro if a == alert and (anomaly is None or f == anomaly)))
@@ -332,13 +355,14 @@ def test_the_slider_changes_the_lists_and_tiles(alert_pages):
     tiles = {p: alert_pages[str(p)]["tiles"]["Large drops"]["value"] for p in drops}
     assert tiles == {30: "1", 10: "4", 15: "3", 20: "2", 60: "0"}
     # The spike slider starts at +50%, and moves to +10%, +20%, +20% and +60%. A spike of exactly
-    # the setting is not flagged, and a weekday average under 10 never is.
+    # the setting is not flagged, and a weekday average under 10 never is. event17 is 25 percent
+    # above its weekday average.
     spikes = {p: alert_pages[str(p)]["spikes"] for p in (30, *SLIDER)}
     assert spikes == {
         30: ["metrics/event14"],
-        10: ["metrics/event14", "metrics/event15"],
-        15: ["metrics/event14"],
-        20: ["metrics/event14"],
+        10: ["metrics/event14", "metrics/event15", "metrics/event17"],
+        15: ["metrics/event14", "metrics/event17"],
+        20: ["metrics/event14", "metrics/event17"],
         60: [],
     }
 
@@ -2260,3 +2284,77 @@ def test_a_blocked_run_with_adobe_suggests_a_local_method(chrome, with_problem, 
         "See the status section. To flag unusual values without it, write this report again "
         f"with ahd render --run {run} --anomaly-method weekday-median."
     )
+
+
+def test_the_edge_cases_differ_by_sensitivity(edges):
+    # So the two tests above compare different alert lists for each sensitivity. event17 is
+    # inside the range of normal and low, and above the range of high.
+    for method in LOCAL_METHODS:
+        got = {s: _macro(*edges, 0.3, 0.5, method, s) for s in ("low", "normal", "high")}
+        assert got["low"] == got["normal"] != got["high"], method
+        assert "metrics/event17" not in got["normal"]
+        assert got["high"]["metrics/event17"] == ("unusual", "high")
+
+
+# The header facts, the rule list and the texts that name who flagged a value.
+SENSITIVITY_PROBE = """
+var facts = {};
+[].forEach.call(document.querySelectorAll(".facts > div"), function (d) {
+  facts[d.querySelector("dt").textContent] = d.querySelector("dd").textContent;
+});
+var tiles = {};
+[].forEach.call(document.querySelectorAll("#tiles .tile"), function (t) {
+  var note = t.querySelector(".tile-note");
+  tiles[t.querySelector(".tile-label").lastChild.textContent] = note ? note.textContent : "";
+});
+document.getElementById("tab-alerts").click();
+return {
+  facts: facts,
+  rules: [].map.call(document.querySelectorAll("#change-alert-rule li"), function (li) {
+    return li.textContent;
+  }),
+  tiles: tiles,
+  hint: document.querySelector("#alerts section[aria-labelledby=unusual-title] .hint").textContent,
+  text: document.body.innerText
+};
+"""
+
+
+@pytest.mark.parametrize(
+    ("method", "sensitivity", "title", "far"),
+    [
+        (
+            "weekday-median",
+            "high",
+            "Weekday median, high sensitivity",
+            "Far means more than 2 times the usual spread of those values.",
+        ),
+        (
+            "weekday-iqr",
+            "low",
+            "Weekday quartile range, low sensitivity",
+            "Far means more than 2 times the width of the middle half past its edge.",
+        ),
+        (
+            "weekday-trend",
+            "normal",
+            "Weekday trend",
+            "far means more than 3 times the usual spread of how",
+        ),
+    ],
+)
+def test_the_page_shows_the_sensitivity(chrome, edges, tmp_path, method, sensitivity, title, far):
+    view = build_view(*edges, method=method, sensitivity=sensitivity)
+    got = run_probe(chrome, render_html(view), SENSITIVITY_PROBE, tmp_path)
+    label = ANOMALY_LABELS[method]
+    assert got["facts"]["Anomaly detection"] == (
+        f"{title} (computed by ahd from the daily values of this run)"
+    )
+    [rule] = [r for r in got["rules"] if r.startswith("A value is unusual when")]
+    assert far in rule
+    assert "A day is flagged only when this run has at least 8 " in rule
+    # The texts that name who flagged a value keep the plain name of the method.
+    assert got["tiles"]["Above expected range"] == f"Flagged by the {label} method"
+    assert got["hint"].startswith(f"The {label} method flagged these values")
+    assert ("sensitivity" in got["text"]) is (sensitivity != "normal")
+    assert "sensitivity method" not in got["text"]

@@ -117,7 +117,8 @@ class AnomalyMethod:
 
 # The anomaly methods, in the order the command line lists them. Adobe's values are stored with
 # the run. The others are computed from the run's daily values: each is one branch of the CASE
-# in _local_dv(), and one branch in the anomaly_days macro of views.sql.
+# in _local_dv(), and one branch in the anomaly_days macro of views.sql. The factors of a local
+# method go into its branch in _local_dv() through _factor_sql(). views.sql writes them itself.
 _METHODS = (
     AnomalyMethod(
         "adobe",

@@ -804,6 +804,127 @@ def test_anomaly_method_option_reaches_the_report_and_the_alert_line(
     assert "<dt>Anomaly detection</dt><dd>Weekday median <span" in page
 
 
+def test_anomaly_sensitivity_option_reaches_the_report_and_the_alert_line(
+    tmp_path, cfg, capsys, monkeypatch
+):
+    from ahd.cli import _alert_line as real_line
+    from ahd.cli import build_view as real_view
+
+    seen = []
+
+    def view(*a, **k):
+        seen.append(("view", k.get("method", "adobe"), k.get("sensitivity", "normal")))
+        return real_view(*a, **k)
+
+    def line(*a, **k):
+        seen.append(("line", k.get("method", "adobe"), k.get("sensitivity", "normal")))
+        return real_line(*a, **k)
+
+    monkeypatch.setattr("ahd.cli.build_view", view)
+    monkeypatch.setattr("ahd.cli._alert_line", line)
+    fake = fake_for("rs1", events(2), custom_dims())
+    fake.gets["/dimensions"] = custom_dims() + [{"id": "variables/evar17", "name": "Term"}]
+    out = tmp_path / "o"
+    run = ["run", "--rsid", "rs1", "--date", "2026-11-07", "--out", str(out)]
+    local = ["--anomaly-method", "weekday-median"]
+    assert (
+        main(args(tmp_path, cfg, *run, *local), client_factory=lambda c, company_id=None: fake) == 0
+    )
+    assert seen == [("view", "weekday-median", "normal"), ("line", "weekday-median", "normal")]
+
+    seen.clear()
+    main(
+        args(tmp_path, cfg, *run, *local, "--anomaly-sensitivity", "high"),
+        client_factory=lambda c, company_id=None: fake,
+    )
+    assert seen == [("view", "weekday-median", "high"), ("line", "weekday-median", "high")]
+
+    seen.clear()
+    individual = ["individual", "--run", "1", "--dimension", "evar17", "--metric", "event1"]
+    main(
+        args(
+            tmp_path,
+            cfg,
+            *individual,
+            "--out",
+            str(out),
+            "--anomaly-method",
+            "weekday-iqr",
+            "--anomaly-sensitivity",
+            "low",
+        ),
+        client_factory=lambda c, company_id=None: fake,
+    )
+    assert seen == [("view", "weekday-iqr", "low")]
+
+    seen.clear()
+    out2 = tmp_path / "o2"
+    db = ["--db", str(tmp_path / "t.duckdb"), "--out", str(out2)]
+    code = main(["render", "--run", "1", *db, *local, "--anomaly-sensitivity", "high"])
+    assert code == 0
+    assert seen == [("view", "weekday-median", "high")]
+    page = next(out2.glob("*.html")).read_text(encoding="utf-8")
+    assert "<dt>Anomaly detection</dt><dd>Weekday median, high sensitivity <span" in page
+
+
+SENSITIVITY_COMMANDS = [
+    ["run", "--rsid", "rs1"],
+    ["individual", "--run", "1", "--dimension", "page", "--metric", "event1"],
+    ["render", "--run", "1"],
+]
+
+
+@pytest.mark.parametrize("command", SENSITIVITY_COMMANDS, ids=lambda c: c[0])
+@pytest.mark.parametrize("sensitivity", ["low", "high"])
+@pytest.mark.parametrize("method", [[], ["--anomaly-method", "adobe"]], ids=["default", "adobe"])
+def test_anomaly_sensitivity_needs_a_local_method(
+    tmp_path, cfg, capsys, command, sensitivity, method
+):
+    def no_sign_in(*a, **k):
+        raise AssertionError("The command should stop before it signs in.")
+
+    db = tmp_path / "t.duckdb"
+    rest = [*method, "--anomaly-sensitivity", sensitivity]
+    code = main(
+        [command[0], "--config", str(cfg), "--db", str(db), *command[1:], *rest]
+        if command[0] != "render"
+        else [*command, "--db", str(db), *rest],
+        client_factory=no_sign_in,
+    )
+    assert code == 1
+    assert capsys.readouterr().err == (
+        "Error: --anomaly-sensitivity works only with a local anomaly method, e.g., "
+        "--anomaly-method weekday-median. The adobe method uses the expected range that Adobe "
+        "returned, which ahd does not change.\n"
+    )
+    # It stops before it opens or makes the database.
+    assert not db.exists()
+
+
+@pytest.mark.parametrize("command", SENSITIVITY_COMMANDS, ids=lambda c: c[0])
+def test_anomaly_sensitivity_normal_works_with_adobe(tmp_path, capsys, command):
+    # normal is the default, so it may be given with adobe. The command then goes on, and here
+    # stops later because there is no stored run.
+    from ahd.cli import _parser
+
+    assert _parser().parse_args(command).anomaly_sensitivity == "normal"
+    db = ["--db", str(tmp_path / "t.duckdb")]
+    rest = [*db, "--anomaly-method", "adobe", "--anomaly-sensitivity", "normal"]
+    argv = [command[0], *rest, *command[1:]]
+    assert main(argv, client_factory=lambda *a, **k: None) == 1
+    err = capsys.readouterr().err
+    assert "--anomaly-sensitivity" not in err and err.startswith("Error: ")
+
+
+@pytest.mark.parametrize("command", SENSITIVITY_COMMANDS, ids=lambda c: c[0])
+@pytest.mark.parametrize("bad", ["nope", "Normal", "medium"])
+def test_anomaly_sensitivity_must_be_a_known_level(tmp_path, capsys, command, bad):
+    with pytest.raises(SystemExit) as stop:
+        main([*command, "--db", str(tmp_path / "t.duckdb"), "--anomaly-sensitivity", bad])
+    assert stop.value.code == 2
+    assert "--anomaly-sensitivity: invalid choice" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize(
     "command",
     [
@@ -848,6 +969,31 @@ def test_the_alert_line_counts_by_the_chosen_method(tmp_path):
     assert _alert_line(store, rid, 0.3, 0.5, method="weekday-median") == (
         "Alerts for 2026-11-06: 1 unusual value, 0 large drops, 0 large spikes, 0 drops to zero"
     )
+    # A second run: the Fridays vary around 100, and the last one is 125. That is inside the
+    # range of normal, 66.6 to 133.4, and above the range of high, 77.8 to 122.2.
+    rid = store.create_run("rs1", "S", None, date(2026, 11, 7), "UTC", "0")
+    store.add_components(
+        rid, [Component(cid, "E1", "metric", "custom_events", 1, Column(cid, cid), True)]
+    )
+    fridays = iter([100.0, 110.0, 90.0, 100.0, 120.0, 80.0, 100.0, 105.0, 95.0, 100.0, 130.0, 70.0])
+    values, day = [], date(2026, 8, 8)
+    while day <= date(2026, 11, 7):
+        v = 125.0 if day == date(2026, 11, 6) else next(fridays) if day.weekday() == 4 else 0.0
+        values.append(DailyValue(cid, day, v, None, None, None, None))
+        day += timedelta(days=1)
+    store.add_daily_values(rid, values)
+    store.finish_run(rid, "ok")
+    counts = {
+        s: _alert_line(store, rid, 0.3, 0.5, method="weekday-median", sensitivity=s)
+        for s in ("low", "normal", "high")
+    }
+    assert counts == {
+        "low": "Alerts for 2026-11-06: 0 unusual values, 0 large drops, 0 large spikes, 0 drops to zero",
+        "normal": (
+            "Alerts for 2026-11-06: 0 unusual values, 0 large drops, 0 large spikes, 0 drops to zero"
+        ),
+        "high": "Alerts for 2026-11-06: 1 unusual value, 0 large drops, 0 large spikes, 0 drops to zero",
+    }
     store.con.close()
 
 

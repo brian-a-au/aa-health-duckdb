@@ -4,6 +4,7 @@ import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 
+import pytest
 from fakes import fake_for, restricted_dimensions, restricted_metrics
 from markupsafe import escape
 
@@ -151,11 +152,11 @@ def sample_store(path: Path, bands: bool = True) -> tuple[Store, int]:
     return store, rid
 
 
-def sample_view(bands: bool = True, method: str = "adobe") -> dict:
+def sample_view(bands: bool = True, method: str = "adobe", sensitivity: str = "normal") -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         store, rid = sample_store(Path(tmp) / "s.duckdb", bands)
         try:
-            return build_view(store, rid, method=method)
+            return build_view(store, rid, method=method, sensitivity=sensitivity)
         finally:
             store.con.close()
 
@@ -774,6 +775,52 @@ def test_the_header_names_the_anomaly_method():
         }
     )
     assert "(not available for this run)" in _fact(render_html(view))
+
+
+def test_the_header_names_a_sensitivity_other_than_normal():
+    note = '<span class="muted">(computed by ahd from the daily values of this run)</span>'
+    for method, label in (
+        ("weekday-median", "Weekday median"),
+        ("weekday-iqr", "Weekday quartile range"),
+        ("weekday-trend", "Weekday trend"),
+    ):
+        for sensitivity in ("low", "high"):
+            html = render_html(sample_view(method=method, sensitivity=sensitivity))
+            assert _fact(html) == f"{label}, {sensitivity} sensitivity {note}"
+            # Every sentence that names the method keeps its plain name.
+            markup = html[: html.index('<script type="application/json"')]
+            assert f"A value that the {label} method flagged is listed" in markup
+            assert "sensitivity method" not in markup
+        assert _fact(render_html(sample_view(method=method, sensitivity="normal"))) == (
+            f"{label} {note}"
+        )
+
+
+@pytest.mark.parametrize(
+    ("method", "sensitivity", "far"),
+    [
+        ("weekday-median", "low", "Far means more than 4 times the usual spread of those values."),
+        (
+            "weekday-median",
+            "normal",
+            "Far means more than 3 times the usual spread of those values.",
+        ),
+        ("weekday-median", "high", "Far means more than 2 times the usual spread of those values."),
+        ("weekday-iqr", "low", "Far means more than 2 times the width of the middle half"),
+        ("weekday-iqr", "normal", "Far means more than 1.5 times the width of the middle half"),
+        ("weekday-iqr", "high", "Far means more than 1 times the width of the middle half"),
+        ("weekday-trend", "low", "far means more than 4 times the usual spread of how"),
+        ("weekday-trend", "normal", "far means more than 3 times the usual spread of how"),
+        ("weekday-trend", "high", "far means more than 2 times the usual spread of how"),
+    ],
+)
+def test_the_rule_list_states_the_factor_in_use(method, sensitivity, far):
+    view = sample_view(method=method, sensitivity=sensitivity)
+    rule = _rule(render_html(view))
+    assert f"<li>{escape(view['anomaly_method']['rule'])}" in rule
+    assert far in rule
+    # The guards do not change with the sensitivity.
+    assert f"A day is flagged only when this run has at least 8 {SAMPLE_WORDS[method]}" in rule
 
 
 def _rule(html: str) -> str:

@@ -25,7 +25,7 @@
     <div><dt>Report suite</dt><dd>{{ run.rsid_name or run.rsid }} <span class="muted">({{ run.rsid }})</span></dd></div>
     <div><dt>Individual component</dt><dd>{{ individual_label }}</dd></div>
     <div><dt>Segment</dt><dd>{% if run.segment_id %}{{ run.segment_id }}{% else %}None (all visits){% endif %}</dd></div>
-    <div><dt>Anomaly detection</dt><dd>{{ anomaly.label }}{% if method_note %} <span class="muted">({{ method_note }})</span>{% endif %}</dd></div>
+    <div><dt>Anomaly detection</dt><dd>{{ anomaly.title }}{% if method_note %} <span class="muted">({{ method_note }})</span>{% endif %}</dd></div>
     <div><dt>Run date</dt><dd>{{ run.today }} <span class="muted">(report suite time zone {{ run.timezone }})</span></dd></div>
     <div><dt>Run time</dt><dd>{% if run.started_at %}{{ run.started_at[:16] | replace("T", " ") }} <span class="muted">(time on the computer that ran it)</span>{% if run.duration %}<br>Took {{ run.duration }}{% endif %}{% else %}Unknown{% endif %}</dd></div>
     <div><dt>Status</dt><dd><span class="badge badge-{{ status_kind }}"><span class="icon" aria-hidden="true">{{ status_icon }}</span>{{ status_label }}</span></dd></div>

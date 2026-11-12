@@ -10,6 +10,7 @@ Start with `ahd check --rsid <suite>`. It signs in, counts what the credential c
 - [Limited access](#limited-access)
 - [Fewer components than last time](#fewer-components-than-last-time)
 - [Problems in the status section](#problems-in-the-status-section)
+- [Anomaly detection options](#anomaly-detection-options)
 - [Time zones](#time-zones)
 - [Profiles and config files](#profiles-and-config-files)
 - [The database](#the-database): a file from another version, no file, a file in use, an older `duckdb`, and a run that stays "running"
@@ -79,6 +80,10 @@ Adobe allows 12 requests in any 6 seconds for each user. The tool starts no more
 When Adobe asks for a longer wait with a Retry-After header, the tool waits that long, up to 2 minutes. The tool also waits at most 10 seconds for a connection to Adobe. It records a problem only when the last try also fails.
 
 **Copy problems** in the status section copies the list for an email or a ticket.
+
+## Anomaly detection options
+
+- **"--anomaly-sensitivity works only with a local anomaly method"**: the command got `--anomaly-sensitivity low` or `high` with the method `adobe`, which is the default. Adobe returns its own expected range, so ahd cannot make it wider or narrower. Add a local method, e.g., `--anomaly-method weekday-median`, or leave out `--anomaly-sensitivity`. The command stops before it signs in or opens the database. See [The report](report.md#the-sensitivity-of-the-local-methods).
 
 ## Time zones
 
