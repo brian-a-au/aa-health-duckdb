@@ -2456,6 +2456,12 @@ return {
             "Far means more than 2 times the width of the middle half past its edge.",
         ),
         (
+            "weekday-iqr",
+            "high",
+            "Weekday quartile range, high sensitivity",
+            "Far means more than the width of the middle half past its edge.",
+        ),
+        (
             "weekday-trend",
             "normal",
             "Weekday trend",

@@ -98,8 +98,9 @@ class AnomalyMethod:
 
     factors holds the width factor of the range for each of SENSITIVITIES, in that order: low
     is 4/3 of normal and high is 2/3 of it. Each number is written as it goes into the SQL, so
-    normal gives the same results as 0.1.8. rule names the factor in use with {factor}. Adobe's
-    method has none, because Adobe returns its range.
+    normal gives the same results as 0.1.8. rule names the factor in use with {times}, which
+    becomes e.g. "2 times " and nothing for a factor of 1, so that the rule reads "more than the
+    width". Adobe's method has none, because Adobe returns its range.
     """
 
     key: str
@@ -130,8 +131,7 @@ _METHODS = (
         "weekday-median",
         "Weekday median",
         "A value is unusual when it is far from the median of the earlier values of the same "
-        "weekday in this run. Far means more than {factor} times the usual spread of those "
-        "values.",
+        "weekday in this run. Far means more than {times}the usual spread of those values.",
         "earlier values of its weekday",
         ("4", "3", "2"),
     ),
@@ -139,8 +139,8 @@ _METHODS = (
         "weekday-iqr",
         "Weekday quartile range",
         "A value is unusual when it is far outside the middle half of the earlier values of the "
-        "same weekday in this run. Far means more than {factor} times the width of the middle "
-        "half past its edge.",
+        "same weekday in this run. Far means more than {times}the width of the middle half "
+        "past its edge.",
         "earlier values of its weekday",
         ("2.0", "1.5", "1.0"),
     ),
@@ -148,9 +148,8 @@ _METHODS = (
         "weekday-trend",
         "Weekday trend",
         "A value is unusual when it is far from what its recent level and its weekday suggest. "
-        "The level is the average of the 7 days before it, and far means more than {factor} "
-        "times the usual spread of how the earlier values of the same weekday compared with "
-        "their level.",
+        "The level is the average of the 7 days before it, and far means more than {times}the "
+        "usual spread of how the earlier values of the same weekday compared with their level.",
         "earlier values of its weekday that have a level",
         ("4", "3", "2"),
     ),
@@ -308,7 +307,8 @@ def method_data(
     rule = m.rule
     title = m.label
     if m.factors is not None:
-        rule = rule.format(factor=f"{float(m.factor(sensitivity)):g}")
+        factor = float(m.factor(sensitivity))
+        rule = rule.format(times="" if factor == 1 else f"{factor:g} times ")
         if sensitivity != DEFAULT_SENSITIVITY:
             title = f"{m.label}, {sensitivity} sensitivity"
     return {

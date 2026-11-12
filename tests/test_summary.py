@@ -1715,9 +1715,16 @@ def test_the_page_data_names_the_sensitivity(tmp_path, method, sensitivity):
     # Only the factor differs from the rule of normal, which test_methods_have_keys_and_labels
     # checks word for word.
     normal = build_view(store, rid, method=method)["anomaly_method"]["rule"]
-    was = f"more than {FACTORS[method]['normal']} times"
+    was = _more_than(FACTORS[method]["normal"])
     assert normal.count(was) == 1
-    assert got["rule"] == normal.replace(was, f"more than {FACTORS[method][sensitivity]} times")
+    assert got["rule"] == normal.replace(was, _more_than(FACTORS[method][sensitivity]))
+    assert "1 times" not in got["rule"]
+
+
+def _more_than(factor: str) -> str:
+    """The words of a rule before the spread or the width, e.g., "more than 2 times the". A
+    factor of 1 reads "more than the", e.g., "more than the width of the middle half"."""
+    return "more than the" if factor == "1" else f"more than {factor} times the"
 
 
 def _macro_data():

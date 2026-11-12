@@ -808,7 +808,12 @@ def test_the_header_names_a_sensitivity_other_than_normal():
         ("weekday-median", "high", "Far means more than 2 times the usual spread of those values."),
         ("weekday-iqr", "low", "Far means more than 2 times the width of the middle half"),
         ("weekday-iqr", "normal", "Far means more than 1.5 times the width of the middle half"),
-        ("weekday-iqr", "high", "Far means more than 1 times the width of the middle half"),
+        # A factor of 1 has no "1 times".
+        (
+            "weekday-iqr",
+            "high",
+            "Far means more than the width of the middle half past its edge.",
+        ),
         ("weekday-trend", "low", "far means more than 4 times the usual spread of how"),
         ("weekday-trend", "normal", "far means more than 3 times the usual spread of how"),
         ("weekday-trend", "high", "far means more than 2 times the usual spread of how"),
@@ -819,6 +824,7 @@ def test_the_rule_list_states_the_factor_in_use(method, sensitivity, far):
     rule = _rule(render_html(view))
     assert f"<li>{escape(view['anomaly_method']['rule'])}" in rule
     assert far in rule
+    assert "1 times" not in rule
     # The guards do not change with the sensitivity.
     assert f"A day is flagged only when this run has at least 8 {SAMPLE_WORDS[method]}" in rule
 
