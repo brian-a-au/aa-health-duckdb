@@ -4,7 +4,7 @@
 
 Every `ahd` run is saved in one DuckDB file. The HTML report shows one run at a time. The file holds every run, for every report suite, and you can ask it any question with SQL. This guide shows what you can do with it, from a daily alert email to an audit of unused variables across all your organizations.
 
-Every example here was run against a real database made by `ahd` with DuckDB 2.0. The outputs are real, from Adobe's demo report suites, and shortened where they were long.
+Every example here was run against a real database made by `ahd` with DuckDB 2.0. The outputs are real, from one file with four runs of Adobe's demo report suites, all with the run date 2026-11-12: run 1 for Demo Data, run 2 for Adobe Store, run 3 for Demo Data CJA and run 4 for Demo Data Evangelists. A block that is shortened says so. Where two rows have the same value in the column that orders them, DuckDB can list them in either order, so your output may differ in that order.
 
 ## Contents
 
@@ -267,12 +267,24 @@ FROM alerts((SELECT max(run_id) FROM latest_runs WHERE rsid = 'my_suite' AND seg
 SELECT alert, name, round(usual) AS usual, value, round(pct_vs_usual * 100) AS pct"
 ```
 
+For the Adobe Store suite, `dgeo1xxpnwcidadobestore`, it prints:
+
 ```
-|   alert    |      name       | usual | value  |  pct  |
-|------------|-----------------|------:|-------:|------:|
-| unusual    | Page            | 650.0 | 2714.0 | 318.0 |
-| unusual    | Checkouts       | 8.0   | 68.0   | 768.0 |
-| large drop | Units           | 24.0  | 16.0   | -33.0 |
+|    alert    |         name          | usual  | value  |  pct  |
+|-------------|-----------------------|-------:|-------:|------:|
+| unusual     | Exit Link Instances   | 2.0    | 8.0    | 231.0 |
+| unusual     | Cart Additions        | 140.0  | 230.0  | 64.0  |
+| unusual     | Orders                | 18.0   | 35.0   | 91.0  |
+| large spike | Custom Link Instances | 12.0   | 41.0   | 239.0 |
+| large spike | Page                  | 4849.0 | 8172.0 | 69.0  |
+| large spike | Cart Views            | 142.0  | 270.0  | 91.0  |
+| large spike | Checkouts             | 67.0   | 203.0  | 204.0 |
+| large spike | Units                 | 491.0  | 838.0  | 71.0  |
+| large spike | Occurrences           | 4863.0 | 8221.0 | 69.0  |
+| large spike | Page Views            | 4849.0 | 8172.0 | 69.0  |
+| large spike | Unique Visitors       | 341.0  | 738.0  | 116.0 |
+| large spike | Visits                | 401.0  | 859.0  | 114.0 |
+| large spike | Product Views         | 2850.0 | 4499.0 | 58.0  |
 ```
 
 ### Send an alert email every morning
@@ -340,7 +352,7 @@ Then one query groups the alerts by owner, ready for one email each:
 WITH owners AS (SELECT row_number() OVER () AS line, * FROM read_csv('owners.csv')),
 routed AS (
     SELECT o.owner, a.*
-    FROM alerts(1, for_day := '2026-11-03') a
+    FROM alerts(1, for_day := '2026-11-08') a
     JOIN owners o ON regexp_matches(a.component_id, o.pattern)
     QUALIFY row_number() OVER (PARTITION BY a.component_id ORDER BY o.line) = 1
 )
@@ -349,13 +361,13 @@ FROM routed GROUP BY ALL ORDER BY alerts DESC;
 ```
 
 ```
-┌───────────────────────────┬────────┬────────────────────────────────────────────────────────────┐
-│           owner           │ alerts │                        worst_three                         │
-├───────────────────────────┼────────┼────────────────────────────────────────────────────────────┤
-│ analytics@example.com     │    186 │ [Surveys Completed, Email Error, Push Error]               │
-│ marketing@example.com     │    114 │ [Service ID, Error Reason, Demandbase Company ID]          │
-│ commerce-team@example.com │     15 │ [Approval Requests Denied, Approval Requests, Course View] │
-└───────────────────────────┴────────┴────────────────────────────────────────────────────────────┘
+┌───────────────────────────┬────────┬─────────────────────────────────────────────────────┐
+│           owner           │ alerts │                     worst_three                     │
+├───────────────────────────┼────────┼─────────────────────────────────────────────────────┤
+│ analytics@example.com     │     20 │ [Push Error, Return In Store, Online Return]        │
+│ marketing@example.com     │      7 │ [Return Reason, Return ID, Foresee Custom Question] │
+│ commerce-team@example.com │      1 │ [Approval Requests Approved]                        │
+└───────────────────────────┴────────┴─────────────────────────────────────────────────────┘
 ```
 
 `read_csv` reads the file directly, with no import step. `QUALIFY` keeps the first matching owner for each alert. `list(...)[1:3]` gathers the three worst drops into one cell.
@@ -380,12 +392,14 @@ GROUP BY ALL ORDER BY suite;
 ```
 
 ```
-┌─────────────┬────────────┬─────────┬─────────────────┬─────────────┬──────────────┬─────────────────┬──────────┐
-│    suite    │    day     │ unusual │ dropped_to_zero │ large_drops │ large_spikes │ never_collected │ problems │
-├─────────────┼────────────┼─────────┼─────────────────┼─────────────┼──────────────┼─────────────────┼──────────┤
-│ Adobe Store │ 2026-11-07 │       9 │               0 │           1 │            2 │              20 │        0 │
-│ Demo Data   │ 2026-11-07 │       0 │               0 │           0 │            1 │              42 │        0 │
-└─────────────┴────────────┴─────────┴─────────────────┴─────────────┴──────────────┴─────────────────┴──────────┘
+┌───────────────────────┬────────────┬─────────┬─────────────────┬─────────────┬──────────────┬─────────────────┬──────────┐
+│         suite         │    day     │ unusual │ dropped_to_zero │ large_drops │ large_spikes │ never_collected │ problems │
+├───────────────────────┼────────────┼─────────┼─────────────────┼─────────────┼──────────────┼─────────────────┼──────────┤
+│ Adobe Store           │ 2026-11-11 │       3 │               0 │           0 │           10 │              20 │        0 │
+│ Demo Data             │ 2026-11-11 │       0 │               0 │           0 │            2 │              42 │        0 │
+│ Demo Data CJA         │ 2026-11-11 │       0 │               2 │          97 │            0 │              25 │        1 │
+│ Demo Data Evangelists │ 2026-11-11 │       0 │             356 │           0 │            0 │              15 │        3 │
+└───────────────────────┴────────────┴─────────┴─────────────────┴─────────────┴──────────────┴─────────────────┴──────────┘
 ```
 
 Run it with `-html` and wrap the rows in `<table>` to get an email body:
@@ -424,15 +438,31 @@ GROUP BY ALL ORDER BY suite, never_collected DESC;
 ```
 
 ```
-┌─────────────┬───────────────┬─────────────────┬──────────────────────────────────────────────────────────────┐
-│    suite    │     group     │ never_collected │                         first_three                          │
-├─────────────┼───────────────┼─────────────────┼──────────────────────────────────────────────────────────────┤
-│ Adobe Store │ custom_events │               6 │ [metrics/event1, metrics/event2, metrics/event3]             │
-│ Adobe Store │ custom_props  │               5 │ [variables/prop1, variables/prop2, variables/prop3]          │
-│ Adobe Store │ custom_evars  │               4 │ [metrics/evar1instances, metrics/evar2instances, metrics/e…  │
-│ Demo Data   │ custom_events │              21 │ [metrics/event28, metrics/event88, metrics/event90]          │
-│ Demo Data   │ custom_evars  │              19 │ [metrics/evar24instances, metrics/evar61instances, metrics…  │
-└─────────────┴───────────────┴─────────────────┴──────────────────────────────────────────────────────────────┘
+┌───────────────────────┬──────────────────────────────┬─────────────────┬─────────────────────────────────────────────────────────────────────────────┐
+│         suite         │            group             │ never_collected │                                 first_three                                 │
+├───────────────────────┼──────────────────────────────┼─────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+│ Adobe Store           │ custom_events                │               6 │ [metrics/event1, metrics/event2, metrics/event3]                            │
+│ Adobe Store           │ custom_props                 │               5 │ [variables/prop1, variables/prop2, variables/prop3]                         │
+│ Adobe Store           │ custom_evars                 │               4 │ [metrics/evar1instances, metrics/evar2instances, metrics/evar3instances]    │
+│ Adobe Store           │ Target Integration Instances │               2 │ [metrics/targetconversion, metrics/targetimpression]                        │
+│ Adobe Store           │ Reserved Purchase Events     │               1 │ [metrics/carts]                                                             │
+│ Adobe Store           │ Reserved eVars               │               1 │ [metrics/campaigninstances]                                                 │
+│ Adobe Store           │ Reserved Props               │               1 │ [metrics/downloadlinkinstances]                                             │
+│ Demo Data             │ custom_events                │              21 │ [metrics/event28, metrics/event88, metrics/event90]                         │
+│ Demo Data             │ custom_evars                 │              19 │ [metrics/evar24instances, metrics/evar61instances, metrics/evar62instances] │
+│ Demo Data             │ Reserved Props               │               1 │ [metrics/exitlinkinstances]                                                 │
+│ Demo Data             │ Target Integration Instances │               1 │ [metrics/targetconversion]                                                  │
+│ Demo Data CJA         │ custom_evars                 │               9 │ [metrics/evar9instances, metrics/evar28instances, metrics/evar29instances]  │
+│ Demo Data CJA         │ custom_props                 │               5 │ [variables/prop1, variables/prop2, variables/prop3]                         │
+│ Demo Data CJA         │ Reserved Purchase Events     │               5 │ [metrics/cartadditions, metrics/cartremovals, metrics/carts]                │
+│ Demo Data CJA         │ custom_events                │               2 │ [metrics/event54, metrics/event55]                                          │
+│ Demo Data CJA         │ Reserved Props               │               2 │ [metrics/downloadlinkinstances, metrics/exitlinkinstances]                  │
+│ Demo Data CJA         │ Target Integration Instances │               2 │ [metrics/targetconversion, metrics/targetimpression]                        │
+│ Demo Data Evangelists │ custom_evars                 │              11 │ [metrics/evar24instances, metrics/evar90instances, metrics/evar95instances] │
+│ Demo Data Evangelists │ Target Integration Instances │               2 │ [metrics/targetconversion, metrics/targetimpression]                        │
+│ Demo Data Evangelists │ Reserved Props               │               1 │ [metrics/exitlinkinstances]                                                 │
+│ Demo Data Evangelists │ custom_events                │               1 │ [metrics/event28]                                                           │
+└───────────────────────┴──────────────────────────────┴─────────────────┴─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Health over time, with a chart in the terminal
@@ -448,33 +478,35 @@ GROUP BY ALL ORDER BY run_id;
 ```
 
 ```
-┌────────┬─────────────────────────┬────────────┬───────┬──────────────────────┐
-│ run_id │          rsid           │   today    │ flags │        chart         │
-├────────┼─────────────────────────┼────────────┼───────┼──────────────────────┤
-│      1 │ dgeo1xxpnwcidluma       │ 2026-11-08 │  1663 │ ████████████████▋    │
-│      2 │ dgeo1xxpnwcidadobestore │ 2026-11-08 │    91 │ ▉                    │
-└────────┴─────────────────────────┴────────────┴───────┴──────────────────────┘
+┌────────┬──────────────────────────┬────────────┬───────┬──────────────────────┐
+│ run_id │           rsid           │   today    │ flags │        chart         │
+├────────┼──────────────────────────┼────────────┼───────┼──────────────────────┤
+│      1 │ dgeo1xxpnwcidluma        │ 2026-11-12 │  1566 │ ███████████████▋     │
+│      2 │ dgeo1xxpnwcidadobestore  │ 2026-11-12 │   115 │ █▏                   │
+│      3 │ dgeo1xxpnwcidcjab2b      │ 2026-11-12 │   176 │ █▊                   │
+│      4 │ egeo1xxpnwcidevangelists │ 2026-11-12 │  3054 │ ████████████████████ │
+└────────┴──────────────────────────┴────────────┴───────┴──────────────────────┘
 ```
 
-With daily runs, the same query shows whether tracking gets better or worse over weeks.
+`bar()` draws a full bar for a count above its maximum, here 2000, as for run 4. With daily runs, the same query shows whether tracking gets better or worse over weeks.
 
 ### The largest drops, as bars
 
 ```sql
 SELECT name, round(pct_vs_usual * 100) AS pct, bar(-pct_vs_usual, 0, 1, 30) AS drop
-FROM alerts(1, for_day := '2026-11-03')
+FROM alerts(1, for_day := '2026-11-08')
 ORDER BY pct_vs_usual LIMIT 4;
 ```
 
 ```
-┌──────────────────────────┬───────┬────────────────────────────────┐
-│           name           │  pct  │              drop              │
-├──────────────────────────┼───────┼────────────────────────────────┤
-│ Approval Requests Denied │ -60.0 │ ██████████████████             │
-│ Surveys Completed        │ -52.0 │ ███████████████▌               │
-│ Email Error              │ -48.0 │ ██████████████▎                │
-│ Push Error               │ -46.0 │ █████████████▉                 │
-└──────────────────────────┴───────┴────────────────────────────────┘
+┌─────────────────┬────────┬────────────────────────────────┐
+│      name       │  pct   │              drop              │
+├─────────────────┼────────┼────────────────────────────────┤
+│ Push Error      │  -41.0 │ ████████████▍                  │
+│ Return In Store │  -41.0 │ ████████████▏                  │
+│ Return Reason   │  -40.0 │ ███████████▉                   │
+│ Return ID       │  -40.0 │ ███████████▉                   │
+└─────────────────┴────────┴────────────────────────────────┘
 ```
 
 ### Count alerts by group with PIVOT
@@ -482,24 +514,17 @@ ORDER BY pct_vs_usual LIMIT 4;
 `PIVOT` turns the values of one column into columns:
 
 ```sql
-PIVOT (FROM alerts(1, for_day := '2026-11-03')) ON alert USING count(*)
+PIVOT (FROM alerts(1, for_day := '2026-11-08')) ON alert USING count(*)
 GROUP BY "group" ORDER BY "group";
 ```
 
 ```
-┌──────────────────────────────┬────────────┬─────────┐
-│            group             │ large drop │ unusual │
-├──────────────────────────────┼────────────┼─────────┤
-│ List Variables               │          1 │       0 │
-│ Reserved Props               │          2 │       0 │
-│ Reserved Purchase Events     │          8 │       0 │
-│ Reserved Traffic Events      │          3 │       0 │
-│ Reserved eVars               │          2 │       0 │
-│ Target Integration Instances │          1 │       0 │
-│ custom_evars                 │        113 │       1 │
-│ custom_events                │        165 │       4 │
-│ custom_props                 │         15 │       0 │
-└──────────────────────────────┴────────────┴─────────┘
+┌───────────────┬────────────┬─────────────┐
+│     group     │ large drop │ large spike │
+├───────────────┼────────────┼─────────────┤
+│ custom_evars  │          6 │           1 │
+│ custom_events │         21 │           0 │
+└───────────────┴────────────┴─────────────┘
 ```
 
 ### A history longer than 92 days
@@ -541,13 +566,18 @@ ORDER BY suite, pair, h.rank;
 ```
 
 ```
-┌─────────────┬─────────────────────┬─────────────┬──────────────────────────────────────────────────────────┬──────────────┐
-│    suite    │        pair         │ rank_before │                           item                           │ value_before │
-├─────────────┼─────────────────────┼─────────────┼──────────────────────────────────────────────────────────┼──────────────┤
-│ Adobe Store │ Page by Occurrences │          12 │ https://www.adobestore.com/products/adobe-staff-event-h… │       3035.0 │
-│ Adobe Store │ Page by Occurrences │          13 │ https://www.adobestore.com/products/p-adb328/adb328      │       3017.0 │
-└─────────────┴─────────────────────┴─────────────┴──────────────────────────────────────────────────────────┴──────────────┘
+┌───────────────────────┬─────────────────────┬─────────────┬──────────────────────────────────────────────────────────────────┬──────────────┐
+│         suite         │        pair         │ rank_before │                               item                               │ value_before │
+├───────────────────────┼─────────────────────┼─────────────┼──────────────────────────────────────────────────────────────────┼──────────────┤
+│ Adobe Store           │ Page by Occurrences │          11 │ https://www.adobestore.com/products/adobe-staff-event-tee/adb539 │       3660.0 │
+│ Demo Data Evangelists │ Page by Occurrences │           1 │ home                                                             │     580781.0 │
+│ Demo Data Evangelists │ Page by Occurrences │           2 │ app: launch                                                      │     286300.0 │
+│ Demo Data Evangelists │ Page by Occurrences │           3 │ category 5                                                       │     240650.0 │
+└───────────────────────┴─────────────────────┴─────────────┴──────────────────────────────────────────────────────────────────┴──────────────┘
+(Shortened: 17 more rows of Demo Data Evangelists follow, with ranks 4 to 20.)
 ```
+
+In this file, the run of Demo Data Evangelists has no top 100 for yesterday, because no rows came back for it. Every value of its top 20 is then missing from yesterday's list. The status section of that run's report names the problem, and the `issues` table holds it too.
 
 ## Export and share
 
@@ -559,7 +589,7 @@ COPY (FROM alerts(1)) TO 'alerts.json' (FORMAT json, ARRAY true);
 COPY (FROM alerts(1)) TO 'alerts.csv';
 ```
 
-Parquet is a compact column format that BI tools, e.g., Power BI and Tableau, can read. The 37,310 rows of one run took about 1 MB. DuckDB reads it back with `FROM 'days.parquet'`, and `FROM 'history/*.parquet'` reads a whole folder of them as one table.
+Parquet is a compact column format that BI tools, e.g., Power BI and Tableau, can read. The 37,310 rows of run 1 took about 0.9 MB. DuckDB reads it back with `FROM 'days.parquet'`, and `FROM 'history/*.parquet'` reads a whole folder of them as one table.
 
 To write an Excel file, load DuckDB's `excel` extension. DuckDB downloads it the first time.
 

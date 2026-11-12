@@ -485,7 +485,7 @@ def test_send_alerts_missing_or_locked_database(tmp_path, capsys):
     mod = _load("send_alerts")
     assert mod.main([str(tmp_path / "none.duckdb"), "rs1"]) == 1
     db = _db(tmp_path, 5_000_000.0)
-    holder = subprocess.Popen(
+    with subprocess.Popen(
         [
             sys.executable,
             "-c",
@@ -496,14 +496,13 @@ def test_send_alerts_missing_or_locked_database(tmp_path, capsys):
         ],
         stdout=subprocess.PIPE,
         text=True,
-    )
-    try:
-        assert holder.stdout.readline().strip() == "ready"
-        assert mod.main([str(db), "rs1"]) == 1
-        assert "Could not read" in capsys.readouterr().err
-    finally:
-        holder.kill()
-        holder.wait()
+    ) as holder:
+        try:
+            assert holder.stdout.readline().strip() == "ready"
+            assert mod.main([str(db), "rs1"]) == 1
+            assert "Could not read" in capsys.readouterr().err
+        finally:
+            holder.kill()
 
 
 @pytest.mark.parametrize("value", [None, 12.5])

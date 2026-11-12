@@ -12,6 +12,7 @@ The database layout stays at version 7, so files made by 0.1.2 to 0.1.9 keep wor
   - A value that is not a method or a sensitivity stops the command with exit code 1 and a message that names the variable and the values it takes.
   - With the method `adobe`, a sensitivity of `low` or `high` still stops the command, wherever each value comes from. The message names the variable that gave a value.
   - [Run it every day](docs/scheduling.md) now sets the two variables in the scripts of the job.
+- Every output in the DuckDB guide now comes from one file, with four runs of Adobe's demo report suites dated 2026-11-12. Before, the guide mixed output from files of different days. The examples with `for_day` now use a day of that file that has alerts, and a block that is shortened says so.
 
 ## 0.1.9 (2026-11-12)
 

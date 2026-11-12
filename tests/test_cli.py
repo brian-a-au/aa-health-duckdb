@@ -371,7 +371,7 @@ def test_locked_database_is_one_line_error(tmp_path, cfg, capsys):
     db = tmp_path / "t.duckdb"
     Store.open(db).con.close()
     # Another process holds the file open for writing, as ahd run does.
-    holder = subprocess.Popen(
+    with subprocess.Popen(
         [
             sys.executable,
             "-c",
@@ -382,23 +382,22 @@ def test_locked_database_is_one_line_error(tmp_path, cfg, capsys):
         ],
         stdout=subprocess.PIPE,
         text=True,
-    )
-    try:
-        assert holder.stdout.readline().strip() == "ready"
-        called = []
+    ) as holder:
+        try:
+            assert holder.stdout.readline().strip() == "ready"
+            called = []
 
-        def sign_in(creds, company_id=None):
-            called.append(1)
+            def sign_in(creds, company_id=None):
+                called.append(1)
 
-        for argv in (["runs", "--db", str(db)], args(tmp_path, cfg, "run", "--rsid", "rs1")):
-            code = main(argv, client_factory=sign_in)
-            err = capsys.readouterr().err
-            assert code == 1 and err.count("\n") == 1 and "Traceback" not in err
-            assert "is in use by another program" in err
-            assert not called  # ahd run stops before it signs in
-    finally:
-        holder.kill()
-        holder.wait()
+            for argv in (["runs", "--db", str(db)], args(tmp_path, cfg, "run", "--rsid", "rs1")):
+                code = main(argv, client_factory=sign_in)
+                err = capsys.readouterr().err
+                assert code == 1 and err.count("\n") == 1 and "Traceback" not in err
+                assert "is in use by another program" in err
+                assert not called  # ahd run stops before it signs in
+        finally:
+            holder.kill()
 
 
 def test_file_that_is_not_a_database_is_one_line_error(tmp_path, capsys):
