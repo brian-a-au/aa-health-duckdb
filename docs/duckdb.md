@@ -11,7 +11,7 @@ Every example here was run against a real database made by `ahd` with DuckDB 2.0
 - [Why a database beats a spreadsheet](#why-a-database-beats-a-spreadsheet)
 - [Before you start](#before-you-start)
 - [What is in the file](#what-is-in-the-file)
-- [Ready-made views and the alerts macro](#ready-made-views-and-the-alerts-macro)
+- [Ready-made views and macros](#ready-made-views-and-macros)
 - [Email recipes](#email-recipes)
 - [Analysis recipes](#analysis-recipes)
 - [Export and share](#export-and-share)
@@ -112,11 +112,11 @@ Every row carries its `run_id`, so you can always tell which run it came from.
 
 To see every column of a table, run `DESCRIBE daily_values`. To see a quick profile of every column, with minimum, maximum, averages and missing values, run `SUMMARIZE daily_values`.
 
-## Ready-made views and the alerts macro
+## Ready-made views and macros
 
-Every file comes with two views and one table macro. A view is a saved query that you use like a table. A table macro is a saved query that takes options. They use the same rules as the report, and the tests check that they agree.
+Every file comes with two views and two table macros. A view is a saved query that you use like a table. A table macro is a saved query that takes options. They use the same rules as the report, and the tests check that they agree.
 
-When a new version of `ahd` changes these rules, the next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces the views and the macro in your file. Until then, your own SQL and the [alert email script](#email-recipes) use the old rules. If you built your own views on top of `component_days`, they follow the new rules after the update.
+When a new version of `ahd` changes these rules, the next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces the views and the macros in your file. Until then, your own SQL and the [alert email script](#email-recipes) use the old rules. If you built your own views on top of `component_days`, they follow the new rules after the update.
 
 ### `latest_runs`
 
@@ -142,14 +142,14 @@ FROM latest_runs SELECT run_id, rsid_name, today, status ORDER BY run_id DESC;
 One row per run, component and full day, with everything the report computes. The column `usual` is the value that the report calls the weekday average.
 
 - `value`, `expected`, `lower` and `upper` from Adobe
-- `anomaly`: "high" or "low" when Adobe flagged the value, else empty
+- `anomaly`: "high" or "low" when Adobe flagged the value, else empty. This view always has Adobe's values. For another anomaly method, use [`anomaly_days`](#anomaly_daysrun-method--adobe-min_usual--10).
 - `usual`: the weekday average, which is the average of the same weekday in the 12 weeks before the day. Only the last 7 days of the run have one, as in the report. An older day falls inside those 12 weeks, so its `usual` is empty.
 - `pct_vs_usual`: the change from the weekday average, e.g., -0.25 for 25 percent below. It is empty when `usual` is empty or 0.
 - `zero`: the value was 0
 - `unused`: the value was 0 or empty on every day of the run, so the component never collected data
 - `is_yesterday`: the row is for the last full day of the run
 
-### `alerts(run, threshold := 0.30, spike_threshold := 0.50, min_usual := 10, for_day := NULL)`
+### `alerts(run, threshold := 0.30, spike_threshold := 0.50, min_usual := 10, for_day := NULL, method := 'adobe')`
 
 The alerts of one run, by the report's rules. Give the run number first. Give the other options by name, e.g., `alerts(1, threshold := 0.20)`.
 
@@ -158,6 +158,7 @@ The alerts of one run, by the report's rules. Give the run number first. Give th
 - `spike_threshold`: the percent for a large spike, as a share. The default is `0.50`, the same as the report's spike slider. A value that doubled is a spike of about `1.0`.
 - `min_usual`: a large drop or spike needs a weekday average (`usual`) of at least this much. The default is `10`.
 - `for_day`: the day to check, e.g., `'2026-11-03'`. The default is the day before the run date. A large drop or spike needs one of the last 7 days before the run date. An older day can only have the alerts "unusual" and "dropped to zero", as in the report's calendar.
+- `method`: the anomaly method that finds the unusual values, one of `'adobe'`, `'weekday-median'` and `'weekday-iqr'`. The default is `'adobe'`, which uses Adobe's flags, as `ahd run` does by default. Another name stops the query with an error. [The report](report.md#anomaly-detection-methods) explains the methods. With a local method, `expected` is that method's expected value.
 
 ```sql
 FROM alerts(2) SELECT alert, name, round(usual) AS usual, value;
@@ -177,9 +178,36 @@ FROM alerts(2) SELECT alert, name, round(usual) AS usual, value;
 └─────────────┴─────────────────┴───────┴────────┘
 ```
 
-Each alert is one of these: "unusual" (Adobe flagged it), "large spike", "large drop" or "dropped to zero".
+Each alert is one of these: "unusual" (the anomaly method flagged it, Adobe by default), "large spike", "large drop" or "dropped to zero".
 
-When you query a file through `ATTACH`, run `USE` with its name before you call `alerts()`, e.g., `USE prod;`. The views work without it.
+The same alerts with the Weekday median method, which ahd computes from the run's own daily values:
+
+```sql
+FROM alerts(2, method := 'weekday-median') SELECT alert, name, round(expected) AS expected, value;
+```
+
+This works for a run whose credential may not use Adobe's anomaly detection, too. Adobe's flags of such a run are empty, so `alerts()` with the default method lists no unusual values.
+
+When you query a file through `ATTACH`, run `USE` with its name before you call `alerts()` or `anomaly_days()`, e.g., `USE prod;`. The views work without it.
+
+### `anomaly_days(run, method := 'adobe', min_usual := 10)`
+
+The expected value, the expected range and the flag of each component and day of one run, by one anomaly method. `alerts()` reads its flags from this macro. It covers the same days as `component_days`, which are the 91 full days of the run. It gives these columns:
+
+- `run_id`, `component_id` and `day`
+- `expected`, `lower` and `upper`: the expected value and the range. With `'adobe'`, they are Adobe's values. With a local method, they are empty on a day with fewer than 4 earlier values of its weekday in the run, e.g., in the first 4 weeks.
+- `anomaly`: "high" or "low" when the method flagged the value, else empty
+
+`method` takes the same names as in `alerts()`. A local method flags a value only when its expected value is at least `min_usual`. With `'adobe'`, `min_usual` changes nothing.
+
+This query counts, for each of the last 7 days, the values that Adobe flagged and the values that the Weekday median method flagged. The two methods often flag different days:
+
+```sql
+SELECT day, count(a.anomaly) AS adobe, count(m.anomaly) AS weekday_median
+FROM anomaly_days(2) a
+JOIN anomaly_days(2, method := 'weekday-median') m USING (run_id, component_id, day)
+GROUP BY day ORDER BY day DESC LIMIT 7;
+```
 
 ## Email recipes
 
@@ -215,7 +243,7 @@ uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite o
 uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb --all
 ```
 
-It reads the latest run of each suite without a segment, from `latest_runs`. `--all` uses every suite that has such a run in the file. Add `--segment ID` for the latest runs with that segment. The script takes only report suite IDs and segment IDs, not names, and they must match exactly. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`. `--spike-threshold` sets the large spike percent the same way, up to `2`. The default is `0.50`.
+It reads the latest run of each suite without a segment, from `latest_runs`. `--all` uses every suite that has such a run in the file. Add `--segment ID` for the latest runs with that segment. The script takes only report suite IDs and segment IDs, not names, and they must match exactly. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`. `--spike-threshold` sets the large spike percent the same way, up to `2`. The default is `0.50`. The script uses Adobe's flags. For another anomaly method, add it to the `alerts()` call in the script's `QUERY`, e.g., `alerts($run, threshold := $threshold, spike_threshold := $spike, method := 'weekday-median')`.
 
 Without `SMTP_HOST`, it writes `alerts.eml` in the current folder, which you can open and check first. To send, set `SMTP_HOST`, `MAIL_FROM` and `MAIL_TO`. Set `SMTP_PORT` when the server does not use 587. Set `SMTP_USER` and `SMTP_PASSWORD` when the server needs a login. The script connects without encryption and then turns it on with the STARTTLS command. It does not work with a server that needs encryption from the start, e.g., on port 465.
 
@@ -527,7 +555,7 @@ with duckdb.connect("data/ahd.duckdb", read_only=True) as con:
 | `read_csv`, `read_xlsx`, `FROM 'file.parquet'` | reads files with no import step |
 | `COPY ... TO` | writes CSV, JSON, Parquet or Excel |
 | `SET VARIABLE` and `getvariable` | keeps a value between queries |
-| Views and table macros | saved queries inside the file: `latest_runs`, `component_days`, `alerts()` |
+| Views and table macros | saved queries inside the file: `latest_runs`, `component_days`, `alerts()`, `anomaly_days()` |
 | `SUMMARIZE`, `DESCRIBE` | profiles a table in one line |
 | `bar()` | draws a bar chart as text |
 | `regexp_matches` | matches components to owners by pattern |

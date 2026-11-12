@@ -41,7 +41,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 | `src/ahd/catalog.py`, `src/ahd/data/` | Decides which components a run checks and how each is counted |
 | `src/ahd/fetch.py` | One run: catalog, anomaly probe, batched trends, and Individual Component Summary pairs |
 | `src/ahd/lookup.py` | Lists suites and segments, and turns names into IDs |
-| `src/ahd/store.py`, `src/ahd/sql/views.sql` | The DuckDB tables, views and the `alerts` table macro |
+| `src/ahd/store.py`, `src/ahd/sql/views.sql` | The DuckDB tables, views and the `alerts` and `anomaly_days` table macros |
 | `src/ahd/transfer.py` | `ahd export` and `ahd import`: copies runs between files by column name, also from an older layout |
 | `src/ahd/summary.py` | Turns a stored run into the data the page shows. Every number is computed in SQL |
 | `src/ahd/render/` | The Jinja template, CSS and JavaScript of the HTML report |
@@ -91,6 +91,8 @@ The rules for unusual values, large drops, large spikes, zero values and compone
 3. `src/ahd/sql/views.sql`, which holds the `alerts` macro for your own SQL
 
 Change all three together. `test_alert_lists_match_the_alerts_macro` and `test_tiles_match_the_alerts_macro` in `tests/test_report_js.py` fail when the page and the macro disagree. `test_alerts_macro` in `tests/test_summary.py` checks the macro on its own.
+
+The anomaly methods, which give the expected value, the range and the flag of each day, live in two places. One is the `anomaly_days` macro in `src/ahd/sql/views.sql`. The other is `_local_dv` with the `_METHODS` table in `src/ahd/summary.py`. `report.js` holds no rule or text of its own for a method. It reads the key, the label and the rule text from the page data. To add a method, add one branch to the `CASE` in each of the two SQL copies, add its name to the names that `anomaly_days` accepts, and add one entry to `_METHODS`, with tests and docs. The guards are shared by every method, so a new method only gives the expected value and the range. `test_page_alerts_match_the_alerts_macro` and `test_page_and_macro_agree_on_every_day` in `tests/test_summary.py` fail when the two copies disagree. The two tests in `tests/test_report_js.py` above run for every method.
 
 ### The HTML report
 

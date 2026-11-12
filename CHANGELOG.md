@@ -2,6 +2,17 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+This release adds a choice of anomaly method. The database layout stays at version 7, so files made by 0.1.2 to 0.1.7 keep working. The views version changes from 2 to 3, because the `alerts()` macro takes a new option and the file gets a new macro, `anomaly_days()`. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces them in your file. `ahd render` opens the file read-only, so it does not replace them. Until a command replaces them, your own SQL that gives `method` to `alerts()` stops with an error.
+
+- `ahd run`, `ahd individual` and `ahd render` take `--anomaly-method` with `adobe`, `weekday-median` or `weekday-iqr`. The default is `adobe`, which uses Adobe's anomaly detection as before. The other two compute the expected range from the run's own daily values, from the earlier values of the same weekday. They are simpler than Adobe's anomaly detection and will flag different days. [The report](docs/report.md#anomaly-detection-methods) explains their rules.
+- The method is not stored with the run. `ahd render` can write the report of any stored run again with another method, and it makes no requests to Adobe.
+- A run whose credential may not use Adobe's anomaly detection, or whose test of it failed, can now get flags with a local method. With `adobe`, the Alerts tab of such a run suggests the `ahd render` command that does this.
+- The report's header has a new fact, "Anomaly detection", which names the method. "How large drops and spikes are found" states the rule of the method in use. With a local method, every text that said that Adobe flagged a value names the method instead, and the list of earlier runs counts every run with that method.
+- The alert line that `ahd run` prints uses the chosen method.
+- The `alerts()` macro takes `method := 'adobe'`, `'weekday-median'` or `'weekday-iqr'`. The default is `'adobe'`, so your existing SQL gives the same rows as before. The new macro `anomaly_days()` gives the expected value, the range and the flag of each component and day by the chosen method. See the [DuckDB guide](docs/duckdb.md#anomaly_daysrun-method--adobe-min_usual--10).
+
 ## 0.1.7 (2026-11-11)
 
 Fixes to the tool and to the docs. The database layout stays at version 7, and the views and the `alerts()` macro do not change.

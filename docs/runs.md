@@ -59,7 +59,7 @@ Every row carries its run number, `run_id`. The tables are:
 | `schema_version` | The version of this layout |
 | `views_version` | The version of the views and the macro |
 
-The file also holds two views and a table macro for your own SQL: `latest_runs`, `component_days` and `alerts()`. They follow the same rules as the report. The [DuckDB guide](duckdb.md) explains them, with recipes.
+The file also holds two views and two table macros for your own SQL: `latest_runs`, `component_days`, `alerts()` and `anomaly_days()`. They follow the same rules as the report. The [DuckDB guide](duckdb.md) explains them, with recipes.
 
 ## Layout versions
 
@@ -78,7 +78,7 @@ On Windows, use `ren data\ahd.duckdb ahd-old.duckdb` for the first line. The old
 
 See [Usage](usage.md#export-and-import) for both commands, and [Troubleshooting](troubleshooting.md#the-database-was-made-by-a-different-version) for the message.
 
-When a new version of the tool changes only the views or the `alerts()` macro, e.g., to fix an alert rule, you keep your file. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces the views and the macro, and your stored runs then follow the new rules. `ahd render` and `ahd runs` open the file read-only, so they do not replace them. If you go back to an older version of the tool, from 0.1.3 on, its next write puts back its own views and macro. 0.1.2 and earlier leave the views as they find them.
+When a new version of the tool changes only the views or the macros, e.g., to fix an alert rule, you keep your file. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces the views and the macros, and your stored runs then follow the new rules. `ahd render` and `ahd runs` open the file read-only, so they do not replace them. If you go back to an older version of the tool, from 0.1.3 on, its next write puts back its own views and macro. 0.1.2 and earlier leave the views as they find them.
 
 ## Looking inside
 
