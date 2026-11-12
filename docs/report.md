@@ -81,7 +81,7 @@ The three local methods are much simpler than Adobe's anomaly detection, and the
 ### Which local method to choose
 
 - Choose `weekday-median` or `weekday-iqr` for a component whose level stays about the same over the weeks. They compare a day with the same weekday in earlier weeks. They have a range for the last 5 weeks.
-- Choose `weekday-trend` for a component whose level rises or falls over the weeks, e.g., one that grows a little every day. The other two methods compare such a component with the older values of its weekday, which were lower or higher. Their expected value then lags behind, and their range is wide. `weekday-trend` follows the recent level instead. It has a range only for about the last 4 weeks, and a day after a gap in the data has no range.
+- Choose `weekday-trend` for a component whose level rises or falls over the weeks, e.g., one that grows a little every day. The other two methods compare such a component with the older values of its weekday, which were lower or higher. Their expected value then lags behind, and their range is wide. `weekday-trend` follows the recent level instead. It has a range only for about the last 4 weeks, and a day after a gap in the data has no range. It suits a slow change. After a sudden large change, e.g., a component that lost most of its data in one week, the level moves with the change, and the method can flag many of the days that follow.
 
 The method is fixed for each report, and the page has no switch for it. The method is not stored with the run, so `ahd render` can write the report of any stored run again with another method. See [render](usage.md#render).
 
