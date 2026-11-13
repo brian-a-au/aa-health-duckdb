@@ -15,7 +15,9 @@ The script looks for ahd in the Python that runs it first, then for the ahd prog
 
 It reads the latest run of each suite that ended "ok" or "partial". It takes report suite IDs
 and a segment ID, not names. It builds one HTML email with a plain text part, with one section
-for each suite that has alerts. --all uses every suite that has a finished run in the database.
+for each suite that has alerts. Each section lists the alerts that are new on the day first,
+and says since when each alert has held, e.g., "since 2026-11-04, 8 days". The Since column
+needs ahd 0.1.12 or newer. With ahd 0.1.11 it stays empty. --all uses every suite that has a finished run in the database.
 Without --segment it uses the latest runs without a segment. --threshold is the large drop
 percent as a share, e.g., 0.30 for 30 percent, the default. --spike-threshold is the large spike
 percent as a share, e.g., 0.50 for 50 percent, the default. The script gives them to ahd alerts
@@ -60,7 +62,7 @@ from email.message import EmailMessage
 from importlib import metadata
 from pathlib import Path
 
-HEADERS = ["Alert", "Component", "ID", "Weekday average", "Actual", "Change"]
+HEADERS = ["Alert", "Component", "ID", "Weekday average", "Actual", "Change", "Since"]
 
 # The exit codes of ahd alerts.
 AHD_ALERTS, AHD_ERROR, AHD_USAGE, AHD_NO_ALERTS = 0, 1, 2, 4
@@ -205,16 +207,36 @@ def _flagged_by(method: str, label: str, sensitivity: str) -> str:
     )
 
 
+def _since(a: dict) -> str:
+    """Since when an alert has held, e.g., "since 2026-11-04, 8 days" or "new on 2026-11-11".
+    It is empty with ahd 0.1.11, which does not give it."""
+    if "is_new" not in a:
+        return ""
+    if a["is_new"]:
+        return f"new on {a['since']}"
+    days = "1 day" if a["days"] == 1 else f"{a['days']} days"
+    if a["at_least"]:
+        return f"since {a['since']} or earlier, at least {days}"
+    return f"since {a['since']}, {days}"
+
+
 def _rows(run: dict) -> list[tuple]:
     """The rows of one suite's alerts for the email: alert, name, ID, weekday average, actual,
-    change in percent and day. The large drops and spikes come with the largest drop first."""
+    change in percent, since when it held, whether it is new, and day. The new alerts come
+    first. Then the alerts come by kind, and the large drops and spikes come with the largest
+    drop first."""
     rows = []
     for a in run["alerts"]:
         pct = None if a["pct_vs_usual"] is None else _round(a["pct_vs_usual"] * 100, 1)
         usual = _round(a["usual"])
-        rows.append((a["alert"], a["name"], a["component_id"], usual, a["value"], pct, run["day"]))
+        new = bool(a.get("is_new"))
+        rows.append(
+            (a["alert"], a["name"], a["component_id"], usual, a["value"], pct, _since(a), new)
+            + (run["day"],)
+        )
     rows.sort(key=lambda r: (r[5] is None, r[5] or 0.0))
     rows.sort(key=lambda r: r[0], reverse=True)
+    rows.sort(key=lambda r: not r[7])
     return rows
 
 
@@ -222,13 +244,12 @@ def _table(rows: list[tuple]) -> tuple[list[str], str]:
     """The plain text lines and the HTML table for one suite's alerts."""
     text = []
     cells = []
-    for alert, name, cid, usual, value, pct, _day in rows:
+    for alert, name, cid, usual, value, pct, since, _new, _day in rows:
         change = "" if pct is None else f"{pct:+.1f}%"
         shown = [_number(usual), _number(value)]
-        text.append(
-            f"- {alert}: {name} ({cid}), weekday average {shown[0]}, actual {shown[1]} {change}"
-        )
-        cells.append([alert, name, cid, *shown, change])
+        line = f"- {alert}: {name} ({cid}), weekday average {shown[0]}, actual {shown[1]} {change}"
+        text.append(f"{line}, {since}" if since else line)
+        cells.append([alert, name, cid, *shown, change, since])
     th = "".join(f"<th style='text-align:left;padding:4px 8px'>{h}</th>" for h in HEADERS)
     trs = "".join(
         "<tr>"
@@ -262,6 +283,8 @@ def build(
     parts = [f"<p>{html.escape(subject)}. {html.escape(rules, quote=False)}</p>"]
     for rsid, name, rows in sections:
         heading = f"{name} ({rsid}), {rows[0][-1]}: {len(rows)} alerts"
+        if any(r[6] for r in rows):
+            heading += f", {sum(1 for r in rows if r[7])} new"
         lines, table = _table(rows)
         text += [heading, *lines, ""]
         parts.append(f"<h3>{html.escape(heading)}</h3>{table}")
