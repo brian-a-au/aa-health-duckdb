@@ -915,3 +915,102 @@ def test_the_email_reads_the_json_of_ahd_0_1_11(tmp_path, monkeypatch):
     lines, table = mod._table([row])
     assert lines == ["- large drop: E (metrics/event1), weekday average 100, actual 50 -50.0%"]
     assert "<td style='padding:4px 8px'></td>" in table
+
+
+def _event_db(tmp_path, zeros=12):
+    """One run with zeros metrics at 0 yesterday, one large drop and 7 metrics at their weekday
+    average. With 12 zeros, they are a suite-wide event: 12 of the 20 that collected data."""
+    db = tmp_path / "ahd.duckdb"
+    s = Store.open(db)
+    rid = s.create_run("rs1", "Suite", None, TODAY, "UTC", "0.1")
+    kinds = ["zero"] * zeros + ["drop"] + ["quiet"] * 7
+    comps, values = [], []
+    for n, kind in enumerate(kinds, start=1):
+        cid = f"metrics/event{n:02d}"
+        comps.append(
+            Component(cid, f"Event {n}", "metric", "custom_events", n, Column(cid, cid), None)
+        )
+        for d in range(91):
+            day = TODAY - timedelta(days=91 - d)
+            v = 100.0
+            if d == 90:
+                v = {"zero": 0.0, "drop": 50.0, "quiet": 100.0}[kind]
+            values.append(DailyValue(cid, day, v, None, None, None, None))
+    s.add_components(rid, comps)
+    s.add_daily_values(rid, values)
+    s.finish_run(rid, "ok")
+    s.con.close()
+    return str(db)
+
+
+EVENT_TEXT = (
+    "Suite-wide event: 12 of the 20 components that collected data had a value of 0 on "
+    "2026-11-06. For all of them, this started on 2026-11-06, so it is new."
+)
+
+
+def test_the_email_starts_with_the_event_and_shortens_it(tmp_path, monkeypatch):
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    assert mod.main([_event_db(tmp_path), "rs1"]) == 0
+    text, page = _mail(tmp_path)
+    lines = text.splitlines()
+    start = lines.index("Suite (rs1), 2026-11-06: 13 alerts, 13 new")
+    zero = (
+        "- dropped to zero: Event {n} (metrics/event{n:02d}), weekday average 100, actual 0 "
+        "-100.0%, new on 2026-11-06"
+    )
+    assert lines[start + 1 :] == [
+        EVENT_TEXT,
+        *[zero.format(n=n) for n in range(1, 6)],
+        "7 more alerts of this event are not listed. ahd alerts --every-alert lists them all.",
+        "Other alerts:",
+        (
+            "- large drop: Event 13 (metrics/event13), weekday average 100, actual 50 -50.0%, "
+            "new on 2026-11-06"
+        ),
+    ]
+    # The subject still counts every alert.
+    assert lines[0] == "13 Analytics Health alerts for rs1 on 2026-11-06"
+    assert f"<p>{EVENT_TEXT}</p>" in page
+    assert page.count("<tr>") == 1 + 5 + 1 + 1
+    assert "<p>7 more alerts of this event are not listed." in page
+    assert "<p>Other alerts</p>" in page
+
+
+def test_the_email_without_an_event_lists_every_alert(tmp_path, monkeypatch):
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    assert mod.main([_event_db(tmp_path, zeros=9), "rs1"]) == 0
+    text, page = _mail(tmp_path)
+    assert "Suite-wide event" not in text and "Other alerts" not in text
+    assert len([line for line in text.splitlines() if line.startswith("- ")]) == 10
+    assert "Suite-wide event" not in page
+
+
+def test_the_email_reads_the_json_of_ahd_0_1_12(tmp_path, monkeypatch):
+    """ahd 0.1.12 gives no events and no event field. The email then lists every alert."""
+    mod = _load("send_alerts")
+    run = {
+        "day": "2026-11-06",
+        "alerts": [
+            {
+                "alert": "large drop",
+                "name": "E",
+                "component_id": "metrics/event1",
+                "usual": 100.0,
+                "value": 50.0,
+                "pct_vs_usual": -0.5,
+                "since": "2026-11-06",
+                "days": 1,
+                "at_least": False,
+                "is_new": True,
+            },
+        ],
+    }
+    rows = mod._rows(run)
+    msg = mod.build([("rs1", "Suite", rows)], 0.3, 0.5, "Adobe.", events={"rs1": []})
+    body = msg.get_body(("plain",)).get_content()
+    assert "- large drop: E (metrics/event1)" in body and "Suite-wide event" not in body

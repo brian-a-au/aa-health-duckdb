@@ -17,7 +17,16 @@ It reads the latest run of each suite that ended "ok" or "partial". It takes rep
 and a segment ID, not names. It builds one HTML email with a plain text part, with one section
 for each suite that has alerts. Each section lists the alerts that are new on the day first,
 and says since when each alert has held, e.g., "since 2026-11-04, 8 days". The Since column
-needs ahd 0.1.12 or newer. With ahd 0.1.11 it stays empty. --all uses every suite that has a finished run in the database.
+needs ahd 0.1.12 or newer. With ahd 0.1.11 it stays empty.
+
+When many components of a suite have the same kind of alert, ahd alerts calls them a
+suite-wide event, e.g., when the data of the whole suite stopped. A section then starts with
+one line for each event, e.g., "356 of the 356 components that collected data had a value of 0
+on 2026-11-11", and lists only the first 5 alerts of the event. The other alerts follow under
+"Other alerts". The subject still counts every alert. This needs ahd 0.1.13 or newer. With an
+older ahd, the email lists every alert.
+
+--all uses every suite that has a finished run in the database.
 Without --segment it uses the latest runs without a segment. --threshold is the large drop
 percent as a share, e.g., 0.30 for 30 percent, the default. --spike-threshold is the large spike
 percent as a share, e.g., 0.50 for 50 percent, the default. The script gives them to ahd alerts
@@ -63,6 +72,8 @@ from importlib import metadata
 from pathlib import Path
 
 HEADERS = ["Alert", "Component", "ID", "Weekday average", "Actual", "Change", "Since"]
+# The email lists this many alerts of each suite-wide event, as ahd alerts does.
+EVENT_SHOWN = 5
 
 # The exit codes of ahd alerts.
 AHD_ALERTS, AHD_ERROR, AHD_USAGE, AHD_NO_ALERTS = 0, 1, 2, 4
@@ -222,9 +233,10 @@ def _since(a: dict) -> str:
 
 def _rows(run: dict) -> list[tuple]:
     """The rows of one suite's alerts for the email: alert, name, ID, weekday average, actual,
-    change in percent, since when it held, whether it is new, and day. The new alerts come
-    first. Then the alerts come by kind, and the large drops and spikes come with the largest
-    drop first."""
+    change in percent, since when it held, whether it is new, its suite-wide event, and day.
+    The new alerts come first. Then the alerts come by kind, and the large drops and spikes come
+    with the largest drop first. The event is None outside an event, and with ahd 0.1.12 and
+    older, which do not give it."""
     rows = []
     for a in run["alerts"]:
         pct = None if a["pct_vs_usual"] is None else _round(a["pct_vs_usual"] * 100, 1)
@@ -232,7 +244,7 @@ def _rows(run: dict) -> list[tuple]:
         new = bool(a.get("is_new"))
         rows.append(
             (a["alert"], a["name"], a["component_id"], usual, a["value"], pct, _since(a), new)
-            + (run["day"],)
+            + (a.get("event"), run["day"])
         )
     rows.sort(key=lambda r: (r[5] is None, r[5] or 0.0))
     rows.sort(key=lambda r: r[0], reverse=True)
@@ -244,7 +256,7 @@ def _table(rows: list[tuple]) -> tuple[list[str], str]:
     """The plain text lines and the HTML table for one suite's alerts."""
     text = []
     cells = []
-    for alert, name, cid, usual, value, pct, since, _new, _day in rows:
+    for alert, name, cid, usual, value, pct, since, _new, _event, _day in rows:
         change = "" if pct is None else f"{pct:+.1f}%"
         shown = [_number(usual), _number(value)]
         line = f"- {alert}: {name} ({cid}), weekday average {shown[0]}, actual {shown[1]} {change}"
@@ -265,9 +277,13 @@ def build(
     threshold: float,
     spike: float,
     flagged_by: str,
+    events: dict[str, list[dict]] | None = None,
 ) -> EmailMessage:
     """One email. Each section is (rsid, suite name, alert rows), for a suite with alerts.
-    flagged_by is the sentence that names the anomaly method."""
+    flagged_by is the sentence that names the anomaly method. events gives the suite-wide
+    events of each suite by its rsid, as ahd alerts gives them. A section with events starts
+    with each event and its first EVENT_SHOWN alerts, and then lists the other alerts."""
+    events = events or {}
     total = sum(len(rows) for _, _, rows in sections)
     if len(sections) == 1:
         rsid, _name, rows = sections[0]
@@ -285,9 +301,33 @@ def build(
         heading = f"{name} ({rsid}), {rows[0][-1]}: {len(rows)} alerts"
         if any(r[6] for r in rows):
             heading += f", {sum(1 for r in rows if r[7])} new"
-        lines, table = _table(rows)
-        text += [heading, *lines, ""]
-        parts.append(f"<h3>{html.escape(heading)}</h3>{table}")
+        text.append(heading)
+        parts.append(f"<h3>{html.escape(heading)}</h3>")
+        mine = events.get(rsid, [])
+        for event in mine:
+            said = f"Suite-wide event: {event['text']}"
+            these = [r for r in rows if r[8] == event["event"]]
+            lines, table = _table(these[:EVENT_SHOWN])
+            text += [said, *lines]
+            parts.append(f"<p>{html.escape(said, quote=False)}</p>{table}")
+            # An event has at least 10 alerts, so at least 5 are left out.
+            more = len(these) - EVENT_SHOWN
+            if more > 0:
+                line = (
+                    f"{more} more alerts of this event are not listed. ahd alerts --every-alert "
+                    "lists them all."
+                )
+                text.append(line)
+                parts.append(f"<p>{html.escape(line, quote=False)}</p>")
+        others = [r for r in rows if not mine or r[8] is None]
+        if others:
+            lines, table = _table(others)
+            if mine:
+                text.append("Other alerts:")
+                parts.append("<p>Other alerts</p>")
+            text += lines
+            parts.append(table)
+        text.append("")
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = os.environ.get("MAIL_FROM", "ahd@localhost")
@@ -350,15 +390,18 @@ def main(argv: list[str]) -> int:
         )
         return 1
     sections = []
+    events = {}
     for run in runs:
         if run["alerts"]:
             sections.append((run["rsid"], run["rsid_name"] or run["rsid"], _rows(run)))
+            # ahd 0.1.12 and older give no events.
+            events[run["rsid"]] = run.get("events", [])
         else:
             print(f"No alerts for {run['rsid']}.")
     if sections:
         first = runs[0]
         said = _flagged_by(first["method"], first["method_name"], first["sensitivity"])
-        msg = build(sections, float(args.threshold), float(args.spike_threshold), said)
+        msg = build(sections, float(args.threshold), float(args.spike_threshold), said, events)
         _send(msg, sum(len(rows) for _, _, rows in sections))
     elif runs:
         print("Nothing to send.")

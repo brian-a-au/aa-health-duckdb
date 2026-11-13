@@ -443,6 +443,8 @@ The 10 large spikes are a [suite-wide event](#suite_eventsrun-), so the text giv
 
 Each section lists the alerts that are new on the day first, and its heading counts them, e.g., "Adobe Store (dgeo1xxpnwcidadobestore), 2026-11-11: 13 alerts, 1 new". Each alert says since when it has held, e.g., "since 2026-11-09, 3 days". The Since column needs `ahd` 0.1.12 or newer. With 0.1.11, it stays empty.
 
+When a suite has a [suite-wide event](#suite_eventsrun-), its section starts with one line for the event, e.g., "356 of the 356 components that collected data had a value of 0 on 2026-11-11". A table of the first 5 alerts of the event follows, and a line counts the others. Then "Other alerts" lists the alerts outside the event. So when the data of a whole suite stops, the email has 5 rows for it, not 356. The subject still counts every alert. This needs `ahd` 0.1.13 or newer. With an older `ahd`, the email lists every alert.
+
 The script gets its alerts from `ahd alerts --format json`, and builds and sends the email itself. So it needs `ahd` 0.1.11 or newer. Before 0.1.11, it needed only DuckDB, and it read the file with its own copy of the rules for the anomaly options. The script is in this repository. Run it from a clone, as below, where `uv run` already has `ahd`. Without a clone, download the file and run it with `ahd` added, e.g., `uv run --with aa-health-duckdb python send_alerts.py ...`. The script looks for `ahd` in the Python that runs it first, then for the `ahd` program on your `PATH`. Without either, it stops with exit code 1 and says how to install it.
 
 ```
