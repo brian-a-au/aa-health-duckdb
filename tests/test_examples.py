@@ -721,7 +721,7 @@ def _rich_db(tmp_path):
 )
 def test_the_email_lists_the_same_rows_as_the_old_query(tmp_path, monkeypatch, options):
     """Before 0.1.11 the script read the rows with OLD_QUERY. The rows from ahd alerts, rounded
-    and ordered by the script, are the same, so the email does not change."""
+    and ordered by the script, are the same, with the new alerts first since 0.1.12."""
     mod = _load("send_alerts")
     db = _rich_db(tmp_path)
     argv = [str(db), "rs1", "rs2", "--threshold", str(options["threshold"])]
@@ -748,8 +748,13 @@ def test_the_email_lists_the_same_rows_as_the_old_query(tmp_path, monkeypatch, o
             ]
             assert name == f"Suite {rsid}"
             assert len(rows) == len(old) > 0
+            # 0.1.12 added since when each alert held and whether it is new, and lists the new
+            # alerts first. The other fields are the same as those of the old query.
+            same = [(*r[:6], r[-1]) for r in rows]
             # Rows with the same alert and change may come in either order in the old query.
-            assert sorted(rows, key=repr) == sorted(old, key=repr)
+            assert sorted(same, key=repr) == sorted(old, key=repr)
+            new = {r[2]: r[7] for r in rows}
+            old = [r for r in old if new[r[2]]] + [r for r in old if not new[r[2]]]
             assert [(r[0], r[5]) for r in rows] == [(r[0], r[5]) for r in old]
     if options["method"] == "adobe":
         # With a local method, most large drops and spikes are unusual values instead.
@@ -838,3 +843,75 @@ def test_the_script_writes_nothing_into_the_folder_it_is_not_run_in(tmp_path, mo
     assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs1"]) == 0
     assert [p.name for p in here.iterdir()] == ["alerts.eml"]
     assert not (EXAMPLES / "alerts.eml").exists()
+
+
+def _since_db(tmp_path):
+    """One run with a metric that dropped to 0 yesterday, one that has been 0 for 9 days, and one
+    more than 30 percent below its weekday average on each of the last 8 days."""
+    db = tmp_path / "ahd.duckdb"
+    s = Store.open(db)
+    rid = s.create_run("rs1", "Suite", None, TODAY, "UTC", "0.1")
+    tails = {"metrics/event1": [0.0], "metrics/event2": [0.0] * 9, "metrics/event3": [50.0] * 8}
+    comps, values = [], []
+    for n, (cid, tail) in enumerate(tails.items(), start=1):
+        comps.append(
+            Component(cid, f"Event {n}", "metric", "custom_events", n, Column(cid, cid), None)
+        )
+        for d in range(91):
+            day = TODAY - timedelta(days=91 - d)
+            back = (TODAY - day).days
+            v = tail[-back] if back <= len(tail) else 100.0
+            values.append(DailyValue(cid, day, v, None, None, None, None))
+    s.add_components(rid, comps)
+    s.add_daily_values(rid, values)
+    s.finish_run(rid, "ok")
+    s.con.close()
+    return str(db)
+
+
+def test_the_email_lists_new_alerts_first_and_says_since_when(tmp_path, monkeypatch):
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    mod = _load("send_alerts")
+    assert mod.main([_since_db(tmp_path), "rs1"]) == 0
+    text, page = _mail(tmp_path)
+    lines = [line for line in text.splitlines() if line.startswith("- ")]
+    assert lines == [
+        (
+            "- dropped to zero: Event 1 (metrics/event1), weekday average 100, actual 0 -100.0%, "
+            "new on 2026-11-06"
+        ),
+        (
+            "- large drop: Event 3 (metrics/event3), weekday average 96, actual 50 -47.8%, "
+            "since 2026-10-31 or earlier, at least 7 days"
+        ),
+        (
+            "- dropped to zero: Event 2 (metrics/event2), weekday average 92, actual 0 -100.0%, "
+            "since 2026-10-29, 9 days"
+        ),
+    ]
+    assert "Suite (rs1), 2026-11-06: 3 alerts, 1 new" in text
+    assert "<th style='text-align:left;padding:4px 8px'>Since</th>" in page
+    assert "<td style='padding:4px 8px'>since 2026-10-29, 9 days</td>" in page
+
+
+def test_the_email_reads_the_json_of_ahd_0_1_11(tmp_path, monkeypatch):
+    """ahd 0.1.11 gives no since fields. The email then leaves the words out."""
+    mod = _load("send_alerts")
+    run = {
+        "day": "2026-11-06",
+        "alerts": [
+            {
+                "alert": "large drop",
+                "name": "E",
+                "component_id": "metrics/event1",
+                "usual": 100.0,
+                "value": 50.0,
+                "pct_vs_usual": -0.5,
+            },
+        ],
+    }
+    [row] = mod._rows(run)
+    lines, table = mod._table([row])
+    assert lines == ["- large drop: E (metrics/event1), weekday average 100, actual 50 -50.0%"]
+    assert "<td style='padding:4px 8px'></td>" in table

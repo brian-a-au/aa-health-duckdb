@@ -198,6 +198,21 @@ FROM local;
 
 -- The alerts of one run on one day, by the same rules as the report. method picks the anomaly
 -- method and sensitivity the width of its range, as in anomaly_days.
+--
+-- The last four columns say since when each alert has held. An alert follows one condition:
+-- a value of 0 when its value is 0, else the direction of its anomaly flag, else a change past
+-- the drop or spike threshold. since is the first day of the unbroken run of days, up to the
+-- alert's day, on which that condition held, and days counts them. The label of the alert may
+-- change inside the run, e.g., from unusual to dropped to zero, while the value stays 0.
+--
+-- at_least is true when the day before since cannot be judged for the condition, so the alert
+-- may have started earlier. That day cannot be judged when it is not in the run's 91 days or
+-- has no value, for a flag when the method gave it no expected value, and for a drop or spike
+-- when it is older than the last 7 days, which are the only days with a weekday average.
+-- is_new is true for an alert that started on its own day: days is 1 and at_least is false.
+--
+-- src/ahd/summary.py and src/ahd/render/static/report.js hold the same rules for the report,
+-- and tests check that all three agree.
 CREATE OR REPLACE MACRO alerts(run_number, threshold := 0.30, spike_threshold := 0.50, min_usual := 10,
     for_day := NULL, method := 'adobe', sensitivity := 'normal') AS TABLE
 WITH days AS (
@@ -208,19 +223,70 @@ WITH days AS (
         sensitivity := sensitivity) a
         ON a.run_id = c.run_id AND a.component_id = c.component_id AND a.day = c.day
     WHERE c.run_id = run_number
+),
+listed AS (
+    SELECT run_id, day, component_id, name, "group", metric_type, value, usual, expected,
+        pct_vs_usual,
+        CASE
+            WHEN anomaly IS NOT NULL THEN 'unusual'
+            WHEN zero THEN 'dropped to zero'
+            WHEN pct_vs_usual > 0 THEN 'large spike'
+            ELSE 'large drop'
+        END AS alert,
+        anomaly,
+        -- The condition that the streak follows.
+        CASE
+            WHEN zero THEN 'zero'
+            WHEN anomaly IS NOT NULL THEN anomaly
+            WHEN pct_vs_usual > 0 THEN 'spike'
+            ELSE 'drop'
+        END AS condition
+    FROM days
+    WHERE (CASE WHEN for_day IS NULL THEN is_yesterday ELSE day = for_day::DATE END)
+        AND NOT (zero AND unused)
+        AND (anomaly IS NOT NULL OR zero OR (usual >= min_usual
+            AND (pct_vs_usual < -threshold OR pct_vs_usual > spike_threshold)))
+),
+-- Each alert with each day from its own day back to the day before the run's 91 days.
+back AS (
+    SELECT l.component_id, l.day AS alert_day, l.condition, l.day - b.n::INTEGER AS day
+    FROM listed l JOIN runs r ON r.run_id = l.run_id, range(0, 93) b(n)
+    WHERE l.day - b.n::INTEGER >= r.today - 92
+),
+-- Whether the condition held on each of those days: yes, no, or unknown when the day cannot
+-- be judged. A day that is not in component_days has no value. component_days gives a weekday
+-- average only to the last 7 days.
+judged AS (
+    SELECT b.component_id, b.alert_day, b.day,
+        CASE
+            WHEN b.condition = 'zero' AND d.value = 0 THEN 'yes'
+            WHEN b.condition IN ('high', 'low') AND d.anomaly = b.condition THEN 'yes'
+            WHEN b.condition = 'drop' AND d.usual >= min_usual AND d.pct_vs_usual < -threshold
+                THEN 'yes'
+            WHEN b.condition = 'spike' AND d.usual >= min_usual
+                AND d.pct_vs_usual > spike_threshold THEN 'yes'
+            WHEN d.value IS NULL THEN 'unknown'
+            WHEN b.condition IN ('high', 'low') AND d.expected IS NULL THEN 'unknown'
+            WHEN b.condition IN ('drop', 'spike') AND d.usual IS NULL THEN 'unknown'
+            ELSE 'no'
+        END AS state
+    FROM back b
+    LEFT JOIN days d ON d.component_id = b.component_id AND d.day = b.day
+),
+-- The last day before each streak. The day before the run's 91 days is always unknown, so
+-- every alert has one.
+breaks AS (
+    SELECT component_id, alert_day, max(day) AS day, arg_max(state, day) AS state
+    FROM judged
+    WHERE state <> 'yes'
+    GROUP BY component_id, alert_day
 )
-SELECT run_id, day, component_id, name, "group", metric_type, value, usual, expected,
-    pct_vs_usual,
-    CASE
-        WHEN anomaly IS NOT NULL THEN 'unusual'
-        WHEN zero THEN 'dropped to zero'
-        WHEN pct_vs_usual > 0 THEN 'large spike'
-        ELSE 'large drop'
-    END AS alert,
-    anomaly
-FROM days
-WHERE (CASE WHEN for_day IS NULL THEN is_yesterday ELSE day = for_day::DATE END)
-    AND NOT (zero AND unused)
-    AND (anomaly IS NOT NULL OR zero OR (usual >= min_usual
-        AND (pct_vs_usual < -threshold OR pct_vs_usual > spike_threshold)))
-ORDER BY alert DESC, "group", component_id;
+SELECT l.run_id, l.day, l.component_id, l.name, l."group", l.metric_type, l.value, l.usual,
+    l.expected, l.pct_vs_usual, l.alert, l.anomaly,
+    b.day + 1 AS since,
+    l.day - b.day AS days,
+    b.state = 'unknown' AS at_least,
+    l.day - b.day = 1 AND b.state = 'no' AS is_new
+FROM listed l
+JOIN breaks b ON b.component_id = l.component_id AND b.alert_day = l.day
+ORDER BY l.alert DESC, l."group", l.component_id;

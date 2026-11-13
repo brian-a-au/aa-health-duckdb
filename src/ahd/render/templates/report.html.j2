@@ -240,7 +240,7 @@
     <button type="button" id="copy-alerts">Copy alerts</button>
     <span id="copy-result" role="status" aria-live="polite"></span>
   </div>
-  <p class="hint">Days in a row counts the days, up to the chosen day, that had the same alert. The report covers 7 days, so a count that reaches the first of them says "or more".</p>
+  <p class="hint">Since says when each alert started and for how many days it has held, up to the chosen day. New alerts started on the chosen day and come first in each list. An alert follows its value of 0, its flag, or its change from the weekday average. A large drop or spike can only be judged on the last 7 days, so one that reaches the first of them says "or earlier".</p>
   <p class="hint">The copy holds a formatted table and plain text. An email program such as Outlook or Gmail pastes the table, and a chat or text editor pastes the text.</p>
   <div id="alerts" data-render-command="ahd render --run {{ run.id }} --anomaly-method {{ suggested_method }}"></div>
   <details class="copy-fallback">

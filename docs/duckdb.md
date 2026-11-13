@@ -189,6 +189,54 @@ FROM alerts(2) SELECT alert, name, round(usual) AS usual, value;
 
 Each alert is one of these: "unusual" (the anomaly method flagged it, Adobe by default), "large spike", "large drop" or "dropped to zero".
 
+The last four columns say since when each alert has held. `ahd` 0.1.12 added them after the other columns, which keep their names, their meaning and their order:
+
+- `since`: the day the alert started. An alert follows one condition: a value of 0 when its value is 0, else the direction of its anomaly flag, else a change past `threshold` or `spike_threshold`. `since` is the first day of the unbroken run of days, up to the alert's day, on which that condition held. A 0 that the anomaly method flagged on some days keeps one start, also when its `alert` changes from "unusual" to "dropped to zero".
+- `days`: the number of days from `since` to the alert's day, both counted.
+- `at_least`: true when the day before `since` cannot be judged, so the alert may have started earlier. That day is not in the run's 91 days, or it has no value. For a flag, the method gave it no expected value. For a large drop or spike, it is older than the last 7 days, which are the only days with a weekday average. So a drop on all 7 days has `days` 7 and `at_least` true.
+- `is_new`: true when the alert started on its own day, so `days` is 1 and `at_least` is false.
+
+With `for_day`, the streak ends on that day. The rows keep the order they had before 0.1.12. Add `ORDER BY is_new DESC` to put the new alerts first, as the report, `ahd alerts` and the email do:
+
+```sql
+FROM alerts(2) SELECT alert, name, since, days, at_least, is_new ORDER BY is_new DESC, since DESC, name;
+```
+
+```
+┌─────────────┬───────────────────────┬────────────┬───────┬──────────┬─────────┐
+│    alert    │         name          │   since    │ days  │ at_least │ is_new  │
+├─────────────┼───────────────────────┼────────────┼───────┼──────────┼─────────┤
+│ unusual     │ Exit Link Instances   │ 2026-11-11 │     1 │ false    │ true    │
+│ large spike │ Cart Views            │ 2026-11-10 │     2 │ false    │ false   │
+│ unusual     │ Orders                │ 2026-11-10 │     2 │ false    │ false   │
+│ large spike │ Unique Visitors       │ 2026-11-10 │     2 │ false    │ false   │
+│ large spike │ Units                 │ 2026-11-10 │     2 │ false    │ false   │
+│ large spike │ Visits                │ 2026-11-10 │     2 │ false    │ false   │
+│ unusual     │ Cart Additions        │ 2026-11-09 │     3 │ false    │ false   │
+│ large spike │ Custom Link Instances │ 2026-11-09 │     3 │ false    │ false   │
+│ large spike │ Checkouts             │ 2026-11-08 │     4 │ false    │ false   │
+│ large spike │ Occurrences           │ 2026-11-07 │     5 │ false    │ false   │
+│ large spike │ Page                  │ 2026-11-07 │     5 │ false    │ false   │
+│ large spike │ Page Views            │ 2026-11-07 │     5 │ false    │ false   │
+│ large spike │ Product Views         │ 2026-11-07 │     5 │ false    │ false   │
+└─────────────┴───────────────────────┴────────────┴───────┴──────────┴─────────┘
+```
+
+On Demo Data CJA, whose values fall every day, the large drops held on all of the last 7 days, so they may have started earlier:
+
+```sql
+FROM alerts(3) SELECT alert, since, days, at_least, is_new, count(*) AS alerts GROUP BY ALL ORDER BY alerts DESC;
+```
+
+```
+┌─────────────────┬────────────┬───────┬──────────┬─────────┬────────┐
+│      alert      │   since    │ days  │ at_least │ is_new  │ alerts │
+├─────────────────┼────────────┼───────┼──────────┼─────────┼────────┤
+│ large drop      │ 2026-11-05 │     7 │ true     │ false   │     97 │
+│ dropped to zero │ 2026-11-11 │     1 │ false    │ true    │      2 │
+└─────────────────┴────────────┴───────┴──────────┴─────────┴────────┘
+```
+
 The same alerts with the Weekday median method, which ahd computes from the run's own daily values:
 
 ```sql
@@ -300,11 +348,12 @@ A large drop is more than 30% below the weekday average, and a large spike is mo
 
 Run 2, Adobe Store (dgeo1xxpnwcidadobestore), status ok
 Alerts for 2026-11-11: 3 unusual values, 0 large drops, 10 large spikes, 0 drops to zero
-- unusual: Exit Link Instances (metrics/exitlinkinstances), weekday average 2.42, actual 8, expected 2.51, change +231.0%
-- unusual: Cart Additions (metrics/cartadditions), weekday average 140.08, actual 230, expected 77.06, change +64.2%
-- unusual: Orders (metrics/orders), weekday average 18.33, actual 35, expected 20.91, change +90.9%
-- large spike: Custom Link Instances (metrics/customlinkinstances), weekday average 12.08, actual 41, change +239.3%
-- large spike: Page (variables/page), weekday average 4,848.50, actual 8,172, change +68.5%
+1 of these alerts is new on 2026-11-11.
+- unusual: Exit Link Instances (metrics/exitlinkinstances), weekday average 2.42, actual 8, expected 2.51, change +231.0%, new on 2026-11-11
+- unusual: Cart Additions (metrics/cartadditions), weekday average 140.08, actual 230, expected 77.06, change +64.2%, since 2026-11-09, 3 days
+- unusual: Orders (metrics/orders), weekday average 18.33, actual 35, expected 20.91, change +90.9%, since 2026-11-10, 2 days
+- large spike: Custom Link Instances (metrics/customlinkinstances), weekday average 12.08, actual 41, change +239.3%, since 2026-11-09, 3 days
+- large spike: Page (variables/page), weekday average 4,848.50, actual 8,172, change +68.5%, since 2026-11-07, 5 days
 (Shortened: 8 more large spikes follow.)
 ```
 
@@ -313,6 +362,8 @@ Alerts for 2026-11-11: 3 unusual values, 0 large drops, 10 large spikes, 0 drops
 ### Send an alert email every morning
 
 [`examples/send_alerts.py`](examples/send_alerts.py) emails the latest alerts for one or more report suites, with an HTML table and a plain text part. The email has one section for each suite that has alerts. It sends nothing when no suite has alerts. That way an empty inbox means healthy suites.
+
+Each section lists the alerts that are new on the day first, and its heading counts them, e.g., "Adobe Store (dgeo1xxpnwcidadobestore), 2026-11-11: 13 alerts, 1 new". Each alert says since when it has held, e.g., "since 2026-11-09, 3 days". The Since column needs `ahd` 0.1.12 or newer. With 0.1.11, it stays empty.
 
 The script gets its alerts from `ahd alerts --format json`, and builds and sends the email itself. So it needs `ahd` 0.1.11 or newer. Before 0.1.11, it needed only DuckDB, and it read the file with its own copy of the rules for the anomaly options. The script is in this repository. Run it from a clone, as below, where `uv run` already has `ahd`. Without a clone, download the file and run it with `ahd` added, e.g., `uv run --with aa-health-duckdb python send_alerts.py ...`. The script looks for `ahd` in the Python that runs it first, then for the `ahd` program on your `PATH`. Without either, it stops with exit code 1 and says how to install it.
 
@@ -342,7 +393,26 @@ To run the check and the email every morning on Windows, macOS or Linux, see [Ru
 
 ### Send only what is new since the last run
 
-If the same variable has been broken for a week, a daily email about it adds nothing. This query keeps only alerts that were not alerts in the run before:
+If the same variable has been broken for a week, a daily email about it adds nothing. The column `is_new` of `alerts()` keeps only the alerts that started on the day of the run. It needs only one run:
+
+```sql
+FROM alerts((SELECT max(run_id) FROM latest_runs WHERE rsid = 'my_suite' AND segment_id IS NULL))
+SELECT alert, name, value WHERE is_new;
+```
+
+For the Adobe Store suite, it prints:
+
+```
+┌─────────┬─────────────────────┬────────┐
+│  alert  │        name         │ value  │
+├─────────┼─────────────────────┼────────┤
+│ unusual │ Exit Link Instances │    8.0 │
+└─────────┴─────────────────────┴────────┘
+```
+
+An alert whose day before cannot be judged is never new, e.g., a large drop that held on all of the last 7 days. Add `OR (at_least AND days = 1)` to keep an alert that may be new.
+
+The query below answers a different question. It keeps the alerts that were not alerts in the run before, whatever their days. Use it when your runs are not made every day, e.g., once a week, so that an alert that started between two runs counts as new:
 
 ```sql
 SET VARIABLE runs = (

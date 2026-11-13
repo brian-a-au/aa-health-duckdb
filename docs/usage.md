@@ -245,19 +245,24 @@ The command opens the database read-only, so it works while a `duckdb -readonly`
 
 ### The formats
 
-`text` starts with the rules in use. Then it gives each run a heading with its number, suite and status, the same alert line that `ahd run` prints, and one line for each alert. A run without alerts has only its heading and its alert line. A character in a name that could change how a terminal shows the text, e.g., a line break, shows as `?`. For the Adobe Store suite, shortened:
+`text` starts with the rules in use. Then it gives each run a heading with its number, suite and status, the same alert line that `ahd run` prints, a line that counts the new alerts, and one line for each alert. A run without alerts has only its heading and its alert line.
+
+Each alert line ends with since when the alert has held: "new on" the day for an alert that started on that day, e.g., "new on 2026-11-11", else the day it started and the number of days, e.g., "since 2026-11-09, 3 days". When the day before cannot be judged, the line says "or earlier" and "at least", e.g., "since 2026-11-05 or earlier, at least 7 days". [The report](report.md#new-and-ongoing-alerts) explains when that happens. The new alerts come first, in all three formats. The others follow in the order of the `alerts()` macro. A character in a name that could change how a terminal shows the text, e.g., a line break, shows as `?`. For the Adobe Store suite, shortened:
 
 ```
 A large drop is more than 30% below the weekday average, and a large spike is more than 50% above it. The weekday average is the average of the same weekday in the 12 weeks before. Adobe's anomaly detection flags the unusual values.
 
 Run 2, Adobe Store (dgeo1xxpnwcidadobestore), status ok
 Alerts for 2026-11-11: 3 unusual values, 0 large drops, 10 large spikes, 0 drops to zero
-- unusual: Exit Link Instances (metrics/exitlinkinstances), weekday average 2.42, actual 8, expected 2.51, change +231.0%
-- unusual: Cart Additions (metrics/cartadditions), weekday average 140.08, actual 230, expected 77.06, change +64.2%
-- unusual: Orders (metrics/orders), weekday average 18.33, actual 35, expected 20.91, change +90.9%
-- large spike: Custom Link Instances (metrics/customlinkinstances), weekday average 12.08, actual 41, change +239.3%
-- large spike: Page (variables/page), weekday average 4,848.50, actual 8,172, change +68.5%
+1 of these alerts is new on 2026-11-11.
+- unusual: Exit Link Instances (metrics/exitlinkinstances), weekday average 2.42, actual 8, expected 2.51, change +231.0%, new on 2026-11-11
+- unusual: Cart Additions (metrics/cartadditions), weekday average 140.08, actual 230, expected 77.06, change +64.2%, since 2026-11-09, 3 days
+- unusual: Orders (metrics/orders), weekday average 18.33, actual 35, expected 20.91, change +90.9%, since 2026-11-10, 2 days
+- large spike: Custom Link Instances (metrics/customlinkinstances), weekday average 12.08, actual 41, change +239.3%, since 2026-11-09, 3 days
+- large spike: Page (variables/page), weekday average 4,848.50, actual 8,172, change +68.5%, since 2026-11-07, 5 days
 ```
+
+For Demo Data CJA, whose values fall every day, a large drop reads "since 2026-11-05 or earlier, at least 7 days".
 
 `json` gives one object with these fields:
 
@@ -270,9 +275,15 @@ Each run has these fields:
 - `day`: the day of the alerts, as YYYY-MM-DD.
 - `method` and `sensitivity`: the anomaly method and sensitivity in use, e.g., `weekday-median` and `high`. `method_name` is the name that the report gives the method, e.g., "Weekday median".
 - `threshold` and `spike_threshold`: the percents for a large drop and a large spike, as shares, e.g., `0.3` for 30 percent, as the `alerts()` macro takes them.
-- `alerts`: one object for each alert, in the order of the `alerts()` macro. It has the columns of the macro: `alert`, `anomaly`, `component_id`, `name`, `group`, `metric_type`, `value`, `usual`, `expected` and `pct_vs_usual`. The run gives the `run_id` and the `day` of the macro. The [DuckDB guide](duckdb.md#alertsrun-threshold--030-spike_threshold--050-min_usual--10-for_day--null-method--adobe-sensitivity--normal) explains each column. A run without alerts has an empty list.
+- `alerts`: one object for each alert. The new alerts come first, and the others follow in the order of the `alerts()` macro. It has the columns of the macro: `alert`, `anomaly`, `component_id`, `name`, `group`, `metric_type`, `value`, `usual`, `expected`, `pct_vs_usual`, `since`, `days`, `at_least` and `is_new`. The run gives the `run_id` and the `day` of the macro.
+  - `since`: the day the alert started, as YYYY-MM-DD.
+  - `days`: the number of days from `since` to the day of the alerts, both counted.
+  - `at_least`: `true` when the day before `since` cannot be judged, so the alert may have started earlier.
+  - `is_new`: `true` when the alert started on the day of the alerts. Then `days` is 1 and `at_least` is `false`.
 
-Later versions may add fields to the object, to a run and to an alert, e.g., the day since an alert has held. A program that reads the JSON should ignore the fields it does not know. A number that is not finite, e.g., a value that Adobe sent as infinity, is `null`. Every character outside ASCII is written as an escape, e.g., `日` for 日, so the output reads the same in any text encoding. For the same suite, shortened:
+  `ahd` 0.1.12 added the last four fields and put the new alerts first. Before, the alerts came in the order of the macro. The [DuckDB guide](duckdb.md#alertsrun-threshold--030-spike_threshold--050-min_usual--10-for_day--null-method--adobe-sensitivity--normal) explains each column. A run without alerts has an empty list.
+
+Later versions may add fields to the object, to a run and to an alert, as 0.1.12 added `since`, `days`, `at_least` and `is_new`. A program that reads the JSON should ignore the fields it does not know. A number that is not finite, e.g., a value that Adobe sent as infinity, is `null`. Every character outside ASCII is written as an escape, e.g., `日` for 日, so the output reads the same in any text encoding. For the same suite, shortened:
 
 ```json
 {
@@ -301,7 +312,11 @@ Later versions may add fields to the object, to a run and to an alert, e.g., the
           "value": 8.0,
           "usual": 2.4166666666666665,
           "expected": 2.505854996828865,
-          "pct_vs_usual": 2.310344828
+          "pct_vs_usual": 2.310344828,
+          "since": "2026-11-11",
+          "days": 1,
+          "at_least": false,
+          "is_new": true
         }
       ]
     }
@@ -309,12 +324,12 @@ Later versions may add fields to the object, to a run and to an alert, e.g., the
 }
 ```
 
-`csv` gives one header row and one row for each alert. Each row starts with the fields of its run, as in the JSON, and goes on with the fields of the alert. A run without alerts has no row. A value with a comma, a quote or a line break is put in quotes, as CSV does it. For the same suite, shortened:
+`csv` gives one header row and one row for each alert. Each row starts with the fields of its run, as in the JSON, and goes on with the fields of the alert. `at_least` and `is_new` are `true` or `false`, as in the JSON. A run without alerts has no row. A value with a comma, a quote or a line break is put in quotes, as CSV does it. For the same suite, shortened:
 
 ```
-run_id,rsid,rsid_name,segment_id,status,day,method,method_name,sensitivity,threshold,spike_threshold,alert,anomaly,component_id,name,group,metric_type,value,usual,expected,pct_vs_usual
-2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,unusual,high,metrics/exitlinkinstances,Exit Link Instances,Reserved Props,int,8.0,2.4166666666666665,2.505854996828865,2.310344828
-2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,unusual,high,metrics/cartadditions,Cart Additions,Reserved Purchase Events,int,230.0,140.08333333333334,77.06421405092522,0.641879833
+run_id,rsid,rsid_name,segment_id,status,day,method,method_name,sensitivity,threshold,spike_threshold,alert,anomaly,component_id,name,group,metric_type,value,usual,expected,pct_vs_usual,since,days,at_least,is_new
+2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,unusual,high,metrics/exitlinkinstances,Exit Link Instances,Reserved Props,int,8.0,2.4166666666666665,2.505854996828865,2.310344828,2026-11-11,1,false,true
+2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,unusual,high,metrics/cartadditions,Cart Additions,Reserved Purchase Events,int,230.0,140.08333333333334,77.06421405092522,0.641879833,2026-11-09,3,false,false
 ```
 
 ### Exit codes of alerts

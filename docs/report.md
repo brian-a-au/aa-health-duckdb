@@ -245,6 +245,8 @@ The tiles count yesterday's results:
 - components that dropped to zero, and how many others never collected data
 - problems in the run
 
+An alert tile that counts at least one alert also says how many of them are new, which means that they started yesterday. See [New and ongoing alerts](#new-and-ongoing-alerts).
+
 Click any alert tile to open the Alerts Summary. Click the problems tile to jump to the status section.
 
 ## Status
@@ -341,14 +343,26 @@ This tab lists the alerts for one day. It starts on yesterday, and the Day picke
 - **Dropped to zero.** The value was 0, but the component had data on other days in the run.
 - **Never collected data.** The value was 0 on every day in the run. These are often unused slots, so they are not alerts, even when the anomaly method flags the 0. They are in a closed list at the end.
 
-Each alert list has a "Days in a row" column. It counts the days, up to the chosen day, that had the same alert:
+### New and ongoing alerts
 
-- For an unusual value, the value was flagged in the same direction on each day, e.g., above the expected range.
-- For a drop, the value was further below its weekday average than the slider allows on each day. The count changes when you move the slider.
-- For a spike, the value was further above its weekday average than the spike slider allows on each day.
-- For a drop to zero, the value was 0 on each day.
+Each alert list has a "Since" column. It says on which day the alert started and for how many days it has held, up to the chosen day, e.g., "Nov 4, 3 days". An alert that started on the chosen day says "New". In each list, the new alerts come first. The heading of each list counts them, e.g., "3 components, 1 new", and so does each alert tile at the top, e.g., "1 new".
 
-The report covers 7 days. When the count reaches the first of them, the column says "or more", e.g., "7 or more", because the alert may have started earlier.
+An alert follows one condition, and its streak is the unbroken run of days on which that condition held:
+
+- For a value of 0, the value was 0 on each day. This holds for a 0 that the anomaly method flagged, too, so the alert keeps its start when its label changes, e.g., from an unusual value to "Dropped to zero".
+- For an unusual value, the anomaly method flagged the value in the same direction on each day, e.g., above the expected range.
+- For a large drop, the value was further below its weekday average than the slider allows on each day. A value of 0 counts too. The streak changes when you move the slider.
+- For a large spike, the value was further above its weekday average than the spike slider allows on each day.
+
+Sometimes the day before the streak cannot be judged, so the alert may have started earlier. The column then says "or earlier" and "at least", e.g., "Nov 5 or earlier, at least 7 days". This happens in these cases:
+
+- The day before is not in the run's 91 days, or it has no value.
+- For an unusual value, the anomaly method gave that day no expected range. Adobe's anomaly detection usually covers every day of the run. A local method has a range only for about the last 5 weeks. See [The first eight weeks have no range](#the-first-eight-weeks-have-no-range).
+- For a large drop or spike, the day is older than the last 7 days. Only the last 7 days have a weekday average, so a drop or spike can be judged only on them. A drop that holds on all 7 days therefore says "at least 7 days".
+
+A value of 0 can be judged on every day of the run, so a drop to zero has a known start even when it is older than 7 days. On Demo Data Evangelists, the data stopped during 2026-11-04. On that day most values were small but not 0, and Adobe flagged 236 of them. From 2026-11-05 on, the values were 0. On 2026-11-11, 330 of the 356 drops to zero said "Nov 5, 7 days", with every anomaly method. 19 said "Nov 4, 8 days", because they were already 0 on 2026-11-04. On Demo Data CJA, the values fall every day. 97 of its 99 alerts were large drops that said "Nov 5 or earlier, at least 7 days", and the other 2 were new drops to zero.
+
+The `alerts()` macro gives the same answer in its columns `since`, `days`, `at_least` and `is_new`. See the [DuckDB guide](duckdb.md#alertsrun-threshold--030-spike_threshold--050-min_usual--10-for_day--null-method--adobe-sensitivity--normal).
 
 ### Copying
 
@@ -357,7 +371,7 @@ The report covers 7 days. When the count reaches the first of them, the column s
 - a formatted table, which Outlook, Gmail and Apple Mail paste
 - plain text, which a chat or a text editor pastes
 
-The copy follows the chosen day and the sliders. It includes the days in a row for each alert. If the browser cannot copy, open "Show the alert summary as text" and copy the text from there.
+The copy follows the chosen day and the sliders. It says since when each alert has held, and lists the new alerts first in each group. If the browser cannot copy, open "Show the alert summary as text" and copy the text from there.
 
 To send alerts on a schedule, or only when something is new, see the [DuckDB guide](duckdb.md#email-recipes).
 

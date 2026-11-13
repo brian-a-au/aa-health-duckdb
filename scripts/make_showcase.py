@@ -118,7 +118,8 @@ YESTERDAY_FACTOR = {
     "metrics/evar1instances": 0.35,  # Campaign Code drop
     "variables/prop3": 1.8,  # Search Term spike
 }
-# Components that stopped this many days before the run date, so the alerts show days in a row.
+# Components that stopped this many days before the run date, so the alerts show since when
+# they have held.
 STOPPED = {"metrics/event18": 3}  # App Crash Reports
 ALWAYS_ZERO = {"metrics/event22", "metrics/evar16instances"}
 # A site release on Oct 15 broke 6 eVars for 2 days. The calendar shows it as one dark week.

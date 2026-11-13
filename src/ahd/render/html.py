@@ -155,10 +155,9 @@ ALERT_FIELDS = (
     "pct_vs_usual",
     "anomaly",
     "zero",
-    "days_in_row",
-    "drop_run",
-    "spike_run",
-    "streak_open",
+    "since_days",
+    "since_open",
+    "changes",
 )
 SERIES_FIELDS = ("value", "expected", "upper", "lower", "anomaly")
 CALENDAR_FIELDS = ("day", "high", "low", "zero", "alerts")

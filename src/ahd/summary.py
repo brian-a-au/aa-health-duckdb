@@ -419,11 +419,21 @@ ORDER BY component_id, day
 # is 0, or the value is more than MIN_CHANGE_ALERT below or more than MIN_SPIKE_ALERT above the
 # usual value for that weekday. The page picks from these with its day picker and sliders.
 #
-# days_in_row counts the days, up to the row's day, that had the same alert: the same Adobe
-# flag direction, a 0, a drop or a spike. Only the days the reader can pick count, so
-# streak_open says that the row reaches the first of them and may be longer. For a drop,
-# drop_run lets the page count the days for the slider's setting, and spike_run does the same
-# for a spike.
+# Each row also says since when its alert has held, by the rules of the alerts macro in
+# views.sql. An alert follows one condition: a value of 0 when its value is 0, else the
+# direction of its anomaly flag, else a change past the drop or spike slider. Its streak is the
+# unbroken run of days, up to the row's day, on which that condition held.
+#
+# A value of 0 and a flag do not depend on a slider, so this query counts their days in
+# since_days. since_open says that the day before the streak cannot be judged, so the alert
+# may have started earlier: the day is not in the run's 91 days or has no value, or, for a
+# flag, the method gave it no expected value. A large drop or spike depends on its slider, so
+# changes lists the change of each day from the row's day back to the first day the reader can
+# pick, newest first, and report.js counts the days past the slider. The day before the first
+# of them has no weekday average, so it cannot be judged. In changes, a day without a value is
+# empty, and a day whose weekday average is under MIN_USUAL is 0, because it is never a drop or
+# a spike. The list stops at the first day that no slider setting counts, to keep the page
+# small.
 _ALERTS_SQL = f"""
 WITH {_DV}, {_COMPS},
 sel AS (SELECT unnest($days::DATE[]) AS sel_day),
@@ -444,52 +454,68 @@ r AS (
     FROM usual u JOIN comps c ON c.component_id = u.component_id
     JOIN dv d ON d.component_id = c.component_id AND d.day = u.sel_day
 ),
--- The alert of each day, to count days in a row: the direction of Adobe's flag, a value of 0,
--- or a drop or spike past the slider's lowest setting. A day without an alert ends a row.
-k AS (
-    SELECT sel_day, component_id, pct_vs_usual,
-        CASE WHEN anomaly IS NOT NULL THEN anomaly
-            WHEN zero THEN 'zero'
-            WHEN usual >= {MIN_USUAL} AND pct_vs_usual < -{MIN_CHANGE_ALERT} THEN 'drop'
-            WHEN usual >= {MIN_USUAL} AND pct_vs_usual > {MIN_SPIKE_ALERT} THEN 'spike'
-        END AS kind
-    FROM r
-),
--- Days in a row with the same alert get the same grp, because each day and its place in the
--- list grow by one together.
-g AS (
-    SELECT *, sel_day - CAST(row_number() OVER (
-        PARTITION BY component_id, kind ORDER BY sel_day) AS INTEGER) AS grp
-    FROM k WHERE kind IS NOT NULL
-),
-streaks AS (
-    SELECT *, min(sel_day) OVER (PARTITION BY component_id, kind, grp) AS first_day FROM g
-),
--- A large drop or spike depends on its slider. For each day back from one, this keeps the
--- smallest change so far: the drop closest to 0, or the smallest spike. The page counts the
--- entries that are past the slider.
+-- Each row with a value of 0 or a flag, with each day from its own day back to the day before
+-- the run's 91 days.
 back AS (
-    SELECT a.sel_day, a.component_id, a.kind, b.sel_day AS back_day,
-        CASE a.kind WHEN 'drop' THEN max(b.pct_vs_usual) OVER w
-            ELSE min(b.pct_vs_usual) OVER w END AS smallest
-    FROM streaks a JOIN streaks b ON b.component_id = a.component_id AND b.kind = a.kind
-        AND b.grp = a.grp AND b.sel_day <= a.sel_day
-    WHERE a.kind IN ('drop', 'spike')
-    WINDOW w AS (PARTITION BY a.sel_day, a.component_id ORDER BY b.sel_day DESC)
+    SELECT r.sel_day, r.component_id, CASE WHEN r.zero THEN 'zero' ELSE r.anomaly END AS condition,
+        r.sel_day - b.n::INTEGER AS day
+    FROM r, range(0, 93) b(n)
+    WHERE (r.zero OR r.anomaly IS NOT NULL) AND r.sel_day - b.n::INTEGER >= $start - 1
 ),
-change_runs AS (
-    SELECT sel_day, component_id, kind, list(smallest ORDER BY back_day DESC) AS change_run
-    FROM back GROUP BY ALL
+judged AS (
+    SELECT b.sel_day, b.component_id, b.day,
+        CASE
+            WHEN b.condition = 'zero' AND d.value = 0 THEN 'yes'
+            WHEN b.condition <> 'zero' AND {_ANOMALY.format(a="d")} = b.condition THEN 'yes'
+            WHEN d.value IS NULL THEN 'unknown'
+            WHEN b.condition <> 'zero' AND d.expected IS NULL THEN 'unknown'
+            ELSE 'no'
+        END AS state
+    FROM back b
+    LEFT JOIN dv d ON d.component_id = b.component_id AND d.day = b.day
+        AND d.day BETWEEN $start AND $yesterday
+),
+-- The last day before each streak. The day before the run's 91 days is always unknown.
+breaks AS (
+    SELECT sel_day, component_id, max(day) AS day, arg_max(state, day) AS state
+    FROM judged
+    WHERE state <> 'yes'
+    GROUP BY sel_day, component_id
+),
+-- The change of each day back from a row that may be a large drop or spike.
+back_change AS (
+    SELECT r.sel_day, r.component_id, s.sel_day AS day, r.pct_vs_usual < 0 AS drop,
+        CASE WHEN d.value IS NULL THEN NULL
+            WHEN u.usual >= {MIN_USUAL} THEN {_pct("d.value", "u.usual")} ELSE 0 END AS change
+    FROM r JOIN sel s ON s.sel_day <= r.sel_day
+    JOIN usual u ON u.sel_day = s.sel_day AND u.component_id = r.component_id
+    LEFT JOIN dv d ON d.component_id = r.component_id AND d.day = s.sel_day
+    WHERE NOT r.zero AND r.anomaly IS NULL AND r.usual >= {MIN_USUAL}
+        AND (r.pct_vs_usual < -{MIN_CHANGE_ALERT} OR r.pct_vs_usual > {MIN_SPIKE_ALERT})
+),
+-- No slider setting counts a day that is empty or not past the slider's lowest setting, so
+-- the list stops at the newest such day. That day is empty, or 0 when it has a value.
+cut AS (
+    SELECT *, max(CASE WHEN change IS NULL
+            OR NOT (CASE WHEN drop THEN change < -{MIN_CHANGE_ALERT}
+                ELSE change > {MIN_SPIKE_ALERT} END) THEN day END)
+        OVER (PARTITION BY sel_day, component_id) AS stop
+    FROM back_change
+),
+changes AS (
+    SELECT sel_day, component_id,
+        list(CASE WHEN day = stop AND change IS NOT NULL THEN 0 ELSE change END
+            ORDER BY day DESC) AS changes
+    FROM cut
+    WHERE stop IS NULL OR day >= stop
+    GROUP BY sel_day, component_id
 )
 SELECT CAST(r.sel_day AS VARCHAR) AS day, name, r.component_id, metric_type, expected, actual,
     usual, pct_vs_expected, r.pct_vs_usual, anomaly, zero, unused,
-    s.sel_day - s.first_day + 1 AS days_in_row,
-    CASE WHEN cr.kind = 'drop' THEN cr.change_run END AS drop_run,
-    CASE WHEN cr.kind = 'spike' THEN cr.change_run END AS spike_run,
-    s.first_day = $first_day AS streak_open
+    r.sel_day - b.day AS since_days, b.state = 'unknown' AS since_open, ch.changes
 FROM r
-LEFT JOIN streaks s ON s.sel_day = r.sel_day AND s.component_id = r.component_id
-LEFT JOIN change_runs cr ON cr.sel_day = r.sel_day AND cr.component_id = r.component_id
+LEFT JOIN breaks b ON b.sel_day = r.sel_day AND b.component_id = r.component_id
+LEFT JOIN changes ch ON ch.sel_day = r.sel_day AND ch.component_id = r.component_id
 WHERE anomaly IS NOT NULL OR zero
     OR (usual >= {MIN_USUAL} AND r.pct_vs_usual < -{MIN_CHANGE_ALERT})
     OR (usual >= {MIN_USUAL} AND r.pct_vs_usual > {MIN_SPIKE_ALERT})

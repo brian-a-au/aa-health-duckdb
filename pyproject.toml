@@ -2,7 +2,7 @@
 # The name on PyPI. The command and the Python package are both "ahd". The name "ahd" on PyPI
 # belongs to an unrelated project.
 name = "aa-health-duckdb"
-version = "0.1.11"
+version = "0.1.12"
 description = "Adobe Analytics report suite health checks with the 2.0 API, DuckDB and one HTML report. Unofficial."
 readme = "README.md"
 license = "Apache-2.0"
