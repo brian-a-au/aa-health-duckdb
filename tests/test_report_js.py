@@ -156,15 +156,35 @@ function ids(selector) {
     return c.textContent;
   }).sort();
 }
+// The Since column of a list, in the order of its rows, and the count in its heading.
+function since(section) {
+  var out = { rows: [], count: null };
+  var head = document.querySelector("#alerts h3#" + section + " .group-count");
+  if (head) out.count = head.textContent;
+  var table = document.querySelector("#alerts section[aria-labelledby=" + section + "] table");
+  if (!table) return out;
+  var heads = [].map.call(table.tHead.rows[0].cells, function (th) {
+    return th.textContent.replace("↕", "");
+  });
+  var col = heads.indexOf("Since");
+  [].forEach.call(table.tBodies[0].rows, function (r) {
+    out.rows.push([r.querySelector("code").textContent, r.cells[col].textContent]);
+  });
+  return out;
+}
 function snapshot() {
   var tiles = {};
   [].forEach.call(document.querySelectorAll("#tiles .tile"), function (t) {
     var note = t.querySelector(".tile-note");
+    var fresh = t.querySelector(".tile-new");
     tiles[t.querySelector(".tile-label").lastChild.textContent] = {
       value: t.querySelector(".tile-value").textContent, note: note ? note.textContent : null
     };
+    if (fresh) tiles[t.querySelector(".tile-label").lastChild.textContent].fresh = fresh.textContent;
   });
   return {
+    since: { unusual: since("unusual-title"), drops: since("drops-title"),
+      spikes: since("spikes-title"), zero: since("zero-title") },
     shown: document.getElementById("change-alert-value").textContent,
     valuetext: document.getElementById("change-alert").getAttribute("aria-valuetext"),
     pos: document.getElementById("change-alert").style.getPropertyValue("--pos"),
@@ -201,6 +221,47 @@ def _macro(store, rid, threshold, spike=0.5, method="adobe", sensitivity="normal
         [rid, threshold, spike, method, sensitivity],
     ).fetchall()
     return {cid: (alert, anomaly) for cid, alert, anomaly in rows}
+
+
+def _macro_since(store, rid, threshold, spike=0.5, method="adobe", sensitivity="normal", day=None):
+    """{component: (alert, since, days, at_least, is_new)} from the alerts() macro."""
+    rows = store.con.execute(
+        "select component_id, alert, since, days, at_least, is_new from alerts(?,"
+        " threshold := ?, spike_threshold := ?, method := ?, sensitivity := ?, for_day := ?)",
+        [rid, threshold, spike, method, sensitivity, day],
+    ).fetchall()
+    return {r[0]: tuple(r[1:]) for r in rows}
+
+
+def _days_text(days):
+    return f"{days} day" if days == 1 else f"{days} days"
+
+
+def _since_cell(since, days, at_least, is_new):
+    """The Since cell of the page for a row of the macro, e.g., "Nov 4, 3 days"."""
+    if is_new:
+        return "New"
+    day = f"{since:%b} {since.day}"
+    if at_least:
+        return f"{day} or earlier, at least {_days_text(days)}"
+    return f"{day}, {_days_text(days)}"
+
+
+def _since_sentence(since, days, at_least, is_new):
+    """The words of the plain text for a row of the macro, e.g., "Since 2026-11-04, 3 days."."""
+    if is_new:
+        return f"New on {since.isoformat()}."
+    if at_least:
+        return f"Since {since.isoformat()} or earlier, at least {_days_text(days)}."
+    return f"Since {since.isoformat()}, {_days_text(days)}."
+
+
+def _count_text(rows, new):
+    """The count in the heading of an alert list. An empty list does not say "0 new"."""
+    n = len(rows)
+    if not n:
+        return "0 components"
+    return f"{n} component, {new} new" if n == 1 else f"{n} components, {new} new"
 
 
 def _never_collected(store, rid):
@@ -276,6 +337,21 @@ def test_alert_lists_match_the_alerts_macro(pages_by_method, edges, pct, method,
             f"Spikes of more than {round(spike * 100)}% above the weekday average "
             f"({len(where('large spike'))}):" in page["text"]
         )
+    # Each alert says since when it has held, as the macro does, and new alerts come first.
+    since = _macro_since(store, rid, pct / 100, spike, method, sensitivity)
+    lists = {"unusual": "unusual", "drops": "large drop", "spikes": "large spike"}
+    lists["zero"] = "dropped to zero"
+    for key, kind in lists.items():
+        rows = page["since"][key]["rows"]
+        assert {cid: cell for cid, cell in rows} == {
+            cid: _since_cell(*since[cid][1:]) for cid in where(kind)
+        }, key
+        fresh = [since[cid][4] for cid, _ in rows]
+        assert fresh == sorted(fresh, reverse=True), key
+        assert page["since"][key]["count"] == _count_text(rows, sum(fresh)), key
+    for cid, (_alert, *rest) in since.items():
+        line = re.search(rf"^- .*\({re.escape(cid)}\): .*$", page["text"], re.MULTILINE)
+        assert line and line.group(0).endswith(" " + _since_sentence(*rest)), cid
 
 
 TILE_PROBE = """
@@ -344,20 +420,38 @@ def test_tiles_match_the_alerts_macro(pages_by_method, edges, pct, method, sensi
     assert tiles["Components checked"]["value"] == str(len(CASES))
     assert tiles["Above expected range"]["value"] == count("unusual", "high")
     assert tiles["Below expected range"]["value"] == count("unusual", "low")
-    assert tiles["Large drops"] == {
+
+    def shown(label):
+        return {k: v for k, v in tiles[label].items() if k != "fresh"}
+
+    assert shown("Large drops") == {
         "value": count("large drop"),
         "note": f"More than {pct}% below the weekday average",
     }
-    assert tiles["Large spikes"] == {
+    assert shown("Large spikes") == {
         "value": count("large spike"),
         "note": f"More than {spike}% above the weekday average",
     }
     unused = len(_never_collected(edges[0], edges[1]))
-    assert tiles["Dropped to zero"] == {
+    assert {k: v for k, v in tiles["Dropped to zero"].items() if k != "fresh"} == {
         "value": count("dropped to zero"),
         "note": f"{unused} others never collected data",
     }
     assert tiles["Problems in this run"]["value"] == "0"
+    # Each alert tile with alerts says how many of them are new.
+    since = _macro_since(store, rid, pct / 100, spike / 100, method, sensitivity)
+    news = {
+        "Above expected range": ("unusual", "high"),
+        "Below expected range": ("unusual", "low"),
+        "Large drops": ("large drop", None),
+        "Large spikes": ("large spike", None),
+        "Dropped to zero": ("dropped to zero", None),
+    }
+    flags = _macro(store, rid, pct / 100, spike / 100, method, sensitivity)
+    for label, (alert, anomaly) in news.items():
+        mine = [c for c, v in since.items() if v[0] == alert and anomaly in (None, flags[c][1])]
+        want = f"{sum(since[c][4] for c in mine)} new" if mine else None
+        assert tiles[label].get("fresh") == want, label
 
 
 def test_the_slider_changes_the_lists_and_tiles(alert_pages):
@@ -1113,71 +1207,89 @@ def streaks(tmp_path_factory):
     store.con.close()
 
 
-# Reads the Days in a row column of each alert list and the alert text, for each slider percent.
+# Reads the Since column of each alert list and the alert text, for each slider percent.
 STREAK_PROBE = """
-function days(section) {
+function since(section) {
   var out = {};
   var table = document.querySelector("#alerts section[aria-labelledby=" + section + "] table");
   if (!table) return out;
   var heads = [].map.call(table.tHead.rows[0].cells, function (th) {
     return th.textContent.replace("↕", "");
   });
-  var col = heads.indexOf("Days in a row");
+  var col = heads.indexOf("Since");
   [].forEach.call(table.tBodies[0].rows, function (r) {
     out[r.querySelector("code").textContent] = r.cells[col].textContent;
   });
   return out;
+}
+function read() {
+  return { unusual: since("unusual-title"), drops: since("drops-title"),
+    zero: since("zero-title"), text: document.getElementById("alert-text").value };
 }
 var slider = document.getElementById("change-alert");
 var out = {};
 [30, 15, 10].forEach(function (p) {
   slider.value = String(-p);
   slider.dispatchEvent(new Event("input"));
-  out[p] = { unusual: days("unusual-title"), drops: days("drops-title"),
-    zero: days("zero-title"), text: document.getElementById("alert-text").value };
+  out[p] = read();
 });
 var day = document.getElementById("alert-day");
 day.selectedIndex = 1;
 day.dispatchEvent(new Event("change"));
-out.before = { unusual: days("unusual-title"), drops: days("drops-title"),
-  zero: days("zero-title") };
+out.before = read();
+slider.value = "-30";
+slider.dispatchEvent(new Event("input"));
+out.before30 = read();
 return out;
 """
 
 
-def test_alert_lists_show_days_in_a_row(chrome, streaks, tmp_path):
+def test_alert_lists_say_since_when(chrome, streaks, tmp_path):
     got = run_probe(chrome, render_html(build_view(*streaks)), STREAK_PROBE, tmp_path)
     # The drop of 40 percent passes 30 percent alone. At 15 percent all 3 days pass.
-    assert got["30"]["drops"] == {"metrics/event1": "1"}
-    assert got["15"]["drops"] == {"metrics/event1": "3"}
-    assert got["10"]["drops"] == {"metrics/event1": "3"}
-    # The zero reaches the first day of the report, so it may be longer.
-    assert got["30"]["zero"] == {"metrics/event2": "7 or more"}
-    assert got["30"]["unusual"] == {"metrics/event3": "2"}
+    assert got["30"]["drops"] == {"metrics/event1": "New"}
+    assert got["15"]["drops"] == {"metrics/event1": "Nov 4, 3 days"}
+    assert got["10"]["drops"] == {"metrics/event1": "Nov 4, 3 days"}
+    # A zero can be judged on every day, so its start is known, also before the 7 days.
+    assert got["30"]["zero"] == {"metrics/event2": "Oct 31, 7 days"}
+    # The day before the flags has no Adobe range, so the flag may have started earlier.
+    assert got["30"]["unusual"] == {"metrics/event3": "Nov 5 or earlier, at least 2 days"}
     text = got["30"]["text"]
+    assert re.search(r"^- E1 \(metrics/event1\): .*\. New on 2026-11-06\.$", text, re.MULTILINE)
     assert re.search(
-        r"^- E1 \(metrics/event1\): .*\. First day with this alert\.$", text, re.MULTILINE
+        r"^- E2 \(metrics/event2\): .*\. Since 2026-10-31, 7 days\.$", text, re.MULTILINE
     )
     assert re.search(
-        r"^- E2 \(metrics/event2\): .*\. 7 or more days in a row\.$", text, re.MULTILINE
+        r"^- E3 \(metrics/event3\): .*\. Since 2026-11-05 or earlier, at least 2 days\.$",
+        text,
+        re.MULTILINE,
     )
-    assert re.search(r"^- E3 \(metrics/event3\): .*\. 2 days in a row\.$", text, re.MULTILINE)
-    assert "- E1 (metrics/event1): " in got["15"]["text"]
-    assert re.search(r"^- E1 .*\. 3 days in a row\.$", got["15"]["text"], re.MULTILINE)
+    assert re.search(r"^- E1 .*\. Since 2026-11-04, 3 days\.$", got["15"]["text"], re.MULTILINE)
     # The day before counts back from its own day. The slider is still at 10 percent, so its
     # drop of 20 percent and the drop of 50 percent the day before it both pass.
-    assert got["before"] == {
-        "unusual": {"metrics/event3": "1"},
-        "drops": {"metrics/event1": "2"},
-        "zero": {"metrics/event2": "6 or more"},
+    assert {k: got["before"][k] for k in ("unusual", "drops", "zero")} == {
+        "unusual": {"metrics/event3": "Nov 5 or earlier, at least 1 day"},
+        "drops": {"metrics/event1": "Nov 4, 2 days"},
+        "zero": {"metrics/event2": "Oct 31, 6 days"},
     }
+    # At 30 percent, the drop of 20 percent on that day is not an alert.
+    assert got["before30"]["drops"] == {}
+    # Every cell agrees with the alerts() macro for the same day and slider.
+    for key, pct, day in [("30", 30, None), ("15", 15, None), ("10", 10, None)] + [
+        ("before", 10, YESTERDAY - timedelta(days=1)),
+        ("before30", 30, YESTERDAY - timedelta(days=1)),
+    ]:
+        macro = _macro_since(*streaks, pct / 100, day=day)
+        cells = {**got[key]["unusual"], **got[key]["drops"], **got[key]["zero"]}
+        assert cells == {cid: _since_cell(*v[1:]) for cid, v in macro.items()}, key
 
 
-def test_copied_alerts_have_days_in_a_row(chrome, streaks, tmp_path):
+def test_copied_alerts_say_since_when(chrome, streaks, tmp_path):
     got = _copy_run(chrome, streaks, tmp_path, "copy-alerts", "copy-result")
     html = got["rich"]["copied"]["html"]
-    assert html.count(">Days in a row</th>") == 3
-    assert ">7 or more</td>" in html and ">2</td>" in html
+    assert html.count(">Since</th>") == 3
+    assert ">Oct 31, 7 days</td>" in html and ">Nov 5 or earlier, at least 2 days</td>" in html
+    assert ">New</td>" in html
 
 
 # Reads the change bar of each row in the first components table, then moves the slider.

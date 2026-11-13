@@ -109,12 +109,16 @@ def test_text_lists_every_kind_of_alert(tmp_path, capsys):
         "\n"
         "Run 1, Suite One (rs1), status ok\n"
         "Alerts for 2026-11-06: 1 unusual value, 1 large drop, 1 large spike, 1 drop to zero\n"
-        "- unusual: Flagged (metrics/event1), weekday average 100, actual 150, expected 100, "
-        "change +50.0%\n"
-        "- large spike: Spike (metrics/event4), weekday average 100, actual 200, change +100.0%\n"
-        "- large drop: Drop (metrics/event3), weekday average 100, actual 50, change -50.0%\n"
+        "3 of these alerts are new on 2026-11-06.\n"
+        "- large spike: Spike (metrics/event4), weekday average 100, actual 200, change +100.0%, "
+        "new on 2026-11-06\n"
+        "- large drop: Drop (metrics/event3), weekday average 100, actual 50, change -50.0%, "
+        "new on 2026-11-06\n"
         "- dropped to zero: Zero (metrics/event2), weekday average 100, actual 0, "
-        "change -100.0%\n"
+        "change -100.0%, new on 2026-11-06\n"
+        # Adobe gave no range for the days before, so the flag may have started earlier.
+        "- unusual: Flagged (metrics/event1), weekday average 100, actual 150, expected 100, "
+        "change +50.0%, since 2026-11-06 or earlier, at least 1 day\n"
     )
 
 
@@ -215,19 +219,24 @@ def test_json_holds_the_run_and_every_column_of_the_macro(tmp_path, capsys):
         "spike_threshold": 0.5,
     }
     rows = _macro(db, 1)
-    # Each alert has every column of the macro. Its run_id and day are those of the run.
+    # Each alert has every column of the macro. Its run_id and day are those of the run. The
+    # new alerts come first, and each part keeps the order of the macro.
     assert [a["alert"] for a in alerts] == [
-        "unusual",
         "large spike",
         "large drop",
         "dropped to zero",
+        "unusual",
     ]
+    rows = [r for r in rows if r["is_new"]] + [r for r in rows if not r["is_new"]]
     for alert, row in zip(alerts, rows, strict=True):
         run_id, day = row.pop("run_id"), row.pop("day")
         assert (run_id, day) == (1, YESTERDAY)
         assert alert == {k: _plain(v) for k, v in row.items()}
-    assert alerts[0]["anomaly"] == "high" and alerts[0]["expected"] == 100.0
-    assert alerts[2]["pct_vs_usual"] == -0.5
+    assert alerts[3]["anomaly"] == "high" and alerts[3]["expected"] == 100.0
+    assert alerts[1]["pct_vs_usual"] == -0.5
+    drop = {k: alerts[1][k] for k in ("since", "days", "at_least", "is_new")}
+    assert drop == {"since": "2026-11-06", "days": 1, "at_least": False, "is_new": True}
+    assert (alerts[3]["days"], alerts[3]["at_least"], alerts[3]["is_new"]) == (1, True, False)
 
 
 def test_json_without_alerts_has_the_run_with_an_empty_list(tmp_path, capsys):
@@ -252,9 +261,12 @@ def test_json_agrees_with_the_macro_for_every_method_and_sensitivity(
     rows = _macro(db, 1, threshold=0.45, method=method, sensitivity=sensitivity)
     assert code == (0 if rows else 4)
     assert (run["method"], run["sensitivity"], run["threshold"]) == (method, sensitivity, 0.45)
-    assert [(a["component_id"], a["alert"], a["anomaly"]) for a in run["alerts"]] == [
-        (r["component_id"], r["alert"], r["anomaly"]) for r in rows
+    rows = [r for r in rows if r["is_new"]] + [r for r in rows if not r["is_new"]]
+    fields = ("component_id", "alert", "anomaly", "days", "at_least", "is_new")
+    assert [tuple(a[k] for k in fields) for a in run["alerts"]] == [
+        tuple(r[k] for k in fields) for r in rows
     ]
+    assert [a["since"] for a in run["alerts"]] == [r["since"].isoformat() for r in rows]
 
 
 def test_json_keeps_numbers_that_are_not_finite_out(tmp_path):
@@ -284,7 +296,10 @@ def test_json_of_a_value_that_is_not_finite_is_valid_json(tmp_path, capsys):
     assert flagged["pct_vs_usual"] is None
     # The text says so, and has no change for it.
     assert _alerts(db, "--run", "1") == 0
-    line = "- unusual: Flagged (metrics/event1), weekday average 100, actual no data, expected no data\n"
+    line = (
+        "- unusual: Flagged (metrics/event1), weekday average 100, actual no data, expected no "
+        "data, since 2026-11-06 or earlier, at least 1 day\n"
+    )
     assert line in capsys.readouterr().out
 
 
@@ -312,6 +327,10 @@ CSV_HEADER = [
     "usual",
     "expected",
     "pct_vs_usual",
+    "since",
+    "days",
+    "at_least",
+    "is_new",
 ]
 
 
@@ -338,18 +357,26 @@ def test_csv_has_one_header_and_one_row_per_alert(tmp_path, capsys):
         "sensitivity": "normal",
         "threshold": "0.3",
         "spike_threshold": "0.5",
-        "alert": "unusual",
-        "anomaly": "high",
-        "component_id": "metrics/event1",
-        "name": "Flagged",
+        # New alerts come first.
+        "alert": "large spike",
+        "anomaly": "",
+        "component_id": "metrics/event4",
+        "name": "Spike",
         "group": "custom_events",
         "metric_type": "",
-        "value": "150.0",
+        "value": "200.0",
         "usual": "100.0",
-        "expected": "100.0",
-        "pct_vs_usual": "0.5",
+        "expected": "",
+        "pct_vs_usual": "1.0",
+        "since": "2026-11-06",
+        "days": "1",
+        "at_least": "false",
+        "is_new": "true",
     }
     assert [r[1] for r in rows[1:]] == ["rs1"] * 4 + ["rs2"] * 4
+    # The flag comes last: it is not new.
+    last = dict(zip(CSV_HEADER, rows[4]))
+    assert (last["alert"], last["at_least"], last["is_new"]) == ("unusual", "true", "false")
 
 
 def test_csv_without_alerts_is_only_the_header(tmp_path, capsys):
@@ -385,7 +412,7 @@ def test_odd_names_stay_inert_in_every_format(tmp_path, capsys):
     text = capsys.readouterr().out
     # One line for each alert, and no character that moves the cursor or colors the terminal.
     lines = text.splitlines()
-    assert len(lines) == 3 + 1 + 4
+    assert len(lines) == 3 + 1 + 1 + 4
     assert "Run 1, Suite?? One (rs1), status ok" in lines
     assert '- large drop: =HYPERLINK("x")?second line??[31mred? (metrics/event3)' in text
     assert "- large spike: 日本サイト?next (metrics/event4)" in text
@@ -570,7 +597,8 @@ def test_the_thresholds_change_the_alerts(tmp_path, capsys):
     # The drop is 50 percent and the spike 100 percent.
     _alerts(db, "--run", "1", "--format", "json", "--change-alert", "50", "--spike-alert", "100")
     [run] = json.loads(capsys.readouterr().out)["runs"]
-    assert [a["alert"] for a in run["alerts"]] == ["unusual", "dropped to zero"]
+    # The drop to zero is new, so it comes first.
+    assert [a["alert"] for a in run["alerts"]] == ["dropped to zero", "unusual"]
 
 
 # ---- the anomaly variables --------------------------------------------------------------
@@ -707,3 +735,86 @@ def test_a_file_that_a_writer_holds_is_a_plain_error(tmp_path, capsys):
             assert captured.err.count("\n") == 1
         finally:
             holder.kill()
+
+
+# ---- since when an alert has held -------------------------------------------------------
+
+
+def _held(store, days_zero):
+    """A run whose event2 has been 0 for days_zero days and whose event3 dropped on each of the
+    last 8 days, with the components of KINDS."""
+    rid = _add_run(store)
+    store.con.execute(
+        "UPDATE daily_values SET value = 0 WHERE run_id = ? AND component_id = 'metrics/event2'"
+        " AND day >= ?",
+        [rid, YESTERDAY - timedelta(days=days_zero - 1)],
+    )
+    store.con.execute(
+        "UPDATE daily_values SET value = 50 WHERE run_id = ? AND component_id = 'metrics/event3'"
+        " AND day >= ?",
+        [rid, YESTERDAY - timedelta(days=7)],
+    )
+    return rid
+
+
+def test_text_says_since_when_each_alert_held(tmp_path, capsys):
+    db = tmp_path / "ahd.duckdb"
+    store = Store.open(db)
+    _held(store, 9)
+    store.con.close()
+    assert _alerts(db, "--run", "1") == 0
+    lines = capsys.readouterr().out.splitlines()
+    start = lines.index("1 of these alerts is new on 2026-11-06.")
+    assert lines[start + 1 :] == [
+        (
+            "- large spike: Spike (metrics/event4), weekday average 100, actual 200, change "
+            "+100.0%, new on 2026-11-06"
+        ),
+        # The others keep the order of the macro.
+        (
+            "- unusual: Flagged (metrics/event1), weekday average 100, actual 150, expected 100, "
+            "change +50.0%, since 2026-11-06 or earlier, at least 1 day"
+        ),
+        # A drop can be judged only on the last 7 days, which have a weekday average.
+        (
+            "- large drop: Drop (metrics/event3), weekday average 95.83, actual 50, change -47.8%, "
+            "since 2026-10-31 or earlier, at least 7 days"
+        ),
+        # A zero can be judged on every day, so its start is known.
+        (
+            "- dropped to zero: Zero (metrics/event2), weekday average 91.67, actual 0, change "
+            "-100.0%, since 2026-10-29, 9 days"
+        ),
+    ]
+
+
+def test_json_and_csv_say_since_when_each_alert_held(tmp_path, capsys):
+    db = tmp_path / "ahd.duckdb"
+    store = Store.open(db)
+    _held(store, 9)
+    store.con.close()
+    assert _alerts(db, "--run", "1", "--format", "json") == 0
+    alerts = json.loads(capsys.readouterr().out)["runs"][0]["alerts"]
+    got = {a["component_id"]: (a["since"], a["days"], a["at_least"], a["is_new"]) for a in alerts}
+    assert got == {
+        "metrics/event4": ("2026-11-06", 1, False, True),
+        "metrics/event1": ("2026-11-06", 1, True, False),
+        "metrics/event3": ("2026-10-31", 7, True, False),
+        "metrics/event2": ("2026-10-29", 9, False, False),
+    }
+    assert list(got) == ["metrics/event4", "metrics/event1", "metrics/event3", "metrics/event2"]
+    assert _alerts(db, "--run", "1", "--format", "csv") == 0
+    rows = list(csv.DictReader(io.StringIO(capsys.readouterr().out)))
+    assert [
+        (r["component_id"], r["since"], r["days"], r["at_least"], r["is_new"]) for r in rows
+    ] == [
+        (cid, *[str(v).lower() if isinstance(v, bool) else str(v) for v in want])
+        for cid, want in got.items()
+    ]
+
+
+@pytest.mark.parametrize(("new", "line"), [(0, "0 of these alerts are new"), (1, "1 of these")])
+def test_the_count_of_new_alerts_reads_well(new, line):
+    from ahd.alerts import new_line
+
+    assert new_line(date(2026, 11, 6), new).startswith(line)

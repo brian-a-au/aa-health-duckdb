@@ -1694,52 +1694,74 @@
     return "value is 0";
   }
 
-  function splitAlerts() {
+  // The alerts of a day, the chosen one by default, in the groups of the Alerts tab.
+  function splitAlerts(day) {
+    var on = day || state.alertDay;
     var alerts = (data.alerts || []).filter(function (a) {
-      return !a.day || a.day === state.alertDay;
+      return !a.day || a.day === on;
     });
     function plain(a) { return !a.anomaly; }
     return {
-      unusual: alerts.filter(function (a) { return !!a.anomaly; }),
-      drops: alerts.filter(function (a) {
+      unusual: newFirst(alerts.filter(function (a) { return !!a.anomaly; })),
+      drops: newFirst(alerts.filter(function (a) {
         return plain(a) && !a.zero && isLargeDrop(a.actual, a.usual, a.pct_vs_usual);
-      }),
-      spikes: alerts.filter(function (a) {
+      })),
+      spikes: newFirst(alerts.filter(function (a) {
         return plain(a) && !a.zero && isLargeSpike(a.actual, a.usual, a.pct_vs_usual);
-      }),
-      zero: alerts.filter(function (a) { return plain(a) && a.zero && !a.unused; }),
+      })),
+      zero: newFirst(alerts.filter(function (a) { return plain(a) && a.zero && !a.unused; })),
       unused: alerts.filter(function (a) { return plain(a) && a.zero && a.unused; })
     };
   }
 
-  // How many days in a row, up to the alert's day, the same alert held. The SQL counts it. For a
-  // large drop or spike it lists the change for each day back, and the page counts the days
-  // that pass the slider. open: the row reaches the first day of the report, so it may be
-  // longer.
-  function streak(a) {
-    var n = typeof a.days_in_row === "number" ? a.days_in_row : 1;
-    var open = !!a.streak_open;
-    if (a.drop_run && a.drop_run.length) {
-      n = a.drop_run.filter(function (p) { return p < -state.t; }).length;
-      open = open && n === a.drop_run.length;
+  // Since when an alert has held, by the rules of the alerts macro in views.sql. An alert
+  // follows one condition: a value of 0, else the direction of its flag, else a change past the
+  // slider. The SQL counts the days of a 0 or a flag in since_days, because they do not depend
+  // on a slider. For a large drop or spike, changes holds the change of each day back to the
+  // first day of the report, newest first, and the page counts the days past the slider. An
+  // empty change is a day without a value. open: the day before the streak cannot be judged, so
+  // the alert may have started earlier. That is the case for a drop or spike that reaches the
+  // first day of the report, because the day before it has no weekday average.
+  function dayBefore(iso, n) {
+    return new Date(parseDay(iso).getTime() - n * 864e5).toISOString().slice(0, 10);
+  }
+  function sinceOf(a) {
+    var n = typeof a.since_days === "number" ? a.since_days : 1;
+    var open = !!a.since_open;
+    var ch = a.changes;
+    if (ch && ch.length) {
+      var drop = a.pct_vs_usual < 0;
+      n = 0;
+      while (n < ch.length && ch[n] !== null && (drop ? ch[n] < -state.t : ch[n] > state.s)) n++;
+      open = n === ch.length || ch[n] === null;
     }
-    if (a.spike_run && a.spike_run.length) {
-      n = a.spike_run.filter(function (p) { return p > state.s; }).length;
-      open = open && n === a.spike_run.length;
-    }
-    return { n: n, open: open };
+    return { n: n, open: open, day: dayBefore(a.day, n - 1), isNew: n === 1 && !open };
   }
-  function streakText(a) {
-    var s = streak(a);
-    return s.open ? s.n + " or more" : String(s.n);
+  function daysText(n) { return n === 1 ? "1 day" : n + " days"; }
+  // For a table, e.g., "Nov 4, 3 days" or "Nov 5 or earlier, at least 7 days".
+  function sinceText(a) {
+    var s = sinceOf(a);
+    if (s.isNew) return "New";
+    return fmtShortDay(s.day) + (s.open ? " or earlier, at least " : ", ") + daysText(s.n);
   }
-  function streakCell(a) {
-    return { c: streakText(a), k: streak(a).n };
+  function sinceCell(a) {
+    var s = sinceOf(a);
+    return { c: el("span", { "class": s.isNew ? "since-new" : null }, sinceText(a)), k: s.n };
   }
-  function streakSentence(a) {
-    var s = streak(a);
-    if (s.open) return s.n + " or more days in a row.";
-    return s.n === 1 ? "First day with this alert." : s.n + " days in a row.";
+  // For the plain text, e.g., "Since 2026-11-04, 3 days."
+  function sinceSentence(a) {
+    var s = sinceOf(a);
+    if (s.isNew) return "New on " + s.day + ".";
+    return "Since " + s.day + (s.open ? " or earlier, at least " : ", ") + daysText(s.n) + ".";
+  }
+  // New alerts first, each part in the order it had.
+  function newFirst(list) {
+    var fresh = [], old = [];
+    list.forEach(function (a) { (sinceOf(a).isNew ? fresh : old).push(a); });
+    return fresh.concat(old);
+  }
+  function newCount(list) {
+    return list.filter(function (a) { return sinceOf(a).isNew; }).length;
   }
 
   function alertLine(a) {
@@ -1751,7 +1773,7 @@
     } else if (a.usual !== null) {
       s += ", weekday average " + fmtRound(a.usual, a.metric_type);
     }
-    return s + ". " + streakSentence(a);
+    return s + ". " + sinceSentence(a);
   }
 
   function alertText() {
@@ -1795,10 +1817,13 @@
     return "Spikes of more than " + Math.round(state.s * 100) + "% above the weekday average";
   }
 
-  function groupHeading(id, title, count) {
+  // The heading of an alert list, with how many components it holds and how many are new.
+  function groupHeading(id, title, list) {
     var h = el("h3", { "class": "group-title", id: id }, title);
+    var count = list.length;
     h.appendChild(el("span", { "class": "group-count" },
-      count === 1 ? "1 component" : count + " components"));
+      (count === 1 ? "1 component" : count + " components") +
+      (count ? ", " + newCount(list) + " new" : "")));
     return h;
   }
   function nameIdCells(a) {
@@ -1870,7 +1895,7 @@
     var pct = Math.round(state.t * 100) + "%";
 
     var g1 = el("section", { "class": "alert-group", "aria-labelledby": "unusual-title" });
-    g1.appendChild(groupHeading("unusual-title", "Unusual values", parts.unusual.length));
+    g1.appendChild(groupHeading("unusual-title", "Unusual values", parts.unusual));
     if (parts.unusual.length) {
       g1.appendChild(el("p", { "class": "hint" },
         flaggedBy(true) + " flagged these values as outside the expected range. The bar shows the size of " +
@@ -1878,11 +1903,11 @@
       g1.appendChild(table(
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" }, { label: "Flag" },
          { label: "Expected", num: true }, { label: "Actual", num: true },
-         { label: "Change from expected", num: true }, { label: "Days in a row", num: true, cls: "days" }],
+         { label: "Change from expected", num: true }, { label: "Since", numSort: true, cls: "since" }],
         parts.unusual.map(function (a) {
           return nameIdCells(a).concat([anomalyCell(a.anomaly), expectedCell(a),
             { c: fmtNum(a.actual, a.metric_type), k: a.actual },
-            devCell(arrowFor(a.pct_vs_expected), a.pct_vs_expected), streakCell(a)]);
+            devCell(arrowFor(a.pct_vs_expected), a.pct_vs_expected), sinceCell(a)]);
         }), null, "alerts-unusual", { labelledby: "unusual-title" }));
     } else {
       g1.appendChild(el("p", { "class": "empty" }, anomalyBlocked ?
@@ -1894,7 +1919,7 @@
     host.appendChild(g1);
 
     var g2 = el("section", { "class": "alert-group", "aria-labelledby": "drops-title" });
-    g2.appendChild(groupHeading("drops-title", dropTitle(), parts.drops.length));
+    g2.appendChild(groupHeading("drops-title", dropTitle(), parts.drops));
     if (parts.drops.length) {
       g2.appendChild(el("p", { "class": "hint" },
         "These values were more than " + pct + " below their weekday average, but " +
@@ -1903,11 +1928,11 @@
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
          { label: "Weekday average", num: true }, { label: "Actual", num: true },
          { label: "Change from weekday average", num: true },
-         { label: "Days in a row", num: true, cls: "days" }],
+         { label: "Since", numSort: true, cls: "since" }],
         parts.drops.map(function (a) {
           return nameIdCells(a).concat([{ c: fmtRound(a.usual, a.metric_type), k: a.usual },
             { c: fmtNum(a.actual, a.metric_type), k: a.actual },
-            devCell(arrowFor(a.pct_vs_usual), a.pct_vs_usual), streakCell(a)]);
+            devCell(arrowFor(a.pct_vs_usual), a.pct_vs_usual), sinceCell(a)]);
         }), null, "alerts-drops", { labelledby: "drops-title" }));
     } else {
       g2.appendChild(el("p", { "class": "empty" },
@@ -1917,7 +1942,7 @@
 
     var spct = Math.round(state.s * 100) + "%";
     var g2b = el("section", { "class": "alert-group", "aria-labelledby": "spikes-title" });
-    g2b.appendChild(groupHeading("spikes-title", spikeTitle(), parts.spikes.length));
+    g2b.appendChild(groupHeading("spikes-title", spikeTitle(), parts.spikes));
     if (parts.spikes.length) {
       g2b.appendChild(el("p", { "class": "hint" },
         "These values were more than " + spct + " above their weekday average, but " +
@@ -1927,11 +1952,11 @@
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
          { label: "Weekday average", num: true }, { label: "Actual", num: true },
          { label: "Change from weekday average", num: true },
-         { label: "Days in a row", num: true, cls: "days" }],
+         { label: "Since", numSort: true, cls: "since" }],
         parts.spikes.map(function (a) {
           return nameIdCells(a).concat([{ c: fmtRound(a.usual, a.metric_type), k: a.usual },
             { c: fmtNum(a.actual, a.metric_type), k: a.actual },
-            devCell(arrowFor(a.pct_vs_usual), a.pct_vs_usual), streakCell(a)]);
+            devCell(arrowFor(a.pct_vs_usual), a.pct_vs_usual), sinceCell(a)]);
         }), null, "alerts-spikes", { labelledby: "spikes-title" }));
     } else {
       g2b.appendChild(el("p", { "class": "empty" },
@@ -1940,7 +1965,7 @@
     host.appendChild(g2b);
 
     var g3 = el("section", { "class": "alert-group", "aria-labelledby": "zero-title" });
-    g3.appendChild(groupHeading("zero-title", "Dropped to zero", parts.zero.length));
+    g3.appendChild(groupHeading("zero-title", "Dropped to zero", parts.zero));
     if (parts.zero.length) {
       g3.appendChild(el("p", { "class": "hint" },
         "These components had data on other days in this run, but a value of 0 on " +
@@ -1948,14 +1973,14 @@
       g3.appendChild(table(
         [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
          { label: "Weekday average", num: true }, { label: "Expected", num: true },
-         { label: "Actual", num: true }, { label: "Days in a row", num: true, cls: "days" }],
+         { label: "Actual", num: true }, { label: "Since", numSort: true, cls: "since" }],
         parts.zero.map(function (a) {
           var name = el("span");
           name.appendChild(document.createTextNode(a.name));
           name.appendChild(zeroBadge());
           return [{ c: name, k: a.name }, { c: el("code", null, a.component_id), k: a.component_id },
             { c: fmtRound(a.usual, a.metric_type), k: a.usual }, expectedCell(a),
-            { c: fmtNum(a.actual, a.metric_type), k: a.actual }, streakCell(a)];
+            { c: fmtNum(a.actual, a.metric_type), k: a.actual }, sinceCell(a)];
         }), null, "alerts-zero", { labelledby: "zero-title" }));
     } else {
       g3.appendChild(el("p", { "class": "empty" },
@@ -2144,27 +2169,27 @@
     section("Unusual values, flagged by " + flaggedBy(false), parts.unusual,
       [{ label: "Component" }, { label: "Flag" }, { label: "Expected", num: true },
        { label: "Actual", num: true }, { label: "Change", num: true },
-       { label: "Days in a row", num: true, cls: "days" }],
+       { label: "Since", numSort: true, cls: "since" }],
       function (a) {
         return [name(a), a.anomaly === "high" ? "Above range" : "Below range",
           a.expected === null ? "Not available" : fmtRound(a.expected, a.metric_type),
-          fmtNum(a.actual, a.metric_type), fmtPct(a.pct_vs_expected), streakText(a)];
+          fmtNum(a.actual, a.metric_type), fmtPct(a.pct_vs_expected), sinceText(a)];
       });
     function changeCells(a) {
       return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type),
-        fmtPct(a.pct_vs_usual), streakText(a)];
+        fmtPct(a.pct_vs_usual), sinceText(a)];
     }
     var changeHeaders = [{ label: "Component" }, { label: "Weekday average", num: true },
       { label: "Actual", num: true }, { label: "Change", num: true },
-      { label: "Days in a row", num: true, cls: "days" }];
+      { label: "Since", numSort: true, cls: "since" }];
     section(dropTitle(), parts.drops, changeHeaders, changeCells);
     section(spikeTitle(), parts.spikes, changeHeaders, changeCells);
     section("Dropped to zero", parts.zero,
       [{ label: "Component" }, { label: "Weekday average", num: true },
-       { label: "Actual", num: true }, { label: "Days in a row", num: true, cls: "days" }],
+       { label: "Actual", num: true }, { label: "Since", numSort: true, cls: "since" }],
       function (a) {
         return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type),
-          streakText(a)];
+          sinceText(a)];
       });
     var notes = [];
     if (parts.unused.length) {
@@ -2257,15 +2282,21 @@
     }).length;
     var problems = (data.issues || []).length;
     var dayText = yesterday ? fmtDay(yesterday, false) : "";
+    // How many of the alerts in a tile started on its day, from the lists of the Alerts tab.
+    var parts = splitAlerts(yesterday);
+    var flagged = { high: [], low: [] };
+    parts.unusual.forEach(function (a) { flagged[a.anomaly].push(a); });
 
-    function tile(kind, icon, label, value, note, onClick) {
+    function tile(kind, icon, label, value, note, onClick, list) {
       var t = el(onClick ? "button" : "div", { "class": "tile tile-" + kind,
         type: onClick ? "button" : null });
       var l = el("span", { "class": "tile-label" });
       l.appendChild(el("span", { "class": "icon", "aria-hidden": "true" }, icon));
       l.appendChild(document.createTextNode(label));
       append(t, [l, el("span", { "class": "tile-value" }, value),
-        note ? el("span", { "class": "tile-note" }, note) : null]);
+        note ? el("span", { "class": "tile-note" }, note) : null,
+        list && list.length ? el("span", { "class": "tile-new" },
+          numFmt.format(newCount(list)) + " new") : null]);
       if (onClick) t.addEventListener("click", onClick);
       host.appendChild(t);
     }
@@ -2288,16 +2319,20 @@
       tile("flag", "▲", "Above expected range", "–", "Anomaly detection not available");
       tile("flag", "▼", "Below expected range", "–", "Anomaly detection not available");
     } else {
-      tile("flag", "▲", "Above expected range", numFmt.format(high), "Flagged by " + flaggedBy(false), toAlerts);
-      tile("flag", "▼", "Below expected range", numFmt.format(low), "Flagged by " + flaggedBy(false), toAlerts);
+      tile("flag", "▲", "Above expected range", numFmt.format(high), "Flagged by " + flaggedBy(false),
+        toAlerts, flagged.high);
+      tile("flag", "▼", "Below expected range", numFmt.format(low), "Flagged by " + flaggedBy(false),
+        toAlerts, flagged.low);
     }
     tile("flag", "▼", "Large drops", numFmt.format(drops),
-      "More than " + Math.round(state.t * 100) + "% below the weekday average", toAlerts);
+      "More than " + Math.round(state.t * 100) + "% below the weekday average", toAlerts,
+      parts.drops);
     tile("flag", "▲", "Large spikes", numFmt.format(spikes),
-      "More than " + Math.round(state.s * 100) + "% above the weekday average", toAlerts);
+      "More than " + Math.round(state.s * 100) + "% above the weekday average", toAlerts,
+      parts.spikes);
     tile("zero", "●", "Dropped to zero", numFmt.format(zero),
       unused ? numFmt.format(unused) + " others never collected data" : "Had data on other days",
-      toAlerts);
+      toAlerts, parts.zero);
     tile(problems ? "flag" : "good", problems ? "!" : "✓", "Problems in this run",
       numFmt.format(problems), problems ? "See the status section" : "Everything was read",
       problems ? toStatus : null);

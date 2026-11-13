@@ -47,7 +47,8 @@ RUN_FIELDS = (
     "threshold",
     "spike_threshold",
 )
-# The columns of the alerts() macro without run_id and day, which are those of the run.
+# The columns of the alerts() macro without run_id and day, which are those of the run. since,
+# days, at_least and is_new say since when the alert has held. ahd 0.1.12 added them.
 ALERT_FIELDS = (
     "alert",
     "anomaly",
@@ -59,6 +60,10 @@ ALERT_FIELDS = (
     "usual",
     "expected",
     "pct_vs_usual",
+    "since",
+    "days",
+    "at_least",
+    "is_new",
 )
 
 FINISHED = ("ok", "partial")
@@ -184,6 +189,8 @@ def read_alerts(store: Store, run: dict[str, Any], rules: Rules) -> RunAlerts:
         "threshold": rules.threshold,
         "spike_threshold": rules.spike_threshold,
     }
+    # The new alerts come first. Each part keeps the order of the macro.
+    rows = [r for r in rows if r["is_new"]] + [r for r in rows if not r["is_new"]]
     return RunAlerts(fields, [{k: r[k] for k in ALERT_FIELDS} for r in rows])
 
 
@@ -211,14 +218,21 @@ def write_json(results: list[RunAlerts], out: TextIO) -> None:
     out.write(json.dumps(data, indent=2, allow_nan=False) + "\n")
 
 
+def csv_value(value: Any) -> Any:
+    """A value as the CSV has it: as in the JSON, and true or false as JSON writes them."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return json_value(value)
+
+
 def write_csv(results: list[RunAlerts], out: TextIO) -> None:
     """One header row, then one row for each alert, with the fields of its run first."""
     writer = csv.writer(out, lineterminator="\n")
     writer.writerow([*RUN_FIELDS, *ALERT_FIELDS])
     for r in results:
-        start = [json_value(r.run[k]) for k in RUN_FIELDS]
+        start = [csv_value(r.run[k]) for k in RUN_FIELDS]
         for a in r.alerts:
-            writer.writerow([*start, *(json_value(a[k]) for k in ALERT_FIELDS)])
+            writer.writerow([*start, *(csv_value(a[k]) for k in ALERT_FIELDS)])
 
 
 # Characters that would move the cursor, start a new line or turn the text around in a terminal:
@@ -256,6 +270,24 @@ def flagged_by(method: str, sensitivity: str) -> str:
     )
 
 
+def since_text(a: dict[str, Any]) -> str:
+    """Since when an alert has held, e.g., "since 2026-11-04, 8 days", "new on 2026-11-11" or
+    "since 2026-11-05 or earlier, at least 7 days"."""
+    since = a["since"].isoformat()
+    if a["is_new"]:
+        return f"new on {since}"
+    days = "1 day" if a["days"] == 1 else f"{a['days']} days"
+    if a["at_least"]:
+        return f"since {since} or earlier, at least {days}"
+    return f"since {since}, {days}"
+
+
+def new_line(day: date, new: int) -> str:
+    """For example "3 of these alerts are new on 2026-11-07"."""
+    verb = "is" if new == 1 else "are"
+    return f"{new} of these alerts {verb} new on {day.isoformat()}."
+
+
 def _alert_text(a: dict[str, Any]) -> str:
     parts = [
         f"- {a['alert']}: {inert(a['name'])} ({inert(a['component_id'])})",
@@ -267,11 +299,13 @@ def _alert_text(a: dict[str, Any]) -> str:
     pct = a["pct_vs_usual"]
     if pct is not None and math.isfinite(pct):
         parts.append(f"change {pct * 100:+.1f}%")
+    parts.append(since_text(a))
     return ", ".join(parts)
 
 
 def write_text(results: list[RunAlerts], rules: Rules, out: TextIO) -> None:
-    """The rules, then for each run a heading, the alert line and one line for each alert."""
+    """The rules, then for each run a heading, the alert line, how many alerts are new and one
+    line for each alert, new alerts first."""
     out.write(
         f"A large drop is more than {_percent(rules.threshold)} below the weekday average, and "
         f"a large spike is more than {_percent(rules.spike_threshold)} above it. The weekday "
@@ -289,6 +323,8 @@ def write_text(results: list[RunAlerts], rules: Rules, out: TextIO) -> None:
             counts[a["alert"]] = counts.get(a["alert"], 0) + 1
         out.write(f"\nRun {run['run_id']}, {suite}{segment}, status {run['status']}\n")
         out.write(counts_line(run["day"], counts) + "\n")
+        if r.alerts:
+            out.write(new_line(run["day"], sum(1 for a in r.alerts if a["is_new"])) + "\n")
         for a in r.alerts:
             out.write(_alert_text(a) + "\n")
 

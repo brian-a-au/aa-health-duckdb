@@ -196,10 +196,10 @@ def test_alerts_zero_and_anomaly(tmp_path):
         "anomaly": "high",
         "zero": False,
         "unused": False,
-        "days_in_row": 1,
-        "drop_run": None,
-        "spike_run": None,
-        "streak_open": False,
+        # The day before has no row, so the flag may have started earlier.
+        "since_days": 1,
+        "since_open": True,
+        "changes": None,
     }
     assert zero["actual"] == 0 and zero["expected"] is None
     assert zero["anomaly"] is None and zero["zero"] is True and zero["unused"] is True
@@ -783,62 +783,6 @@ def _streak_values(cid, last_days):
         else:
             out.append(_dv(cid, day, v))
     return out
-
-
-def test_days_in_row(tmp_path):
-    cases = {
-        # The last 3 days were 0, and the day before was normal.
-        "metrics/event1": [100.0, 0.0, 0.0, 0.0],
-        # 2 days above Adobe's range, after a day below it: only the same direction counts.
-        "metrics/event2": [(5.0, "low"), (500.0, "high"), (500.0, "high")],
-        # A 0 that Adobe flagged is an unusual value, so it ends a row of zeros.
-        "metrics/event3": [0.0, (0.0, "low"), 0.0],
-        # Drops of 50, 20 and 40 percent, oldest first, after a normal day.
-        "metrics/event4": [100.0, 50.0, 80.0, 60.0],
-        # 0 on all 7 days that the reader can pick: the row may be longer.
-        "metrics/event5": [0.0] * 7,
-        # A day without data ends the row.
-        "metrics/event6": [0.0, None, 0.0],
-        # Spikes of 50, 20 and 80 percent, oldest first, after a normal day.
-        "metrics/event7": [100.0, 150.0, 120.0, 180.0],
-        # A spike after a drop: a new kind of alert starts a new row.
-        "metrics/event8": [100.0, 50.0, 150.0],
-    }
-    comps = [_comp(cid, cid, number=i) for i, cid in enumerate(cases, start=1)]
-    vals = []
-    for cid, last in cases.items():
-        vals += [v for v in _streak_values(cid, last) if v.value is not None]
-    store, rid = _build(tmp_path, comps, vals)
-    day = YESTERDAY.isoformat()
-    got = {a["component_id"]: a for a in build_view(store, rid)["alerts"] if a["day"] == day}
-    assert {cid: a["days_in_row"] for cid, a in got.items()} == {
-        "metrics/event1": 3,
-        "metrics/event2": 2,
-        "metrics/event3": 1,
-        "metrics/event4": 3,
-        "metrics/event5": 7,
-        "metrics/event6": 1,
-        "metrics/event7": 3,
-        "metrics/event8": 1,
-    }
-    assert [cid for cid, a in got.items() if a["streak_open"]] == ["metrics/event5"]
-    # For a drop, the smallest drop so far on each day back, from yesterday.
-    assert got["metrics/event4"]["drop_run"] == pytest.approx([-0.4, -0.2, -0.2])
-    assert all(a["drop_run"] is None for cid, a in got.items() if cid != "metrics/event4")
-    # For a spike, the smallest spike so far on each day back.
-    assert got["metrics/event7"]["spike_run"] == pytest.approx([0.8, 0.2, 0.2])
-    assert got["metrics/event8"]["spike_run"] == pytest.approx([0.5])
-    assert all(
-        a["spike_run"] is None
-        for cid, a in got.items()
-        if cid not in ("metrics/event7", "metrics/event8")
-    )
-    # The day before yesterday counts back from its own day.
-    before = YESTERDAY - timedelta(days=1)
-    earlier = [a for a in build_view(store, rid)["alerts"] if a["day"] == before.isoformat()]
-    rows = {a["component_id"]: a for a in earlier}
-    assert rows["metrics/event1"]["days_in_row"] == 2
-    assert rows["metrics/event4"]["drop_run"] == pytest.approx([-0.2, -0.2])
 
 
 def test_pair_weekday_average(tmp_path):
@@ -1978,3 +1922,327 @@ def test_a_query_without_the_part_to_replace_fails_for_a_local_method():
             _for_method(sql, "weekday-median", _DV, _LOCAL_RUN_DV)
     sql = f"WITH {_DV} SELECT 1"
     assert _for_method(sql, "weekday-iqr", _DV, _LOCAL_RUN_DV) == f"WITH {_LOCAL_RUN_DV} SELECT 1"
+
+
+# ---- since when an alert has held -------------------------------------------------------------
+# An alert follows one condition: a value of 0, then the direction of the anomaly flag, then a
+# change past the drop or spike threshold. Its streak is the unbroken run of days, ending on the
+# alert's day, on which that condition held. It is "at least" when the day before the streak
+# cannot be judged for the condition.
+
+PLAIN = "plain"  # a value without Adobe's expected value, so a flag cannot be judged that day
+
+
+def _history(cid, last, base=100.0):
+    """base on every day with Adobe's range around it and no flag, then the values in last,
+    oldest first, ending yesterday.
+
+    An entry of last is a value, (value, "high" or "low") for a value that Adobe flagged,
+    (PLAIN, value) for a value without Adobe's range, None for a day without a row, or NaN.
+    """
+    out = []
+    for d in _days(START, YESTERDAY - timedelta(days=len(last))):
+        out.append(_dv(cid, d, base, base, base * 1.3, base * 0.7, False))
+    for back, v in enumerate(reversed(last)):
+        day = YESTERDAY - timedelta(days=back)
+        if v is None:
+            continue
+        if isinstance(v, tuple) and v[0] == PLAIN:
+            out.append(_dv(cid, day, v[1]))
+        elif isinstance(v, tuple):
+            value, flag = v
+            if flag == "high":
+                out.append(_dv(cid, day, value, base, value - 1, base * 0.7, True))
+            else:
+                out.append(_dv(cid, day, value, base, base * 1.3, value + 1, True))
+        else:
+            out.append(_dv(cid, day, v, base, base * 1.3, base * 0.7, False))
+    return out
+
+
+SINCE_CASES = {
+    # A drop to zero on yesterday only.
+    "metrics/event1": [100.0, 0.0],
+    # Zero on the last 3 days.
+    "metrics/event2": [100.0, 0.0, 0.0, 0.0],
+    # Adobe flagged the first two zeros, so the label changed from unusual to dropped to zero.
+    # The value was 0 on all 4 days, so it is one streak.
+    "metrics/event3": [100.0, (0.0, "low"), (0.0, "low"), 0.0, 0.0],
+    # A day with data breaks the streak.
+    "metrics/event4": [0.0, 100.0, 0.0, 0.0],
+    # Zero on 10 days. A zero can be judged on every day of the run, so the start is known.
+    "metrics/event5": [100.0] + [0.0] * 10,
+    # A day without a row cannot be judged, so the streak may be longer.
+    "metrics/event6": [0.0, None, 0.0],
+    # A value that is not a number cannot be judged either.
+    "metrics/event7": [0.0, math.nan, 0.0],
+    # Above the range on 2 days, after a day below it: only the same direction counts.
+    "metrics/event8": [(5.0, "low"), (500.0, "high"), (500.0, "high")],
+    # Above the range on 2 days, after a day without Adobe's range.
+    "metrics/event9": [(PLAIN, 100.0), (500.0, "high"), (500.0, "high")],
+    # Drops of 50, 20 and 40 percent, oldest first.
+    "metrics/event10": [100.0, 50.0, 80.0, 60.0],
+    # A drop on every day that has a weekday average, and on the day before them.
+    "metrics/event11": [50.0] * 8,
+    # A value of 0 is also more than 30 percent below the weekday average.
+    "metrics/event12": [100.0, 0.0, 50.0],
+    # Spikes of 50, 20 and 80 percent, oldest first.
+    "metrics/event13": [100.0, 150.0, 120.0, 180.0],
+    # Above the range on every day of the run.
+    "metrics/event14": [(500.0, "high")] * 91,
+    # Never collected data: not an alert.
+    "metrics/event15": [0.0] * 91,
+}
+
+
+@pytest.fixture
+def since_run(tmp_path):
+    comps = [_comp(cid, cid, number=i) for i, cid in enumerate(SINCE_CASES, start=1)]
+    vals = []
+    for cid, last in SINCE_CASES.items():
+        vals += _history(cid, last, 0.0 if cid == "metrics/event15" else 100.0)
+    return _build(tmp_path, comps, vals)
+
+
+def _since(store, rid, **options):
+    """{component: (alert, since, days, at_least, is_new)} from the alerts() macro."""
+    args = "".join(f", {k} := ?" for k in options)
+    rows = store.con.execute(
+        f"SELECT component_id, alert, since, days, at_least, is_new FROM alerts(?{args})",
+        [rid, *options.values()],
+    ).fetchall()
+    return {r[0]: tuple(r[1:]) for r in rows}
+
+
+def _ago(n):
+    return YESTERDAY - timedelta(days=n)
+
+
+def test_alerts_macro_says_since_when_each_alert_held(since_run):
+    got = _since(*since_run)
+    assert got == {
+        "metrics/event1": ("dropped to zero", YESTERDAY, 1, False, True),
+        "metrics/event2": ("dropped to zero", _ago(2), 3, False, False),
+        "metrics/event3": ("dropped to zero", _ago(3), 4, False, False),
+        "metrics/event4": ("dropped to zero", _ago(1), 2, False, False),
+        "metrics/event5": ("dropped to zero", _ago(9), 10, False, False),
+        "metrics/event6": ("dropped to zero", YESTERDAY, 1, True, False),
+        "metrics/event7": ("dropped to zero", YESTERDAY, 1, True, False),
+        "metrics/event8": ("unusual", _ago(1), 2, False, False),
+        "metrics/event9": ("unusual", _ago(1), 2, True, False),
+        "metrics/event10": ("large drop", YESTERDAY, 1, False, True),
+        # The day before the 7 days has no weekday average, so it cannot be judged.
+        "metrics/event11": ("large drop", _ago(6), 7, True, False),
+        "metrics/event12": ("large drop", _ago(1), 2, False, False),
+        "metrics/event13": ("large spike", YESTERDAY, 1, False, True),
+        # The streak starts on the first day of the run, and the day before is not in it.
+        "metrics/event14": ("unusual", START, 91, True, False),
+    }
+
+
+def test_the_thresholds_make_a_streak_longer(since_run):
+    got = _since(*since_run, threshold=0.15, spike_threshold=0.10)
+    assert got["metrics/event10"] == ("large drop", _ago(2), 3, False, False)
+    assert got["metrics/event13"] == ("large spike", _ago(2), 3, False, False)
+    shorter = _since(*since_run, threshold=0.45)
+    assert shorter["metrics/event11"] == ("large drop", _ago(6), 7, True, False)
+    assert "metrics/event10" not in shorter
+
+
+def test_a_streak_ends_on_for_day(since_run):
+    got = _since(*since_run, for_day=_ago(2))
+    # On that day, Adobe flagged the 0, so the alert is unusual. Its streak follows the 0.
+    assert got["metrics/event3"] == ("unusual", _ago(3), 2, False, False)
+    assert got["metrics/event2"] == ("dropped to zero", _ago(2), 1, False, True)
+    assert got["metrics/event14"] == ("unusual", START, 89, True, False)
+    # A day before the 7 days with a weekday average has drops to zero and flags only.
+    older = _since(*since_run, for_day=_ago(8))
+    assert older == {
+        "metrics/event5": ("dropped to zero", _ago(9), 2, False, False),
+        "metrics/event14": ("unusual", START, 83, True, False),
+    }
+
+
+def test_the_new_columns_come_after_the_old_ones(since_run):
+    cur = since_run[0].con.execute("SELECT * FROM alerts(?)", [since_run[1]])
+    assert [d[0] for d in cur.description] == [
+        "run_id",
+        "day",
+        "component_id",
+        "name",
+        "group",
+        "metric_type",
+        "value",
+        "usual",
+        "expected",
+        "pct_vs_usual",
+        "alert",
+        "anomaly",
+        "since",
+        "days",
+        "at_least",
+        "is_new",
+    ]
+
+
+def _jump(cid):
+    """100 on every day, and 1000 on each of the last 35 days, which have a local range."""
+    return [
+        _dv(cid, d, 1000.0 if d >= TODAY - timedelta(days=35) else 100.0)
+        for d in _days(START, TODAY)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("method", "want"),
+    [
+        # Adobe gave no range, so the values are large spikes, on each of the last 7 days.
+        ("adobe", ("large spike", _ago(6), 7, True, False)),
+        # The median of each weekday stays 100, so every day with a range is flagged. The day
+        # before them has no range.
+        ("weekday-median", ("unusual", TODAY - timedelta(days=35), 35, True, False)),
+        # The quartiles take in the values of 1000 after 3 weeks, so the last 2 weeks are not
+        # flagged. They are spikes.
+        ("weekday-iqr", ("large spike", _ago(6), 7, True, False)),
+    ],
+)
+def test_a_streak_follows_the_anomaly_method(tmp_path, method, want):
+    store, rid = _build(
+        tmp_path, [_comp("metrics/event1", "E1", number=1)], _jump("metrics/event1")
+    )
+    assert _since(store, rid, method=method) == {"metrics/event1": want}
+
+
+def _spread_then(cid, last):
+    """S12 on each weekday by week, 100 on the 4 days after, then last, ending yesterday."""
+    out = []
+    for d in _days(START, YESTERDAY):
+        week = (d - START).days // 7
+        if d > YESTERDAY - timedelta(days=len(last)):
+            v = last[len(last) - 1 - (YESTERDAY - d).days]
+        else:
+            v = S12[week] if week < 12 else 100.0
+        out.append(_dv(cid, d, v))
+    return out
+
+
+@pytest.mark.parametrize(
+    ("sensitivity", "want"),
+    [
+        # 140 is outside the range of normal, 66.6 to 133.4, and 125 is inside it.
+        ("normal", ("unusual", YESTERDAY, 1, False, True)),
+        # high narrows the range to 77.8 to 122.2, so 125 is flagged too.
+        ("high", ("unusual", _ago(2), 3, False, False)),
+    ],
+)
+def test_a_streak_follows_the_sensitivity(tmp_path, sensitivity, want):
+    cid = "metrics/event1"
+    store, rid = _build(
+        tmp_path, [_comp(cid, "E1", number=1)], _spread_then(cid, [140.0, 125.0, 140.0])
+    )
+    got = _since(store, rid, method="weekday-median", sensitivity=sensitivity)
+    assert got == {cid: want}
+
+
+def test_page_alerts_say_since_when(since_run):
+    view = build_view(*since_run)
+    day = YESTERDAY.isoformat()
+    got = {a["component_id"]: a for a in view["alerts"] if a["day"] == day}
+    # A drop to zero or a flag does not depend on the sliders, so the SQL counts its days.
+    assert (got["metrics/event3"]["since_days"], got["metrics/event3"]["since_open"]) == (4, False)
+    assert (got["metrics/event6"]["since_days"], got["metrics/event6"]["since_open"]) == (1, True)
+    assert (got["metrics/event9"]["since_days"], got["metrics/event9"]["since_open"]) == (2, True)
+    assert got["metrics/event14"]["since_days"] == 91 and got["metrics/event14"]["since_open"]
+    assert all(got[c]["changes"] is None for c in ("metrics/event3", "metrics/event9"))
+    # A large drop or spike depends on its slider. changes holds the change of each day back
+    # to the first of the 7 days, so the page can count the days past the slider.
+    # The list stops at the first day that no slider setting counts, which it gives as 0.
+    assert got["metrics/event10"]["changes"] == pytest.approx([-0.4, -0.2, -0.5, 0.0])
+    assert got["metrics/event10"]["since_days"] is None
+    assert got["metrics/event13"]["changes"] == pytest.approx([0.8, 0.2, 0.5, 0.0])
+    # Yesterday's weekday average holds the 50 of the Friday a week before: 1150 / 12.
+    assert got["metrics/event11"]["changes"] == pytest.approx([50 * 12 / 1150 - 1] + [-0.5] * 6)
+    # The day before yesterday counts back from its own day.
+    before = {a["component_id"]: a for a in view["alerts"] if a["day"] == _ago(1).isoformat()}
+    assert before["metrics/event10"]["changes"] == pytest.approx([-0.2, -0.5, 0.0])
+    assert before["metrics/event2"]["since_days"] == 2
+
+
+def test_a_day_without_a_value_is_empty_in_changes(tmp_path):
+    cid = "metrics/event1"
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], _history(cid, [50.0, None, 50.0]))
+    [a] = [a for a in build_view(store, rid)["alerts"] if a["day"] == YESTERDAY.isoformat()]
+    # The list stops at the day without a value.
+    assert a["changes"] == [-0.5, None]
+
+
+def _page_since(a, threshold, spike):
+    """(days, at_least) of a page alert, as report.js counts them for the sliders."""
+    changes = a["changes"]
+    if changes is None:
+        return a["since_days"], a["since_open"]
+    drop = a["pct_vs_usual"] < 0
+    n = 0
+    while n < len(changes) and changes[n] is not None:
+        if not (changes[n] < -threshold if drop else changes[n] > spike):
+            break
+        n += 1
+    return n, n == len(changes) or changes[n] is None
+
+
+def _page_alerts(view, day, threshold, spike):
+    """{component: (alert, days, at_least)} of the page on day, for the slider settings."""
+    out = {}
+    for a in view["alerts"]:
+        if a["day"] != day.isoformat() or (a["zero"] and a["unused"]):
+            continue
+        if a["anomaly"]:
+            kind = "unusual"
+        elif a["zero"]:
+            kind = "dropped to zero"
+        elif a["usual"] >= 10 and a["pct_vs_usual"] < -threshold:
+            kind = "large drop"
+        elif a["usual"] >= 10 and a["pct_vs_usual"] > spike:
+            kind = "large spike"
+        else:
+            continue
+        out[a["component_id"]] = (kind, *_page_since(a, threshold, spike))
+    return out
+
+
+SETTINGS = [(0.10, 0.10), (0.15, 0.20), (0.30, 0.50), (0.45, 0.10), (0.60, 1.50)]
+
+
+@pytest.mark.parametrize(("method", "sensitivity"), [("adobe", "normal"), *LOCAL_LEVELS])
+@pytest.mark.parametrize("data", ["since", "random"])
+def test_page_and_macro_agree_on_since(tmp_path, method, sensitivity, data):
+    if data == "since":
+        comps = [_comp(cid, cid, number=i) for i, cid in enumerate(SINCE_CASES, start=1)]
+        vals = []
+        for cid, last in SINCE_CASES.items():
+            vals += _history(cid, last, 0.0 if cid == "metrics/event15" else 100.0)
+        comps.append(_comp("metrics/event16", "E16", number=16))
+        vals += _jump("metrics/event16")
+        comps.append(_comp("metrics/event17", "E17", number=17))
+        vals += _spread_then("metrics/event17", [140.0, 125.0, 140.0])
+        store, rid = _build(tmp_path, comps, vals)
+    else:
+        store, rid = _random_run(tmp_path)
+    view = build_view(store, rid, method=method, sensitivity=sensitivity)
+    compared = 0
+    for day in [YESTERDAY - timedelta(days=n) for n in range(7)]:
+        for threshold, spike in SETTINGS:
+            page = _page_alerts(view, day, threshold, spike)
+            rows = store.con.execute(
+                "SELECT component_id, alert, days, at_least, since, is_new FROM alerts(?,"
+                " threshold := ?, spike_threshold := ?, for_day := ?, method := ?,"
+                " sensitivity := ?)",
+                [rid, threshold, spike, day, method, sensitivity],
+            ).fetchall()
+            macro = {r[0]: r[1:4] for r in rows}
+            assert macro == page, (day, threshold, spike)
+            for _cid, _alert, days, at_least, since, is_new in rows:
+                assert since == day - timedelta(days=days - 1)
+                assert is_new == (days == 1 and not at_least)
+            compared += len(rows)
+    assert compared > 50
