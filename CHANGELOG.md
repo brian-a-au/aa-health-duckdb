@@ -2,7 +2,7 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
-## 0.1.13 (unreleased)
+## 0.1.13 (2026-11-12)
 
 This release gives one line to a problem that hits most of a report suite at once, e.g., when its data stops. The database layout stays at version 7, so files made by 0.1.2 to 0.1.12 keep working. The views version changes from 7 to 8, because the `alerts()` macro gets a new column and a new macro `suite_events()` comes next to it. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces them in your file. `ahd render` and `ahd alerts` open the file read-only, so they do not replace them, but they use the new rules for their own session. Which components are alerts does not change, and neither do the counts in the tiles, the list headings, the alert line and the earlier runs.
 
@@ -12,7 +12,7 @@ This release gives one line to a problem that hits most of a report suite at onc
 - **What looks different in the alert email:** `send_alerts.py` starts the section of a suite with an event with the line of the event and a table of its first 5 alerts, then lists the other alerts. On Demo Data Evangelists, the email has 5 rows in place of 356. Its options, variables and exit codes stay the same, and the subject still counts every alert. With an older `ahd`, the email lists every alert as before.
 - The `alerts()` macro has a new column `event` at the end. The other columns and the rows stay the same. The new macro `suite_events()` takes the same options and gives one row for each event. See the [DuckDB guide](docs/duckdb.md#suite_eventsrun-).
 
-## 0.1.12 (unreleased)
+## 0.1.12 (2026-11-12)
 
 This release says since when each alert has held, so you can tell new alerts from ongoing ones. The database layout stays at version 7, so files made by 0.1.2 to 0.1.11 keep working. The views version changes from 6 to 7, because the `alerts()` macro gets new columns. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces it in your file. `ahd render` and `ahd alerts` open the file read-only, so they do not replace it, but they use the new rules for their own session. Which components are alerts does not change, and neither do the counts.
 
