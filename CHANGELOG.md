@@ -2,7 +2,7 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
-## 0.1.12 (unreleased)
+## 0.1.12 (2026-11-12)
 
 This release says since when each alert has held, so you can tell new alerts from ongoing ones. The database layout stays at version 7, so files made by 0.1.2 to 0.1.11 keep working. The views version changes from 6 to 7, because the `alerts()` macro gets new columns. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces it in your file. `ahd render` and `ahd alerts` open the file read-only, so they do not replace it, but they use the new rules for their own session. Which components are alerts does not change, and neither do the counts.
 
