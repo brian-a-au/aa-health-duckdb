@@ -13,7 +13,7 @@ Start with `ahd check --rsid <suite>`. It signs in, counts what the credential c
 - [Anomaly detection options](#anomaly-detection-options)
 - [Time zones](#time-zones)
 - [Profiles and config files](#profiles-and-config-files)
-- [The database](#the-database): a file from another version, no file, a file in use, an older `duckdb`, and a run that stays "running"
+- [The database](#the-database): a file from another version, no file, a file in use, an older `duckdb`, a run that stays "running", and runs that `ahd alerts` cannot read
 - [Getting more detail](#getting-more-detail)
 
 ## Sign-in problems
@@ -135,7 +135,8 @@ The database data/ahd.duckdb is in use by another program
 Only one program can write to a DuckDB file at a time. While a program writes to it, no other program can open it. While a program reads it, nothing can write to it. Some examples:
 
 - While `ahd run`, `ahd individual`, `ahd prune` or `ahd import` works on the file, wait for it to finish.
-- A `duckdb` session that is still open on the file also blocks `ahd run`. Close it, then try again. `ahd runs` and `ahd render` only read, so they work while a `duckdb -readonly` session is open.
+- A `duckdb` session that is still open on the file also blocks `ahd run`. Close it, then try again. `ahd runs`, `ahd render` and `ahd alerts` only read, so they work while a `duckdb -readonly` session is open.
+- A scheduled `ahd alerts` or `send_alerts.py` that starts while `ahd run` still writes to the file stops with this message and exit code 1. Start it after `ahd run` has finished, as the jobs in [Run it every day](scheduling.md) do.
 
 DuckDB's own message for this is "Could not set lock on file".
 
@@ -152,6 +153,15 @@ The `duckdb` command is older than 2.0. Update it, then check with `duckdb --ver
 A run that you stop with Ctrl-C is marked "failed". The requests that were already sent finish first, and the rest are not sent. A request that was waiting to try again is not tried again.
 
 A run that stopped in another way, e.g., because you closed the window, keeps the status "running". Make a new run. To delete the old one, use `ahd prune --run N --force`.
+
+### ahd alerts cannot read a run
+
+`ahd alerts` reads only runs that ended "ok" or "partial". It says so in these cases:
+
+- **"holds no finished run of"**: the database has no run of that report suite ID that ended "ok" or "partial", with the segment you chose or, without `--segment`, without a segment. Check the ID with `ahd runs`. `ahd alerts` takes the ID, not the name, and the case must match. The command still prints the alerts of the other suites, and exits with 1. With `--all-suites`, the message says that the database holds no finished run with that segment or without one.
+- **"so it has no alerts"**: the run that `--run` names ended "failed". Choose another run.
+- **"so its alerts are not complete"**: the run that `--run` names is still marked "running". Wait for it to finish, or see [A run stays "running"](#a-run-stays-running).
+- **"--segment works only with --rsid or --all-suites"**: `--run` already names one run, with its own segment. Leave out `--segment`.
 
 ## Getting more detail
 

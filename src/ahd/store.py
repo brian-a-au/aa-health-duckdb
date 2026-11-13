@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from importlib import resources
 from pathlib import Path
@@ -74,6 +75,19 @@ RUN_TABLES = (
 def _views() -> str:
     """The views and the alerts macro from ahd/sql/views.sql."""
     return resources.files("ahd").joinpath("sql/views.sql").read_text(encoding="utf-8")
+
+
+def temporary_views() -> str:
+    """The views and the macros of ahd/sql/views.sql as temporary ones, for one session.
+
+    DuckDB looks for a name among the temporary objects first, so in that session they stand in
+    for the views and the macros that the file holds, whatever version of ahd wrote them. They
+    can be made on a file that is open read-only. A DROP statement removes an older view or
+    macro from a file. A session has nothing to remove, so it is left out. Every other statement
+    of views.sql is CREATE OR REPLACE, as AGENTS.md requires.
+    """
+    sql = re.sub(r"^DROP\b[^;]*;", "", _views(), flags=re.MULTILINE)
+    return re.sub(r"\bCREATE OR REPLACE (VIEW|MACRO)\b", r"CREATE OR REPLACE TEMP \1", sql)
 
 
 def _first(cur: duckdb.DuckDBPyConnection) -> Any:
@@ -208,13 +222,22 @@ class Store:
                     found = _first(con.execute("SELECT max(version) FROM schema_version"))
                 if found != SCHEMA_VERSION:
                     raise SchemaVersionError(_version_message(path, found))
-                # A read-only file cannot be changed. No read-only command uses the views.
+                # A read-only file cannot be changed. ahd render and ahd runs do not use the
+                # views, and ahd alerts calls use_current_views().
                 if not read_only:
                     _update_views(con)
         except BaseException:
             con.close()
             raise
         return cls(con)
+
+    def use_current_views(self) -> None:
+        """Use the views and the macros of this version of ahd until the connection closes.
+
+        They are temporary, so this works on a file that is open read-only, and the file keeps
+        the views of the version that last wrote to it.
+        """
+        self.con.execute(temporary_views())
 
     def _insert(self, table: str, columns: str, types: str, rows: list[tuple]) -> None:
         """Insert many rows with one statement.

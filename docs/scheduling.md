@@ -5,9 +5,9 @@
 This page shows how to check every report suite each morning and get one email with the alerts. The schedule runs two commands:
 
 1. `ahd run --all-suites` checks every suite the credential can see. It stores one run and writes one report for each suite.
-2. [`docs/examples/send_alerts.py`](examples/send_alerts.py) emails the alerts of the latest runs. It sends nothing when no suite has alerts.
+2. [`docs/examples/send_alerts.py`](examples/send_alerts.py) emails the alerts of the latest runs. It gets them from `ahd alerts`. It sends nothing when no suite has alerts.
 
-These steps run from a clone of this repository, because the email script is in it. [Development](development.md#work-from-a-clone) shows how to make one. The commands start with `uv run` for that reason.
+These steps run from a clone of this repository, because the email script is in it. [Development](development.md#work-from-a-clone) shows how to make one. The commands start with `uv run` for that reason. The script needs `ahd` 0.1.11 or newer, which `uv run` in a clone has. Before 0.1.11, the script needed only DuckDB, so a job that runs it on a computer without `ahd` now stops with exit code 1 and a message that says how to install it.
 
 ## Before you start
 
@@ -20,7 +20,7 @@ These steps run from a clone of this repository, because the email script is in 
   ```
 
 - **Check the email first.** Without `SMTP_HOST`, the script writes `alerts.eml` in the current folder. Open it, and set the mail settings when it looks right. See [Send an alert email every morning](duckdb.md#send-an-alert-email-every-morning).
-- **Choose the anomaly method once for the job.** The scripts below set the variables `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`. `ahd run` and `send_alerts.py` both read them, so the reports and the email always flag the same values. The scripts set the defaults, `adobe` and `normal`, which use Adobe's anomaly detection. To use a local method, change the two values, e.g., to `weekday-median` and `high`. Do not also give `--anomaly-method` or `--anomaly-sensitivity` to only one of the commands, because an option wins over the variable. See [Set the anomaly method once](usage.md#set-the-anomaly-method-once) and [The report](report.md#anomaly-detection-methods).
+- **Choose the anomaly method once for the job.** The scripts below set the variables `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`. `ahd run` reads them, and so does `ahd alerts`, which `send_alerts.py` runs. So the reports and the email always flag the same values. The scripts set the defaults, `adobe` and `normal`, which use Adobe's anomaly detection. To use a local method, change the two values, e.g., to `weekday-median` and `high`. Do not also give `--anomaly-method` or `--anomaly-sensitivity` to only one of the commands, because an option wins over the variable. See [Set the anomaly method once](usage.md#set-the-anomaly-method-once) and [The report](report.md#anomaly-detection-methods).
 - **Keep the reports where you want them.** Reports go to `./reports/` in the folder the schedule starts in. To choose another folder, add `--out`, e.g., `--out ~/ahd-reports`.
 
 The script with the commands holds your mail password when your server needs a login. Only your user account should be able to read it. The steps below show how.
@@ -30,6 +30,16 @@ The script with the commands holds your mail password when your server needs a l
 `ahd run` checks the other suites when one fails. Its exit code is then 1. The schedule below sends the email anyway, so the alerts of the other suites still reach you. The run's output, which the schedule keeps in a log file, names the suite that failed.
 
 The email uses the latest run of each suite that ended "ok" or "partial". For a suite whose run failed today, that is an older run. Each section of the email gives the date of its alerts, so you can see this.
+
+## Without the email script
+
+`ahd alerts` prints the alerts as plain text, and exits with 4 when there are none. So a job that has its own way to send mail can run it after `ahd run`, e.g., with a `mail` program:
+
+```sh
+uv run ahd alerts --profile prod --all-suites > alerts.txt && mail -s "Analytics Health alerts" team@example.com < alerts.txt
+```
+
+The `&&` sends the mail only when the command exits with 0, which means that it printed at least one alert. See [Exit codes of alerts](usage.md#exit-codes-of-alerts). The steps below use the email script, which sends one HTML email.
 
 ## macOS and Linux
 
