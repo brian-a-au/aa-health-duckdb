@@ -205,6 +205,9 @@ def test_json_holds_the_run_and_every_column_of_the_macro(tmp_path, capsys):
     assert data["format_version"] == 1
     [run] = data["runs"]
     alerts = run.pop("alerts")
+    # ahd 0.1.13 added the suite-wide events. This run has none.
+    events = run.pop("events")
+    assert events == []
     assert run == {
         "run_id": 1,
         "rsid": "rs1",
@@ -331,6 +334,8 @@ CSV_HEADER = [
     "days",
     "at_least",
     "is_new",
+    # ahd 0.1.13 added the event of each alert.
+    "event",
 ]
 
 
@@ -372,6 +377,7 @@ def test_csv_has_one_header_and_one_row_per_alert(tmp_path, capsys):
         "days": "1",
         "at_least": "false",
         "is_new": "true",
+        "event": "",
     }
     assert [r[1] for r in rows[1:]] == ["rs1"] * 4 + ["rs2"] * 4
     # The flag comes last: it is not new.
@@ -679,7 +685,7 @@ def test_the_current_views_are_made_for_the_session_only(tmp_path):
         ).split(";")
         if s.strip()
     ]
-    assert len(statements) == 4
+    assert len(statements) == 5
     assert all(s.startswith("CREATE OR REPLACE TEMP ") for s in statements)
 
 
@@ -818,3 +824,262 @@ def test_the_count_of_new_alerts_reads_well(new, line):
     from ahd.alerts import new_line
 
     assert new_line(date(2026, 11, 6), new).startswith(line)
+
+
+# ---- suite-wide events ------------------------------------------------------------------
+
+
+def _event_db(tmp_path, zeros=12, quiet=7, earlier=0, names=None):
+    """A run with zeros components at 0 yesterday, earlier more at 0 since 3 days, one large
+    drop, one flag and quiet components at their weekday average of 100. With the defaults, the
+    zeros are an event: 12 of the 21 components that collected data."""
+    names = names or {}
+    db = tmp_path / "ahd.duckdb"
+    store = Store.open(db)
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "UTC", "0.1")
+    kinds = (
+        [("zero", 1)] * zeros
+        + [("zero", 3)] * earlier
+        + [("drop", 1), ("flag", 1)]
+        + [("quiet", 1)] * quiet
+    )
+    comps, values = [], []
+    for n, (kind, days) in enumerate(kinds, start=1):
+        cid = f"metrics/event{n}"
+        label = names.get(cid, f"{kind.title()} {n}")
+        comps.append(Component(cid, label, "metric", "custom_events", n, Column(cid, cid), True))
+        for i in range(91):
+            day = TODAY - timedelta(days=91 - i)
+            back = (TODAY - day).days
+            if kind == "flag" and back == 1:
+                values.append(DailyValue(cid, day, 150.0, 100.0, 120.0, 80.0, True))
+                continue
+            v = 100.0
+            if kind == "zero" and back <= days:
+                v = 0.0
+            elif kind == "drop" and back == 1:
+                v = 50.0
+            values.append(DailyValue(cid, day, v, None, None, None, None))
+    store.add_components(rid, comps)
+    store.add_daily_values(rid, values)
+    store.finish_run(rid, "ok")
+    store.con.close()
+    return db
+
+
+def _by_id(count):
+    """The numbers 1 to count in the order of their component IDs, as the macro orders them."""
+    return sorted(range(1, count + 1), key=lambda n: f"metrics/event{n}")
+
+
+def _zero_line(n):
+    return (
+        f"- dropped to zero: Zero {n} (metrics/event{n}), weekday average 100, actual 0, "
+        "change -100.0%, new on 2026-11-06"
+    )
+
+
+OTHER_LINES = [
+    (
+        "- large drop: Drop 13 (metrics/event13), weekday average 100, actual 50, change "
+        "-50.0%, new on 2026-11-06"
+    ),
+    (
+        "- unusual: Flag 14 (metrics/event14), weekday average 100, actual 150, expected 100, "
+        "change +50.0%, since 2026-11-06 or earlier, at least 1 day"
+    ),
+]
+
+
+def test_text_starts_with_the_event_and_lists_its_first_5_alerts(tmp_path, capsys):
+    db = _event_db(tmp_path)
+    assert _alerts(db, "--run", "1") == 0
+    assert capsys.readouterr().out == "\n".join(
+        [
+            RULES,
+            "",
+            "Run 1, Suite One (rs1), status ok",
+            "Alerts for 2026-11-06: 1 unusual value, 1 large drop, 0 large spikes, 12 drops to zero",
+            "13 of these alerts are new on 2026-11-06.",
+            (
+                "Suite-wide event: 12 of the 21 components that collected data had a value of 0 "
+                "on 2026-11-06. For all of them, this started on 2026-11-06, so it is new."
+            ),
+            *[_zero_line(n) for n in _by_id(12)[:5]],
+            "7 more alerts of this event are not listed. Add --every-alert to list them.",
+            "Other alerts:",
+            *OTHER_LINES,
+            "",
+        ]
+    )
+
+
+def test_every_alert_lists_the_whole_event(tmp_path, capsys):
+    db = _event_db(tmp_path)
+    assert _alerts(db, "--run", "1", "--every-alert") == 0
+    lines = capsys.readouterr().out.splitlines()
+    start = lines.index("13 of these alerts are new on 2026-11-06.")
+    assert lines[start + 2 :] == [
+        *[_zero_line(n) for n in _by_id(12)],
+        "Other alerts:",
+        *OTHER_LINES,
+    ]
+
+
+def test_text_without_an_event_reads_as_before(tmp_path, capsys):
+    # 10 zeros of the 21 components that collected data are fewer than half of them.
+    db = _event_db(tmp_path, zeros=10, quiet=9)
+    assert _alerts(db, "--run", "1", "--every-alert") == 0
+    with_option = capsys.readouterr().out
+    assert _alerts(db, "--run", "1") == 0
+    out = capsys.readouterr().out
+    assert out == with_option
+    assert "Suite-wide event" not in out and "Other alerts" not in out
+    # As in 0.1.12: the new alerts first, each part in the order of the macro.
+    drop, flag = (line.replace("13", "11").replace("14", "12") for line in OTHER_LINES)
+    assert out.splitlines()[5:] == [drop, *[_zero_line(n) for n in _by_id(10)], flag]
+
+
+def test_an_event_with_mixed_starts_names_the_most_common_one(tmp_path, capsys):
+    db = _event_db(tmp_path, zeros=4, earlier=8, quiet=7)
+    assert _alerts(db, "--run", "1") == 0
+    out = capsys.readouterr().out
+    assert (
+        "Suite-wide event: 12 of the 21 components that collected data had a value of 0 on "
+        "2026-11-06. For 8 of them, this started on 2026-11-04. For the other 4, it started "
+        "on other days.\n"
+    ) in out
+
+
+def test_the_event_sentence_reads_well_for_each_case():
+    from ahd.alerts import Rules, event_text
+
+    day = date(2026, 11, 11)
+    rules = Rules(0.275, 1.2)
+
+    def text(event, **kw):
+        e = {
+            "event": event,
+            "alerts": 97,
+            "components": 99,
+            "since": date(2026, 11, 5),
+            "at_least": False,
+            "since_alerts": 97,
+            "new": 0,
+            **kw,
+        }
+        return event_text(e, day, rules)
+
+    head = "97 of the 99 components that collected data had a value"
+    assert text("drop", at_least=True) == (
+        f"{head} more than 27.5% below the weekday average on 2026-11-11. For all of them, "
+        "this started on 2026-11-05 or earlier."
+    )
+    assert text("spike", since_alerts=96).endswith(
+        "more than 120% above the weekday average on 2026-11-11. For 96 of them, this started "
+        "on 2026-11-05. For the other one, it started on another day."
+    )
+    assert text("low").startswith(f"{head} below the expected range on 2026-11-11.")
+    assert text("high").startswith(f"{head} above the expected range on 2026-11-11.")
+    assert text("zero", since=day, new=97).endswith(
+        "For all of them, this started on 2026-11-11, so it is new."
+    )
+    # A start on the day that may be earlier is not new.
+    assert text("zero", since=day, at_least=True).endswith("on 2026-11-11 or earlier.")
+
+
+def test_json_adds_the_events_and_keeps_every_alert(tmp_path, capsys):
+    db = _event_db(tmp_path)
+    assert _alerts(db, "--run", "1", "--format", "json") == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["format_version"] == 1
+    [run] = data["runs"]
+    assert run["events"] == [
+        {
+            "event": "zero",
+            "alerts": 12,
+            "components": 21,
+            "since": "2026-11-06",
+            "at_least": False,
+            "since_alerts": 12,
+            "new": 12,
+            "text": "12 of the 21 components that collected data had a value of 0 on "
+            "2026-11-06. For all of them, this started on 2026-11-06, so it is new.",
+        }
+    ]
+    # Every alert stays in the list, in the order of 0.1.12. Without the new field, each one is
+    # what 0.1.12 gave.
+    rows = _macro(db, 1)
+    rows = [r for r in rows if r["is_new"]] + [r for r in rows if not r["is_new"]]
+    assert len(run["alerts"]) == len(rows) == 14
+    for alert, row in zip(run["alerts"], rows, strict=True):
+        row.pop("run_id"), row.pop("day")
+        assert alert == {k: _plain(v) for k, v in row.items()}
+    assert [a["event"] for a in run["alerts"]] == [None] + ["zero"] * 12 + [None]
+    old = {k for k in run["alerts"][0] if k != "event"}
+    assert old == set(ALERT_FIELDS_0_1_12)
+
+
+ALERT_FIELDS_0_1_12 = (
+    "alert",
+    "anomaly",
+    "component_id",
+    "name",
+    "group",
+    "metric_type",
+    "value",
+    "usual",
+    "expected",
+    "pct_vs_usual",
+    "since",
+    "days",
+    "at_least",
+    "is_new",
+)
+
+
+def test_json_without_an_event_has_an_empty_list(tmp_path, capsys):
+    db = _event_db(tmp_path, zeros=9)
+    assert _alerts(db, "--run", "1", "--format", "json") == 0
+    [run] = json.loads(capsys.readouterr().out)["runs"]
+    assert run["events"] == []
+    assert {a["event"] for a in run["alerts"]} == {None}
+
+
+def test_csv_adds_the_event_of_each_alert_at_the_end(tmp_path, capsys):
+    db = _event_db(tmp_path)
+    assert _alerts(db, "--run", "1", "--format", "csv") == 0
+    rows = list(csv.reader(io.StringIO(capsys.readouterr().out)))
+    assert rows[0] == CSV_HEADER and rows[0][-1] == "event"
+    assert len(rows) == 1 + 14
+    assert [r[-1] for r in rows[1:]] == [""] + ["zero"] * 12 + [""]
+
+
+@pytest.mark.parametrize(("method", "sensitivity"), PAIRS)
+def test_the_events_of_the_json_are_those_of_the_macro(tmp_path, capsys, method, sensitivity):
+    db = _event_db(tmp_path)
+    options = ["--anomaly-method", method, "--anomaly-sensitivity", sensitivity]
+    assert _alerts(db, "--run", "1", "--format", "json", *options) == 0
+    [run] = json.loads(capsys.readouterr().out)["runs"]
+    store = Store.open(db)
+    try:
+        cur = store.con.execute(
+            "FROM suite_events(1, method := ?, sensitivity := ?)", [method, sensitivity]
+        )
+        cols = [d[0] for d in cur.description]
+        macro = [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        store.con.close()
+    assert macro
+    got = [{k: v for k, v in e.items() if k != "text"} for e in run["events"]]
+    assert got == [
+        {k: _plain(v) for k, v in m.items() if k not in ("run_id", "day")} for m in macro
+    ]
+
+
+def test_odd_names_in_an_event_stay_inert(tmp_path, capsys):
+    db = _event_db(tmp_path, names={"metrics/event1": "Zero\nfake line\x1b[31m\u202e"})
+    assert _alerts(db, "--run", "1") == 0
+    out = capsys.readouterr().out
+    assert "- dropped to zero: Zero?fake line?[31m? (metrics/event1)" in out
+    assert "\x1b" not in out and "\u202e" not in out

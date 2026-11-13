@@ -340,6 +340,12 @@ def _parser() -> argparse.ArgumentParser:
         help="text for a person or an email (default), json or csv for a program.",
     )
     alerts.add_argument(
+        "--every-alert",
+        action="store_true",
+        help="In the text, list every alert of a suite-wide event, not only its first 5. JSON "
+        "and CSV always hold every alert.",
+    )
+    alerts.add_argument(
         "--change-alert",
         dest="threshold",
         type=_percent_share(100),
@@ -765,7 +771,7 @@ def _alerts(args: argparse.Namespace) -> int:
         store.con.close()
     for message in missing:
         print(f"Error: {message}", file=sys.stderr)
-    write(results, rules, args.format, sys.stdout)
+    write(results, rules, args.format, sys.stdout, args.every_alert)
     if missing:
         return 1
     return 0 if any(r.alerts for r in results) else EXIT_NO_ALERTS

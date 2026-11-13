@@ -11,7 +11,7 @@ import csv
 import json
 import math
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, TextIO
@@ -48,7 +48,8 @@ RUN_FIELDS = (
     "spike_threshold",
 )
 # The columns of the alerts() macro without run_id and day, which are those of the run. since,
-# days, at_least and is_new say since when the alert has held. ahd 0.1.12 added them.
+# days, at_least and is_new say since when the alert has held. ahd 0.1.12 added them. event
+# names the suite-wide event of the alert, or is None. ahd 0.1.13 added it.
 ALERT_FIELDS = (
     "alert",
     "anomaly",
@@ -64,7 +65,21 @@ ALERT_FIELDS = (
     "days",
     "at_least",
     "is_new",
+    "event",
 )
+# The columns of the suite_events() macro without run_id and day, which are those of the run.
+# The JSON adds text, the sentence that the text output prints.
+EVENT_FIELDS = (
+    "event",
+    "alerts",
+    "components",
+    "since",
+    "at_least",
+    "since_alerts",
+    "new",
+)
+# The text output lists this many alerts of each event, unless --every-alert asks for all.
+EVENT_SHOWN = 5
 
 FINISHED = ("ok", "partial")
 
@@ -81,10 +96,12 @@ class Rules:
 
 @dataclass
 class RunAlerts:
-    """One run, with the fields of RUN_FIELDS, and its alerts, with the fields of ALERT_FIELDS."""
+    """One run, with the fields of RUN_FIELDS, its alerts, with the fields of ALERT_FIELDS, and
+    its suite-wide events, with the fields of EVENT_FIELDS and text."""
 
     run: dict[str, Any]
     alerts: list[dict[str, Any]]
+    events: list[dict[str, Any]] = field(default_factory=list)
 
 
 def counts_line(day: date, counts: dict[str, int]) -> str:
@@ -170,12 +187,14 @@ def choose_runs(
 
 
 def read_alerts(store: Store, run: dict[str, Any], rules: Rules) -> RunAlerts:
-    """The alerts of one run by the alerts() macro, with the fields of the run."""
-    rows = _rows(
-        store,
-        "FROM alerts(?, threshold := ?, spike_threshold := ?, method := ?, sensitivity := ?)",
+    """The alerts of one run by the alerts() macro, and its events by the suite_events() macro,
+    with the fields of the run."""
+    options = (
+        "(?, threshold := ?, spike_threshold := ?, method := ?, sensitivity := ?)",
         [run["run_id"], rules.threshold, rules.spike_threshold, rules.method, rules.sensitivity],
     )
+    rows = _rows(store, "FROM alerts" + options[0], options[1])
+    events = _rows(store, "FROM suite_events" + options[0], options[1])
     fields = {
         "run_id": run["run_id"],
         "rsid": run["rsid"],
@@ -191,7 +210,14 @@ def read_alerts(store: Store, run: dict[str, Any], rules: Rules) -> RunAlerts:
     }
     # The new alerts come first. Each part keeps the order of the macro.
     rows = [r for r in rows if r["is_new"]] + [r for r in rows if not r["is_new"]]
-    return RunAlerts(fields, [{k: r[k] for k in ALERT_FIELDS} for r in rows])
+    return RunAlerts(
+        fields,
+        [{k: r[k] for k in ALERT_FIELDS} for r in rows],
+        [
+            {**{k: e[k] for k in EVENT_FIELDS}, "text": event_text(e, fields["day"], rules)}
+            for e in events
+        ],
+    )
 
 
 def json_value(value: Any) -> Any:
@@ -210,6 +236,7 @@ def write_json(results: list[RunAlerts], out: TextIO) -> None:
         "runs": [
             {
                 **{k: json_value(v) for k, v in r.run.items()},
+                "events": [{k: json_value(v) for k, v in e.items()} for e in r.events],
                 "alerts": [{k: json_value(v) for k, v in a.items()} for a in r.alerts],
             }
             for r in results
@@ -282,6 +309,34 @@ def since_text(a: dict[str, Any]) -> str:
     return f"since {since}, {days}"
 
 
+def event_text(e: dict[str, Any], day: date, rules: Rules) -> str:
+    """The sentences of a suite-wide event, e.g., "356 of the 356 components that collected data
+    had a value of 0 on 2026-11-11. For 330 of them, this started on 2026-11-05. For the other
+    26, it started on other days." e has the fields of EVENT_FIELDS."""
+    what = {
+        "zero": "a value of 0",
+        "low": "a value below the expected range",
+        "high": "a value above the expected range",
+        "drop": f"a value more than {_percent(rules.threshold)} below the weekday average",
+        "spike": f"a value more than {_percent(rules.spike_threshold)} above the weekday average",
+    }[e["event"]]
+    n, k = e["alerts"], e["since_alerts"]
+    head = f"{n} of the {e['components']} components that collected data had {what} on {day}."
+    start = e["since"].isoformat()
+    if e["at_least"]:
+        start += " or earlier"
+    elif e["since"] == day:
+        start += ", so it is new"
+    if k == n:
+        return f"{head} For all of them, this started on {start}."
+    rest = n - k
+    if rest == 1:
+        others = "the other one, it started on another day"
+    else:
+        others = f"the other {rest}, it started on other days"
+    return f"{head} For {k} of them, this started on {start}. For {others}."
+
+
 def new_line(day: date, new: int) -> str:
     """For example "3 of these alerts are new on 2026-11-07"."""
     verb = "is" if new == 1 else "are"
@@ -303,9 +358,15 @@ def _alert_text(a: dict[str, Any]) -> str:
     return ", ".join(parts)
 
 
-def write_text(results: list[RunAlerts], rules: Rules, out: TextIO) -> None:
+def write_text(
+    results: list[RunAlerts], rules: Rules, out: TextIO, every_alert: bool = False
+) -> None:
     """The rules, then for each run a heading, the alert line, how many alerts are new and one
-    line for each alert, new alerts first."""
+    line for each alert, new alerts first.
+
+    A run with suite-wide events gives each event its sentence and its first EVENT_SHOWN
+    alerts, or all of them with every_alert, and then lists the other alerts.
+    """
     out.write(
         f"A large drop is more than {_percent(rules.threshold)} below the weekday average, and "
         f"a large spike is more than {_percent(rules.spike_threshold)} above it. The weekday "
@@ -325,14 +386,34 @@ def write_text(results: list[RunAlerts], rules: Rules, out: TextIO) -> None:
         out.write(counts_line(run["day"], counts) + "\n")
         if r.alerts:
             out.write(new_line(run["day"], sum(1 for a in r.alerts if a["is_new"])) + "\n")
-        for a in r.alerts:
+        for e in r.events:
+            out.write(f"Suite-wide event: {e['text']}\n")
+            mine = [a for a in r.alerts if a["event"] == e["event"]]
+            shown = mine if every_alert else mine[:EVENT_SHOWN]
+            for a in shown:
+                out.write(_alert_text(a) + "\n")
+            # An event has at least 10 alerts, so at least 5 are left out.
+            if len(mine) > len(shown):
+                more = len(mine) - len(shown)
+                out.write(
+                    f"{more} more alerts of this event are not listed. Add --every-alert to "
+                    "list them.\n"
+                )
+        others = [a for a in r.alerts if a["event"] is None]
+        if r.events and others:
+            out.write("Other alerts:\n")
+        for a in others:
             out.write(_alert_text(a) + "\n")
 
 
-def write(results: list[RunAlerts], rules: Rules, fmt: str, out: TextIO) -> None:
+def write(
+    results: list[RunAlerts], rules: Rules, fmt: str, out: TextIO, every_alert: bool = False
+) -> None:
+    """every_alert lists every alert of a suite-wide event in the text. JSON and CSV always
+    hold every alert."""
     if fmt == "json":
         write_json(results, out)
     elif fmt == "csv":
         write_csv(results, out)
     else:
-        write_text(results, rules, out)
+        write_text(results, rules, out, every_alert)

@@ -2082,6 +2082,7 @@ def test_the_new_columns_come_after_the_old_ones(since_run):
         "days",
         "at_least",
         "is_new",
+        "event",
     ]
 
 

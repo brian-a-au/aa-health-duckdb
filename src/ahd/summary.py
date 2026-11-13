@@ -36,6 +36,13 @@ MIN_USUAL = 10
 # this constant and writes the number itself. The two numbers must match, and
 # test_a_range_needs_8_earlier_values in tests/test_summary.py fails when they do not.
 MIN_SAMPLE = 8
+# A suite-wide event is a group of alerts of the same condition, e.g., a value of 0, that holds
+# at least EVENT_MIN alerts and at least EVENT_SHARE of the components that collected data in
+# the run. The page reads both numbers from its data. The alerts and suite_events macros in
+# views.sql cannot read them and write the numbers themselves. test_the_limits_are_half_and_10
+# and the tests at the limits in tests/test_events.py fail when they differ.
+EVENT_SHARE = 0.5
+EVENT_MIN = 10
 # The earlier runs that a report lists, newest first.
 HISTORY_RUNS = 30
 # Warn when a run sees more than this share fewer custom components than the run before.
@@ -934,5 +941,7 @@ def build_view(
         "change_alert": change_alert,
         "spike_alert": spike_alert,
         "min_usual": MIN_USUAL,
+        "event_share": EVENT_SHARE,
+        "event_min": EVENT_MIN,
         "component_drop_cause": DROP_CAUSE,
     }

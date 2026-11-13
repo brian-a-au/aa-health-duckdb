@@ -7,7 +7,7 @@ This page shows how to check every report suite each morning and get one email w
 1. `ahd run --all-suites` checks every suite the credential can see. It stores one run and writes one report for each suite.
 2. [`docs/examples/send_alerts.py`](examples/send_alerts.py) emails the alerts of the latest runs. It gets them from `ahd alerts`. It sends nothing when no suite has alerts.
 
-These steps run from a clone of this repository, because the email script is in it. [Development](development.md#work-from-a-clone) shows how to make one. The commands start with `uv run` for that reason. The script needs `ahd` 0.1.11 or newer, which `uv run` in a clone has. With 0.1.12 or newer, the email lists the new alerts first and says since when each alert has held. Before 0.1.11, the script needed only DuckDB, so a job that runs it on a computer without `ahd` now stops with exit code 1 and a message that says how to install it.
+These steps run from a clone of this repository, because the email script is in it. [Development](development.md#work-from-a-clone) shows how to make one. The commands start with `uv run` for that reason. The script needs `ahd` 0.1.11 or newer, which `uv run` in a clone has. With 0.1.12 or newer, the email lists the new alerts first and says since when each alert has held. With 0.1.13 or newer, a suite whose components mostly have the same kind of alert, e.g., when its data stopped, gets one line for it and only its first 5 alerts, so the email stays short. Before 0.1.11, the script needed only DuckDB, so a job that runs it on a computer without `ahd` now stops with exit code 1 and a message that says how to install it.
 
 ## Before you start
 

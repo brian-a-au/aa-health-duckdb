@@ -2596,3 +2596,379 @@ def test_the_page_shows_the_sensitivity(chrome, edges, tmp_path, method, sensiti
     assert got["hint"].startswith(f"The {label} method flagged these values")
     assert ("sensitivity" in got["text"]) is (sensitivity != "normal")
     assert "sensitivity method" not in got["text"]
+
+
+# ---- suite-wide events -------------------------------------------------------------------
+
+# 12 of the 20 components that collected data move together. Each day of the week before
+# yesterday is a different event: all 12 are 0 on Tuesday and 60 percent up on Wednesday. On
+# Thursday, the first 4 fall 40 percent, and yesterday the first 8 fall 40 percent and the other
+# 4 fall 25 percent. Their Fridays before vary as SPREAD does, so the local methods flag some of
+# the falls and leave others as large drops. 8 components stay at 100, and one never collected
+# data.
+ODD_EVENT_NAMES = {
+    5: '<img src=x onerror="window.pwned=1"> & "quotes"',
+    6: "</script><b>bold</b> next line",
+}
+
+
+def _event_series(cid, n):
+    fridays = iter(SPREAD)
+    out = []
+    for d in _days():
+        back = (YESTERDAY - d).days
+        if n == 21:
+            v = 0.0
+        elif n > 12:
+            v = 100.0
+        elif back == 0:
+            v = 60.0 if n <= 8 else 75.0
+        elif back == 1 and n <= 4:
+            v = 60.0
+        elif back == 2:
+            v = 160.0
+        elif back == 3:
+            v = 0.0
+        elif d.weekday() == 4 and d < YESTERDAY:
+            v = next(fridays)
+        else:
+            v = 100.0
+        out.append(_dv(cid, d, v))
+    return out
+
+
+@pytest.fixture(scope="module")
+def together(tmp_path_factory):
+    path = tmp_path_factory.mktemp("together") / "together.duckdb"
+    store = Store.open(path)
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
+    comps, values = [], []
+    for n in range(1, 22):
+        cid = f"metrics/event{n}"
+        name = ODD_EVENT_NAMES.get(n, f"Event {n}")
+        comps.append(Component(cid, name, "metric", "custom_events", n, Column(cid, cid), True))
+        values += _event_series(cid, n)
+    store.add_components(rid, comps)
+    store.add_daily_values(rid, values)
+    store.finish_run(rid, "ok")
+    yield store, rid
+    store.con.close()
+
+
+# For each day of the Day picker and each slider setting, reads the event boxes and the alert
+# lists. "30" is the default of both sliders, -30% and +50%.
+EVENTS_PROBE = """
+function codes(node) {
+  return [].map.call(node.querySelectorAll("tbody code"), function (c) {
+    return c.textContent;
+  }).sort();
+}
+function list(id) {
+  var s = document.querySelector("#alerts section[aria-labelledby=" + id + "]");
+  var note = s.querySelector(".event-note");
+  return { ids: codes(s), count: s.querySelector(".group-count").textContent,
+    note: note ? note.textContent : null };
+}
+function read() {
+  var events = [].map.call(document.querySelectorAll("#alerts .suite-event"), function (box) {
+    var d = box.querySelector("details");
+    return { key: box.getAttribute("data-event"),
+      line: box.querySelector(".event-line").textContent,
+      summary: d.querySelector("summary").textContent, open: d.open, ids: codes(d) };
+  });
+  var head = document.querySelector("#alerts h3#events-title");
+  return { events: events, head: head ? head.textContent : null,
+    unusual: list("unusual-title"), drops: list("drops-title"), spikes: list("spikes-title"),
+    zero: list("zero-title"), text: document.getElementById("alert-text").value,
+    spikeShown: document.getElementById("spike-alert-value").textContent };
+}
+function move(drop, spike) {
+  var slider = document.getElementById("change-alert");
+  var spikes = document.getElementById("spike-alert");
+  slider.value = String(-drop);
+  slider.dispatchEvent(new Event("input"));
+  spikes.value = String(spike);
+  spikes.dispatchEvent(new Event("input"));
+}
+var sel = document.getElementById("alert-day");
+var out = {};
+[].forEach.call(sel.options, function (o) {
+  sel.value = o.value;
+  sel.dispatchEvent(new Event("change"));
+  out[o.value] = {};
+  [30].concat(SLIDER).forEach(function (p) {
+    move(p, p === 30 ? 50 : p);
+    out[o.value][String(p)] = read();
+  });
+  move(30, 50);
+});
+return out;
+"""
+
+
+@pytest.fixture(scope="module")
+def event_pages(chrome, together, tmp_path_factory):
+    store, rid = together
+    probe = EVENTS_PROBE.replace("SLIDER", json.dumps(list(SLIDER)))
+    pages = {}
+
+    def read(method, sensitivity="normal"):
+        if (method, sensitivity) not in pages:
+            folder = tmp_path_factory.mktemp("events")
+            page = render_html(build_view(store, rid, method=method, sensitivity=sensitivity))
+            pages[method, sensitivity] = run_probe(chrome, page, probe, folder)
+        return pages[method, sensitivity]
+
+    return read
+
+
+def _suite_events(store, rid, threshold, spike, method, sensitivity, day):
+    cur = store.con.execute(
+        "FROM suite_events(?, threshold := ?, spike_threshold := ?, method := ?,"
+        " sensitivity := ?, for_day := ?)",
+        [rid, threshold, spike, method, sensitivity, day],
+    )
+    cols = [d[0] for d in cur.description]
+    return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def _macro_events(store, rid, threshold, spike, method, sensitivity, day):
+    """{component: (alert, event)} from the alerts() macro."""
+    rows = store.con.execute(
+        "SELECT component_id, alert, event FROM alerts(?, threshold := ?, spike_threshold := ?,"
+        " method := ?, sensitivity := ?, for_day := ?)",
+        [rid, threshold, spike, method, sensitivity, day],
+    ).fetchall()
+    return {cid: (alert, event) for cid, alert, event in rows}
+
+
+def _short(day):
+    return f"{day:%b} {day.day}"
+
+
+def _event_line(e, day, drop, spike):
+    """The line of an event on the page, for a row of the suite_events() macro."""
+    what = {
+        "zero": "a value of 0",
+        "low": "a value below the expected range",
+        "high": "a value above the expected range",
+        "drop": f"a value more than {drop}% below the weekday average",
+        "spike": f"a value more than {spike}% above the weekday average",
+    }[e["event"]]
+    when = f"{day:%a}, {_short(day)}" + (" (yesterday)" if day == YESTERDAY else "")
+    head = f"{e['alerts']} of the {e['components']} components that collected data had {what} "
+    head += f"on {when}."
+    start = _short(e["since"])
+    if e["at_least"]:
+        start += " or earlier"
+    elif e["since"] == day:
+        start += ", so it is new"
+    n, k = e["alerts"], e["since_alerts"]
+    if k == n:
+        return f"{head} For all of them, this started on {start}."
+    rest = n - k
+    others = (
+        "the other one, it started on another day"
+        if rest == 1
+        else f"the other {rest}, it started on other days"
+    )
+    return f"{head} For {k} of them, this started on {start}. For {others}."
+
+
+def _event_note(folded, outside):
+    """The note under an alert list whose alerts are partly or all in an event."""
+    if not folded:
+        return None
+    if outside:
+        if folded == 1:
+            return "1 more is part of a suite-wide event above, which lists it."
+        return f"{folded} more are part of a suite-wide event above, which lists them."
+    if folded == 1:
+        return "It is part of a suite-wide event above, which lists it."
+    return f"All {folded} are part of a suite-wide event above, which lists them."
+
+
+LIST_KINDS = {
+    "unusual": "unusual",
+    "drops": "large drop",
+    "spikes": "large spike",
+    "zero": "dropped to zero",
+}
+
+
+@pytest.mark.parametrize(("method", "sensitivity"), METHOD_LEVELS)
+def test_page_events_match_the_suite_events_macro(event_pages, together, method, sensitivity):
+    store, rid = together
+    pages = event_pages(method, sensitivity)
+    assert len(pages) == 7
+    seen = set()
+    for iso, by_pct in pages.items():
+        day = date.fromisoformat(iso)
+        for pct, page in by_pct.items():
+            drop = int(pct)
+            spike = int(page["spikeShown"].strip("+%"))
+            args = (store, rid, drop / 100, spike / 100, method, sensitivity, day)
+            macro = _suite_events(*args)
+            alerts = _macro_events(*args)
+            where = (iso, pct)
+            assert [e["key"] for e in page["events"]] == [m["event"] for m in macro], where
+            for e, m in zip(page["events"], macro, strict=True):
+                seen.add(m["event"])
+                assert e["line"] == _event_line(m, day, drop, spike), where
+                assert e["ids"] == sorted(c for c, (_, ev) in alerts.items() if ev == m["event"])
+                assert e["summary"] == f"Show the {m['alerts']} alerts" and not e["open"]
+            # The heading of each list counts all of its alerts, as in 0.1.12. Its table lists
+            # the ones outside an event, and a note counts the others.
+            for key, kind in LIST_KINDS.items():
+                mine = [c for c, (a, _) in alerts.items() if a == kind]
+                outside = sorted(c for c in mine if alerts[c][1] is None)
+                assert page[key]["ids"] == outside, (where, key)
+                assert page[key]["count"].split(",")[0] in (
+                    f"{len(mine)} components",
+                    f"{len(mine)} component",
+                ), (where, key)
+                assert page[key]["note"] == _event_note(len(mine) - len(outside), outside), (
+                    where,
+                    key,
+                )
+            if macro:
+                assert page["head"].startswith("Suite-wide events")
+            else:
+                assert page["head"] is None
+    # Each method has at least a zero event on Tuesday and some other event.
+    assert "zero" in seen and len(seen) >= 2
+
+
+def test_the_sliders_make_and_end_an_event(event_pages):
+    pages = event_pages("adobe")
+    friday, wednesday = pages[YESTERDAY.isoformat()], pages["2026-11-04"]
+    # Yesterday 8 values fell 40 percent and 4 fell 25 percent: 8 drops at -30% are no event,
+    # and from -20% the 12 drops are one. At -60% there are no drops.
+    keys = {p: [e["key"] for e in friday[str(p)]["events"]] for p in (30, *SLIDER)}
+    assert keys == {30: [], 10: ["drop"], 15: ["drop"], 20: ["drop"], 60: []}
+    assert len(friday["30"]["drops"]["ids"]) == 8 and friday["20"]["drops"]["ids"] == []
+    # On Wednesday all 12 rose 60 percent: one event up to +50%, none at +60%.
+    keys = {p: [e["key"] for e in wednesday[str(p)]["events"]] for p in (30, *SLIDER)}
+    assert keys == {30: ["spike"], 10: ["spike"], 15: ["spike"], 20: ["spike"], 60: []}
+    # Tuesday has the zero event at every setting, and nothing outside it.
+    tuesday = pages["2026-11-03"]
+    for p in (30, *SLIDER):
+        assert [e["key"] for e in tuesday[str(p)]["events"]] == ["zero"]
+        assert tuesday[str(p)]["zero"]["ids"] == []
+        assert tuesday[str(p)]["head"] == "Suite-wide events1 event"
+
+
+def test_the_drop_event_names_its_most_common_start(event_pages):
+    page = event_pages("adobe")[YESTERDAY.isoformat()]["20"]
+    [event] = page["events"]
+    # 8 of the 12 started yesterday. 4 also fell on Thursday.
+    assert event["line"] == (
+        "12 of the 20 components that collected data had a value more than 20% below the "
+        "weekday average on Fri, Nov 6 (yesterday). For 8 of them, this started on Nov 6, so "
+        "it is new. For the other 4, it started on other days."
+    )
+
+
+def test_the_copied_text_starts_with_the_event_and_shortens_it(event_pages):
+    page = event_pages("adobe")["2026-11-03"]["30"]
+    lines = page["text"].splitlines()
+    assert lines[2] == (
+        "Suite-wide event: 12 of the 20 components that collected data had a value of 0 on "
+        "Tue, Nov 3. For all of them, this started on Nov 3, so it is new."
+    )
+    assert all(line.startswith("- ") for line in lines[3:8])
+    assert lines[8] == "7 more alerts of this event are listed in the report."
+    # No other alert is listed.
+    assert [line for line in lines if line.startswith("- ")] == lines[3:8]
+    # A day without an event reads as in 0.1.12.
+    plain = event_pages("adobe")[YESTERDAY.isoformat()]["30"]["text"]
+    assert "Suite-wide event" not in plain
+
+
+# Opens and closes the rows of the event, and reads the names in them. The browser sends the
+# toggle event after the click, so the probe waits for it before it measures the page.
+EVENT_FOLD_PROBE = """
+document.getElementById("tab-alerts").click();
+var slider = document.getElementById("change-alert");
+slider.value = "-20";
+slider.dispatchEvent(new Event("input"));
+var box = document.querySelector("#alerts .suite-event");
+var d = box.querySelector("details");
+var out = { closed: !d.open };
+function toggled() {
+  return new Promise(function (r) { d.addEventListener("toggle", r, { once: true }); });
+}
+var opened = toggled();
+d.querySelector("summary").click();
+return opened.then(function () {
+  out.opened = d.open;
+  out.names = [].map.call(d.querySelectorAll("tbody tr"), function (r) {
+    return r.cells[0].firstChild.textContent;
+  });
+  out.bold = document.querySelectorAll("#alerts b, #alerts img").length;
+  out.pwned = window.pwned === 1;
+  out.width = document.documentElement.clientWidth;
+  out.scroll = document.documentElement.scrollWidth;
+  var closed = toggled();
+  d.querySelector("summary").click();
+  return closed;
+}).then(function () {
+  out.closedAgain = !d.open;
+  return out;
+});
+"""
+
+
+@pytest.mark.parametrize("width", [375, 1280])
+def test_the_rows_of_an_event_open_and_close_and_stay_inert(chrome, together, tmp_path, width):
+    page = render_html(build_view(*together))
+    got = run_probe(chrome, page, EVENT_FOLD_PROBE, tmp_path, width=width)
+    assert got["closed"] and got["opened"] and got["closedAgain"]
+    assert ODD_EVENT_NAMES[5] in got["names"] and ODD_EVENT_NAMES[6] in got["names"]
+    assert len(got["names"]) == 12
+    assert got["bold"] == 0 and not got["pwned"]
+    assert got["scroll"] <= got["width"] <= width
+
+
+def test_the_tiles_count_the_alerts_of_an_event(chrome, together, tmp_path):
+    # The tiles count yesterday's alerts at the default sliders: 8 large drops, no event.
+    store, rid = together
+    probe = """
+var tiles = {};
+[].forEach.call(document.querySelectorAll("#tiles .tile"), function (t) {
+  tiles[t.querySelector(".tile-label").lastChild.textContent] =
+    t.querySelector(".tile-value").textContent;
+});
+var slider = document.getElementById("change-alert");
+slider.value = "-20";
+slider.dispatchEvent(new Event("input"));
+var after = {};
+[].forEach.call(document.querySelectorAll("#tiles .tile"), function (t) {
+  after[t.querySelector(".tile-label").lastChild.textContent] =
+    t.querySelector(".tile-value").textContent;
+});
+return { before: tiles, after: after,
+  events: document.querySelectorAll("#alerts .suite-event").length };
+"""
+    got = run_probe(chrome, render_html(build_view(store, rid)), probe, tmp_path)
+    assert got["before"]["Large drops"] == "8" and got["after"]["Large drops"] == "12"
+    assert got["events"] == 1
+    assert got["before"]["Components checked"] == got["after"]["Components checked"] == "21"
+
+
+def test_the_copied_html_starts_with_the_event_and_keeps_names_inert(chrome, together, tmp_path):
+    # At -20%, yesterday's 12 drops are one event and the only alerts of the day.
+    page = render_html(build_view(*together, change_alert=0.2))
+    probe = COPY_PROBE.replace("BUTTON", json.dumps("copy-alerts"))
+    got = run_probe(chrome, page, probe.replace("RESULT", json.dumps("copy-result")), tmp_path)
+    copied = got["rich"]["copied"]
+    assert copied["text"] == got["alertText"]
+    assert copied["text"].splitlines()[2].startswith("Suite-wide event: 12 of the 20 components")
+    rich = copied["html"]
+    assert "Suite-wide event" in rich
+    assert "7 more alerts of this event are listed in the report." in rich
+    # One table: its heading row and the first 5 alerts of the event.
+    assert rich.count("<table") == 1 and rich.count("<tr") == 6
+    # The first 5 are the new drops, which hold the two odd names, as text.
+    assert "&lt;img src=x" in rich and "&lt;/script&gt;&lt;b&gt;bold" in rich
+    assert "<img" not in rich and "<b>" not in rich
