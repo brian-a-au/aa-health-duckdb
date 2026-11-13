@@ -483,3 +483,9 @@ button.spark:focus-visible { outline: 2px solid var(--focus); outline-offset: 1p
    most of the row on a phone. */
 .picker-type { flex: 0 1 auto; min-width: 0; max-width: 40%; }
 .picker-type select { width: 100%; }
+
+/* ---- suite-wide events: one line for many alerts of the same kind, with the rows folded ---- */
+.suite-event { margin: 8px 0 12px; padding: 10px 14px; border: 1px solid var(--border); border-left: 4px solid var(--flag); border-radius: 8px; background: var(--surface); }
+.event-line { margin: 0 0 6px; font-weight: 600; }
+.event-rows > summary { margin-bottom: 8px; }
+.event-note { margin-top: 0; }

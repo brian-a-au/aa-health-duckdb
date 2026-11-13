@@ -1764,6 +1764,83 @@
     return list.filter(function (a) { return sinceOf(a).isNew; }).length;
   }
 
+  // ---- suite-wide events ----------------------------------------------------------------
+  // An event is a group of alerts of the same condition that holds at least EVENT_MIN alerts
+  // and at least EVENT_SHARE of the components that collected data in the run, by the rules of
+  // the alerts and suite_events macros in views.sql. The condition is the one that the Since
+  // column follows: a value of 0, else the direction of the flag, else a large drop or spike.
+  // The two numbers come from the page data, so this file holds none of its own.
+  var EVENT_SHARE = data.event_share, EVENT_MIN = data.event_min;
+  // The copied text lists this many alerts of each event, as ahd alerts does.
+  var EVENT_SHOWN = 5;
+  var collected = (data.views.week || []).filter(function (r) { return !r.unused; }).length;
+  function conditionOf(a) {
+    if (a.zero) return "zero";
+    if (a.anomaly) return a.anomaly;
+    return a.pct_vs_usual > 0 ? "spike" : "drop";
+  }
+  // The events of the alert lists, biggest first, and events of the same size by name. Each
+  // names the start that most of its alerts share: the day and whether it may be earlier. Of
+  // two starts that as many alerts share, the earlier one wins.
+  function suiteEvents(parts) {
+    var groups = {}, events = [];
+    parts.unusual.concat(parts.drops, parts.spikes, parts.zero).forEach(function (a) {
+      var k = conditionOf(a);
+      (groups[k] = groups[k] || []).push(a);
+    });
+    Object.keys(groups).forEach(function (k) {
+      var list = groups[k];
+      if (!(list.length >= EVENT_MIN && list.length >= EVENT_SHARE * collected)) return;
+      var starts = {}, best = null;
+      list.forEach(function (a) {
+        var s = sinceOf(a), key = s.day + (s.open ? " open" : "");
+        starts[key] = starts[key] || { day: s.day, open: s.open, n: 0 };
+        starts[key].n++;
+      });
+      Object.keys(starts).forEach(function (key) {
+        var st = starts[key];
+        if (!best || st.n > best.n || (st.n === best.n && (st.day < best.day ||
+            (st.day === best.day && best.open && !st.open)))) best = st;
+      });
+      events.push({ key: k, list: list, start: best });
+    });
+    events.sort(function (a, b) {
+      return b.list.length - a.list.length || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+    });
+    return events;
+  }
+  function eventWhat(key) {
+    if (key === "zero") return "a value of 0";
+    if (key === "low") return "a value below the expected range";
+    if (key === "high") return "a value above the expected range";
+    if (key === "drop") {
+      return "a value more than " + Math.round(state.t * 100) + "% below the weekday average";
+    }
+    return "a value more than " + Math.round(state.s * 100) + "% above the weekday average";
+  }
+  // For example "356 of the 356 components that collected data had a value of 0 on Wed, Nov 11
+  // (yesterday). For 330 of them, this started on Nov 5. For the other 26, it started on other
+  // days."
+  function eventLine(ev) {
+    var n = ev.list.length, k = ev.start.n, rest = n - k;
+    var head = n + " of the " + collected + " components that collected data had " +
+      eventWhat(ev.key) + " on " + alertDayText() + ".";
+    var start = fmtShortDay(ev.start.day) + (ev.start.open ? " or earlier" :
+      ev.start.day === state.alertDay ? ", so it is new" : "");
+    if (k === n) return head + " For all of them, this started on " + start + ".";
+    return head + " For " + k + " of them, this started on " + start + ". For " +
+      (rest === 1 ? "the other one, it started on another day" :
+        "the other " + rest + ", it started on other days") + ".";
+  }
+  // Which event each component of the chosen day belongs to.
+  function eventOf(events) {
+    var of = {};
+    events.forEach(function (ev) {
+      ev.list.forEach(function (a) { of[a.component_id] = ev.key; });
+    });
+    return of;
+  }
+
   function alertLine(a) {
     var s = "- " + a.name + " (" + a.component_id + "): " + alertReason(a) +
       ". Actual " + fmtNum(a.actual, a.metric_type);
@@ -1776,14 +1853,30 @@
     return s + ". " + sinceSentence(a);
   }
 
+  // The rows of an event that a copy lists, and the line that counts the others. An event has
+  // at least EVENT_MIN alerts, so the copy leaves some out.
+  function shownOf(ev) { return ev.list.slice(0, EVENT_SHOWN); }
+  function moreLine(ev) {
+    return (ev.list.length - EVENT_SHOWN) + " more alerts of this event are listed in the report.";
+  }
+
   function alertText() {
     var run = data.run || {};
     var parts = splitAlerts();
+    var events = suiteEvents(parts);
+    var of = eventOf(events);
     var lines = [];
     lines.push("Analytics Health alerts for " + (run.rsid_name || run.rsid) + " (" + run.rsid +
       "), " + state.alertDay);
     lines.push("Segment: " + (run.segment_id || "none (all visits)"));
-    function section(title, list) {
+    events.forEach(function (ev) {
+      lines.push("Suite-wide event: " + eventLine(ev));
+      shownOf(ev).forEach(function (a) { lines.push(alertLine(a)); });
+      lines.push(moreLine(ev));
+    });
+    // The alerts of an event are listed with it, so the sections leave them out.
+    function section(title, all) {
+      var list = all.filter(function (a) { return !of[a.component_id]; });
       if (!list.length) return;
       lines.push(title + " (" + list.length + "):");
       list.forEach(function (a) { lines.push(alertLine(a)); });
@@ -1888,105 +1981,143 @@
       componentLabel(best) + ").";
   }
 
+  // The tables of the alert lists. Each kind has its own columns. The rows of an event use the
+  // columns of the list that its condition belongs to.
+  function unusualTable(list, id, name) {
+    return table(
+      [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" }, { label: "Flag" },
+       { label: "Expected", num: true }, { label: "Actual", num: true },
+       { label: "Change from expected", num: true }, { label: "Since", numSort: true, cls: "since" }],
+      list.map(function (a) {
+        return nameIdCells(a).concat([anomalyCell(a.anomaly), expectedCell(a),
+          { c: fmtNum(a.actual, a.metric_type), k: a.actual },
+          devCell(arrowFor(a.pct_vs_expected), a.pct_vs_expected), sinceCell(a)]);
+      }), null, id, name);
+  }
+  function changeTable(list, id, name) {
+    return table(
+      [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
+       { label: "Weekday average", num: true }, { label: "Actual", num: true },
+       { label: "Change from weekday average", num: true },
+       { label: "Since", numSort: true, cls: "since" }],
+      list.map(function (a) {
+        return nameIdCells(a).concat([{ c: fmtRound(a.usual, a.metric_type), k: a.usual },
+          { c: fmtNum(a.actual, a.metric_type), k: a.actual },
+          devCell(arrowFor(a.pct_vs_usual), a.pct_vs_usual), sinceCell(a)]);
+      }), null, id, name);
+  }
+  // A 0 that the anomaly method flagged is an unusual value. In the rows of a zero event it
+  // keeps its flag next to its name.
+  function zeroTable(list, id, name) {
+    return table(
+      [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
+       { label: "Weekday average", num: true }, { label: "Expected", num: true },
+       { label: "Actual", num: true }, { label: "Since", numSort: true, cls: "since" }],
+      list.map(function (a) {
+        var cell = el("span");
+        cell.appendChild(document.createTextNode(a.name));
+        cell.appendChild(zeroBadge());
+        if (a.anomaly) cell.appendChild(flagBadge(a.anomaly));
+        return [{ c: cell, k: a.name }, { c: el("code", null, a.component_id), k: a.component_id },
+          { c: fmtRound(a.usual, a.metric_type), k: a.usual }, expectedCell(a),
+          { c: fmtNum(a.actual, a.metric_type), k: a.actual }, sinceCell(a)];
+      }), null, id, name);
+  }
+
+  // The events, each with its line and its rows, folded.
+  function eventsBlock(events) {
+    var g = el("section", { "class": "alert-group suite-events", "aria-labelledby": "events-title" });
+    var h = el("h3", { "class": "group-title", id: "events-title" }, "Suite-wide events");
+    h.appendChild(el("span", { "class": "group-count" },
+      events.length === 1 ? "1 event" : events.length + " events"));
+    g.appendChild(h);
+    var share = EVENT_SHARE === 0.5 ? "half" : Math.round(EVENT_SHARE * 100) + " percent";
+    g.appendChild(el("p", { "class": "hint" },
+      "At least " + share + " of the components that collected data in this run, and at least " +
+      EVENT_MIN + ", have the same kind of alert. Their rows are folded here. The lists below " +
+      "leave them out, and their headings still count them."));
+    events.forEach(function (ev) {
+      var box = el("div", { "class": "suite-event", "data-event": ev.key });
+      box.appendChild(el("p", { "class": "event-line" }, eventLine(ev)));
+      var d = el("details", { "class": "event-rows" });
+      d.appendChild(el("summary", null, "Show the " + ev.list.length + " alerts"));
+      var id = "alerts-event-" + ev.key, name = { label: "Alerts of the suite-wide event" };
+      d.appendChild(ev.key === "zero" ? zeroTable(ev.list, id, name) :
+        ev.key === "drop" || ev.key === "spike" ? changeTable(ev.list, id, name) :
+          unusualTable(ev.list, id, name));
+      // A table in a closed box has no width, so the page checks it when the box opens.
+      d.addEventListener("toggle", function () { if (d.open) fitTables(); });
+      box.appendChild(d);
+      g.appendChild(box);
+    });
+    return g;
+  }
+  // The note under a list whose alerts are partly or all in an event.
+  function eventNote(folded, outside) {
+    if (!folded) return null;
+    var text = outside ?
+      (folded === 1 ? "1 more is part of a suite-wide event above, which lists it." :
+        folded + " more are part of a suite-wide event above, which lists them.") :
+      (folded === 1 ? "It is part of a suite-wide event above, which lists it." :
+        "All " + folded + " are part of a suite-wide event above, which lists them.");
+    return el("p", { "class": "hint event-note" }, text);
+  }
+
   function renderAlerts() {
     var host = byId("alerts");
     clear(host);
     var parts = splitAlerts();
     var pct = Math.round(state.t * 100) + "%";
+    var events = suiteEvents(parts);
+    var of = eventOf(events);
+    function outside(list) { return list.filter(function (a) { return !of[a.component_id]; }); }
+    if (events.length) host.appendChild(eventsBlock(events));
 
-    var g1 = el("section", { "class": "alert-group", "aria-labelledby": "unusual-title" });
-    g1.appendChild(groupHeading("unusual-title", "Unusual values", parts.unusual));
-    if (parts.unusual.length) {
-      g1.appendChild(el("p", { "class": "hint" },
-        flaggedBy(true) + " flagged these values as outside the expected range. The bar shows the size of " +
-        "the change from the expected value, up to 100 percent."));
-      g1.appendChild(table(
-        [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" }, { label: "Flag" },
-         { label: "Expected", num: true }, { label: "Actual", num: true },
-         { label: "Change from expected", num: true }, { label: "Since", numSort: true, cls: "since" }],
-        parts.unusual.map(function (a) {
-          return nameIdCells(a).concat([anomalyCell(a.anomaly), expectedCell(a),
-            { c: fmtNum(a.actual, a.metric_type), k: a.actual },
-            devCell(arrowFor(a.pct_vs_expected), a.pct_vs_expected), sinceCell(a)]);
-        }), null, "alerts-unusual", { labelledby: "unusual-title" }));
-    } else {
-      g1.appendChild(el("p", { "class": "empty" }, anomalyBlocked ?
+    // A list group: its heading counts all of its alerts. Its table holds the ones outside an
+    // event, after the hint, and a note counts the others.
+    function group(id, title, list, hint, makeTable, tableId, empty) {
+      var g = el("section", { "class": "alert-group", "aria-labelledby": id });
+      g.appendChild(groupHeading(id, title, list));
+      var rest = outside(list);
+      if (rest.length) {
+        g.appendChild(el("p", { "class": "hint" }, hint));
+        g.appendChild(makeTable(rest, tableId, { labelledby: id }));
+      } else if (!list.length) {
+        g.appendChild(el("p", { "class": "empty" }, empty));
+      }
+      var note = eventNote(list.length - rest.length, rest.length);
+      if (note) g.appendChild(note);
+      host.appendChild(g);
+    }
+
+    group("unusual-title", "Unusual values", parts.unusual,
+      flaggedBy(true) + " flagged these values as outside the expected range. The bar shows the size of " +
+        "the change from the expected value, up to 100 percent.",
+      unusualTable, "alerts-unusual", anomalyBlocked ?
         "Anomaly detection is not available for this run, so no values could be flagged. " +
         "See the status section. To flag unusual values without it, write this report again " +
         "with " + host.getAttribute("data-render-command") + "." :
-        flaggedBy(true) + " flagged no unusual values on " + alertDayText() + "."));
-    }
-    host.appendChild(g1);
+        flaggedBy(true) + " flagged no unusual values on " + alertDayText() + ".");
 
-    var g2 = el("section", { "class": "alert-group", "aria-labelledby": "drops-title" });
-    g2.appendChild(groupHeading("drops-title", dropTitle(), parts.drops));
-    if (parts.drops.length) {
-      g2.appendChild(el("p", { "class": "hint" },
-        "These values were more than " + pct + " below their weekday average, but " +
-        flaggedBy(false) + " did not flag them. Move the slider at the top of the page to change the percent."));
-      g2.appendChild(table(
-        [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
-         { label: "Weekday average", num: true }, { label: "Actual", num: true },
-         { label: "Change from weekday average", num: true },
-         { label: "Since", numSort: true, cls: "since" }],
-        parts.drops.map(function (a) {
-          return nameIdCells(a).concat([{ c: fmtRound(a.usual, a.metric_type), k: a.usual },
-            { c: fmtNum(a.actual, a.metric_type), k: a.actual },
-            devCell(arrowFor(a.pct_vs_usual), a.pct_vs_usual), sinceCell(a)]);
-        }), null, "alerts-drops", { labelledby: "drops-title" }));
-    } else {
-      g2.appendChild(el("p", { "class": "empty" },
-        dropSummary(data.views["day:" + state.alertDay] || [], alertDayText())));
-    }
-    host.appendChild(g2);
+    group("drops-title", dropTitle(), parts.drops,
+      "These values were more than " + pct + " below their weekday average, but " +
+        flaggedBy(false) + " did not flag them. Move the slider at the top of the page to change the percent.",
+      changeTable, "alerts-drops",
+      dropSummary(data.views["day:" + state.alertDay] || [], alertDayText()));
 
     var spct = Math.round(state.s * 100) + "%";
-    var g2b = el("section", { "class": "alert-group", "aria-labelledby": "spikes-title" });
-    g2b.appendChild(groupHeading("spikes-title", spikeTitle(), parts.spikes));
-    if (parts.spikes.length) {
-      g2b.appendChild(el("p", { "class": "hint" },
-        "These values were more than " + spct + " above their weekday average, but " +
+    group("spikes-title", spikeTitle(), parts.spikes,
+      "These values were more than " + spct + " above their weekday average, but " +
         flaggedBy(false) + " did not flag them. A value that doubled, e.g., from a tag that fires twice, is " +
-        "about +100%. Move the spike slider at the top of the page to change the percent."));
-      g2b.appendChild(table(
-        [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
-         { label: "Weekday average", num: true }, { label: "Actual", num: true },
-         { label: "Change from weekday average", num: true },
-         { label: "Since", numSort: true, cls: "since" }],
-        parts.spikes.map(function (a) {
-          return nameIdCells(a).concat([{ c: fmtRound(a.usual, a.metric_type), k: a.usual },
-            { c: fmtNum(a.actual, a.metric_type), k: a.actual },
-            devCell(arrowFor(a.pct_vs_usual), a.pct_vs_usual), sinceCell(a)]);
-        }), null, "alerts-spikes", { labelledby: "spikes-title" }));
-    } else {
-      g2b.appendChild(el("p", { "class": "empty" },
-        spikeSummary(data.views["day:" + state.alertDay] || [], alertDayText())));
-    }
-    host.appendChild(g2b);
+        "about +100%. Move the spike slider at the top of the page to change the percent.",
+      changeTable, "alerts-spikes",
+      spikeSummary(data.views["day:" + state.alertDay] || [], alertDayText()));
 
-    var g3 = el("section", { "class": "alert-group", "aria-labelledby": "zero-title" });
-    g3.appendChild(groupHeading("zero-title", "Dropped to zero", parts.zero));
-    if (parts.zero.length) {
-      g3.appendChild(el("p", { "class": "hint" },
-        "These components had data on other days in this run, but a value of 0 on " +
-        alertDayText() + "."));
-      g3.appendChild(table(
-        [{ label: "Name", cls: "name" }, { label: "ID", cls: "id" },
-         { label: "Weekday average", num: true }, { label: "Expected", num: true },
-         { label: "Actual", num: true }, { label: "Since", numSort: true, cls: "since" }],
-        parts.zero.map(function (a) {
-          var name = el("span");
-          name.appendChild(document.createTextNode(a.name));
-          name.appendChild(zeroBadge());
-          return [{ c: name, k: a.name }, { c: el("code", null, a.component_id), k: a.component_id },
-            { c: fmtRound(a.usual, a.metric_type), k: a.usual }, expectedCell(a),
-            { c: fmtNum(a.actual, a.metric_type), k: a.actual }, sinceCell(a)];
-        }), null, "alerts-zero", { labelledby: "zero-title" }));
-    } else {
-      g3.appendChild(el("p", { "class": "empty" },
-        "No component that collects data had a value of 0 on " + alertDayText() + "."));
-    }
-    host.appendChild(g3);
+    group("zero-title", "Dropped to zero", parts.zero,
+      "These components had data on other days in this run, but a value of 0 on " +
+        alertDayText() + ".",
+      zeroTable, "alerts-zero",
+      "No component that collects data had a value of 0 on " + alertDayText() + ".");
 
     if (parts.unused.length) {
       var g4 = el("details", { "class": "alert-group" });
@@ -2158,7 +2289,11 @@
     box.appendChild(el("p", { style: MAIL.p }, "Report suite " + run.rsid + ". Segment: " +
       (run.segment_id || "none (all visits)") + "."));
     function name(a) { return a.name + " (" + a.component_id + ")"; }
-    function section(title, list, headers, cells) {
+    var events = suiteEvents(parts);
+    var of = eventOf(events);
+    // The alerts of an event are listed with it, so the sections leave them out.
+    function section(title, all, headers, cells) {
+      var list = all.filter(function (a) { return !of[a.component_id]; });
       if (!list.length) return;
       box.appendChild(el("p", { style: MAIL.h }, title + " (" + list.length + ")"));
       box.appendChild(mailTable(headers, list.map(cells)));
@@ -2166,15 +2301,14 @@
     if (!anyAlert(parts)) {
       box.appendChild(el("p", { style: MAIL.p }, "No alerts for this day."));
     }
-    section("Unusual values, flagged by " + flaggedBy(false), parts.unusual,
-      [{ label: "Component" }, { label: "Flag" }, { label: "Expected", num: true },
-       { label: "Actual", num: true }, { label: "Change", num: true },
-       { label: "Since", numSort: true, cls: "since" }],
-      function (a) {
-        return [name(a), a.anomaly === "high" ? "Above range" : "Below range",
-          a.expected === null ? "Not available" : fmtRound(a.expected, a.metric_type),
-          fmtNum(a.actual, a.metric_type), fmtPct(a.pct_vs_expected), sinceText(a)];
-      });
+    var unusualHeaders = [{ label: "Component" }, { label: "Flag" }, { label: "Expected", num: true },
+      { label: "Actual", num: true }, { label: "Change", num: true },
+      { label: "Since", numSort: true, cls: "since" }];
+    function unusualCells(a) {
+      return [name(a), a.anomaly === "high" ? "Above range" : "Below range",
+        a.expected === null ? "Not available" : fmtRound(a.expected, a.metric_type),
+        fmtNum(a.actual, a.metric_type), fmtPct(a.pct_vs_expected), sinceText(a)];
+    }
     function changeCells(a) {
       return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type),
         fmtPct(a.pct_vs_usual), sinceText(a)];
@@ -2182,15 +2316,26 @@
     var changeHeaders = [{ label: "Component" }, { label: "Weekday average", num: true },
       { label: "Actual", num: true }, { label: "Change", num: true },
       { label: "Since", numSort: true, cls: "since" }];
+    var zeroHeaders = [{ label: "Component" }, { label: "Weekday average", num: true },
+      { label: "Actual", num: true }, { label: "Since", numSort: true, cls: "since" }];
+    function zeroCells(a) {
+      return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type),
+        sinceText(a)];
+    }
+    events.forEach(function (ev) {
+      box.appendChild(el("p", { style: MAIL.h }, "Suite-wide event"));
+      box.appendChild(el("p", { style: MAIL.p }, eventLine(ev)));
+      var change = ev.key === "drop" || ev.key === "spike";
+      box.appendChild(mailTable(ev.key === "zero" ? zeroHeaders : change ? changeHeaders :
+        unusualHeaders, shownOf(ev).map(ev.key === "zero" ? zeroCells : change ? changeCells :
+          unusualCells)));
+      box.appendChild(el("p", { style: MAIL.p }, moreLine(ev)));
+    });
+    section("Unusual values, flagged by " + flaggedBy(false), parts.unusual, unusualHeaders,
+      unusualCells);
     section(dropTitle(), parts.drops, changeHeaders, changeCells);
     section(spikeTitle(), parts.spikes, changeHeaders, changeCells);
-    section("Dropped to zero", parts.zero,
-      [{ label: "Component" }, { label: "Weekday average", num: true },
-       { label: "Actual", num: true }, { label: "Since", numSort: true, cls: "since" }],
-      function (a) {
-        return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type),
-          sinceText(a)];
-      });
+    section("Dropped to zero", parts.zero, zeroHeaders, zeroCells);
     var notes = [];
     if (parts.unused.length) {
       notes.push(parts.unused.length + (parts.unused.length === 1 ? " component" : " components") +

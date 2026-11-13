@@ -235,6 +235,7 @@ ahd alerts --rsid my_suite --change-alert 27.5 --anomaly-method weekday-median
 | `--all-suites` | Prints the alerts of the latest run that ended "ok" or "partial" of every suite in the database, in the order of the suite names. |
 | `--segment` | With `--rsid` or `--all-suites`, uses the latest runs with this segment ID. Without it, the command uses the runs without a segment. It does not work with `--run`, because a run already has its segment. |
 | `--format` | `text`, the default, for a person or the body of a plain email. `json` or `csv` for another program. See [The formats](#the-formats). |
+| `--every-alert` | In the text, lists every alert of a suite-wide event, not only its first 5. JSON and CSV always hold every alert. See [Suite-wide events in the output](#suite-wide-events-in-the-output). |
 | `--change-alert` | A large drop is a value more than this percent below the weekday average. The default is 30. Any percent above 0 and up to 100 works, e.g., `27.5`, because there is no slider here. |
 | `--spike-alert` | A large spike is a value more than this percent above the weekday average. The default is 50. Any percent above 0 and up to 200 works. |
 | `--anomaly-method`, `--anomaly-sensitivity` | Work as in `run`, with the same defaults and the same variables `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`. With `adobe`, `low` or `high` stops the command with exit code 1. See [Set the anomaly method once](#set-the-anomaly-method-once). |
@@ -245,9 +246,9 @@ The command opens the database read-only, so it works while a `duckdb -readonly`
 
 ### The formats
 
-`text` starts with the rules in use. Then it gives each run a heading with its number, suite and status, the same alert line that `ahd run` prints, a line that counts the new alerts, and one line for each alert. A run without alerts has only its heading and its alert line.
+`text` starts with the rules in use. Then it gives each run a heading with its number, suite and status, the same alert line that `ahd run` prints, a line that counts the new alerts, and one line for each alert. A run without alerts has only its heading and its alert line. A run with a suite-wide event starts its alerts with the event. See [Suite-wide events in the output](#suite-wide-events-in-the-output).
 
-Each alert line ends with since when the alert has held: "new on" the day for an alert that started on that day, e.g., "new on 2026-11-11", else the day it started and the number of days, e.g., "since 2026-11-09, 3 days". When the day before cannot be judged, the line says "or earlier" and "at least", e.g., "since 2026-11-05 or earlier, at least 7 days". [The report](report.md#new-and-ongoing-alerts) explains when that happens. The new alerts come first, in all three formats. The others follow in the order of the `alerts()` macro. A character in a name that could change how a terminal shows the text, e.g., a line break, shows as `?`. For the Adobe Store suite, shortened:
+Each alert line ends with since when the alert has held: "new on" the day for an alert that started on that day, e.g., "new on 2026-11-11", else the day it started and the number of days, e.g., "since 2026-11-09, 3 days". When the day before cannot be judged, the line says "or earlier" and "at least", e.g., "since 2026-11-05 or earlier, at least 7 days". [The report](report.md#new-and-ongoing-alerts) explains when that happens. The new alerts come first, in all three formats. The others follow in the order of the `alerts()` macro. A character in a name that could change how a terminal shows the text, e.g., a line break, shows as `?`. For the Adobe Store suite, which has a suite-wide event of 10 large spikes:
 
 ```
 A large drop is more than 30% below the weekday average, and a large spike is more than 50% above it. The weekday average is the average of the same weekday in the 12 weeks before. Adobe's anomaly detection flags the unusual values.
@@ -255,14 +256,38 @@ A large drop is more than 30% below the weekday average, and a large spike is mo
 Run 2, Adobe Store (dgeo1xxpnwcidadobestore), status ok
 Alerts for 2026-11-11: 3 unusual values, 0 large drops, 10 large spikes, 0 drops to zero
 1 of these alerts is new on 2026-11-11.
+Suite-wide event: 10 of the 15 components that collected data had a value more than 50% above the weekday average on 2026-11-11. For 4 of them, this started on 2026-11-07. For the other 6, it started on other days.
+- large spike: Custom Link Instances (metrics/customlinkinstances), weekday average 12.08, actual 41, change +239.3%, since 2026-11-09, 3 days
+- large spike: Page (variables/page), weekday average 4,848.50, actual 8,172, change +68.5%, since 2026-11-07, 5 days
+- large spike: Cart Views (metrics/cartviews), weekday average 141.50, actual 270, change +90.8%, since 2026-11-10, 2 days
+- large spike: Checkouts (metrics/checkouts), weekday average 66.83, actual 203, change +203.7%, since 2026-11-08, 4 days
+- large spike: Units (metrics/units), weekday average 490.83, actual 838, change +70.7%, since 2026-11-10, 2 days
+5 more alerts of this event are not listed. Add --every-alert to list them.
+Other alerts:
 - unusual: Exit Link Instances (metrics/exitlinkinstances), weekday average 2.42, actual 8, expected 2.51, change +231.0%, new on 2026-11-11
 - unusual: Cart Additions (metrics/cartadditions), weekday average 140.08, actual 230, expected 77.06, change +64.2%, since 2026-11-09, 3 days
 - unusual: Orders (metrics/orders), weekday average 18.33, actual 35, expected 20.91, change +90.9%, since 2026-11-10, 2 days
-- large spike: Custom Link Instances (metrics/customlinkinstances), weekday average 12.08, actual 41, change +239.3%, since 2026-11-09, 3 days
-- large spike: Page (variables/page), weekday average 4,848.50, actual 8,172, change +68.5%, since 2026-11-07, 5 days
 ```
 
 For Demo Data CJA, whose values fall every day, a large drop reads "since 2026-11-05 or earlier, at least 7 days".
+
+#### Suite-wide events in the output
+
+A suite-wide event is a group of at least 10 alerts of the same kind that covers at least half of the components that collected data in the run, e.g., when the data of the whole suite stopped. [The report](report.md#suite-wide-events) explains the rule. In the text, each event gets one line that starts with "Suite-wide event:". The line says how many components have the alert, since when, and how many share that start. The first 5 alerts of the event follow, and a line counts the others. `--every-alert` lists all of them. After the events, "Other alerts:" lists the alerts that are not part of an event, in full. A run without an event reads as before 0.1.13.
+
+For Demo Data Evangelists, whose data stopped, the text is 12 lines in place of 360:
+
+```
+Run 4, Demo Data Evangelists (egeo1xxpnwcidevangelists), status partial
+Alerts for 2026-11-11: 0 unusual values, 0 large drops, 0 large spikes, 356 drops to zero
+0 of these alerts are new on 2026-11-11.
+Suite-wide event: 356 of the 356 components that collected data had a value of 0 on 2026-11-11. For 330 of them, this started on 2026-11-05. For the other 26, it started on other days.
+- dropped to zero: Activity Map Link By Region Instances (metrics/clickmaplinkbyregioninstances), weekday average 112,750.75, actual 0, change -100.0%, since 2026-11-05, 7 days
+...
+351 more alerts of this event are not listed. Add --every-alert to list them.
+```
+
+JSON and CSV keep one entry for each alert, so a program gets every alert, as before. The JSON adds a list of the events to each run, and an `event` field to each alert. The CSV adds an `event` column at the end.
 
 `json` gives one object with these fields:
 
@@ -275,15 +300,23 @@ Each run has these fields:
 - `day`: the day of the alerts, as YYYY-MM-DD.
 - `method` and `sensitivity`: the anomaly method and sensitivity in use, e.g., `weekday-median` and `high`. `method_name` is the name that the report gives the method, e.g., "Weekday median".
 - `threshold` and `spike_threshold`: the percents for a large drop and a large spike, as shares, e.g., `0.3` for 30 percent, as the `alerts()` macro takes them.
-- `alerts`: one object for each alert. The new alerts come first, and the others follow in the order of the `alerts()` macro. It has the columns of the macro: `alert`, `anomaly`, `component_id`, `name`, `group`, `metric_type`, `value`, `usual`, `expected`, `pct_vs_usual`, `since`, `days`, `at_least` and `is_new`. The run gives the `run_id` and the `day` of the macro.
+- `events`: one object for each suite-wide event, biggest first. It has the columns of the [`suite_events()` macro](duckdb.md#suite_eventsrun-), without `run_id` and `day`, and the field `text`. A run without an event has an empty list. `ahd` 0.1.13 added this field.
+  - `event`: the kind of alert that the event groups: `zero` for a value of 0, `low` or `high` for a value below or above the expected range, `drop` for a large drop and `spike` for a large spike.
+  - `alerts`: the number of alerts in the event.
+  - `components`: the number of components that collected data in the run.
+  - `since` and `at_least`: the start that most alerts of the event share, as in an alert. `since_alerts` counts the alerts with that start.
+  - `new`: the number of alerts of the event that are new.
+  - `text`: the line that the text output prints after "Suite-wide event:".
+- `alerts`: one object for each alert. The new alerts come first, and the others follow in the order of the `alerts()` macro. It has the columns of the macro: `alert`, `anomaly`, `component_id`, `name`, `group`, `metric_type`, `value`, `usual`, `expected`, `pct_vs_usual`, `since`, `days`, `at_least`, `is_new` and `event`. The run gives the `run_id` and the `day` of the macro.
   - `since`: the day the alert started, as YYYY-MM-DD.
   - `days`: the number of days from `since` to the day of the alerts, both counted.
   - `at_least`: `true` when the day before `since` cannot be judged, so the alert may have started earlier.
   - `is_new`: `true` when the alert started on the day of the alerts. Then `days` is 1 and `at_least` is `false`.
+  - `event`: the `event` of the suite-wide event that the alert belongs to, e.g., `spike`, or `null` for an alert outside an event.
 
-  `ahd` 0.1.12 added the last four fields and put the new alerts first. Before, the alerts came in the order of the macro. The [DuckDB guide](duckdb.md#alertsrun-threshold--030-spike_threshold--050-min_usual--10-for_day--null-method--adobe-sensitivity--normal) explains each column. A run without alerts has an empty list.
+  `ahd` 0.1.12 added `since`, `days`, `at_least` and `is_new`, and put the new alerts first. Before, the alerts came in the order of the macro. `ahd` 0.1.13 added `event`. Every alert stays in the list, also an alert of an event. The [DuckDB guide](duckdb.md#alertsrun-threshold--030-spike_threshold--050-min_usual--10-for_day--null-method--adobe-sensitivity--normal) explains each column. A run without alerts has an empty list.
 
-Later versions may add fields to the object, to a run and to an alert, as 0.1.12 added `since`, `days`, `at_least` and `is_new`. A program that reads the JSON should ignore the fields it does not know. A number that is not finite, e.g., a value that Adobe sent as infinity, is `null`. Every character outside ASCII is written as an escape, e.g., `日` for 日, so the output reads the same in any text encoding. For the same suite, shortened:
+Later versions may add fields to the object, to a run and to an alert, as 0.1.13 added `events` and `event`. A program that reads the JSON should ignore the fields it does not know. A number that is not finite, e.g., a value that Adobe sent as infinity, is `null`. Every character outside ASCII is written as an escape, e.g., `日` for 日, so the output reads the same in any text encoding. For the same suite, shortened:
 
 ```json
 {
@@ -301,6 +334,18 @@ Later versions may add fields to the object, to a run and to an alert, as 0.1.12
       "sensitivity": "normal",
       "threshold": 0.3,
       "spike_threshold": 0.5,
+      "events": [
+        {
+          "event": "spike",
+          "alerts": 10,
+          "components": 15,
+          "since": "2026-11-07",
+          "at_least": false,
+          "since_alerts": 4,
+          "new": 0,
+          "text": "10 of the 15 components that collected data had a value more than 50% above the weekday average on 2026-11-11. For 4 of them, this started on 2026-11-07. For the other 6, it started on other days."
+        }
+      ],
       "alerts": [
         {
           "alert": "unusual",
@@ -316,7 +361,25 @@ Later versions may add fields to the object, to a run and to an alert, as 0.1.12
           "since": "2026-11-11",
           "days": 1,
           "at_least": false,
-          "is_new": true
+          "is_new": true,
+          "event": null
+        },
+        {
+          "alert": "large spike",
+          "anomaly": null,
+          "component_id": "metrics/customlinkinstances",
+          "name": "Custom Link Instances",
+          "group": "Reserved Props",
+          "metric_type": "int",
+          "value": 41.0,
+          "usual": 12.083333333333334,
+          "expected": 33.33527533895863,
+          "pct_vs_usual": 2.393103448,
+          "since": "2026-11-09",
+          "days": 3,
+          "at_least": false,
+          "is_new": false,
+          "event": "spike"
         }
       ]
     }
@@ -324,12 +387,12 @@ Later versions may add fields to the object, to a run and to an alert, as 0.1.12
 }
 ```
 
-`csv` gives one header row and one row for each alert. Each row starts with the fields of its run, as in the JSON, and goes on with the fields of the alert. `at_least` and `is_new` are `true` or `false`, as in the JSON. A run without alerts has no row. A value with a comma, a quote or a line break is put in quotes, as CSV does it. For the same suite, shortened:
+`csv` gives one header row and one row for each alert. Each row starts with the fields of its run, as in the JSON, and goes on with the fields of the alert. `at_least` and `is_new` are `true` or `false`, as in the JSON. The last column, `event`, is empty for an alert outside a suite-wide event. `ahd` 0.1.13 added it. The CSV has no row for an event. A run without alerts has no row. A value with a comma, a quote or a line break is put in quotes, as CSV does it. For the same suite, shortened:
 
 ```
-run_id,rsid,rsid_name,segment_id,status,day,method,method_name,sensitivity,threshold,spike_threshold,alert,anomaly,component_id,name,group,metric_type,value,usual,expected,pct_vs_usual,since,days,at_least,is_new
-2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,unusual,high,metrics/exitlinkinstances,Exit Link Instances,Reserved Props,int,8.0,2.4166666666666665,2.505854996828865,2.310344828,2026-11-11,1,false,true
-2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,unusual,high,metrics/cartadditions,Cart Additions,Reserved Purchase Events,int,230.0,140.08333333333334,77.06421405092522,0.641879833,2026-11-09,3,false,false
+run_id,rsid,rsid_name,segment_id,status,day,method,method_name,sensitivity,threshold,spike_threshold,alert,anomaly,component_id,name,group,metric_type,value,usual,expected,pct_vs_usual,since,days,at_least,is_new,event
+2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,unusual,high,metrics/exitlinkinstances,Exit Link Instances,Reserved Props,int,8.0,2.4166666666666665,2.505854996828865,2.310344828,2026-11-11,1,false,true,
+2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,unusual,high,metrics/cartadditions,Cart Additions,Reserved Purchase Events,int,230.0,140.08333333333334,77.06421405092522,0.641879833,2026-11-09,3,false,false,
 ```
 
 ### Exit codes of alerts

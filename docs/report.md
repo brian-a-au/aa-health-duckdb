@@ -364,6 +364,29 @@ A value of 0 can be judged on every day of the run, so a drop to zero has a know
 
 The `alerts()` macro gives the same answer in its columns `since`, `days`, `at_least` and `is_new`. See the [DuckDB guide](duckdb.md#alertsrun-threshold--030-spike_threshold--050-min_usual--10-for_day--null-method--adobe-sensitivity--normal).
 
+### Suite-wide events
+
+When the data of a whole suite stops, or its traffic jumps, most components get the same kind of alert on the same day. The lists then hold hundreds of rows that all say the same thing. So the tab starts with one line for such a group, a suite-wide event, and folds its rows under that line.
+
+An event is a group of alerts that follow the same condition, the one that the Since column follows: a value of 0, a value below the expected range, a value above it, a large drop or a large spike. It needs at least 10 alerts, and they must be at least half of the components that collected data in the run.
+
+- **Half of the components.** When most of a suite moves the same way on the same day, the cause is likely in the suite, e.g., its tracking or its traffic, and not in each component. With half as the limit, a day has at most two events.
+- **Components that collected data.** A component that was 0 on every day of the run cannot alert. Many suites have a lot of unused slots, e.g., 20 of the 35 components of Adobe Store, so counting them would hide an event in such a suite.
+- **At least 10 alerts.** A list of fewer than 10 rows is short enough to read row by row. In a very small suite, half can also be 2 or 3 components, which says little about the whole suite.
+
+The start of an event is not part of the rule, because one stop can start on two days for different components. The line names the start that most alerts of the event share, e.g., "For 330 of them, this started on Nov 5. For the other 26, it started on other days." When two starts are shared by as many alerts, it names the earlier one.
+
+The line is at the top of the tab, under "Suite-wide events". "Show the 356 alerts" opens the rows of the event, with the columns of the list that they belong to. The lists below leave these rows out, and a note says how many of their alerts are in an event. The heading of each list and the tiles at the top still count every alert. The copied alerts start with the line of each event and its first 5 alerts. Alerts outside an event are listed as before.
+
+The events follow the chosen day, the anomaly method and the sliders. Moving the drop slider can make a group of large drops big enough for an event, or too small. Examples from Adobe's demo suites on 2026-11-11, with Adobe's anomaly detection:
+
+- Demo Data Evangelists: "356 of the 356 components that collected data had a value of 0 on Wed, Nov 11 (yesterday). For 330 of them, this started on Nov 5. For the other 26, it started on other days." No alert is outside the event. Nov 4, the day the data stopped, is older than the 7 days of the report. There, `suite_events()` with `for_day` finds 234 values below the expected range, an event of its own.
+- Demo Data CJA: "97 of the 99 components that collected data had a value more than 30% below the weekday average on Wed, Nov 11 (yesterday). For all of them, this started on Nov 5 or earlier." The 2 drops to zero stay in their list.
+- Adobe Store: 10 of the 15 components that collected data had a value more than 50% above the weekday average, e.g., Visits rose 114 percent. The 3 unusual values stay in their list.
+- Demo Data has 2 alerts, so it has no event.
+
+The [`suite_events()` macro](duckdb.md#suite_eventsrun-) gives the same events for your own SQL, and the `event` column of `alerts()` says which event each alert belongs to. `ahd alerts` and the alert email give each event one line, too. See [Usage](usage.md#suite-wide-events-in-the-output).
+
 ### Copying
 
 **Copy alerts** puts two versions on the clipboard at once:
@@ -371,7 +394,7 @@ The `alerts()` macro gives the same answer in its columns `since`, `days`, `at_l
 - a formatted table, which Outlook, Gmail and Apple Mail paste
 - plain text, which a chat or a text editor pastes
 
-The copy follows the chosen day and the sliders. It says since when each alert has held, and lists the new alerts first in each group. If the browser cannot copy, open "Show the alert summary as text" and copy the text from there.
+The copy follows the chosen day and the sliders. It says since when each alert has held, and lists the new alerts first in each group. A suite-wide event comes first, with its line and its first 5 alerts, and a line that counts the others. The groups after it leave out the alerts of the event. If the browser cannot copy, open "Show the alert summary as text" and copy the text from there.
 
 To send alerts on a schedule, or only when something is new, see the [DuckDB guide](duckdb.md#email-recipes).
 

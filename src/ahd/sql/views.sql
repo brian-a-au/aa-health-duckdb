@@ -3,7 +3,8 @@
 --
 -- The views are latest_runs and component_days. The macro alerts lists the alerts of a run.
 -- It reads its expected values and flags from the macro anomaly_days, which applies the
--- anomaly method that alerts is given.
+-- anomaly method that alerts is given. The macro suite_events groups the alerts of a run into
+-- suite-wide events.
 --
 -- ahd runs this file again on an existing file when VIEWS_VERSION in store.py is raised, so
 -- every statement must replace what it creates. To remove a view or a macro, add a
@@ -211,6 +212,12 @@ FROM local;
 -- when it is older than the last 7 days, which are the only days with a weekday average.
 -- is_new is true for an alert that started on its own day: days is 1 and at_least is false.
 --
+-- The last column, event, names the suite-wide event that the alert belongs to, or is NULL. An
+-- event is a group of alerts of the same condition that holds at least 10 alerts and at least
+-- half of the components that collected data in the run. event is the name of the condition:
+-- zero, low, high, drop or spike. The macro suite_events gives one row for each event. The
+-- numbers 10 and 0.5 must match EVENT_MIN and EVENT_SHARE in src/ahd/summary.py.
+--
 -- src/ahd/summary.py and src/ahd/render/static/report.js hold the same rules for the report,
 -- and tests check that all three agree.
 CREATE OR REPLACE MACRO alerts(run_number, threshold := 0.30, spike_threshold := 0.50, min_usual := 10,
@@ -280,13 +287,59 @@ breaks AS (
     FROM judged
     WHERE state <> 'yes'
     GROUP BY component_id, alert_day
+),
+-- The components that collected data in the run. The others cannot alert. The 0.5 and the 10
+-- must match EVENT_SHARE and EVENT_MIN in src/ahd/summary.py.
+collected AS (
+    SELECT count(DISTINCT component_id) AS n FROM days WHERE NOT unused
+),
+grouped AS (
+    SELECT condition FROM listed, collected
+    GROUP BY condition, collected.n
+    HAVING count(*) >= 10 AND count(*) >= 0.5 * collected.n
 )
 SELECT l.run_id, l.day, l.component_id, l.name, l."group", l.metric_type, l.value, l.usual,
     l.expected, l.pct_vs_usual, l.alert, l.anomaly,
     b.day + 1 AS since,
     l.day - b.day AS days,
     b.state = 'unknown' AS at_least,
-    l.day - b.day = 1 AND b.state = 'no' AS is_new
+    l.day - b.day = 1 AND b.state = 'no' AS is_new,
+    g.condition AS event
 FROM listed l
 JOIN breaks b ON b.component_id = l.component_id AND b.alert_day = l.day
+LEFT JOIN grouped g ON g.condition = l.condition
 ORDER BY l.alert DESC, l."group", l.component_id;
+
+-- The suite-wide events of one run on one day, from the event column of alerts, with the same
+-- arguments. Each row is one event: its condition, its number of alerts, and the number of
+-- components that collected data in the run. since and at_least give the start that most of
+-- its alerts share, and since_alerts counts them. When two starts are shared by as many alerts,
+-- the earlier one wins. new counts the alerts of the event that are new on the day. The biggest
+-- event comes first, and events of the same size come by name.
+CREATE OR REPLACE MACRO suite_events(run_number, threshold := 0.30, spike_threshold := 0.50,
+    min_usual := 10, for_day := NULL, method := 'adobe', sensitivity := 'normal') AS TABLE
+WITH listed AS (
+    FROM alerts(run_number, threshold := threshold, spike_threshold := spike_threshold,
+        min_usual := min_usual, for_day := for_day, method := method, sensitivity := sensitivity)
+    WHERE event IS NOT NULL
+),
+collected AS (
+    SELECT count(DISTINCT component_id) AS n
+    FROM component_days WHERE run_id = run_number AND NOT unused
+),
+starts AS (
+    SELECT event, since, at_least, count(*) AS n
+    FROM listed
+    GROUP BY event, since, at_least
+    QUALIFY row_number() OVER (PARTITION BY event ORDER BY count(*) DESC, since, at_least) = 1
+)
+SELECT any_value(l.run_id) AS run_id, any_value(l.day) AS day, l.event,
+    count(*) AS alerts, any_value(c.n) AS components,
+    any_value(s.since) AS since, any_value(s.at_least) AS at_least,
+    any_value(s.n) AS since_alerts,
+    count(*) FILTER (WHERE l.is_new) AS new
+FROM listed l
+JOIN starts s ON s.event = l.event
+CROSS JOIN collected c
+GROUP BY l.event
+ORDER BY alerts DESC, l.event;

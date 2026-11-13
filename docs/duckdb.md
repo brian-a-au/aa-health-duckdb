@@ -114,7 +114,7 @@ To see every column of a table, run `DESCRIBE daily_values`. To see a quick prof
 
 ## Ready-made views and macros
 
-Every file comes with two views and two table macros. A view is a saved query that you use like a table. A table macro is a saved query that takes options. They use the same rules as the report, and the tests check that they agree.
+Every file comes with two views and three table macros. A view is a saved query that you use like a table. A table macro is a saved query that takes options. They use the same rules as the report, and the tests check that they agree.
 
 When a new version of `ahd` changes these rules, the next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces the views and the macros in your file. Until then, your own SQL uses the old rules. If you built your own views on top of `component_days`, they follow the new rules after the update. [`ahd alerts`](#print-the-alerts-with-ahd-alerts) and the [alert email script](#send-an-alert-email-every-morning) always use the rules of the `ahd` that you run, also on a file with older views.
 
@@ -264,7 +264,80 @@ FROM alerts(2, method := 'weekday-median') SELECT alert, name, round(expected) A
 
 This works for a run whose credential may not use Adobe's anomaly detection, too. Adobe's flags of such a run are empty, so `alerts()` with the default method lists no unusual values.
 
-When you query a file through `ATTACH`, run `USE` with its name before you call `alerts()` or `anomaly_days()`, e.g., `USE prod;`. The views work without it.
+The last column, `event`, names the suite-wide event that the alert belongs to, or is `NULL`. `ahd` 0.1.13 added it. See [`suite_events()`](#suite_eventsrun-) below. On Adobe Store, the 10 large spikes are one event, and the 3 unusual values are outside it:
+
+```sql
+FROM alerts(2) SELECT alert, event, count(*) AS alerts GROUP BY ALL ORDER BY alerts DESC;
+```
+
+```
+┌─────────────┬─────────┬────────┐
+│    alert    │  event  │ alerts │
+├─────────────┼─────────┼────────┤
+│ large spike │ spike   │     10 │
+│ unusual     │ NULL    │      3 │
+└─────────────┴─────────┴────────┘
+```
+
+Add `WHERE event IS NULL` to keep only the alerts outside an event:
+
+```sql
+FROM alerts(2) SELECT alert, name, since WHERE event IS NULL;
+```
+
+```
+┌─────────┬─────────────────────┬────────────┐
+│  alert  │        name         │   since    │
+├─────────┼─────────────────────┼────────────┤
+│ unusual │ Exit Link Instances │ 2026-11-11 │
+│ unusual │ Cart Additions      │ 2026-11-09 │
+│ unusual │ Orders              │ 2026-11-10 │
+└─────────┴─────────────────────┴────────────┘
+```
+
+When you query a file through `ATTACH`, run `USE` with its name before you call `alerts()`, `suite_events()` or `anomaly_days()`, e.g., `USE prod;`. The views work without it.
+
+### `suite_events(run, ...)`
+
+The suite-wide events of one run, one row for each event. It takes the same options as `alerts()`, with the same defaults, e.g., `suite_events(4, for_day := '2026-11-04')`. `ahd` 0.1.13 added it.
+
+An event is a group of alerts that follow the same condition, e.g., a value of 0. It needs at least 10 alerts, and they must be at least half of the components that collected data in the run. [The report](report.md#suite-wide-events) explains why. The condition is the one that `since` follows in `alerts()`, so a 0 that the anomaly method flagged belongs to the same event as a drop to zero. The columns:
+
+- `run_id` and `day`: as in `alerts()`.
+- `event`: the condition: `zero` for a value of 0, `low` or `high` for a flag below or above the expected range, `drop` for a large drop and `spike` for a large spike. The `event` column of `alerts()` holds the same name for each alert of the event.
+- `alerts`: the number of alerts in the event.
+- `components`: the number of components that collected data in the run, i.e., had a value other than 0 on at least one of its 91 days. The others cannot alert, so they do not count.
+- `since` and `at_least`: the start that most alerts of the event share. When two starts are shared by as many alerts, the earlier one wins.
+- `since_alerts`: the number of alerts with that start.
+- `new`: the number of alerts of the event that are new on the day.
+
+The biggest event comes first. Most days have no event, and then the macro gives no row. On Demo Data Evangelists, the data stopped. All 356 components that collected data were 0, and 330 of them since 2026-11-05:
+
+```sql
+FROM suite_events(4);
+```
+
+```
+┌────────┬────────────┬─────────┬────────┬────────────┬────────────┬──────────┬──────────────┬───────┐
+│ run_id │    day     │  event  │ alerts │ components │   since    │ at_least │ since_alerts │  new  │
+├────────┼────────────┼─────────┼────────┼────────────┼────────────┼──────────┼──────────────┼───────┤
+│      4 │ 2026-11-11 │ zero    │    356 │        356 │ 2026-11-05 │ false    │          330 │     0 │
+└────────┴────────────┴─────────┴────────┴────────────┴────────────┴──────────┴──────────────┴───────┘
+```
+
+On the day the data stopped, most values were small but not 0, and Adobe flagged them as below the expected range:
+
+```sql
+FROM suite_events(4, for_day := '2026-11-04') SELECT event, alerts, components, since, since_alerts, new;
+```
+
+```
+┌─────────┬────────┬────────────┬────────────┬──────────────┬───────┐
+│  event  │ alerts │ components │   since    │ since_alerts │  new  │
+├─────────┼────────┼────────────┼────────────┼──────────────┼───────┤
+│ low     │    234 │        356 │ 2026-11-04 │          233 │   233 │
+└─────────┴────────┴────────────┴────────────┴──────────────┴───────┘
+```
 
 ### `anomaly_days(run, method := 'adobe', min_usual := 10, sensitivity := 'normal')`
 
@@ -349,15 +422,20 @@ A large drop is more than 30% below the weekday average, and a large spike is mo
 Run 2, Adobe Store (dgeo1xxpnwcidadobestore), status ok
 Alerts for 2026-11-11: 3 unusual values, 0 large drops, 10 large spikes, 0 drops to zero
 1 of these alerts is new on 2026-11-11.
+Suite-wide event: 10 of the 15 components that collected data had a value more than 50% above the weekday average on 2026-11-11. For 4 of them, this started on 2026-11-07. For the other 6, it started on other days.
+- large spike: Custom Link Instances (metrics/customlinkinstances), weekday average 12.08, actual 41, change +239.3%, since 2026-11-09, 3 days
+- large spike: Page (variables/page), weekday average 4,848.50, actual 8,172, change +68.5%, since 2026-11-07, 5 days
+- large spike: Cart Views (metrics/cartviews), weekday average 141.50, actual 270, change +90.8%, since 2026-11-10, 2 days
+- large spike: Checkouts (metrics/checkouts), weekday average 66.83, actual 203, change +203.7%, since 2026-11-08, 4 days
+- large spike: Units (metrics/units), weekday average 490.83, actual 838, change +70.7%, since 2026-11-10, 2 days
+5 more alerts of this event are not listed. Add --every-alert to list them.
+Other alerts:
 - unusual: Exit Link Instances (metrics/exitlinkinstances), weekday average 2.42, actual 8, expected 2.51, change +231.0%, new on 2026-11-11
 - unusual: Cart Additions (metrics/cartadditions), weekday average 140.08, actual 230, expected 77.06, change +64.2%, since 2026-11-09, 3 days
 - unusual: Orders (metrics/orders), weekday average 18.33, actual 35, expected 20.91, change +90.9%, since 2026-11-10, 2 days
-- large spike: Custom Link Instances (metrics/customlinkinstances), weekday average 12.08, actual 41, change +239.3%, since 2026-11-09, 3 days
-- large spike: Page (variables/page), weekday average 4,848.50, actual 8,172, change +68.5%, since 2026-11-07, 5 days
-(Shortened: 8 more large spikes follow.)
 ```
 
-`--all-suites` prints every suite with a finished run. `--format json` and `--format csv` give the same alerts to another program. The command exits with 0 when it printed an alert and with 4 when there was none, so a scheduled job can send an email only on a day with alerts. [Usage](usage.md#alerts) gives every option, the fields of the JSON and the exit codes.
+The 10 large spikes are a [suite-wide event](#suite_eventsrun-), so the text gives them one line and lists only the first 5. `--every-alert` lists all of them. `--all-suites` prints every suite with a finished run. `--format json` and `--format csv` give the same alerts to another program. The command exits with 0 when it printed an alert and with 4 when there was none, so a scheduled job can send an email only on a day with alerts. [Usage](usage.md#alerts) gives every option, the fields of the JSON and the exit codes.
 
 ### Send an alert email every morning
 
