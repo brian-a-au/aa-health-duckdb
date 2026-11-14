@@ -36,12 +36,15 @@ usual AS (
     GROUP BY ALL
 ),
 used AS (
-    SELECT run_id, component_id, bool_or(value <> 0) AS had_data FROM dv GROUP BY ALL
+    SELECT run_id, component_id, min(day) FILTER (WHERE value <> 0) AS first_data
+    FROM dv GROUP BY ALL
 )
 SELECT dv.run_id, dv.day, dv.day = dv.today - 1 AS is_yesterday,
     c.component_id, c.name, c.kind, c."group", c.number, c.metric_type,
     dv.value, dv.expected, dv.lower, dv.upper,
-    CASE WHEN dv.anomaly THEN CASE WHEN dv.value > dv.upper THEN 'high' ELSE 'low' END END
+    -- Adobe may flag a value without an upper limit. The expected value then says the direction.
+    CASE WHEN dv.anomaly
+        THEN CASE WHEN dv.value > coalesce(dv.upper, dv.expected) THEN 'high' ELSE 'low' END END
         AS anomaly,
     -- Only the last 7 days have a weekday average, from the 12 weeks before them. An older day
     -- falls inside those weeks, so it has none, as in the report.
@@ -50,7 +53,10 @@ SELECT dv.run_id, dv.day, dv.day = dv.today - 1 AS is_yesterday,
     CASE WHEN dv.day >= dv.today - 7 AND u.usual <> 0 THEN round(dv.value / u.usual - 1, 9) END
         AS pct_vs_usual,
     coalesce(dv.value = 0, false) AS zero,
-    NOT coalesce(used.had_data, false) AS unused
+    used.first_data IS NULL AS unused,
+    -- The first day with a value other than 0. A day before it is never an alert, e.g., the
+    -- days before a new component collected data. It is empty for an unused component.
+    used.first_data
 FROM dv
 JOIN components c ON c.run_id = dv.run_id AND c.component_id = dv.component_id
 LEFT JOIN usual u ON u.run_id = dv.run_id AND u.component_id = dv.component_id
@@ -187,7 +193,8 @@ local AS (
     FROM wide
 )
 SELECT run_id, component_id, day, expected, lower, upper,
-    CASE WHEN anomaly THEN CASE WHEN value > upper THEN 'high' ELSE 'low' END END AS anomaly
+    CASE WHEN anomaly THEN CASE WHEN value > coalesce(upper, expected) THEN 'high' ELSE 'low' END
+        END AS anomaly
 FROM dv, checked
 WHERE checked.chosen = 'adobe'
 UNION ALL
@@ -199,6 +206,10 @@ FROM local;
 
 -- The alerts of one run on one day, by the same rules as the report. method picks the anomaly
 -- method and sensitivity the width of its range, as in anomaly_days.
+--
+-- A day before the first day on which a component had a value other than 0 is never an alert,
+-- with any method. So a component that never collected data in the run never alerts, and a new
+-- component does not alert on the days before it started to collect data.
 --
 -- The last four columns say since when each alert has held. An alert follows one condition:
 -- a value of 0 when its value is 0, else the direction of its anomaly flag, else a change past
@@ -224,7 +235,7 @@ CREATE OR REPLACE MACRO alerts(run_number, threshold := 0.30, spike_threshold :=
     for_day := NULL, method := 'adobe', sensitivity := 'normal') AS TABLE
 WITH days AS (
     SELECT c.run_id, c.day, c.is_yesterday, c.component_id, c.name, c."group", c.metric_type,
-        c.value, c.usual, a.expected, c.pct_vs_usual, c.zero, c.unused, a.anomaly
+        c.value, c.usual, a.expected, c.pct_vs_usual, c.zero, c.unused, c.first_data, a.anomaly
     FROM component_days c
     JOIN anomaly_days(run_number, method := method, min_usual := min_usual,
         sensitivity := sensitivity) a
@@ -250,7 +261,9 @@ listed AS (
         END AS condition
     FROM days
     WHERE (CASE WHEN for_day IS NULL THEN is_yesterday ELSE day = for_day::DATE END)
-        AND NOT (zero AND unused)
+        -- A day before the component's first value other than 0 is not an alert. A component
+        -- that never collected data has no such day, so it never alerts.
+        AND coalesce(day >= first_data, false)
         AND (anomaly IS NOT NULL OR zero OR (usual >= min_usual
             AND (pct_vs_usual < -threshold OR pct_vs_usual > spike_threshold)))
 ),
@@ -262,10 +275,12 @@ back AS (
 ),
 -- Whether the condition held on each of those days: yes, no, or unknown when the day cannot
 -- be judged. A day that is not in component_days has no value. component_days gives a weekday
--- average only to the last 7 days.
+-- average only to the last 7 days. A day before the first value other than 0 is never an
+-- alert, so the condition did not hold on it.
 judged AS (
     SELECT b.component_id, b.alert_day, b.day,
         CASE
+            WHEN d.day < d.first_data THEN 'no'
             WHEN b.condition = 'zero' AND d.value = 0 THEN 'yes'
             WHEN b.condition IN ('high', 'low') AND d.anomaly = b.condition THEN 'yes'
             WHEN b.condition = 'drop' AND d.usual >= min_usual AND d.pct_vs_usual < -threshold

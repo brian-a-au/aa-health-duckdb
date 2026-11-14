@@ -144,11 +144,12 @@ FROM latest_runs SELECT run_id, rsid_name, today, status ORDER BY run_id DESC;
 One row per run, component and full day, with everything the report computes. The column `usual` is the value that the report calls the weekday average.
 
 - `value`, `expected`, `lower` and `upper` from Adobe
-- `anomaly`: "high" or "low" when Adobe flagged the value, else empty. This view always has Adobe's values. For another anomaly method, use [`anomaly_days`](#anomaly_daysrun-method--adobe-min_usual--10-sensitivity--normal).
+- `anomaly`: "high" or "low" when Adobe flagged the value, else empty. A value above `upper` is "high". When Adobe gave no `upper`, a value above `expected` is "high". This view always has Adobe's values. For another anomaly method, use [`anomaly_days`](#anomaly_daysrun-method--adobe-min_usual--10-sensitivity--normal).
 - `usual`: the weekday average, which is the average of the same weekday in the 12 weeks before the day. Only the last 7 days of the run have one, as in the report. An older day falls inside those 12 weeks, so its `usual` is empty.
 - `pct_vs_usual`: the change from the weekday average, e.g., -0.25 for 25 percent below. It is empty when `usual` is empty or 0.
 - `zero`: the value was 0
 - `unused`: the value was 0 or empty on every day of the run, so the component never collected data
+- `first_data`: the first day of the run with a value other than 0. It is empty when `unused` is true. A day before it is never an alert, e.g., a day before a new eVar started to collect data.
 - `is_yesterday`: the row is for the last full day of the run
 
 ### `alerts(run, threshold := 0.30, spike_threshold := 0.50, min_usual := 10, for_day := NULL, method := 'adobe', sensitivity := 'normal')`
@@ -189,11 +190,13 @@ FROM alerts(2) SELECT alert, name, round(usual) AS usual, value;
 
 Each alert is one of these: "unusual" (the anomaly method flagged it, Adobe by default), "large spike", "large drop" or "dropped to zero".
 
+A day before a component's `first_data` is never an alert, with any method. So a component that never collected data has no alerts, and a new component has none on the days before it started to collect data.
+
 The last four columns say since when each alert has held. `ahd` 0.1.12 added them after the other columns, which keep their names, their meaning and their order:
 
 - `since`: the day the alert started. An alert follows one condition: a value of 0 when its value is 0, else the direction of its anomaly flag, else a change past `threshold` or `spike_threshold`. `since` is the first day of the unbroken run of days, up to the alert's day, on which that condition held. A 0 that the anomaly method flagged on some days keeps one start, also when its `alert` changes from "unusual" to "dropped to zero".
 - `days`: the number of days from `since` to the alert's day, both counted.
-- `at_least`: true when the day before `since` cannot be judged, so the alert may have started earlier. That day is not in the run's 91 days, or it has no value. For a flag, the method gave it no expected value. For a large drop or spike, it is older than the last 7 days, which are the only days with a weekday average. So a drop on all 7 days has `days` 7 and `at_least` true.
+- `at_least`: true when the day before `since` cannot be judged, so the alert may have started earlier. That day is not in the run's 91 days, or it has no value. A day before `first_data` can be judged: it is never an alert, so the streak stops there. For a flag, the method gave it no expected value. For a large drop or spike, it is older than the last 7 days, which are the only days with a weekday average. So a drop on all 7 days has `days` 7 and `at_least` true.
 - `is_new`: true when the alert started on its own day, so `days` is 1 and `at_least` is false.
 
 With `for_day`, the streak ends on that day. The rows keep the order they had before 0.1.12. Add `ORDER BY is_new DESC` to put the new alerts first, as the report, `ahd alerts` and the email do:
@@ -549,12 +552,13 @@ FROM routed GROUP BY ALL ORDER BY alerts DESC;
 
 ### Send one digest for every suite
 
-One row per report suite, with yesterday's alerts from the latest run of each that has no segment. Each alert counts once, by the same rules as the `alerts` macro. An Adobe flag comes first, then a value of 0, then a large drop or spike.
+One row per report suite, with yesterday's alerts from the latest run of each that has no segment. Each alert counts once, by the same rules as the `alerts` macro. An Adobe flag comes first, then a value of 0, then a large drop or spike. A day before `first_data` is not an alert, so a component that never collected data does not count.
 
 ```sql
 SELECT r.rsid_name AS suite, r.today - 1 AS day,
-    count(*) FILTER (WHERE d.anomaly IS NOT NULL AND NOT (d.zero AND d.unused)) AS unusual,
-    count(*) FILTER (WHERE d.zero AND NOT d.unused AND d.anomaly IS NULL) AS dropped_to_zero,
+    count(*) FILTER (WHERE d.anomaly IS NOT NULL AND d.day >= d.first_data) AS unusual,
+    count(*) FILTER (WHERE d.zero AND d.day >= d.first_data AND d.anomaly IS NULL)
+        AS dropped_to_zero,
     count(*) FILTER (WHERE d.usual >= 10 AND d.pct_vs_usual < -0.30
                      AND NOT d.zero AND d.anomaly IS NULL) AS large_drops,
     count(*) FILTER (WHERE d.usual >= 10 AND d.pct_vs_usual > 0.50

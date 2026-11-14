@@ -171,12 +171,14 @@ def test_alerts_zero_and_anomaly(tmp_path):
         _dv("metrics/event1", YESTERDAY, 50.0, 50.0, 60.0, 40.0, False),
         _dv("metrics/event2", YESTERDAY, 30.0, 20.0, 25.0, 15.0, True),
         _dv("metrics/event3", YESTERDAY, 0.0),
+        _dv("metrics/event1", date(2026, 11, 4), 50.0),
         _dv("metrics/event1", date(2026, 11, 5), 0.0),  # zero, but not yesterday
         _dv("individual/1", YESTERDAY, 0.0),  # never an alert
     ]
     store, rid = _build(tmp_path, comps, vals)
     every = build_view(store, rid)["alerts"]
-    # Each selectable day has its own rows: the zero on Nov 5 is an alert for that day.
+    # Each selectable day has its own rows: the zero on Nov 5 is an alert for that day. It
+    # comes after a day with data, so it is not a day before the component started.
     assert [(a["day"], a["component_id"]) for a in every if a["day"] != "2026-11-06"] == [
         ("2026-11-05", "metrics/event1")
     ]
@@ -488,6 +490,38 @@ def test_alert_below_range_is_low(tmp_path):
     )
     alert = build_view(store, rid)["alerts"][0]
     assert alert["anomaly"] == "low" and alert["zero"] is False
+
+
+@pytest.mark.parametrize(
+    ("value", "expected", "flag"),
+    [
+        (500.0, 100.0, "high"),  # above the expected value
+        (5.0, 100.0, "low"),  # below it
+        (500.0, None, "low"),  # nothing to compare with
+    ],
+)
+def test_a_flag_without_an_upper_limit_follows_the_expected_value(tmp_path, value, expected, flag):
+    # Adobe may flag a value without an upper limit. The expected value then says the direction.
+    cid = "metrics/event1"
+    vals = [_dv(cid, d, 100.0, 100.0, 130.0, 70.0, False) for d in _days(START, TODAY)]
+    vals[-2] = _dv(cid, YESTERDAY, value, expected, math.nan, 70.0, True)
+    store, rid = _build(tmp_path, [_comp(cid, "E1", number=1)], vals)
+    view = build_view(store, rid)
+    day = YESTERDAY.isoformat()
+    assert [a["anomaly"] for a in view["alerts"] if a["day"] == day] == [flag]
+    assert _row(view["views"][f"day:{day}"], cid)["anomaly"] == flag
+    assert view["series"][cid][-1][5] == flag
+    [cal] = [c for c in view["calendar"] if c["day"] == day]
+    assert cal[flag] == [cid]
+    assert view["history"][0][flag] == 1
+    sql = {
+        "alerts": "SELECT anomaly FROM alerts(?)",
+        "anomaly_days": "SELECT anomaly FROM anomaly_days(?) WHERE anomaly IS NOT NULL",
+        "component_days": "SELECT anomaly FROM component_days"
+        " WHERE run_id = ? AND anomaly IS NOT NULL",
+    }
+    for name, query in sql.items():
+        assert store.con.execute(query, [rid]).fetchall() == [(flag,)], name
 
 
 def test_standard_metric_gets_plain_name(tmp_path):
@@ -1994,14 +2028,33 @@ SINCE_CASES = {
     "metrics/event15": [0.0] * 91,
 }
 
+# New components: 0 on every day until the values in last. A day before the first value other
+# than 0 is never an alert. With a base of 0, Adobe's range of a flagged value of 0 or more is
+# below it, so _history makes each flag "high".
+LAUNCH_CASES = {
+    # Started 6 days ago, and 0 again on the last 3 days.
+    "metrics/event18": [100.0, 100.0, 100.0, 0.0, 0.0, 0.0],
+    # Started yesterday. Its weekday average is 0, so it is not a spike.
+    "metrics/event19": [100.0],
+    # Adobe flagged two days of 0 before it started, and its first two days.
+    "metrics/event20": [(0.0, "high"), (0.0, "high"), (500.0, "high"), (500.0, "high")],
+}
+
+
+def _since_values():
+    """The components and values of SINCE_CASES and LAUNCH_CASES."""
+    cases = {**SINCE_CASES, **LAUNCH_CASES}
+    comps = [_comp(cid, cid, number=int(cid.removeprefix("metrics/event"))) for cid in cases]
+    vals = []
+    for cid, last in cases.items():
+        base = 0.0 if cid == "metrics/event15" or cid in LAUNCH_CASES else 100.0
+        vals += _history(cid, last, base)
+    return comps, vals
+
 
 @pytest.fixture
 def since_run(tmp_path):
-    comps = [_comp(cid, cid, number=i) for i, cid in enumerate(SINCE_CASES, start=1)]
-    vals = []
-    for cid, last in SINCE_CASES.items():
-        vals += _history(cid, last, 0.0 if cid == "metrics/event15" else 100.0)
-    return _build(tmp_path, comps, vals)
+    return _build(tmp_path, *_since_values())
 
 
 def _since(store, rid, **options):
@@ -2037,6 +2090,12 @@ def test_alerts_macro_says_since_when_each_alert_held(since_run):
         "metrics/event13": ("large spike", YESTERDAY, 1, False, True),
         # The streak starts on the first day of the run, and the day before is not in it.
         "metrics/event14": ("unusual", START, 91, True, False),
+        # The 0 after the start of a new component is an alert. The days before the start are
+        # not, so neither is the alert of event19.
+        "metrics/event18": ("dropped to zero", _ago(2), 3, False, False),
+        # The flags before the start are not alerts, so the streak starts on the first day with
+        # data and cannot have started earlier.
+        "metrics/event20": ("unusual", _ago(1), 2, False, False),
     }
 
 
@@ -2145,6 +2204,58 @@ def test_a_streak_follows_the_sensitivity(tmp_path, sensitivity, want):
     assert got == {cid: want}
 
 
+LAUNCHED = {"metrics/event18": _ago(5), "metrics/event19": YESTERDAY, "metrics/event20": _ago(1)}
+
+
+def test_a_day_before_the_first_data_is_never_an_alert(since_run):
+    store, rid = since_run
+
+    def launched(day):
+        rows = store.con.execute(
+            "SELECT component_id, alert, since, days, at_least FROM alerts(?, for_day := ?)",
+            [rid, day],
+        ).fetchall()
+        return {r[0]: tuple(r[1:]) for r in rows if r[0] in LAUNCHED}
+
+    # Every launched component was 0 on this day, and Adobe flagged event20.
+    assert launched(_ago(6)) == {}
+    assert launched(_ago(3)) == {}
+    assert launched(_ago(2)) == {"metrics/event18": ("dropped to zero", _ago(2), 1, False)}
+    assert launched(_ago(1)) == {
+        "metrics/event18": ("dropped to zero", _ago(2), 2, False),
+        "metrics/event20": ("unusual", _ago(1), 1, False),
+    }
+    # The days of the whole run, with any method.
+    for method in ALL_METHODS:
+        for day in _days(START, YESTERDAY):
+            rows = store.con.execute(
+                "SELECT component_id FROM alerts(?, for_day := ?, method := ?)",
+                [rid, day, method],
+            ).fetchall()
+            assert all(day >= LAUNCHED[c] for (c,) in rows if c in LAUNCHED), (method, day)
+    # The page: its alert lists, its day tables and its calendar.
+    view = build_view(store, rid)
+    page = {(a["component_id"], a["day"]) for a in view["alerts"] if a["component_id"] in LAUNCHED}
+    assert page == {("metrics/event18", _ago(n).isoformat()) for n in range(3)} | {
+        ("metrics/event20", _ago(n).isoformat()) for n in range(2)
+    }
+    for n in range(7):
+        day = _ago(n).isoformat()
+        for cid, first in LAUNCHED.items():
+            row = _row(view["views"][f"day:{day}"], cid)
+            assert row["first_data"] == first.isoformat() and row["unused"] is False
+            if day < first.isoformat():
+                assert row["zero"] is False and row["anomaly"] is None, (cid, day)
+    zero = _row(view["views"][f"day:{_ago(2).isoformat()}"], "metrics/event18")
+    assert zero["zero"] is True
+    for c in view["calendar"]:
+        listed = c["high"] + c["low"] + c["zero"]
+        assert all(c["day"] >= LAUNCHED[x].isoformat() for x in listed if x in LAUNCHED), c
+    assert {c["day"] for c in view["calendar"] if "metrics/event18" in c["zero"]} == {
+        _ago(n).isoformat() for n in range(3)
+    }
+
+
 def test_page_alerts_say_since_when(since_run):
     view = build_view(*since_run)
     day = YESTERDAY.isoformat()
@@ -2218,10 +2329,7 @@ SETTINGS = [(0.10, 0.10), (0.15, 0.20), (0.30, 0.50), (0.45, 0.10), (0.60, 1.50)
 @pytest.mark.parametrize("data", ["since", "random"])
 def test_page_and_macro_agree_on_since(tmp_path, method, sensitivity, data):
     if data == "since":
-        comps = [_comp(cid, cid, number=i) for i, cid in enumerate(SINCE_CASES, start=1)]
-        vals = []
-        for cid, last in SINCE_CASES.items():
-            vals += _history(cid, last, 0.0 if cid == "metrics/event15" else 100.0)
+        comps, vals = _since_values()
         comps.append(_comp("metrics/event16", "E16", number=16))
         vals += _jump("metrics/event16")
         comps.append(_comp("metrics/event17", "E17", number=17))

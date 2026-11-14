@@ -3179,6 +3179,101 @@ return {
 """
 
 
+# ---- new components -----------------------------------------------------------------------
+
+# For each day of the Alerts tab, the components its lists name. Then, with "Flagged only", the
+# rows of the table of each day and of the weekly view.
+LAUNCH_PROBE = """
+function names() {
+  return [].map.call(document.querySelectorAll("#tables tbody tr"), function (tr) {
+    // The name, and "(zero)" when the row has the Zero data badge.
+    var cell = tr.querySelector("td.name"), first = cell.firstChild;
+    var name = first.nodeType === 3 ? first.textContent : first.firstChild.textContent;
+    return name + (cell.querySelector(".badge-zero") ? " (zero)" : "");
+  });
+}
+var out = { alerts: {}, tables: {} };
+var sel = document.getElementById("alert-day");
+[].forEach.call(sel.options, function (o) {
+  sel.value = o.value;
+  sel.dispatchEvent(new Event("change"));
+  out.alerts[o.value] = [].map.call(document.querySelectorAll("#alerts tbody code"),
+    function (c) { return c.textContent; }).sort();
+});
+document.getElementById("flagged-only").click();
+var day = document.getElementById("day");
+[].forEach.call(day.options, function (o) {
+  day.value = o.value;
+  day.dispatchEvent(new Event("change"));
+  out.tables[o.value] = names();
+});
+var g = document.getElementById("granularity");
+g.value = "week";
+g.dispatchEvent(new Event("change"));
+out.week = names();
+return out;
+"""
+
+
+def _launched(first, flagged=None):
+    """0 on every day before first and 100 from first on. Adobe flagged the 0 on flagged."""
+
+    def make(cid):
+        out = []
+        for d in _days():
+            if d == flagged:
+                out.append(_dv(cid, d, 0.0, 50.0, 80.0, 20.0, True))
+            else:
+                out.append(_dv(cid, d, 0.0 if d < first else 100.0))
+        return out
+
+    return make
+
+
+def test_a_new_component_is_no_alert_before_it_collects_data(chrome, tmp_path):
+    # Event 1 started 2 days before yesterday. Event 2 started yesterday, and Adobe flagged one
+    # of its days of 0 before. Event 3 has data on every day but one, so its 0 is an alert.
+    ago = {n: YESTERDAY - timedelta(days=n) for n in range(7)}
+    page = _page_of(
+        tmp_path,
+        [
+            _launched(ago[2]),
+            _launched(YESTERDAY, flagged=ago[3]),
+            lambda cid: [_dv(cid, d, 0.0 if d == ago[4] else 100.0) for d in _days()],
+        ],
+    )
+    got = run_probe(chrome, page, LAUNCH_PROBE, tmp_path)
+    days = {d.isoformat(): ["metrics/event3"] if n == 4 else [] for n, d in ago.items()}
+    assert got["alerts"] == days
+    assert got["tables"] == {d: ["Event 3 (zero)"] if ids else [] for d, ids in days.items()}
+    # The weekly view counts no flag of Event 2 on a day before it started.
+    assert got["week"] == []
+
+
+# Reads every text of the page that names the drop and spike thresholds.
+THRESHOLD_PROBE = """
+var tiles = {};
+[].forEach.call(document.querySelectorAll("#tiles .tile"), function (t) {
+  var note = t.querySelector(".tile-note");
+  tiles[t.querySelector(".tile-label").lastChild.textContent] = note ? note.textContent : null;
+});
+return {
+  tiles: tiles,
+  drops: document.querySelector("#alerts h3#drops-title").firstChild.textContent,
+  spikes: document.querySelector("#alerts h3#spikes-title").firstChild.textContent,
+  hints: [].map.call(document.querySelectorAll("#alerts .hint"), function (p) {
+    return p.textContent;
+  }),
+  result: document.getElementById("change-alert-result").textContent,
+  spikeResult: document.getElementById("spike-alert-result").textContent,
+  text: document.getElementById("alert-text").value,
+  badges: [].map.call(document.querySelectorAll("#tables .badge"), function (b) {
+    return b.getAttribute("title");
+  })
+};
+"""
+
+
 def test_the_chart_is_a_group_that_a_screen_reader_can_enter(chrome, showcase, tmp_path):
     got = run_probe(chrome, render_html(build_view(*showcase)), CHART_ROLE_PROBE, tmp_path)
     # role="img" would hide the parts of the chart and keep the arrow keys from reaching it.
@@ -3189,3 +3284,36 @@ def test_the_chart_is_a_group_that_a_screen_reader_can_enter(chrome, showcase, t
     assert got["live"] == "polite" and got["readoutId"]
     assert got["describedby"] == got["readoutId"]
     assert got["readout"].startswith("Fri, Nov 6, 2026: ")
+
+
+def test_the_page_writes_a_threshold_with_its_decimal(chrome, tmp_path):
+    # A drop of 40 percent and a spike of 80 percent, past thresholds of 27.5 and 62.5 percent.
+    # The page writes them as ahd alerts does, and does not round them to 28 and 63.
+    store = Store.open(tmp_path / "t.duckdb")
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
+    comps = [
+        Component(cid, cid, "metric", "custom_events", i, Column(cid, cid), True)
+        for i, cid in enumerate(("metrics/event1", "metrics/event2"), start=1)
+    ]
+    store.add_components(rid, comps)
+    store.add_daily_values(
+        rid, _series("metrics/event1", 100.0, 60.0) + _series("metrics/event2", 100.0, 180.0)
+    )
+    store.finish_run(rid, "ok")
+    view = build_view(store, rid, change_alert=0.275, spike_alert=0.625)
+    got = run_probe(chrome, render_html(view), THRESHOLD_PROBE, tmp_path)
+    store.con.close()
+    assert got["tiles"]["Large drops"] == "More than 27.5% below the weekday average"
+    assert got["tiles"]["Large spikes"] == "More than 62.5% above the weekday average"
+    assert got["drops"] == "Drops of more than 27.5% below the weekday average"
+    assert got["spikes"] == "Spikes of more than 62.5% above the weekday average"
+    assert any("more than 27.5% below their weekday average" in h for h in got["hints"])
+    assert any("more than 62.5% above their weekday average" in h for h in got["hints"])
+    assert "more than 27.5% below the weekday average" in got["result"]
+    assert "more than 62.5% above the weekday average" in got["spikeResult"]
+    assert "Drops of more than 27.5% below the weekday average (1):" in got["text"]
+    assert "Spikes of more than 62.5% above the weekday average (1):" in got["text"]
+    assert any(b and b.startswith("More than 27.5% below") for b in got["badges"])
+    assert any(b and b.startswith("More than 62.5% above") for b in got["badges"])
+    for words in (got["result"], got["text"], *got["tiles"].values()):
+        assert "28%" not in (words or "") and "63%" not in (words or "")

@@ -74,20 +74,22 @@ dv AS (
 )"""
 
 # Catalog components that have at least one daily value, with their sort position.
-# unused: the value was 0 or empty on every day through yesterday. It reads dv, so NaN and
-# Infinity count as empty, as in the component_days view.
+# first_data: the first day of the run's 91 days with a value other than 0. A day before it is
+# never an alert, with any method. It reads dv, so NaN and Infinity count as empty, as in the
+# component_days view. unused: the component has no such day, so it never collected data.
 _COMPS = """
-comps AS (
+c_first AS (
     SELECT c.component_id, c.name, c.kind, c."group", c.number, c.metric_type,
         coalesce(list_position($groups::VARCHAR[], c."group"), 1000000) AS gpos,
-        NOT EXISTS (SELECT 1 FROM dv d
-                    WHERE d.component_id = c.component_id
-                      AND d.day BETWEEN $start AND $yesterday AND d.value <> 0) AS unused
+        (SELECT min(d.day) FROM dv d
+         WHERE d.component_id = c.component_id
+           AND d.day BETWEEN $start AND $yesterday AND d.value <> 0) AS first_data
     FROM components c
     WHERE c.run_id = $run_id AND NOT starts_with(c.component_id, 'individual/')
       AND EXISTS (SELECT 1 FROM daily_values d
                   WHERE d.run_id = $run_id AND d.component_id = c.component_id)
-)"""
+),
+comps AS (SELECT *, first_data IS NULL AS unused FROM c_first)"""
 
 
 # How wide the range of a local anomaly method is, from the widest to the narrowest. A higher
@@ -344,16 +346,16 @@ def _for_method(sql: str, method: str, adobe_dv: str, local_dv: str) -> str:
     return sql.replace(adobe_dv, local_dv)
 
 
+# The direction of a flag. Adobe may flag a value without an upper limit, and then the expected
+# value says the direction. The anomaly_days macro and the component_days view in views.sql
+# have the same rule.
 _ANOMALY = """CASE WHEN {a}.anomaly
-    THEN CASE WHEN {a}.value > {a}.upper THEN 'high' ELSE 'low' END END"""
+    THEN CASE WHEN {a}.value > coalesce({a}.upper, {a}.expected) THEN 'high' ELSE 'low' END END"""
 
-# A component that never collected data is not an alert, even when Adobe flags its 0.
-# The alerts macro in views.sql leaves out the same rows with NOT (zero AND unused).
-_ALERT_ANOMALY = (
-    "CASE WHEN c.unused AND coalesce(d.value = 0, false) THEN NULL ELSE "
-    + _ANOMALY.format(a="d")
-    + " END"
-)
+# A day before the first day with a value other than 0 is not an alert, even when the method
+# flags it. So a component that never collected data never alerts. The alerts macro in
+# views.sql leaves out the same rows with coalesce(day >= first_data, false).
+_ALERT_ANOMALY = "CASE WHEN d.day >= c.first_data THEN " + _ANOMALY.format(a="d") + " END"
 
 _ORDER = "gpos, number NULLS LAST, component_id"
 
@@ -380,7 +382,7 @@ base AS (
 ),
 r AS (
     SELECT s.sel_day, c.component_id, c.name, c.kind, c."group", c.number, c.metric_type,
-        c.unused, c.gpos, d.value, b.baseline,
+        c.unused, c.first_data, c.gpos, d.value, b.baseline,
         {_pct("d.value", "b.baseline")} AS pct,
         {_ALERT_ANOMALY} AS anomaly
     FROM sel s CROSS JOIN comps c
@@ -388,7 +390,11 @@ r AS (
     LEFT JOIN dv d ON d.component_id = c.component_id AND d.day = s.sel_day
 )
 SELECT CAST(sel_day AS VARCHAR) AS sel_day, component_id, name, kind, "group", number,
-    metric_type, value, baseline, pct, coalesce(value = 0, false) AS zero, unused, anomaly
+    metric_type, value, baseline, pct,
+    -- A 0 before the first day with data is not an alert, so it does not count as zero. A
+    -- component that never collected data keeps it, and the page marks it as never used.
+    coalesce(value = 0, false) AND (unused OR sel_day >= first_data) AS zero, unused,
+    CAST(first_data AS VARCHAR) AS first_data, anomaly
 FROM r
 ORDER BY sel_day DESC, {_ORDER}
 """
@@ -396,7 +402,8 @@ ORDER BY sel_day DESC, {_ORDER}
 _WEEK_SQL = f"""
 WITH {_DV}, {_COMPS},
 r AS (
-    SELECT c.component_id, c.name, c.kind, c."group", c.number, c.metric_type, c.unused, c.gpos,
+    SELECT c.component_id, c.name, c.kind, c."group", c.number, c.metric_type, c.unused,
+        c.first_data, c.gpos,
         sum(d.value) FILTER (WHERE d.day BETWEEN $week_start AND $week_end) AS value,
         coalesce(sum(d.value) FILTER (WHERE d.day BETWEEN $baseline_start AND $baseline_end), 0)
             / 12 AS baseline
@@ -405,7 +412,8 @@ r AS (
 ),
 p AS (SELECT *, {_pct("value", "baseline")} AS pct FROM r)
 SELECT component_id, name, kind, "group", number, metric_type, value, baseline, pct,
-    coalesce(value = 0, false) AS zero, unused, NULL AS anomaly
+    coalesce(value = 0, false) AS zero, unused, CAST(first_data AS VARCHAR) AS first_data,
+    NULL AS anomaly
 FROM p
 ORDER BY {_ORDER}
 """
@@ -453,8 +461,8 @@ usual AS (
     GROUP BY s.sel_day, c.component_id
 ),
 r AS (
-    SELECT u.sel_day, c.name, c.component_id, c.metric_type, c.unused, c.gpos, c.number,
-        d.expected, d.value AS actual, u.usual,
+    SELECT u.sel_day, c.name, c.component_id, c.metric_type, c.unused, c.first_data, c.gpos,
+        c.number, d.expected, d.value AS actual, u.usual,
         {_pct("d.value", "d.expected")} AS pct_vs_expected,
         {_pct("d.value", "u.usual")} AS pct_vs_usual,
         {_ALERT_ANOMALY} AS anomaly, coalesce(d.value = 0, false) AS zero
@@ -464,7 +472,8 @@ r AS (
 -- Each row with a value of 0 or a flag, with each day from its own day back to the day before
 -- the run's 91 days.
 back AS (
-    SELECT r.sel_day, r.component_id, CASE WHEN r.zero THEN 'zero' ELSE r.anomaly END AS condition,
+    SELECT r.sel_day, r.component_id, r.first_data,
+        CASE WHEN r.zero THEN 'zero' ELSE r.anomaly END AS condition,
         r.sel_day - b.n::INTEGER AS day
     FROM r, range(0, 93) b(n)
     WHERE (r.zero OR r.anomaly IS NOT NULL) AND r.sel_day - b.n::INTEGER >= $start - 1
@@ -472,6 +481,7 @@ back AS (
 judged AS (
     SELECT b.sel_day, b.component_id, b.day,
         CASE
+            WHEN d.day < b.first_data THEN 'no'
             WHEN b.condition = 'zero' AND d.value = 0 THEN 'yes'
             WHEN b.condition <> 'zero' AND {_ANOMALY.format(a="d")} = b.condition THEN 'yes'
             WHEN d.value IS NULL THEN 'unknown'
@@ -523,9 +533,12 @@ SELECT CAST(r.sel_day AS VARCHAR) AS day, name, r.component_id, metric_type, exp
 FROM r
 LEFT JOIN breaks b ON b.sel_day = r.sel_day AND b.component_id = r.component_id
 LEFT JOIN changes ch ON ch.sel_day = r.sel_day AND ch.component_id = r.component_id
-WHERE anomaly IS NOT NULL OR zero
-    OR (usual >= {MIN_USUAL} AND r.pct_vs_usual < -{MIN_CHANGE_ALERT})
-    OR (usual >= {MIN_USUAL} AND r.pct_vs_usual > {MIN_SPIKE_ALERT})
+-- A day before the first day with data is not an alert. A 0 of a component that never
+-- collected data stays, so that the page can list it apart.
+WHERE (r.sel_day >= r.first_data OR (r.unused AND zero))
+    AND (anomaly IS NOT NULL OR zero
+        OR (usual >= {MIN_USUAL} AND r.pct_vs_usual < -{MIN_CHANGE_ALERT})
+        OR (usual >= {MIN_USUAL} AND r.pct_vs_usual > {MIN_SPIKE_ALERT}))
 ORDER BY r.sel_day DESC, {_ORDER}
 """
 
@@ -544,15 +557,15 @@ ORDER BY s.sel_day
 """
 
 # Every day of the trend, with the components that had an alert by the rules that hold for
-# any day: Adobe flagged the value, or it dropped to 0 and the component had data on other
-# days. Large drops need a weekday average, which only the last 7 days have, so they are not
+# any day: Adobe flagged the value, or it dropped to 0 on or after the first day the component
+# had data. Large drops need a weekday average, which only the last 7 days have, so they are not
 # here. A day with no stored value at all is left out, so the page can show it as missing.
 _CALENDAR_SQL = f"""
 WITH {_DV}, {_COMPS},
 v AS (
     SELECT d.day, c.component_id, c.gpos, c.number,
         {_ALERT_ANOMALY} AS anomaly,
-        coalesce(d.value = 0, false) AND NOT c.unused AS zero
+        coalesce(d.value = 0 AND d.day >= c.first_data, false) AS zero
     FROM dv d JOIN comps c ON c.component_id = d.component_id
     WHERE d.day BETWEEN $start AND $yesterday
 )
@@ -574,6 +587,7 @@ _HISTORY_DV = """
 dv AS (
     SELECT d.run_id, d.component_id, d.day, r.today,
         CASE WHEN isfinite(d.value) THEN d.value END AS value,
+        CASE WHEN isfinite(d.expected) THEN d.expected END AS expected,
         CASE WHEN isfinite(d.upper) THEN d.upper END AS upper,
         d.anomaly
     FROM daily_values d JOIN r ON r.run_id = d.run_id
@@ -604,8 +618,8 @@ r AS (
 ),{_HISTORY_DV},
 c AS (
     SELECT k.run_id, k.component_id,
-        NOT coalesce(bool_or(d.value <> 0)
-            FILTER (WHERE d.day BETWEEN d.today - 91 AND d.today - 1), false) AS unused,
+        min(d.day) FILTER (WHERE d.value <> 0 AND d.day BETWEEN d.today - 91 AND d.today - 1)
+            AS first_data,
         coalesce(sum(d.value) FILTER (WHERE d.day BETWEEN d.today - 91 AND d.today - 8
             AND dayofweek(d.day) = dayofweek(d.today - 1)), 0) / 12 AS usual
     FROM components k
@@ -614,7 +628,7 @@ c AS (
     GROUP BY ALL
 ),
 last AS (
-    SELECT c.run_id, c.component_id, c.unused, c.usual,
+    SELECT c.run_id, c.component_id, c.first_data IS NULL AS unused, c.usual,
         {_pct("d.value", "c.usual")} AS pct,
         {_ALERT_ANOMALY} AS anomaly,
         coalesce(d.value = 0, false) AS zero
