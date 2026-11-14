@@ -245,11 +245,23 @@ def write_json(results: list[RunAlerts], out: TextIO) -> None:
     out.write(json.dumps(data, indent=2, allow_nan=False) + "\n")
 
 
+# A spreadsheet such as Excel reads a cell that starts with one of these as a formula, e.g.,
+# =HYPERLINK(...) in the name of a component.
+_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
+
+
 def csv_value(value: Any) -> Any:
-    """A value as the CSV has it: as in the JSON, and true or false as JSON writes them."""
+    """A value as the CSV has it: as in the JSON, and true or false as JSON writes them.
+
+    Text that a spreadsheet would read as a formula gets a single quote in front, so that it
+    stays text. Numbers stay as they are, also negative ones.
+    """
     if isinstance(value, bool):
         return "true" if value else "false"
-    return json_value(value)
+    value = json_value(value)
+    if isinstance(value, str) and value.startswith(_FORMULA_STARTS):
+        return "'" + value
+    return value
 
 
 def write_csv(results: list[RunAlerts], out: TextIO) -> None:

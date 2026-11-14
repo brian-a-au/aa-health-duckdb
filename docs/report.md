@@ -283,7 +283,7 @@ The calendar follows the Day picker. In the weekly view it outlines the week's 7
 
 ### Charts
 
-Two charts show 91 days of one metric and one dimension. Each shows the actual values, the expected value and expected range of the anomaly method, and markers where it flagged a value. With a local method, the first 8 weeks have no range, or the first 9 weeks with `weekday-trend`. See [The first eight weeks have no range](#the-first-eight-weeks-have-no-range). Use the arrow keys on a chart to read each day.
+Two charts show 91 days of one metric and one dimension. Each shows the actual values, the expected value and expected range of the anomaly method, and markers where it flagged a value. With a local method, the first 8 weeks have no range, or the first 9 weeks with `weekday-trend`. See [The first eight weeks have no range](#the-first-eight-weeks-have-no-range). Use the arrow keys on a chart to read each day. A screen reader says each day as you move.
 
 The charts follow the Day picker:
 
@@ -394,7 +394,7 @@ The [`suite_events()` macro](duckdb.md#suite_eventsrun-) gives the same events f
 - a formatted table, which Outlook, Gmail and Apple Mail paste
 - plain text, which a chat or a text editor pastes
 
-The copy follows the chosen day and the sliders. It says since when each alert has held, and lists the new alerts first in each group. A suite-wide event comes first, with its line and its first 5 alerts, and a line that counts the others. The groups after it leave out the alerts of the event. If the browser cannot copy, open "Show the alert summary as text" and copy the text from there.
+The copy follows the chosen day and the sliders. Both versions use the last slider setting, also in a large report that is still waiting for you to pause. It says since when each alert has held, and lists the new alerts first in each group. A suite-wide event comes first, with its line and its first 5 alerts, and a line that counts the others. The groups after it leave out the alerts of the event. If the browser cannot copy, open "Show the alert summary as text" and copy the text from there.
 
 To send alerts on a schedule, or only when something is new, see the [DuckDB guide](duckdb.md#email-recipes).
 
@@ -432,5 +432,7 @@ If you run ahd every day, the table shows when a problem started and whether it 
 - **Other metrics** show as plain numbers, with up to two decimals.
 - **Weekday averages and expected values** are rounded: whole numbers from 100 up, one decimal below that. A currency value below 100 keeps the currency's own decimals.
 - **A value that could not be read** says "No data". It is never shown as 0.
+- **The chart axis** gives each line its own label. A currency axis in steps under 1 keeps at least the currency's own decimals, e.g., $0.05 and $0.10.
+- **Numbers, percents and dates** follow the language of your browser, e.g., -12.5% in English and -12,5 % in German.
 
 For how these numbers compare with the Excel workbook, see [Compared with the Excel workbook](excel-comparison.md).
