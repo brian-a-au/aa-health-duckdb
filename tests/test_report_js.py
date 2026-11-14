@@ -2972,3 +2972,75 @@ def test_the_copied_html_starts_with_the_event_and_keeps_names_inert(chrome, tog
     # The first 5 are the new drops, which hold the two odd names, as text.
     assert "&lt;img src=x" in rich and "&lt;/script&gt;&lt;b&gt;bold" in rich
     assert "<img" not in rich and "<b>" not in rich
+
+
+# ---- new components -----------------------------------------------------------------------
+
+# For each day of the Alerts tab, the components its lists name. Then, with "Flagged only", the
+# rows of the table of each day and of the weekly view.
+LAUNCH_PROBE = """
+function names() {
+  return [].map.call(document.querySelectorAll("#tables tbody tr"), function (tr) {
+    // The name, and "(zero)" when the row has the Zero data badge.
+    var cell = tr.querySelector("td.name"), first = cell.firstChild;
+    var name = first.nodeType === 3 ? first.textContent : first.firstChild.textContent;
+    return name + (cell.querySelector(".badge-zero") ? " (zero)" : "");
+  });
+}
+var out = { alerts: {}, tables: {} };
+var sel = document.getElementById("alert-day");
+[].forEach.call(sel.options, function (o) {
+  sel.value = o.value;
+  sel.dispatchEvent(new Event("change"));
+  out.alerts[o.value] = [].map.call(document.querySelectorAll("#alerts tbody code"),
+    function (c) { return c.textContent; }).sort();
+});
+document.getElementById("flagged-only").click();
+var day = document.getElementById("day");
+[].forEach.call(day.options, function (o) {
+  day.value = o.value;
+  day.dispatchEvent(new Event("change"));
+  out.tables[o.value] = names();
+});
+var g = document.getElementById("granularity");
+g.value = "week";
+g.dispatchEvent(new Event("change"));
+out.week = names();
+return out;
+"""
+
+
+def _launched(first, flagged=None):
+    """0 on every day before first and 100 from first on. Adobe flagged the 0 on flagged."""
+
+    def make(cid):
+        out = []
+        for d in _days():
+            if d == flagged:
+                out.append(_dv(cid, d, 0.0, 50.0, 80.0, 20.0, True))
+            else:
+                out.append(_dv(cid, d, 0.0 if d < first else 100.0))
+        return out
+
+    return make
+
+
+def test_a_new_component_is_no_alert_before_it_collects_data(chrome, tmp_path):
+    # Event 1 started 2 days before yesterday. Event 2 started yesterday, and Adobe flagged one
+    # of its days of 0 before. Event 3 has data on every day but one, so its 0 is an alert.
+    ago = {n: YESTERDAY - timedelta(days=n) for n in range(7)}
+    page = _page_of(
+        tmp_path,
+        [
+            _launched(ago[2]),
+            _launched(YESTERDAY, flagged=ago[3]),
+            lambda cid: [_dv(cid, d, 0.0 if d == ago[4] else 100.0) for d in _days()],
+        ],
+    )
+    got = run_probe(chrome, page, LAUNCH_PROBE, tmp_path)
+    days = {d.isoformat(): ["metrics/event3"] if n == 4 else [] for n, d in ago.items()}
+    assert got["alerts"] == days
+    assert got["tables"] == {d: ["Event 3 (zero)"] if ids else [] for d, ids in days.items()}
+    # The weekly view counts no flag of Event 2 on a day before it started.
+    assert got["week"] == []
+

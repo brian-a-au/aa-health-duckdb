@@ -632,6 +632,7 @@ ROW_KEYS = (
     "number",
     "metric_type",
     "unused",
+    "first_data",
     "value",
     "baseline",
     "pct",

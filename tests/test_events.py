@@ -39,11 +39,13 @@ def _days(start=START, end=TODAY):
 
 def _values(cid, kind, since=YESTERDAY):
     """100 on every day, and the value of kind on each day from since to yesterday. "unused"
-    is 0 on every day."""
+    is 0 on every day. "new" is 0 on every day before since and 100 from since on."""
     out = []
     for d in _days():
         if kind == "unused":
             out.append(DailyValue(cid, d, 0.0, None, None, None, None))
+        elif kind == "new":
+            out.append(DailyValue(cid, d, 0.0 if d < since else 100.0, None, None, None, None))
         elif since <= d <= YESTERDAY and kind in ("high", "low"):
             out.append(DailyValue(cid, d, YESTERDAY_VALUE[kind], 100.0, 120.0, 80.0, True))
         elif since <= d <= YESTERDAY:
@@ -139,6 +141,20 @@ def test_components_that_never_collected_data_do_not_count(tmp_path):
     store, rid = _store(tmp_path, {"zero": 10, "quiet": 10, "unused": 30})
     [event] = _events(store, rid)
     assert (event["event"], event["alerts"], event["components"]) == ("zero", 10, 20)
+
+
+def test_new_components_make_no_event_before_they_collect_data(tmp_path):
+    # 12 components started the day before yesterday, so they were 0 on every day before.
+    # Those days are not alerts, so the 12 make no zero event on them. They collected data in
+    # the run, so they count among the components of yesterday's event.
+    start = YESTERDAY - timedelta(days=1)
+    store, rid = _store(tmp_path, {"new": [start] * 12, "zero": 12})
+    for back in (2, 30, 90):
+        day = YESTERDAY - timedelta(days=back)
+        assert _alert_events(store, rid, for_day=day) == {}, day
+        assert _events(store, rid, for_day=day) == [], day
+    [event] = _events(store, rid)
+    assert (event["event"], event["alerts"], event["components"]) == ("zero", 12, 24)
 
 
 def test_a_small_suite_has_an_event_from_10_alerts(tmp_path):

@@ -1182,16 +1182,17 @@
     return fmtShortDay(weekDays[0]) + " to " + fmtShortDay(weekDays[6]) + ", " +
       weekDays[6].slice(0, 4);
   }
-  // How many of the week's days were flagged above and below the expected range. A component
-  // that never collected data has no flags, as in the daily view.
+  // How many of the week's days were flagged above and below the expected range. A day before
+  // the component's first day with data has no flags, as in the daily view. So a component
+  // that never collected data has none.
   var weekFlagCache = {};
   function weekFlags(row) {
     var cid = row.component_id;
     if (!(cid in weekFlagCache)) {
       var f = { high: 0, low: 0 };
-      if (!row.unused) {
+      if (!row.unused && row.first_data) {
         (data.series[cid] || []).forEach(function (p) {
-          if (weekDays.indexOf(p[0]) < 0) return;
+          if (weekDays.indexOf(p[0]) < 0 || p[0] < row.first_data) return;
           if (p[5] === "high") f.high++;
           if (p[5] === "low") f.low++;
         });

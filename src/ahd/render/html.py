@@ -141,7 +141,7 @@ def _inline(text: str, tag: str) -> Markup:
 
 # The page data is packed to keep the file small. report.js unpacks it with unpackView into
 # the shape build_view returns. Keep both in step: the field order below is the order there.
-COMPONENT_FIELDS = ("name", "kind", "group", "number", "metric_type", "unused")
+COMPONENT_FIELDS = ("name", "kind", "group", "number", "metric_type", "unused", "first_data")
 # An alert carries only these fields of its component.
 ALERT_COMPONENT_FIELDS = ("name", "metric_type", "unused")
 ROW_FIELDS = ("component_id", "value", "baseline", "pct", "zero", "anomaly")
