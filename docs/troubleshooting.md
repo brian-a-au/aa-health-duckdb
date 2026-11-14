@@ -125,7 +125,7 @@ There is no database at data/ahd.duckdb.
 
 Only `ahd run` and `ahd import` make a new file. Every other command needs a file that holds runs. Make a run first, or name the file with `--db` or a profile. [How runs are stored](runs.md#where-the-file-is) says where the file is.
 
-Two more messages name a file that is not usable. "holds no ahd runs" means the file is an empty DuckDB database. "is not a DuckDB database" means the file is something else. Choose the right file with `--db`.
+Three more messages name a file that is not usable. "holds no ahd runs" means the file is an empty DuckDB database. "is not an ahd database" means the file is a DuckDB database that another program made. The tool does not change it. "is not a DuckDB database" means the file is something else. Choose the right file with `--db`.
 
 ### The database is in use by another program
 
@@ -151,7 +151,7 @@ The `duckdb` command is older than 2.0. Update it, then check with `duckdb --ver
 
 ### A run stays "running"
 
-A run that you stop with Ctrl-C is marked "failed". The requests that were already sent finish first, and the rest are not sent. A request that was waiting to try again is not tried again.
+A run that you stop with Ctrl-C is marked "failed". The requests that were already sent finish first, and the rest are not sent. A request that was waiting to try again is not tried again. The run gets the issue "The run stopped before this component was read." for each component that it did not read. Such a run stays "failed" when `ahd individual` adds a pair to it, so `ahd alerts` does not use it. Make a new run instead.
 
 A run that stopped in another way, e.g., because you closed the window, keeps the status "running". Make a new run. To delete the old one, use `ahd prune --run N --force`.
 

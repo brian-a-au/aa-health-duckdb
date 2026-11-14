@@ -59,6 +59,9 @@ NO_ANOMALY_CODES = ("anomaly_not_allowed", "anomaly_probe_failed")
 NETWORK_ERROR = "network_error"
 SIGN_IN_UNAVAILABLE = "sign_in_unavailable"
 INVALID_RESPONSE = "invalid_response"
+INTERRUPTED = "interrupted"
+INTERRUPTED_MESSAGE = "The run stopped before this component was read."
+INTERRUPTED_PAIR_MESSAGE = "The run stopped before the Individual Component Summary was read."
 
 # The 5 requests of one Individual Component Summary pair.
 PairKind = Literal["current", "historical", "browser", "device", "trend"]
@@ -175,14 +178,26 @@ def probe_anomaly(
 
     Any other ApiError or network error is raised; callers decide how to report it.
     """
+    allowed, _answer = _probe(client, rsid, window, column, segment_id)
+    return allowed
+
+
+def _probe(
+    client: Any, rsid: str, window: RunWindow, column: Column, segment_id: str | None
+) -> tuple[bool, Any]:
+    """probe_anomaly, with Adobe's answer when anomaly detection is allowed.
+
+    The request is the one that a trend batch of this column alone would send, so a run
+    stores the answer and does not ask for the column again.
+    """
     body = trend_body(rsid, window.trend_range(), [column], segment_id, True)
     try:
-        client.post_report(body)
+        answer = client.post_report(body)
     except ApiError as e:
         if e.error_code == "invalid_access":
-            return False
+            return False, None
         raise
-    return True
+    return True, answer
 
 
 def _batches(columns: list[Column], size: int) -> list[list[Column]]:
@@ -260,10 +275,27 @@ def run_fetch(
     try:
         status = _run(client, store, opts, run_id, catalog, window, progress)
     except BaseException:
-        store.finish_run(run_id, "failed")
+        try:
+            _note_interrupted(store, run_id)
+        finally:
+            store.finish_run(run_id, "failed")
         raise
     store.finish_run(run_id, status)
     return run_id
+
+
+def _note_interrupted(store: Store, run_id: int) -> None:
+    """Say what a run that stopped part way, e.g., on Ctrl-C, did not read.
+
+    Each component without a daily value or an issue gets an issue. The pair gets one too,
+    because the pair is read last. add_pair keeps a failed run failed while such an issue is
+    there, so a pair added later cannot make the run look whole.
+    """
+    store.add_unread_issues(run_id, INTERRUPTED, INTERRUPTED_MESSAGE)
+    for p in store.list_pairs(run_id):
+        store.add_issue(
+            run_id, "individual", pair_series_id(p["pair"]), INTERRUPTED, INTERRUPTED_PAIR_MESSAGE
+        )
 
 
 def _run(
@@ -289,14 +321,20 @@ def _run(
 
     columns = [c.column for c in catalog]
     anomaly = True
+    rest = columns
     if columns:
         try:
-            allowed = probe_anomaly(client, opts.rsid, window, columns[0], opts.segment_id)
+            allowed, answer = _probe(client, opts.rsid, window, columns[0], opts.segment_id)
         except (ApiError, SignInUnavailable, requests.RequestException) as e:
             anomaly = False
             issue("permissions", None, "anomaly_probe_failed", _probe_failed_message(e))
         else:
-            if not allowed:
+            if allowed:
+                # The probe asked for the trend of the first column, as a batch of that column
+                # alone would. Store its answer and leave the column out of the batches.
+                value_count += _store_batch(store, run_id, columns[:1], lambda: answer, issue)
+                rest = columns[1:]
+            else:
                 anomaly = False
                 issue("permissions", None, "anomaly_not_allowed", ANOMALY_MESSAGE)
 
@@ -319,7 +357,7 @@ def _run(
                     client.post_report, trend_body(rsid, window.trend_range(), batch, seg, anomaly)
                 ),
             )
-            for batch in _batches(columns, opts.batch_size)
+            for batch in _batches(rest, opts.batch_size)
         ]
         trend_col, ind_futures = _submit_pair(
             pool, client, rsid, seg, window, anomaly, opts.dimension, opts.metric, pair
@@ -330,30 +368,7 @@ def _run(
         for done, (batch, fut) in enumerate(batch_futures, start=1):
             wait([fut])
             progress(f"Daily trends: {done} of {total} requests done.")
-            try:
-                values, errors = parse_trend(fut.result(), batch)
-            except ApiError as e:
-                code = e.error_code or f"http_{e.status}"
-                for col in batch:
-                    issue("column", col.component_id, code, e.message)
-                continue
-            except MalformedResponse:
-                for col in batch:
-                    issue("column", col.component_id, INVALID_RESPONSE, MALFORMED)
-                continue
-            except SignInUnavailable as e:
-                # Signing in again failed for a while. Later requests may still work.
-                for col in batch:
-                    issue("column", col.component_id, SIGN_IN_UNAVAILABLE, str(e))
-                continue
-            except requests.RequestException as e:
-                for col in batch:
-                    issue("column", col.component_id, NETWORK_ERROR, _network_message(e))
-                continue
-            store.add_daily_values(run_id, values)
-            value_count += len(values)
-            for err in errors:
-                issue("column", err.component_id, err.error_code, err.message)
+            value_count += _store_batch(store, run_id, batch, fut.result, issue)
 
         label = _pair_label(opts.dimension_name or opts.dimension, opts.metric_name or opts.metric)
         pair_values, _stored = _store_pair(
@@ -364,6 +379,43 @@ def _run(
     if value_count == 0:
         return "failed"
     return "partial" if issue_count else "ok"
+
+
+def _store_batch(
+    store: Store,
+    run_id: int,
+    batch: list[Column],
+    answer: Callable[[], Any],
+    issue: Callable[[str, str | None, str, str], None],
+) -> int:
+    """Write one trend batch on the calling thread, and return the number of daily values.
+
+    answer gives Adobe's answer or raises the error of the request, e.g., Future.result.
+    """
+    try:
+        values, errors = parse_trend(answer(), batch)
+    except ApiError as e:
+        code = e.error_code or f"http_{e.status}"
+        for col in batch:
+            issue("column", col.component_id, code, e.message)
+        return 0
+    except MalformedResponse:
+        for col in batch:
+            issue("column", col.component_id, INVALID_RESPONSE, MALFORMED)
+        return 0
+    except SignInUnavailable as e:
+        # Signing in again failed for a while. Later requests may still work.
+        for col in batch:
+            issue("column", col.component_id, SIGN_IN_UNAVAILABLE, str(e))
+        return 0
+    except requests.RequestException as e:
+        for col in batch:
+            issue("column", col.component_id, NETWORK_ERROR, _network_message(e))
+        return 0
+    store.add_daily_values(run_id, values)
+    for err in errors:
+        issue("column", err.component_id, err.error_code, err.message)
+    return len(values)
 
 
 def _pair_label(dimension: str, metric: str) -> str:
@@ -487,9 +539,10 @@ def add_pair(
 ) -> tuple[int, int]:
     """Fetch one more pair for a stored run, for the same suite, segment and dates.
 
-    Returns the pair number and how many problems it had. A run that was "ok" becomes
-    "partial" when the new pair had problems. A run that was "failed" becomes "partial" when
-    the new pair stored some data.
+    Returns the pair number and how many problems it had. The status of the run then follows
+    the issues it holds, as _status_after_pair says: e.g., a run that was "ok" becomes
+    "partial" when the new pair had problems, and a run that was "failed" becomes "partial"
+    when the new pair stored some data, unless the run stopped part way.
     """
     run = store.get_run(run_id)
     if run["status"] == "running":
@@ -543,9 +596,19 @@ def add_pair(
         raise
     if empty is not None:
         store.delete_pair(run_id, empty, pair_series_id(empty))
-    if problems and run["status"] == "ok":
-        store.set_status(run_id, "partial")
-    elif stored and run["status"] == "failed":
-        # The run now holds some data, so "Failed. No data could be read." is no longer true.
-        store.set_status(run_id, "partial")
+    status = _status_after_pair(run["status"], stored, store.issue_codes(run_id))
+    if status != run["status"]:
+        store.set_status(run_id, status)
     return pair, problems
+
+
+def _status_after_pair(old: str, stored: int, codes: set[str]) -> str:
+    """The status of a run after add_pair, from the issues the run holds now.
+
+    A failed run stays failed when the new pair stored nothing, or when the run stopped part
+    way and its issues still say so. Else the run is "partial" while it holds an issue, and "ok"
+    when it holds none, e.g., after the pair replaced an empty pair that held the only issues.
+    """
+    if old == "failed" and (not stored or INTERRUPTED in codes):
+        return "failed"
+    return "partial" if codes else "ok"

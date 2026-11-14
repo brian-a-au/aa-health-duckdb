@@ -112,12 +112,28 @@ def _update_views(con: duckdb.DuckDBPyConnection) -> None:
         found = _first(con.execute("SELECT max(version) FROM views_version"))
         if found == VIEWS_VERSION:
             return
+    _in_transaction(con, _write_views)
+
+
+def _write_views(con: duckdb.DuckDBPyConnection) -> None:
+    con.execute(_views())
+    con.execute("CREATE TABLE IF NOT EXISTS views_version (version INTEGER)")
+    con.execute("DELETE FROM views_version")
+    con.execute("INSERT INTO views_version (version) VALUES (?)", [VIEWS_VERSION])
+
+
+def _make_new(con: duckdb.DuckDBPyConnection) -> None:
+    """Write the tables, their version, the views and the views version of a new file."""
+    con.execute(_SCHEMA)
+    con.execute("INSERT INTO schema_version (version) VALUES (?)", [SCHEMA_VERSION])
+    _write_views(con)
+
+
+def _in_transaction(con: duckdb.DuckDBPyConnection, write: Any) -> None:
+    """Run write(con) in one transaction, so that a failure or Ctrl-C changes nothing."""
     con.execute("BEGIN TRANSACTION")
     try:
-        con.execute(_views())
-        con.execute("CREATE TABLE IF NOT EXISTS views_version (version INTEGER)")
-        con.execute("DELETE FROM views_version")
-        con.execute("INSERT INTO views_version (version) VALUES (?)", [VIEWS_VERSION])
+        write(con)
     except BaseException:
         con.execute("ROLLBACK")
         raise
@@ -213,13 +229,15 @@ class Store:
             if not tables and read_only:
                 raise StoreError(f"The database {path} holds no ahd runs.")
             if not tables:
-                con.execute(_SCHEMA)
-                con.execute("INSERT INTO schema_version (version) VALUES (?)", [SCHEMA_VERSION])
-                _update_views(con)
+                _in_transaction(con, _make_new)
+            elif "schema_version" not in tables:
+                # Every released version of ahd made this table, so another program made the
+                # file. Its tables are not ours to delete.
+                raise StoreError(
+                    f"The database {path} is not an ahd database. Choose another file with --db."
+                )
             else:
-                found = None
-                if "schema_version" in tables:
-                    found = _first(con.execute("SELECT max(version) FROM schema_version"))
+                found = _first(con.execute("SELECT max(version) FROM schema_version"))
                 if found != SCHEMA_VERSION:
                     raise SchemaVersionError(_version_message(path, found))
                 # A read-only file cannot be changed. ahd render and ahd runs do not use the
@@ -417,6 +435,24 @@ class Store:
             [run_id, scope, component_id, code, message],
         )
 
+    def add_unread_issues(self, run_id: int, code: str, message: str) -> None:
+        """Add a column issue for each component of the run with no daily value and no issue."""
+        self.con.execute(
+            "INSERT INTO issues (run_id, scope, component_id, code, message)"
+            " SELECT c.run_id, 'column', c.component_id, $code, $message FROM components c"
+            " WHERE c.run_id = $r"
+            " AND NOT EXISTS (FROM daily_values v WHERE v.run_id = $r"
+            " AND v.component_id = c.component_id)"
+            " AND NOT EXISTS (FROM issues i WHERE i.run_id = $r AND i.component_id = c.component_id)"
+            " ORDER BY c.rowid",
+            {"r": run_id, "code": code, "message": message},
+        )
+
+    def issue_codes(self, run_id: int) -> set[str]:
+        """The codes of the issues that the run holds."""
+        cur = self.con.execute("SELECT DISTINCT code FROM issues WHERE run_id = ?", [run_id])
+        return {r[0] for r in cur.fetchall()}
+
     def list_runs(self) -> list[dict]:
         cur = self.con.execute("SELECT * FROM runs ORDER BY run_id DESC")
         cols = [d[0] for d in cur.description]
@@ -461,13 +497,16 @@ class Store:
         self.con.execute("CHECKPOINT")
 
     def pair_has_data(self, run_id: int, pair: int, series_id: str) -> bool:
-        """Whether the pair stored any row: a top 100 item, a breakdown or a daily value."""
+        """Whether the pair stored any row: a top 100 item, a breakdown row or a daily value.
+
+        The totals of a browser or device table do not count. A table that came back with no
+        rows still has totals, e.g., 0, and the run calls it "no rows came back".
+        """
         return bool(
             _first(
                 self.con.execute(
                     "SELECT EXISTS (FROM top_items WHERE run_id = $r AND pair = $p)"
                     " OR EXISTS (FROM breakdowns WHERE run_id = $r AND pair = $p)"
-                    " OR EXISTS (FROM breakdown_totals WHERE run_id = $r AND pair = $p)"
                     " OR EXISTS (FROM daily_values WHERE run_id = $r AND component_id = $s)",
                     {"r": run_id, "p": pair, "s": series_id},
                 )
