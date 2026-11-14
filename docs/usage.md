@@ -387,7 +387,7 @@ Later versions may add fields to the object, to a run and to an alert, as 0.1.13
 }
 ```
 
-`csv` gives one header row and one row for each alert. Each row starts with the fields of its run, as in the JSON, and goes on with the fields of the alert. `at_least` and `is_new` are `true` or `false`, as in the JSON. The last column, `event`, is empty for an alert outside a suite-wide event. `ahd` 0.1.13 added it. The CSV has no row for an event. A run without alerts has no row. A value with a comma, a quote or a line break is put in quotes, as CSV does it. For the same suite, shortened:
+`csv` gives one header row and one row for each alert. Each row starts with the fields of its run, as in the JSON, and goes on with the fields of the alert. `at_least` and `is_new` are `true` or `false`, as in the JSON. The last column, `event`, is empty for an alert outside a suite-wide event. `ahd` 0.1.13 added it. The CSV has no row for an event. A run without alerts has no row. A value with a comma, a quote or a line break is put in quotes, as CSV does it. Names and IDs come from Adobe, and a spreadsheet such as Excel reads a cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return as a formula and runs it. So the CSV puts a single quote `'` in front of such a text value, e.g., `'=HYPERLINK("x")`, and the spreadsheet shows it as text. Numbers keep their form, also negative ones. For the same suite, shortened:
 
 ```
 run_id,rsid,rsid_name,segment_id,status,day,method,method_name,sensitivity,threshold,spike_threshold,alert,anomaly,component_id,name,group,metric_type,value,usual,expected,pct_vs_usual,since,days,at_least,is_new,event
