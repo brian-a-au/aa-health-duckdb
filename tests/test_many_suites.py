@@ -187,7 +187,8 @@ def test_a_wrong_name_stops_before_any_run(run, tmp_path, capsys):
     client = fake()
     assert run(client, "--rsid", "rs1", "--rsid", "No Such Suite") == 1
     assert "No report suite has the ID or name 'No Such Suite'" in capsys.readouterr().err
-    assert stored(tmp_path) == [] and client.posted() == []
+    # The run stored nothing, so it leaves no new database behind.
+    assert not (tmp_path / "t.duckdb").exists() and client.posted() == []
 
 
 def test_all_suites_without_suites_is_an_error(run, capsys):

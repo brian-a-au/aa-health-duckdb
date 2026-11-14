@@ -36,13 +36,15 @@ ahd runs                           # list what is stored
 
 | Option | What it does |
 |---|---|
-| `--profile NAME` | Uses the credential in `~/.aa/orgs/NAME/config.json`, and the database in the same folder. You can put it before or after the command. `AA_PROFILE` sets it too. See [Configuration](configuration.md). |
-| `--config PATH` | Uses this credential file instead of `./config.json`. It cannot be used with a profile. For the commands that sign in. |
+| `--profile NAME` | Chooses the profile in `~/.aa/orgs/NAME`. The commands that sign in use its credential, `config.json`. The commands that read or write runs use its database, `ahd.duckdb`, unless `--db` names another file. `run` and `individual` use both. You can put it before or after the command. `AA_PROFILE` sets it too. See [Configuration](configuration.md). |
+| `--config PATH` | Uses this credential file instead of `./config.json`. It cannot be used with a profile, or when all four credential variables `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_SECRET` and `AHD_SCOPES` are set. For the commands that sign in. |
 | `--company ID_OR_NAME` | Chooses the login company, by global company ID or by name, when the credential sees more than one. Without it, the tool uses the first one and prints its name. For the commands that sign in. |
 | `--db PATH` | Uses this database file. For the commands that read or write a database. |
 | `--verbose` | Writes debug detail to stderr. Put it before the command, e.g., `ahd --verbose run ...`. |
 
-The commands that sign in are `check`, `suites`, `segments`, `run` and `individual`. Each of them first prints where the credential came from, e.g., "Signed in using profile prod". The others never call Adobe. `runs`, `render`, `alerts` and `export` only read the database. `prune` deletes runs from it, and `import` adds runs to it. Only `run` and `import` create a new database. The other commands stop when the file does not exist.
+The commands that sign in are `check`, `suites`, `segments`, `run` and `individual`. Each of them first prints where the credential came from, e.g., "Signed in using profile prod". The others never call Adobe. `runs`, `render`, `alerts` and `export` only read the database. `prune` deletes runs from it, and `import` adds runs to it. Only `run` and `import` create a new database. The other commands stop when the file does not exist. When `run` stops before it stores a run, e.g., because the sign-in fails, it removes the new file again, and the folders it made for it.
+
+A `~` at the start of a path means your home folder, e.g., `--db "~/ahd/ahd.duckdb"`. This holds for `--db`, `--out`, `--config` and the source of `import`, also when the shell leaves the `~` as it is, e.g., in quotes or in a scheduled job.
 
 Where a command takes a report suite, segment, dimension or metric, it accepts an ID or a name. See [How IDs and names are matched](#how-ids-and-names-are-matched).
 
@@ -233,7 +235,7 @@ ahd alerts --rsid my_suite --change-alert 27.5 --anomaly-method weekday-median
 | `--run` | Prints the alerts of this stored run. The run must have ended "ok" or "partial". |
 | `--rsid` | A report suite ID, as `ahd runs` lists it. Prints the alerts of the latest run of the suite that ended "ok" or "partial", which is the run that the view [`latest_runs`](duckdb.md#latest_runs) holds. Give it more than once for several suites. They come in the order you give them, and each suite comes once. |
 | `--all-suites` | Prints the alerts of the latest run that ended "ok" or "partial" of every suite in the database, in the order of the suite names. |
-| `--segment` | With `--rsid` or `--all-suites`, uses the latest runs with this segment ID. Without it, the command uses the runs without a segment. It does not work with `--run`, because a run already has its segment. |
+| `--segment` | With `--rsid` or `--all-suites`, uses the latest runs with this segment ID. Without it, the command uses the runs without a segment. It does not work with `--run`, because a run already has its segment. The command then exits with 2. |
 | `--format` | `text`, the default, for a person or the body of a plain email. `json` or `csv` for another program. See [The formats](#the-formats). |
 | `--every-alert` | In the text, lists every alert of a suite-wide event, not only its first 5. JSON and CSV always hold every alert. See [Suite-wide events in the output](#suite-wide-events-in-the-output). |
 | `--change-alert` | A large drop is a value more than this percent below the weekday average. The default is 30. Any percent above 0 and up to 100 works, e.g., `27.5`, because there is no slider here. |
@@ -423,7 +425,7 @@ AA_PROFILE=prod ahd runs
 
 ## prune
 
-Deletes stored runs from the database. Give `--run` once for each run number, `--before` to delete every run whose run date is before a day, or both. Without either option, it stops with an error.
+Deletes stored runs from the database. Give `--run` once for each run number, `--before` to delete every run whose run date is before a day, or both. Without either option, it stops with exit code 2 and prints its usage. When a run that `--run` names is not stored, it deletes nothing, also none of the other runs, and exits with 1. The message names each missing run, e.g., "There is no stored run 9."
 
 ```
 ahd prune --run 1 --run 4
@@ -459,8 +461,8 @@ ahd import backup/2026-11 --db data/other.duckdb
 | Code | Meaning |
 |---|---|
 | 0 | Everything worked. `alerts` printed at least one alert. |
-| 1 | The command failed. The message on stderr says why. `run` also exits with 1 when the run ends "failed". `prune` also exits with 1 when you answer no. `alerts` also exits with 1 when a suite has no finished run. |
-| 2 | `check` found limited access, or a check could not be run. `check` or `suites` found no report suites. Any command also exits with 2 when an option is wrong, e.g., `--change-alert 12`, and prints its usage. |
+| 1 | The command failed. The message on stderr says why. `run` also exits with 1 when the run ends "failed". `prune` also exits with 1 when you answer no, or when a run that `--run` names is not stored. `alerts` also exits with 1 when a suite has no finished run. A variable that does not go with an option also gives 1, e.g., `AA_PROFILE` or all four credential variables with `--config`. |
+| 2 | `check` found limited access, or a check could not be run. `check` or `suites` found no report suites. Any command also exits with 2 when an option is wrong, e.g., `--change-alert 12`, or when two options do not go together, e.g., `--profile` with `--config`, and prints its usage. |
 | 3 | `run` or `individual` finished, but some columns or requests had problems. The report's status section lists them. After a run of several suites, at least one suite ended "partial" and none failed. |
 | 4 | `alerts` found no alerts in the chosen runs. See [Exit codes of alerts](#exit-codes-of-alerts). |
 | 130 | You stopped the command with Ctrl-C. A run that `ahd run` had started is marked "failed". A pair that `ahd individual` was adding is removed. |

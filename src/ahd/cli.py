@@ -6,8 +6,11 @@ import argparse
 import logging
 import os
 import re
+import shlex
+import subprocess
 import sys
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -81,10 +84,32 @@ METRIC_HELP = (
     "short ID (cartadditions) or a name (Cart Additions)."
 )
 
+# The help of --profile. Commands that sign in use the credential of the profile, and commands
+# that read or write runs use its database. run and individual use both.
 PROFILE_HELP = (
+    "The profile in ~/.aa/orgs/NAME, the one aa_auto_sdr uses. A command that signs in uses "
+    "its credential, config.json. A command that reads or writes runs uses its database, "
+    "ahd.duckdb, unless --db names another. Defaults to the AA_PROFILE variable."
+)
+PROFILE_CREDENTIAL_HELP = (
     "Use the credential in ~/.aa/orgs/NAME/config.json, the profile aa_auto_sdr uses. "
     "Defaults to the AA_PROFILE variable."
 )
+PROFILE_BOTH_HELP = (
+    "Use the credential in ~/.aa/orgs/NAME/config.json, the profile aa_auto_sdr uses, and "
+    "the database ahd.duckdb in the same folder. --db wins over the database. Defaults to the "
+    "AA_PROFILE variable."
+)
+PROFILE_DATABASE_HELP = (
+    "Use the database of this profile, ~/.aa/orgs/NAME/ahd.duckdb. --db wins over it. "
+    "Defaults to the AA_PROFILE variable."
+)
+
+SEGMENT_WITH_RUN = (
+    "--segment works only with --rsid or --all-suites. The run that --run names already has "
+    "its segment."
+)
+NO_SELECTION = "Say which runs to delete with --run N or --before YYYY-MM-DD."
 
 ACCESS_FIX = (
     "Fix: in the Adobe Admin Console, add the OAuth Server-to-Server credential's technical "
@@ -103,6 +128,12 @@ SENSITIVITY_NEEDS_LOCAL = (
 # given, so that a scheduled job sets them once for ahd run and for send_alerts.py.
 METHOD_ENV = "AHD_ANOMALY_METHOD"
 SENSITIVITY_ENV = "AHD_ANOMALY_SENSITIVITY"
+
+
+def _path(text: str) -> Path:
+    """An argparse type for a path. A ~ at the start is the home folder, also when the shell
+    did not expand it, e.g., in quotes or in a scheduled job."""
+    return Path(text).expanduser()
 
 
 def _day(text: str) -> date:
@@ -170,21 +201,26 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--profile", dest="top_profile", metavar="NAME", help=PROFILE_HELP)
     sub = p.add_subparsers(dest="command", required=True)
 
-    def common(sp: argparse.ArgumentParser, config: bool = True, db: bool = True) -> None:
-        sp.add_argument("--profile", metavar="NAME", help=PROFILE_HELP)
+    def common(
+        sp: argparse.ArgumentParser,
+        config: bool = True,
+        db: bool = True,
+        profile_help: str = PROFILE_DATABASE_HELP,
+    ) -> None:
+        sp.add_argument("--profile", metavar="NAME", help=profile_help)
         if config:
             sp.add_argument(
-                "--config", type=Path, help="Path to config.json (default ./config.json)."
+                "--config", type=_path, help="Path to config.json (default ./config.json)."
             )
         if db:
             sp.add_argument(
                 "--db",
-                type=Path,
+                type=_path,
                 help=f"DuckDB file (default {DEFAULT_DB}, or ahd.duckdb in the profile folder).",
             )
 
-    def signin(sp: argparse.ArgumentParser) -> None:
-        common(sp, db=False)
+    def signin(sp: argparse.ArgumentParser, profile_help: str = PROFILE_CREDENTIAL_HELP) -> None:
+        common(sp, db=False, profile_help=profile_help)
         sp.add_argument(
             "--company",
             metavar="ID_OR_NAME",
@@ -246,10 +282,10 @@ def _parser() -> argparse.ArgumentParser:
     segments.add_argument("--rsid", required=True, help=RSID_HELP)
 
     run = sub.add_parser("run", help="Fetch data and write the HTML report.")
-    signin(run)
+    signin(run, PROFILE_BOTH_HELP)
     run.add_argument(
         "--db",
-        type=Path,
+        type=_path,
         help=f"DuckDB file (default {DEFAULT_DB}, or ahd.duckdb in the profile folder).",
     )
     which = run.add_mutually_exclusive_group(required=True)
@@ -283,29 +319,29 @@ def _parser() -> argparse.ArgumentParser:
         default=DEFAULT_WORKERS,
         help=f"Requests that run at the same time, 1 to 16 (default {DEFAULT_WORKERS}).",
     )
-    run.add_argument("--out", type=Path, default=Path(DEFAULT_OUT), help=OUT_HELP)
+    run.add_argument("--out", type=_path, default=Path(DEFAULT_OUT), help=OUT_HELP)
     change_alert(run)
 
     individual = sub.add_parser(
         "individual",
         help="Add a dimension by metric pair to a stored run's Individual Component Summary.",
     )
-    signin(individual)
+    signin(individual, PROFILE_BOTH_HELP)
     individual.add_argument(
         "--db",
-        type=Path,
+        type=_path,
         help=f"DuckDB file (default {DEFAULT_DB}, or ahd.duckdb in the profile folder).",
     )
     individual.add_argument("--run", type=int, required=True, help="The stored run to add to.")
     individual.add_argument("--dimension", required=True, help=DIMENSION_HELP)
     individual.add_argument("--metric", required=True, help=METRIC_HELP)
-    individual.add_argument("--out", type=Path, default=Path(DEFAULT_OUT), help=OUT_HELP)
+    individual.add_argument("--out", type=_path, default=Path(DEFAULT_OUT), help=OUT_HELP)
     change_alert(individual)
 
     render = sub.add_parser("render", help="Write the HTML from a stored run. No API calls.")
     common(render, config=False)
     render.add_argument("--run", type=int, required=True, help="The stored run to rebuild.")
-    render.add_argument("--out", type=Path, default=Path(DEFAULT_OUT), help=OUT_HELP)
+    render.add_argument("--out", type=_path, default=Path(DEFAULT_OUT), help=OUT_HELP)
     change_alert(render)
 
     alerts = sub.add_parser(
@@ -386,7 +422,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     common(export, config=False)
     export.add_argument(
-        "--out", type=Path, required=True, help="A new or an empty folder for the files."
+        "--out", type=_path, required=True, help="A new or an empty folder for the files."
     )
 
     imp = sub.add_parser(
@@ -395,8 +431,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     common(imp, config=False)
     imp.add_argument(
-        "source", type=Path, help="An ahd DuckDB file, or a folder that ahd export wrote."
+        "source", type=_path, help="An ahd DuckDB file, or a folder that ahd export wrote."
     )
+    for sp in sub.choices.values():
+        # A wrong combination of options stops with exit code 2 and the usage of the command,
+        # as argparse does for a wrong option. See _check_options.
+        sp.set_defaults(usage_error=sp.error)
     return p
 
 
@@ -418,18 +458,35 @@ def _db_path(args: argparse.Namespace) -> Path:
     return folder / PROFILE_DB
 
 
+def _check_options(args: argparse.Namespace) -> None:
+    """Stop with exit code 2 and the usage of the command when its options do not go together.
+    Only the command line counts here. A conflict with a variable, e.g., AA_PROFILE, is found
+    later and exits with 1, as other configuration problems do."""
+    profile = getattr(args, "profile", None) or args.top_profile
+    if getattr(args, "config", None) is not None and profile:
+        # A profile always wins, so --config would be ignored without a word.
+        args.usage_error(
+            f"Use a profile or --config, not both. The profile {profile!r} comes from --profile."
+        )
+    if args.command == "alerts" and args.run is not None and args.segment is not None:
+        args.usage_error(SEGMENT_WITH_RUN)
+    if args.command == "prune" and not args.run and args.before is None:
+        args.usage_error(NO_SELECTION)
+
+
 def _connect(args: argparse.Namespace, factory: Callable[..., Any]) -> Any:
     path = args.config
     profile = _profile(args)
     if path is not None and profile:
-        # A profile always wins, so --config would be ignored without a word.
+        # _check_options already stopped a --profile option, so this one is from AA_PROFILE.
         raise ConfigError(
-            f"Use a profile or --config, not both. The profile {profile!r} comes from --profile "
-            "or the AA_PROFILE variable."
+            f"Use a profile or --config, not both. The profile {profile!r} comes from the "
+            "AA_PROFILE variable."
         )
+    from_option = path is not None
     if path is None and Path("config.json").exists():
         path = Path("config.json")
-    creds = load_credentials(path, profile)
+    creds = load_credentials(path, profile, from_option=from_option)
     company = getattr(args, "company", None)
     client = factory(creds, company_id=company) if company else factory(creds)
     # Only the name of the source, never a value from it.
@@ -589,8 +646,28 @@ def _alert_line(
     return counts_line(alerts_day(store.get_run(run_id)), counts)
 
 
-def _write(view: dict[str, Any], out: Path) -> Path:
-    """Write the report. A file system error becomes a plain ConfigError that names the fix."""
+def _shell_word(text: str) -> str:
+    """The text as one word for the shell of this system, quoted only when it needs it."""
+    if os.name == "nt":
+        return subprocess.list2cmdline([text])
+    return shlex.quote(text)
+
+
+def _render_command(args: argparse.Namespace, run_id: int) -> str:
+    """The ahd render command for the run, with the --db or the profile that chose the file, so
+    that it reads the same database."""
+    words = ["ahd", "render", "--run", str(run_id)]
+    if args.db is not None:
+        words += ["--db", _shell_word(str(args.db))]
+    elif profile := _profile(args):
+        words += ["--profile", _shell_word(profile)]
+    return " ".join(words)
+
+
+def _write(view: dict[str, Any], args: argparse.Namespace) -> Path:
+    """Write the report to --out. A file system error becomes a plain ConfigError that names the
+    fix."""
+    out = args.out
     try:
         return write_report(view, out)
     except OSError as e:
@@ -598,7 +675,8 @@ def _write(view: dict[str, Any], out: Path) -> Path:
         raise ConfigError(
             f"The report could not be written to {out} ({e.strerror or type(e).__name__}). "
             "Choose another folder with --out, or fix this one. "
-            f"Run {run_id} is stored. Then run ahd render --run {run_id} to write the report."
+            f"Run {run_id} is stored. Then run {_render_command(args, run_id)} to write the "
+            "report."
         ) from None
 
 
@@ -628,7 +706,7 @@ def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -
     threshold = args.change_alert / 100
     spike = args.spike_alert / 100
     anomaly = {"method": args.anomaly_method, "sensitivity": args.anomaly_sensitivity}
-    path = _write(build_view(store, run_id, threshold, spike, **anomaly), args.out)
+    path = _write(build_view(store, run_id, threshold, spike, **anomaly), args)
     print(path)
     print(f"Run {run_id} for {rsid} finished with status: {status}")
     if status != "failed":
@@ -642,13 +720,43 @@ def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -
     return status
 
 
+def _new_parts(path: Path) -> list[Path]:
+    """The file and the folders above it that do not exist yet, the file first."""
+    parts: list[Path] = []
+    for part in (path, *path.parents):
+        if part.exists():
+            break
+        parts.append(part)
+    return parts
+
+
+def _remove_new(parts: list[Path]) -> None:
+    """Remove the file that the command made, and the folders it made for it."""
+    file, *folders = parts
+    for leftover in (file, file.with_name(file.name + ".wal")):
+        leftover.unlink(missing_ok=True)
+    for folder in folders:
+        # A folder that now holds something else stays.
+        with suppress(OSError):
+            folder.rmdir()
+
+
 def _run(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
+    path = _db_path(args)
+    new = _new_parts(path)
     # Open the file first, so a locked file stops the run before any call to Adobe.
-    store = Store.open(_db_path(args))
+    store = Store.open(path)
+    stored = True
     try:
         return _run_suites(args, factory, store)
     finally:
+        if new:
+            # A new file that holds no run, e.g., after a failed sign-in, is not left behind.
+            with suppress(duckdb.Error):
+                stored = bool(store.list_runs())
         store.con.close()
+        if not stored:
+            _remove_new(new)
 
 
 def _run_suites(args: argparse.Namespace, factory: Callable[..., Any], store: Store) -> int:
@@ -716,7 +824,7 @@ def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
                 method=args.anomaly_method,
                 sensitivity=args.anomaly_sensitivity,
             ),
-            args.out,
+            args,
         )
     )
     print(f"Added {dim['name']} by {met['name']} to run {args.run}.")
@@ -742,7 +850,7 @@ def _render(args: argparse.Namespace) -> int:
                 method=args.anomaly_method,
                 sensitivity=args.anomaly_sensitivity,
             ),
-            args.out,
+            args,
         )
     )
     return 0
@@ -751,11 +859,6 @@ def _render(args: argparse.Namespace) -> int:
 def _alerts(args: argparse.Namespace) -> int:
     """Print the alerts of the chosen runs. Exit with 0 when there are any, EXIT_NO_ALERTS when
     there are none, and 1 when a suite has no finished run. The others are still printed."""
-    if args.run is not None and args.segment is not None:
-        raise ConfigError(
-            "--segment works only with --rsid or --all-suites. The run that --run names already "
-            "has its segment."
-        )
     path = _db_path(args)
     rules = Rules(
         args.threshold, args.spike_threshold, args.anomaly_method, args.anomaly_sensitivity
@@ -861,13 +964,21 @@ def _confirm(question: str) -> bool:
         return False
 
 
+def _no_stored_runs(numbers: list[int]) -> str:
+    """For example "There is no stored run 9." or "There are no stored runs 7, 8 and 9."."""
+    if len(numbers) == 1:
+        return f"There is no stored run {numbers[0]}."
+    words = [str(n) for n in numbers]
+    return f"There are no stored runs {', '.join(words[:-1])} and {words[-1]}."
+
+
 def _prune(args: argparse.Namespace) -> int:
-    if not args.run and args.before is None:
-        raise ConfigError("Say which runs to delete with --run N or --before YYYY-MM-DD.")
     store = Store.open(_db_path(args), create=False)
     found = store.runs_to_prune(args.run, args.before)
-    for n in sorted(set(args.run) - {r["run_id"] for r in found}):
-        print(f"There is no stored run {n}.")
+    missing = sorted(set(args.run) - {r["run_id"] for r in found})
+    if missing:
+        # A wrong number may be a typo for another run, so nothing is deleted.
+        raise ConfigError(f"{_no_stored_runs(missing)} No runs were deleted.")
     running = [r for r in found if r["status"] == "running"]
     if running and not args.force:
         for r in running:
@@ -957,6 +1068,7 @@ def _replace_unknown_characters() -> None:
 def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> int:
     _replace_unknown_characters()
     args = _parser().parse_args(argv)
+    _check_options(args)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         stream=sys.stderr,

@@ -526,9 +526,12 @@ def test_a_partial_run_has_alerts(many, capsys):
 
 
 def test_segment_does_not_go_with_run(many, capsys):
-    assert _alerts(many, "--run", "1", "--segment", "s300_mobile") == 1
-    assert capsys.readouterr().err == (
-        "Error: --segment works only with --rsid or --all-suites. The run that --run names "
+    # Two options that do not go together are a wrong option, with exit code 2 and the usage.
+    with pytest.raises(SystemExit) as stop:
+        _alerts(many, "--run", "1", "--segment", "s300_mobile")
+    assert stop.value.code == 2
+    assert capsys.readouterr().err.endswith(
+        "error: --segment works only with --rsid or --all-suites. The run that --run names "
         "already has its segment.\n"
     )
 
