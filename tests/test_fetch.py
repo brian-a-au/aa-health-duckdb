@@ -16,7 +16,7 @@ from fakes import (
 )
 
 from ahd.api.client import ApiError
-from ahd.api.reports import MALFORMED, Column
+from ahd.api.reports import MALFORMED, Column, trend_body
 from ahd.config import ConfigError
 from ahd.dates import RunWindow
 from ahd.fetch import RunOptions, fetch_catalog, probe_anomaly, run_fetch
@@ -76,13 +76,50 @@ def test_batches_respect_batch_size(store):
     fake = fake_for("rs1", events(44), custom_dims()[1:])  # 44 events + page = 45 columns
     run_fetch(fake, store, opts(metric="metrics/visits"))
     sizes = sorted(len(metric_ids(b)) for b in fake.trend_bodies())
-    # probe (1), individual (1), batches 20 + 20 + 5
-    assert sizes == [1, 1, 5, 20, 20]
-    # the probe is always the first call; every event appears exactly once after it
-    later = [i for b in fake.trend_bodies()[1:] for i in metric_ids(b)]
-    assert sorted(i for i in later if i.startswith("metrics/event")) == sorted(
+    # probe (1), individual (1), batches 20 + 20 + 4 of the columns after the probe's
+    assert sizes == [1, 1, 4, 20, 20]
+    # the probe is always the first call, and it holds the first column. Every event is
+    # asked for exactly once.
+    assert metric_ids(fake.trend_bodies()[0]) == ["metrics/event1"]
+    every = [i for b in fake.trend_bodies() for i in metric_ids(b)]
+    assert sorted(i for i in every if i.startswith("metrics/event")) == sorted(
         f"metrics/event{n}" for n in range(1, 45)
     )
+
+
+def test_the_probe_answer_is_stored_as_the_first_columns_trend(store):
+    fake = fake_for("rs1", events(3), custom_dims())
+    rid = run_fetch(fake, store, opts())
+    probe = fake.trend_bodies()[0]
+    assert is_anomaly_trend(probe) and metric_ids(probe) == ["metrics/event1"]
+    # The probe's body is the one that a batch of this column alone would send.
+    assert probe == trend_body(
+        "rs1", W.trend_range(), [Column("metrics/event1", "metrics/event1")], None, True
+    )
+    assert values_for(store, rid, "metrics/event1") == 92
+    assert sum(b == probe for b in fake.posted()) == 1
+    assert store.get_run(rid)["status"] == "ok"
+
+
+def test_a_probe_answer_that_cannot_be_read_is_an_issue_of_its_column(store):
+    fake = fake_for(
+        "rs1",
+        events(3),
+        custom_dims(),
+        posts=[(lambda b: is_trend(b) and metric_ids(b) == ["metrics/event1"], {"rows": "x"})],
+    )
+    rid = run_fetch(fake, store, opts())
+    assert [(r[1], r[2]) for r in issues(store, rid)] == [("metrics/event1", "invalid_response")]
+    assert values_for(store, rid, "metrics/event2") == 92
+
+
+def test_without_anomaly_detection_the_first_column_is_asked_for_again(store):
+    denied = ApiError(403, "anomaly detection not allowed", "invalid_access")
+    fake = fake_for("rs1", events(3), custom_dims(), posts=[(is_anomaly_trend, denied)])
+    rid = run_fetch(fake, store, opts())
+    batch = fake.trend_bodies()[1]
+    assert not is_anomaly_trend(batch) and metric_ids(batch)[0] == "metrics/event1"
+    assert values_for(store, rid, "metrics/event1") == 92
 
 
 def test_trend_bodies_use_full_window(store):
@@ -204,12 +241,14 @@ def test_batch_api_error_one_issue_per_column(store):
     )
     rid = run_fetch(fake, store, opts(batch_size=2))
     col_issues = [(r[1], r[2]) for r in issues(store, rid) if r[0] == "column"]
-    # catalog order: event1, event2, event3, prop1, page -> batch [event1, event2] fails
+    # catalog order: event1, event2, event3, prop1, page. The probe holds event1, so the
+    # batches are [event2, event3] and [prop1, page], and the first one fails.
     assert col_issues == [
-        ("metrics/event1", "invalid_request"),
         ("metrics/event2", "invalid_request"),
+        ("metrics/event3", "invalid_request"),
     ]
-    assert values_for(store, rid, "metrics/event3") == 92
+    assert values_for(store, rid, "metrics/event1") == 92
+    assert values_for(store, rid, "variables/prop1") == 92
     assert values_for(store, rid, "individual/1") == 92
     assert store.get_run(rid)["status"] == "partial"
 
@@ -219,7 +258,7 @@ def test_failed_when_no_values(store):
         "rs1",
         events(2),
         custom_dims(),
-        posts=[(after_probe(is_trend), ApiError(400, "nope", "invalid_request"))],
+        posts=[(is_trend, ApiError(400, "nope", "invalid_request"))],
     )
     rid = run_fetch(fake, store, opts())
     assert store.get_run(rid)["status"] == "failed"
@@ -499,8 +538,8 @@ def test_network_error_in_one_batch_continues(store):
     fake = fake_for("rs1", events(3), custom_dims(), posts=[(timed_out_batch, raise_timeout)])
     rid = run_fetch(fake, store, opts(batch_size=2))
     col_issues = [(r[1], r[2]) for r in issues(store, rid) if r[0] == "column"]
-    assert col_issues == [("metrics/event1", "network_error"), ("metrics/event2", "network_error")]
-    for cid in ["metrics/event3", "variables/prop1", "variables/page", "individual/1"]:
+    assert col_issues == [("metrics/event2", "network_error"), ("metrics/event3", "network_error")]
+    for cid in ["metrics/event1", "variables/prop1", "variables/page", "individual/1"]:
         assert values_for(store, rid, cid) == 92
     assert store.get_run(rid)["status"] == "partial"
 
@@ -519,10 +558,10 @@ def test_a_temporary_sign_in_problem_in_one_batch_continues(store):
     rid = run_fetch(fake, store, opts(batch_size=2))
     col_issues = [(r[1], r[2]) for r in issues(store, rid) if r[0] == "column"]
     assert col_issues == [
-        ("metrics/event1", "sign_in_unavailable"),
         ("metrics/event2", "sign_in_unavailable"),
+        ("metrics/event3", "sign_in_unavailable"),
     ]
-    for cid in ["metrics/event3", "variables/prop1", "variables/page", "individual/1"]:
+    for cid in ["metrics/event1", "variables/prop1", "variables/page", "individual/1"]:
         assert values_for(store, rid, cid) == 92
     assert store.get_run(rid)["status"] == "partial"
 
@@ -961,7 +1000,7 @@ def test_a_batch_that_is_not_json_becomes_issues(store):
 def test_a_batch_of_the_wrong_shape_becomes_issues_and_the_run_goes_on(store):
     """A 200 answer that is JSON but not a report must not end the run with an error trace."""
     bad = {"rows": [{"itemId": "1260708", "value": "Aug 8, 2026", "data": [None]}]}
-    first_batch = after_probe(lambda b: is_trend(b) and "metrics/event1" in metric_ids(b))
+    first_batch = after_probe(lambda b: is_trend(b) and "metrics/event2" in metric_ids(b))
     fake = fake_for("rs1", events(3), custom_dims(), posts=[(first_batch, bad)])
     rid = run_fetch(fake, store, opts(batch_size=2))
     assert store.get_run(rid)["status"] == "partial"

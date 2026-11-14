@@ -178,14 +178,26 @@ def probe_anomaly(
 
     Any other ApiError or network error is raised; callers decide how to report it.
     """
+    allowed, _answer = _probe(client, rsid, window, column, segment_id)
+    return allowed
+
+
+def _probe(
+    client: Any, rsid: str, window: RunWindow, column: Column, segment_id: str | None
+) -> tuple[bool, Any]:
+    """probe_anomaly, with Adobe's answer when anomaly detection is allowed.
+
+    The request is the one that a trend batch of this column alone would send, so a run
+    stores the answer and does not ask for the column again.
+    """
     body = trend_body(rsid, window.trend_range(), [column], segment_id, True)
     try:
-        client.post_report(body)
+        answer = client.post_report(body)
     except ApiError as e:
         if e.error_code == "invalid_access":
-            return False
+            return False, None
         raise
-    return True
+    return True, answer
 
 
 def _batches(columns: list[Column], size: int) -> list[list[Column]]:
@@ -309,14 +321,20 @@ def _run(
 
     columns = [c.column for c in catalog]
     anomaly = True
+    rest = columns
     if columns:
         try:
-            allowed = probe_anomaly(client, opts.rsid, window, columns[0], opts.segment_id)
+            allowed, answer = _probe(client, opts.rsid, window, columns[0], opts.segment_id)
         except (ApiError, SignInUnavailable, requests.RequestException) as e:
             anomaly = False
             issue("permissions", None, "anomaly_probe_failed", _probe_failed_message(e))
         else:
-            if not allowed:
+            if allowed:
+                # The probe asked for the trend of the first column, as a batch of that column
+                # alone would. Store its answer and leave the column out of the batches.
+                value_count += _store_batch(store, run_id, columns[:1], lambda: answer, issue)
+                rest = columns[1:]
+            else:
                 anomaly = False
                 issue("permissions", None, "anomaly_not_allowed", ANOMALY_MESSAGE)
 
@@ -339,7 +357,7 @@ def _run(
                     client.post_report, trend_body(rsid, window.trend_range(), batch, seg, anomaly)
                 ),
             )
-            for batch in _batches(columns, opts.batch_size)
+            for batch in _batches(rest, opts.batch_size)
         ]
         trend_col, ind_futures = _submit_pair(
             pool, client, rsid, seg, window, anomaly, opts.dimension, opts.metric, pair
@@ -350,30 +368,7 @@ def _run(
         for done, (batch, fut) in enumerate(batch_futures, start=1):
             wait([fut])
             progress(f"Daily trends: {done} of {total} requests done.")
-            try:
-                values, errors = parse_trend(fut.result(), batch)
-            except ApiError as e:
-                code = e.error_code or f"http_{e.status}"
-                for col in batch:
-                    issue("column", col.component_id, code, e.message)
-                continue
-            except MalformedResponse:
-                for col in batch:
-                    issue("column", col.component_id, INVALID_RESPONSE, MALFORMED)
-                continue
-            except SignInUnavailable as e:
-                # Signing in again failed for a while. Later requests may still work.
-                for col in batch:
-                    issue("column", col.component_id, SIGN_IN_UNAVAILABLE, str(e))
-                continue
-            except requests.RequestException as e:
-                for col in batch:
-                    issue("column", col.component_id, NETWORK_ERROR, _network_message(e))
-                continue
-            store.add_daily_values(run_id, values)
-            value_count += len(values)
-            for err in errors:
-                issue("column", err.component_id, err.error_code, err.message)
+            value_count += _store_batch(store, run_id, batch, fut.result, issue)
 
         label = _pair_label(opts.dimension_name or opts.dimension, opts.metric_name or opts.metric)
         pair_values, _stored = _store_pair(
@@ -384,6 +379,43 @@ def _run(
     if value_count == 0:
         return "failed"
     return "partial" if issue_count else "ok"
+
+
+def _store_batch(
+    store: Store,
+    run_id: int,
+    batch: list[Column],
+    answer: Callable[[], Any],
+    issue: Callable[[str, str | None, str, str], None],
+) -> int:
+    """Write one trend batch on the calling thread, and return the number of daily values.
+
+    answer gives Adobe's answer or raises the error of the request, e.g., Future.result.
+    """
+    try:
+        values, errors = parse_trend(answer(), batch)
+    except ApiError as e:
+        code = e.error_code or f"http_{e.status}"
+        for col in batch:
+            issue("column", col.component_id, code, e.message)
+        return 0
+    except MalformedResponse:
+        for col in batch:
+            issue("column", col.component_id, INVALID_RESPONSE, MALFORMED)
+        return 0
+    except SignInUnavailable as e:
+        # Signing in again failed for a while. Later requests may still work.
+        for col in batch:
+            issue("column", col.component_id, SIGN_IN_UNAVAILABLE, str(e))
+        return 0
+    except requests.RequestException as e:
+        for col in batch:
+            issue("column", col.component_id, NETWORK_ERROR, _network_message(e))
+        return 0
+    store.add_daily_values(run_id, values)
+    for err in errors:
+        issue("column", err.component_id, err.error_code, err.message)
+    return len(values)
 
 
 def _pair_label(dimension: str, metric: str) -> str:
