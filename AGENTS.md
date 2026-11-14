@@ -49,6 +49,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 | `tests/fakes.py` | A fake Adobe client. Tests use it instead of the network |
 | `tests/chrome.py`, `tests/test_report_js.py` | Run `report.js` in headless Chrome and read the results back |
 | `scripts/make_showcase.py` | Builds the README slideshow from synthetic data |
+| `scripts/check_wheel.py` | The release workflow runs it with the built wheel. It checks that the wheel has its SQL, template and page files |
 | `docs/` | The user documentation. The README is a short landing page that links to it. Update the matching page when behavior changes |
 | `tests/test_docs.py` | Checks the docs: every link and heading link, every option in `docs/usage.md`, and the messages that `docs/troubleshooting.md` quotes |
 | `docs/duckdb.md` | SQL recipes for the database, including alert emails |
