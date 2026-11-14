@@ -69,6 +69,7 @@ ISSUE_HEADINGS = {
         "Some parts of the Individual Component Summary came back empty. The credential's "
         "product profile may hide the chosen dimension, or there was no data."
     ),
+    "interrupted": ("The run stopped before it read some components. Running again reads them."),
 }
 # The fetch step records an Adobe error without its own code as http_<status>.
 HTTP_HEADING = "Adobe returned an error for some requests."
