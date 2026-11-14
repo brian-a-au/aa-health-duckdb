@@ -46,12 +46,16 @@ counts as not set. An unknown value in a variable stops the script with exit cod
 
 To send, set SMTP_HOST, SMTP_PORT (default 587), MAIL_FROM and MAIL_TO, and SMTP_USER and
 SMTP_PASSWORD when the server needs a login. Without SMTP_HOST, it writes the message to
-alerts.eml in the current folder instead, so you can open it and check it first.
+alerts.eml in the current folder instead, so you can open it and check it first. The script
+turns on encryption with STARTTLS and checks the certificate of the server and its host name.
+It waits at most 60 seconds for the server. When it cannot send, e.g., the server refuses the
+login, it prints one line that says why and exits with 1.
 
 Exit codes, so a scheduler can tell the cases apart:
     0  it sent or wrote a message
     1  something is wrong, e.g., a suite has no finished run. The other suites are still sent.
-       A wrong option also exits with 1 and prints the usage.
+       A wrong option also exits with 1 and prints the usage. So does an email that could not
+       be sent.
     2  there were no alerts
 """
 
@@ -64,6 +68,7 @@ import math
 import os
 import shutil
 import smtplib
+import ssl
 import subprocess
 import sys
 from decimal import Decimal, InvalidOperation
@@ -74,6 +79,9 @@ from pathlib import Path
 HEADERS = ["Alert", "Component", "ID", "Weekday average", "Actual", "Change", "Since"]
 # The email lists this many alerts of each suite-wide event, as ahd alerts does.
 EVENT_SHOWN = 5
+
+# How long the script waits for the mail server, in seconds.
+SMTP_TIMEOUT = 60
 
 # The exit codes of ahd alerts.
 AHD_ALERTS, AHD_ERROR, AHD_USAGE, AHD_NO_ALERTS = 0, 1, 2, 4
@@ -122,6 +130,12 @@ def _share(text: str, top: float = 1.0) -> str:
 
 def _spike_share(text: str) -> str:
     return _share(text, 2.0)
+
+
+def _percent(share: float) -> str:
+    """The share as a percent for the email, as ahd alerts writes it, e.g., 0.275 as "27.5%"
+    and 0.3 as "30%"."""
+    return f"{share * 100:g}%"
 
 
 def _percent_text(share: str) -> str:
@@ -291,9 +305,9 @@ def build(
     else:
         subject = f"{total} Analytics Health alerts for {len(sections)} report suites"
     rules = (
-        f"A large drop is more than {threshold:.0%} below the weekday average, and a large "
-        f"spike is more than {spike:.0%} above it. The weekday average is the average of the "
-        f"same weekday in the 12 weeks before. {flagged_by}"
+        f"A large drop is more than {_percent(threshold)} below the weekday average, and a "
+        f"large spike is more than {_percent(spike)} above it. The weekday average is the "
+        f"average of the same weekday in the 12 weeks before. {flagged_by}"
     )
     text = [subject, "", rules, ""]
     parts = [f"<p>{html.escape(subject)}. {html.escape(rules, quote=False)}</p>"]
@@ -337,18 +351,58 @@ def build(
     return msg
 
 
-def _send(msg: EmailMessage, count: int) -> None:
+def _port() -> int | None:
+    """The port from SMTP_PORT, 587 by default, or None when it is not a port number."""
+    try:
+        port = int(os.environ.get("SMTP_PORT") or "587")
+    except ValueError:
+        return None
+    return port if 0 < port < 65536 else None
+
+
+def _send_problem(error: Exception) -> str:
+    """One plain line about why sending failed. It names only the kind of error, because the
+    text of an error can hold a server reply or an address."""
+    if isinstance(error, smtplib.SMTPAuthenticationError):
+        return "The mail server refused the login. Check SMTP_USER and SMTP_PASSWORD."
+    if isinstance(error, ssl.SSLCertVerificationError):
+        return (
+            "The certificate of the mail server could not be checked, so the script did not "
+            "send. Check that SMTP_HOST is the name in the certificate of the server."
+        )
+    if isinstance(error, TimeoutError):
+        return f"The mail server did not answer within {SMTP_TIMEOUT} seconds."
+    if isinstance(error, smtplib.SMTPNotSupportedError):
+        return "The mail server does not offer STARTTLS, so the script did not send."
+    return (
+        f"Could not send the email ({type(error).__name__}). Check SMTP_HOST, SMTP_PORT, "
+        "MAIL_FROM and MAIL_TO."
+    )
+
+
+def _send(msg: EmailMessage, count: int) -> bool:
+    """Sends the email, or writes alerts.eml without SMTP_HOST. False when it could not send."""
     host = os.environ.get("SMTP_HOST")
     if not host:
         Path("alerts.eml").write_bytes(bytes(msg))
         print(f"Wrote alerts.eml with {count} alerts. Set SMTP_HOST to send it.")
-        return
-    with smtplib.SMTP(host, int(os.environ.get("SMTP_PORT", "587"))) as smtp:
-        smtp.starttls()
-        if os.environ.get("SMTP_USER"):
-            smtp.login(os.environ["SMTP_USER"], os.environ.get("SMTP_PASSWORD", ""))
-        smtp.send_message(msg)
+        return True
+    port = _port()
+    if port is None:
+        print("SMTP_PORT must be a port number from 1 to 65535, e.g., 587.", file=sys.stderr)
+        return False
+    try:
+        with smtplib.SMTP(host, port, timeout=SMTP_TIMEOUT) as smtp:
+            # The default context checks the certificate of the server and its host name.
+            smtp.starttls(context=ssl.create_default_context())
+            if os.environ.get("SMTP_USER"):
+                smtp.login(os.environ["SMTP_USER"], os.environ.get("SMTP_PASSWORD", ""))
+            smtp.send_message(msg)
+    except (OSError, smtplib.SMTPException) as error:
+        print(f"{_send_problem(error)} Nothing was sent to {host}.", file=sys.stderr)
+        return False
     print(f"Sent {count} alerts to {msg['To']}.")
+    return True
 
 
 def main(argv: list[str]) -> int:
@@ -402,7 +456,8 @@ def main(argv: list[str]) -> int:
         first = runs[0]
         said = _flagged_by(first["method"], first["method_name"], first["sensitivity"])
         msg = build(sections, float(args.threshold), float(args.spike_threshold), said, events)
-        _send(msg, sum(len(rows) for _, _, rows in sections))
+        if not _send(msg, sum(len(rows) for _, _, rows in sections)):
+            return 1
     elif runs:
         print("Nothing to send.")
     if done.returncode == AHD_ERROR:

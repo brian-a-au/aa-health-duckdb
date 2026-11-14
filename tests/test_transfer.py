@@ -1,6 +1,7 @@
 """ahd export and ahd import: moving stored runs between files and across layout versions."""
 
 import json
+import os
 from datetime import date
 
 import duckdb
@@ -96,6 +97,41 @@ def test_export_then_import_gives_the_same_rows(tmp_path, source):
     )
     new = Store.open(tmp_path / "new.duckdb")
     assert import_runs(new, out).numbers == [(1, 1), (3, 3)]
+    assert _rows(new) == rows
+    new.con.close()
+
+
+@pytest.mark.parametrize(
+    ("name", "decoy"),
+    [
+        ("exp[1]", "exp1"),
+        # Windows does not allow * or ? in a file name.
+        pytest.param("exp*", "expX", marks=pytest.mark.skipif(os.name == "nt", reason="Windows")),
+        pytest.param("exp?", "expX", marks=pytest.mark.skipif(os.name == "nt", reason="Windows")),
+    ],
+)
+def test_a_folder_name_with_pattern_characters_is_read_as_it_is(tmp_path, source, name, decoy):
+    # DuckDB reads [ ], * and ? in a Parquet path as a pattern for file names. The folder that
+    # the pattern also matches must not be read instead.
+    path, rows = source
+    other = tmp_path / "other.duckdb"
+    s = Store.open(other)
+    _fill(s, "decoy")
+    s.con.close()
+    export_runs(other, tmp_path / decoy)
+    export_runs(path, tmp_path / name)
+    new = Store.open(tmp_path / "new.duckdb")
+    assert import_runs(new, tmp_path / name).numbers == [(1, 1), (3, 3)]
+    assert _rows(new) == rows
+    new.con.close()
+
+
+def test_a_file_name_with_pattern_characters_is_read_as_it_is(tmp_path, source):
+    path, rows = source
+    odd = path.with_name("old[1].duckdb")
+    path.rename(odd)
+    new = Store.open(tmp_path / "new.duckdb")
+    assert import_runs(new, odd).numbers == [(1, 1), (3, 3)]
     assert _rows(new) == rows
     new.con.close()
 

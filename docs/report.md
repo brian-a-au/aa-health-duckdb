@@ -98,7 +98,7 @@ The method changes the expected values, the ranges and the flags. The values and
 
 On Demo Data CJA, the values fell by about 20 percent a week until mid October, and by 32 to 54 percent a week after that. In the 28 days from 2026-10-15 to 2026-11-11, `weekday-trend` flagged 93 of the 94 components whose expected value is 10 or more. It flagged 1,090 values. `weekday-median` flagged 169 values of 17 components, and Adobe flagged 3 values. With `low`, `weekday-trend` still flagged 744 values.
 
-**Data that stops.** Do not rely on `weekday-trend`, or on the range of any method, to report data that stops. A value of 0 is an alert with every method when the component had data on other days. When the method flags the 0, the value is listed as an unusual value. Otherwise, it is listed as "Dropped to zero". `weekday-trend` flags fewer of these values than `weekday-median`, for two reasons:
+**Data that stops.** Do not rely on `weekday-trend`, or on the range of any method, to report data that stops. A value of 0 is an alert with every method when the component had data on an earlier day in the run. When the method flags the 0, the value is listed as an unusual value. Otherwise, it is listed as "Dropped to zero". `weekday-trend` flags fewer of these values than `weekday-median`, for two reasons:
 
 - The lower end of its range is often 0 already, and a value of 0 is not below 0. This happens on a suite with single-day spikes. A spike is part of the average of the 7 days before each of the next days, so the ratios of those days vary a lot, and the range is very wide.
 - The level falls with the values of 0 over the next 7 days. After a week, the expected value is under 10, or the day has no level, so the day gets no flag.
@@ -160,7 +160,7 @@ Then the same four checks apply to every local method, in this order:
 3. When no value in the sample is below 0, the lower end of the range is not below 0. For `weekday-trend`, the sample is the ratios, and the level is above 0, so this means that the lower end is not below 0 when no ratio is below 0.
 4. A day is flagged only when its value is a number, its expected value is 10 or more, and its value is above the range or below it. A value that is exactly on the upper or lower end is not flagged.
 
-A value above the range is flagged "Above range", and a value below it "Below range", as with Adobe. A component that never collected data is never an alert, with any method.
+A value above the range is flagged "Above range", and a value below it "Below range", as with Adobe. Adobe sometimes flags a value without the upper end of its range. ahd then compares the value with Adobe's expected value: above it is "Above range", and otherwise "Below range". A component that never collected data is never an alert, with any method. Neither is a day before the first day on which a component had data, e.g., the days before a new eVar started to collect data.
 
 An example for `weekday-median`. A Monday has 8 earlier Mondays in the run, with the values 100, 110, 90, 100, 105, 95, 100 and 110:
 
@@ -271,9 +271,9 @@ This tab shows every custom event, eVar and prop, then the solution components, 
 A calendar shows the last 13 weeks. Each square is one day, and a darker square had more components with an alert:
 
 - The anomaly method flagged the value above or below its expected range.
-- The value dropped to 0, and the component had data on other days.
+- The value dropped to 0, and the component had data on an earlier day.
 
-Large drops and spikes are not counted, because only the last 7 days have a weekday average. A day with no data at all is an outline.
+Large drops and spikes are not counted, because only the last 7 days have a weekday average. The days before a component's first day with data are not counted for it, so a new component does not darken every day before it started. A day with no data at all is an outline.
 
 A release that breaks tracking usually breaks many components on the same day, so it shows as one dark square. Choose a square, or move with the arrow keys, to list that day's components. The left and right keys move a week, and the up and down keys move a day. Choose a component in the list to see it on the metric or dimension chart. The text under the chart is then about that day.
 
@@ -283,7 +283,7 @@ The calendar follows the Day picker. In the weekly view it outlines the week's 7
 
 ### Charts
 
-Two charts show 91 days of one metric and one dimension. Each shows the actual values, the expected value and expected range of the anomaly method, and markers where it flagged a value. With a local method, the first 8 weeks have no range, or the first 9 weeks with `weekday-trend`. See [The first eight weeks have no range](#the-first-eight-weeks-have-no-range). Use the arrow keys on a chart to read each day.
+Two charts show 91 days of one metric and one dimension. Each shows the actual values, the expected value and expected range of the anomaly method, and markers where it flagged a value. With a local method, the first 8 weeks have no range, or the first 9 weeks with `weekday-trend`. See [The first eight weeks have no range](#the-first-eight-weeks-have-no-range). Use the arrow keys on a chart to read each day. A screen reader says each day as you move.
 
 The charts follow the Day picker:
 
@@ -316,7 +316,7 @@ The "Find a component" box above the tables keeps only the components whose name
 
 The table headings stay in view while you scroll. A table that is too wide for the window, e.g., on a phone, scrolls in its own box, and its headings stay at the top of that box. The links under "Jump to" above the tables go to each group, and show how many components each group has. After each table, the link "Back to the top of the tables" goes back to these links.
 
-The flag is "Above range" or "Below range" from the anomaly method, or "Large drop" or "Large spike" when a slider flags it. A red "Zero data" badge marks a value of 0 on a component that has data on other days. A gray "never collected data" note marks a component that was 0 on every day. In the weekly view, the anomaly flags are counted by day, e.g., "Below range on 2 days", and "Show only flagged" keeps those components.
+The flag is "Above range" or "Below range" from the anomaly method, or "Large drop" or "Large spike" when a slider flags it. A red "Zero data" badge marks a value of 0 on a component that had data on an earlier day. A value of 0 before the component's first day with data has no badge and no flag, because it is not an alert. A gray "never collected data" note marks a component that was 0 on every day. In the weekly view, the anomaly flags are counted by day, e.g., "Below range on 2 days", and "Show only flagged" keeps those components.
 
 ## Individual Component Summary
 
@@ -340,8 +340,10 @@ This tab lists the alerts for one day. It starts on yesterday, and the Day picke
 - **Unusual values.** The anomaly method flagged the value as outside the expected range. By default, that is Adobe's anomaly detection.
 - **Drops of more than 30% below the weekday average.** The heading shows the drop slider's percent. The value was further below its weekday average than the slider allows, and the anomaly method did not flag it.
 - **Spikes of more than 50% above the weekday average.** The heading shows the spike slider's percent. The value was further above its weekday average than the slider allows, and the anomaly method did not flag it.
-- **Dropped to zero.** The value was 0, but the component had data on other days in the run.
+- **Dropped to zero.** The value was 0, and the component had data on an earlier day in the run.
 - **Never collected data.** The value was 0 on every day in the run. These are often unused slots, so they are not alerts, even when the anomaly method flags the 0. They are in a closed list at the end.
+
+A day before the first day on which a component had data in the run is never an alert, with any method. A new component, e.g., an eVar that started to collect data 3 days ago, was 0 on every day before. Those days are not drops to zero, and a flag on them is not an unusual value. The component is not listed as "Never collected data" either, because it has data on later days.
 
 ### New and ongoing alerts
 
@@ -360,6 +362,8 @@ Sometimes the day before the streak cannot be judged, so the alert may have star
 - For an unusual value, the anomaly method gave that day no expected range. Adobe's anomaly detection usually covers every day of the run. A local method has a range only for about the last 5 weeks. See [The first eight weeks have no range](#the-first-eight-weeks-have-no-range).
 - For a large drop or spike, the day is older than the last 7 days. Only the last 7 days have a weekday average, so a drop or spike can be judged only on them. A drop that holds on all 7 days therefore says "at least 7 days".
 
+A day before the component's first day with data is never an alert, so a streak does not reach back past that first day. When the alert started on that first day, its start is known, and the column does not say "or earlier".
+
 A value of 0 can be judged on every day of the run, so a drop to zero has a known start even when it is older than 7 days. On Demo Data Evangelists, the data stopped during 2026-11-04. On that day most values were small but not 0, and Adobe flagged 236 of them. From 2026-11-05 on, the values were 0. On 2026-11-11, 330 of the 356 drops to zero said "Nov 5, 7 days", with every anomaly method. 19 said "Nov 4, 8 days", because they were already 0 on 2026-11-04. On Demo Data CJA, the values fall every day. 97 of its 99 alerts were large drops that said "Nov 5 or earlier, at least 7 days", and the other 2 were new drops to zero.
 
 The `alerts()` macro gives the same answer in its columns `since`, `days`, `at_least` and `is_new`. See the [DuckDB guide](duckdb.md#alertsrun-threshold--030-spike_threshold--050-min_usual--10-for_day--null-method--adobe-sensitivity--normal).
@@ -371,7 +375,7 @@ When the data of a whole suite stops, or its traffic jumps, most components get 
 An event is a group of alerts that follow the same condition, the one that the Since column follows: a value of 0, a value below the expected range, a value above it, a large drop or a large spike. It needs at least 10 alerts, and they must be at least half of the components that collected data in the run.
 
 - **Half of the components.** When most of a suite moves the same way on the same day, the cause is likely in the suite, e.g., its tracking or its traffic, and not in each component. With half as the limit, a day has at most two events.
-- **Components that collected data.** A component that was 0 on every day of the run cannot alert. Many suites have a lot of unused slots, e.g., 20 of the 35 components of Adobe Store, so counting them would hide an event in such a suite.
+- **Components that collected data.** A component that was 0 on every day of the run cannot alert. A new component counts on every day of the run, also on a day before it started, because it collected data later in the run. Many suites have a lot of unused slots, e.g., 20 of the 35 components of Adobe Store, so counting them would hide an event in such a suite.
 - **At least 10 alerts.** A list of fewer than 10 rows is short enough to read row by row. In a very small suite, half can also be 2 or 3 components, which says little about the whole suite.
 
 The start of an event is not part of the rule, because one stop can start on two days for different components. The line names the start that most alerts of the event share, e.g., "For 330 of them, this started on Nov 5. For the other 26, it started on other days." When two starts are shared by as many alerts, it names the earlier one.
@@ -394,7 +398,7 @@ The [`suite_events()` macro](duckdb.md#suite_eventsrun-) gives the same events f
 - a formatted table, which Outlook, Gmail and Apple Mail paste
 - plain text, which a chat or a text editor pastes
 
-The copy follows the chosen day and the sliders. It says since when each alert has held, and lists the new alerts first in each group. A suite-wide event comes first, with its line and its first 5 alerts, and a line that counts the others. The groups after it leave out the alerts of the event. If the browser cannot copy, open "Show the alert summary as text" and copy the text from there.
+The copy follows the chosen day and the sliders. Both versions use the last slider setting, also in a large report that is still waiting for you to pause. It says since when each alert has held, and lists the new alerts first in each group. A suite-wide event comes first, with its line and its first 5 alerts, and a line that counts the others. The groups after it leave out the alerts of the event. If the browser cannot copy, open "Show the alert summary as text" and copy the text from there.
 
 To send alerts on a schedule, or only when something is new, see the [DuckDB guide](duckdb.md#email-recipes).
 
@@ -432,5 +436,7 @@ If you run ahd every day, the table shows when a problem started and whether it 
 - **Other metrics** show as plain numbers, with up to two decimals.
 - **Weekday averages and expected values** are rounded: whole numbers from 100 up, one decimal below that. A currency value below 100 keeps the currency's own decimals.
 - **A value that could not be read** says "No data". It is never shown as 0.
+- **The chart axis** gives each line its own label. A currency axis in steps under 1 keeps at least the currency's own decimals, e.g., $0.05 and $0.10.
+- **Numbers, percents and dates** follow the language of your browser, e.g., -12.5% in English and -12,5 % in German.
 
 For how these numbers compare with the Excel workbook, see [Compared with the Excel workbook](excel-comparison.md).

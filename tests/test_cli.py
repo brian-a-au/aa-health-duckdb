@@ -1,4 +1,7 @@
 import json
+import os
+import shlex
+import subprocess
 
 import pytest
 from fakes import (
@@ -40,6 +43,13 @@ def cfg(tmp_path):
     p = tmp_path / "config.json"
     p.write_text(json.dumps(CONFIG), encoding="utf-8")
     return p
+
+
+def _quoted(path):
+    """A path as the hint to run ahd render writes it, for the shell of this system."""
+    if os.name == "nt":
+        return subprocess.list2cmdline([str(path)])
+    return shlex.quote(str(path))
 
 
 def args(tmp_path, cfg, *rest):
@@ -108,7 +118,8 @@ def test_a_report_that_cannot_be_written_is_a_plain_error(tmp_path, cfg, capsys)
     assert code == 1
     err = capsys.readouterr().err
     assert f"\nError: The report could not be written to {taken} (" in err
-    assert "Run 1 is stored. Then run ahd render --run 1 to write the report." in err
+    db = _quoted(tmp_path / "t.duckdb")
+    assert f"Run 1 is stored. Then run ahd render --run 1 --db {db} to write the report." in err
     assert "Traceback" not in err
     store = Store.open(tmp_path / "t.duckdb", read_only=True)
     assert [r["status"] for r in store.list_runs()] == ["ok"]
@@ -533,17 +544,31 @@ def test_aa_profile_variable_picks_profile(tmp_path, capsys, monkeypatch):
     assert (folder / "ahd.duckdb").exists()
 
 
-@pytest.mark.parametrize("how", ["flag", "variable"])
-def test_profile_and_config_together_is_an_error(tmp_path, cfg, capsys, monkeypatch, how):
+@pytest.mark.parametrize("where", ["before", "after"])
+def test_profile_and_config_options_together_are_a_wrong_option(tmp_path, cfg, capsys, where):
     _profile("prod")
     argv = ["suites", "--config", str(cfg)]
-    if how == "flag":
-        argv += ["--profile", "prod"]
-    else:
-        monkeypatch.setenv("AA_PROFILE", "prod")
+    argv = ["--profile", "prod", *argv] if where == "before" else [*argv, "--profile", "prod"]
+    with pytest.raises(SystemExit) as stop:
+        main(argv, client_factory=lambda c, company_id=None: pytest.fail("signed in"))
+    assert stop.value.code == 2
+    err = capsys.readouterr().err
+    assert "usage: ahd suites" in err
+    assert err.endswith(
+        "error: Use a profile or --config, not both. The profile 'prod' comes from --profile.\n"
+    )
+
+
+def test_a_profile_variable_and_config_together_is_an_error(tmp_path, cfg, capsys, monkeypatch):
+    _profile("prod")
+    monkeypatch.setenv("AA_PROFILE", "prod")
+    argv = ["suites", "--config", str(cfg)]
     code = main(argv, client_factory=lambda c, company_id=None: pytest.fail("signed in"))
     assert code == 1
-    assert "Use a profile or --config, not both" in capsys.readouterr().err
+    assert capsys.readouterr().err == (
+        "Error: Use a profile or --config, not both. The profile 'prod' comes from the "
+        "AA_PROFILE variable.\n"
+    )
 
 
 def test_db_flag_wins_over_profile(tmp_path, capsys):
@@ -653,8 +678,12 @@ def _answer(monkeypatch, reply):
 
 
 def test_prune_needs_a_selection(three_runs, capsys):
-    assert main(["prune", "--db", str(three_runs)]) == 1
-    assert "--run N or --before" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as stop:
+        main(["prune", "--db", str(three_runs)])
+    assert stop.value.code == 2
+    err = capsys.readouterr().err
+    assert "usage: ahd prune" in err
+    assert err.endswith("error: Say which runs to delete with --run N or --before YYYY-MM-DD.\n")
 
 
 @pytest.mark.parametrize("value", ["tomorrow", "20261001", "2026-W40-4", "2026-02-30"])
@@ -692,10 +721,9 @@ def test_prune_yes_skips_question(three_runs, capsys, monkeypatch):
 
 
 def test_prune_keeps_running_runs_without_force(three_runs, capsys):
-    code = main(["prune", "--db", str(three_runs), "--run", "2", "--run", "7", "--yes"])
+    code = main(["prune", "--db", str(three_runs), "--run", "2", "--yes"])
     out = capsys.readouterr().out
     assert code == 0
-    assert "There is no stored run 7." in out
     assert 'Run 2 is still marked "running", so it is kept. Add --force' in out
     assert "No runs were deleted." in out
     assert _stored(three_runs) == [3, 2, 1]
@@ -1541,3 +1569,256 @@ def test_ids_and_names_of_another_type_do_not_stop_the_lists(cfg, capsys):
     assert capsys.readouterr().out.splitlines()[-1].split() == ["rs1"]
     assert main(["segments", "--config", str(cfg), "--rsid", "rs1"], client_factory=factory) == 0
     assert capsys.readouterr().out.splitlines()[-1].split() == ["s1", "Seg"]
+
+
+# ---- the hint to run ahd render ------------------------------------------------------
+
+
+def _unwritable_report(tmp_path, *options):
+    """Run ahd run with an --out that names a file, and give its exit code."""
+    taken = tmp_path / "taken"
+    taken.write_text("not a folder", encoding="utf-8")
+    fake = fake_for("rs1", events(3), custom_dims())
+    return main(
+        _run_args(*options, "--out", str(taken)), client_factory=lambda c, company_id=None: fake
+    )
+
+
+def test_the_render_hint_names_the_database_that_was_given(tmp_path, cfg, capsys):
+    db = tmp_path / "my data" / "t.duckdb"
+    assert _unwritable_report(tmp_path, "--config", str(cfg), "--db", str(db)) == 1
+    err = capsys.readouterr().err
+    hint = f"ahd render --run 1 --db {_quoted(db)}"
+    assert f"Run 1 is stored. Then run {hint} to write the report." in err
+    if os.name != "nt":
+        # The shell gives the path with its space back as one word.
+        command = shlex.split(hint)
+        assert command[-1] == str(db)
+        assert main([*command[1:], "--out", str(tmp_path / "r")]) == 0
+
+
+@pytest.mark.parametrize("how", ["flag", "variable", "none"])
+def test_the_render_hint_names_the_profile_that_chose_the_database(
+    tmp_path, cfg, capsys, monkeypatch, how
+):
+    monkeypatch.chdir(tmp_path)
+    options = []
+    if how == "flag":
+        _profile()
+        options = ["--profile", "prod"]
+    elif how == "variable":
+        _profile()
+        monkeypatch.setenv("AA_PROFILE", "prod")
+    else:
+        options = ["--config", str(cfg)]
+    assert _unwritable_report(tmp_path, *options) == 1
+    words = "" if how == "none" else " --profile prod"
+    assert f"Then run ahd render --run 1{words} to write the report." in capsys.readouterr().err
+
+
+# ---- the credential variables and --config -------------------------------------------
+
+
+def _all_credential_variables(monkeypatch, value=None):
+    for k, v in CONFIG.items():
+        monkeypatch.setenv(f"AHD_{k.upper()}", value or v)
+
+
+def test_config_option_and_every_credential_variable_is_an_error(
+    tmp_path, cfg, capsys, monkeypatch
+):
+    _all_credential_variables(monkeypatch)
+    db = tmp_path / "new" / "t.duckdb"
+    for argv in (
+        ["suites", "--config", str(cfg)],
+        _run_args("--config", str(cfg), "--db", str(db)),
+    ):
+        code = main(argv, client_factory=lambda c, company_id=None: pytest.fail("signed in"))
+        assert code == 1
+        err = capsys.readouterr().err
+        assert err == (
+            "Error: Use --config or the four variables AHD_ORG_ID, AHD_CLIENT_ID, AHD_SECRET and "
+            "AHD_SCOPES, not both. To use the file, unset the variables.\n"
+        )
+        assert "sec-67890" not in err
+    assert not db.parent.exists()
+
+
+def test_the_credential_variables_win_over_a_config_json_in_the_folder(
+    tmp_path, cfg, capsys, monkeypatch
+):
+    monkeypatch.chdir(cfg.parent)
+    _all_credential_variables(monkeypatch, "from-env")
+    seen = []
+
+    def factory(creds, company_id=None):
+        seen.append(creds)
+        return fake_for("rs1", events(1), custom_dims())
+
+    assert main(["suites"], client_factory=factory) == 0
+    assert "Signed in using environment variables" in capsys.readouterr().out
+    assert seen[0].secret == "from-env"
+
+
+# ---- prune of a run that is not stored ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        (["--run", "9"], "There is no stored run 9."),
+        (["--run", "1", "--run", "9"], "There is no stored run 9."),
+        (["--run", "9", "--before", "2026-10-01"], "There is no stored run 9."),
+        (["--run", "9", "--run", "3", "--run", "8"], "There are no stored runs 8 and 9."),
+        (["--run", "9", "--run", "7", "--run", "8"], "There are no stored runs 7, 8 and 9."),
+    ],
+)
+def test_prune_of_a_run_that_is_not_stored_deletes_nothing(three_runs, capsys, options, message):
+    code = main(["prune", "--db", str(three_runs), *options, "--yes", "--force"])
+    assert code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == f"Error: {message} No runs were deleted.\n"
+    assert _stored(three_runs) == [3, 2, 1]
+
+
+# ---- a run that stores nothing leaves no new file -------------------------------------
+
+
+@pytest.mark.parametrize("failure", ["sign-in", "ctrl-c", "suite"])
+def test_a_run_that_stores_no_run_leaves_no_new_database(tmp_path, cfg, capsys, failure):
+    from ahd.api.auth import WRONG_SECRET, SignInError
+
+    def factory(creds, company_id=None):
+        if failure == "sign-in":
+            raise SignInError(WRONG_SECRET)
+        if failure == "ctrl-c":
+            raise KeyboardInterrupt
+        return fake_for("rs1", events(1), custom_dims())
+
+    kept = tmp_path / "kept"
+    kept.mkdir()
+    for db in (tmp_path / "new" / "sub" / "t.duckdb", kept / "t.duckdb"):
+        argv = ["run", "--config", str(cfg), "--db", str(db), "--rsid", "typo"]
+        assert main(argv, client_factory=factory) == (130 if failure == "ctrl-c" else 1)
+    assert not (tmp_path / "new").exists()
+    assert kept.is_dir() and list(kept.iterdir()) == []
+
+
+def test_a_failed_sign_in_keeps_a_database_that_was_there(tmp_path, cfg, capsys):
+    from ahd.api.auth import WRONG_SECRET, SignInError
+
+    def factory(creds, company_id=None):
+        raise SignInError(WRONG_SECRET)
+
+    db = tmp_path / "t.duckdb"
+    Store.open(db).con.close()
+    assert main(["run", "--config", str(cfg), "--db", str(db), "--rsid", "rs1"], factory) == 1
+    assert db.exists()
+    runs = Store.open(db, read_only=True).list_runs()
+    assert runs == []
+
+
+def test_a_failed_run_keeps_the_new_database_with_its_run(tmp_path, cfg):
+    fake = fake_for(
+        "rs1", events(3), custom_dims(), posts=[(is_trend, ApiError(403, "no", "invalid_access"))]
+    )
+    db = tmp_path / "new" / "t.duckdb"
+    argv = _run_args("--config", str(cfg), "--db", str(db), "--out", str(tmp_path / "o"))
+    assert main(argv, client_factory=lambda c, company_id=None: fake) == 1
+    runs = Store.open(db, read_only=True).list_runs()
+    assert [r["status"] for r in runs] == ["failed"]
+
+
+def test_a_failed_sign_in_keeps_the_profile_folder(tmp_path, capsys):
+    from ahd.api.auth import WRONG_SECRET, SignInError
+
+    def factory(creds, company_id=None):
+        raise SignInError(WRONG_SECRET)
+
+    folder = _profile()
+    assert main(_run_args("--profile", "prod"), client_factory=factory) == 1
+    assert [p.name for p in folder.iterdir()] == ["config.json"]
+
+
+# ---- options that do not go together -------------------------------------------------
+
+
+def test_segment_with_run_in_alerts_is_a_wrong_option(tmp_path, capsys):
+    db = tmp_path / "t.duckdb"
+    with pytest.raises(SystemExit) as stop:
+        main(["alerts", "--db", str(db), "--run", "1", "--segment", "s1"])
+    assert stop.value.code == 2
+    err = capsys.readouterr().err
+    assert "usage: ahd alerts" in err
+    assert err.endswith(
+        "error: --segment works only with --rsid or --all-suites. The run that --run names "
+        "already has its segment.\n"
+    )
+    assert not db.exists()
+
+
+# ---- a ~ in a path ---------------------------------------------------------------------
+
+
+def test_a_tilde_in_a_path_option_means_the_home_folder(tmp_path, capsys, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Windows reads this one
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    (home / "config.json").write_text(json.dumps(CONFIG), encoding="utf-8")
+    fake = fake_for("rs1", events(2), custom_dims())
+
+    def factory(creds, company_id=None):
+        return fake
+
+    db = ["--db", "~/data/t.duckdb"]
+    signin = ["--config", "~/config.json", *db]
+    assert main(_run_args(*signin, "--out", "~/reports"), client_factory=factory) == 0
+    assert (home / "data" / "t.duckdb").exists()
+    assert len(list((home / "reports").glob("*.html"))) == 1
+    pair = ["--run", "1", "--dimension", "prop1", "--metric", "event1", "--out", "~/pair"]
+    assert main(["individual", *signin, *pair], client_factory=factory) == 0
+    assert main(["runs", *db]) == 0
+    assert main(["render", "--run", "1", *db, "--out", "~/again"]) == 0
+    assert main(["alerts", "--run", "1", *db]) in (0, 4)
+    assert main(["export", *db, "--out", "~/backup"]) == 0
+    assert main(["import", "~/backup", "--db", "~/copy.duckdb"]) == 0
+    assert main(["prune", "--run", "1", "--yes", "--db", "~/copy.duckdb"]) == 0
+    for folder in ("pair", "again", "backup"):
+        assert any((home / folder).iterdir()), folder
+    assert list(work.iterdir()) == []
+
+
+# ---- the help of --profile --------------------------------------------------------------
+
+
+def _profile_help(command):
+    from ahd.cli import _parser
+
+    parser = _parser()
+    [commands] = [a for a in parser._actions if a.dest == "command"]
+    [action] = [a for a in commands.choices[command]._actions if "--profile" in a.option_strings]
+    return action.help
+
+
+@pytest.mark.parametrize("command", ["render", "alerts", "runs", "prune", "export", "import"])
+def test_the_profile_help_of_a_command_that_does_not_sign_in_names_only_the_database(command):
+    text = _profile_help(command)
+    assert "credential" not in text and "~/.aa/orgs/NAME/ahd.duckdb" in text
+    assert "--db wins over it" in text
+
+
+@pytest.mark.parametrize("command", ["check", "suites", "segments"])
+def test_the_profile_help_of_a_command_without_a_database_names_only_the_credential(command):
+    text = _profile_help(command)
+    assert "~/.aa/orgs/NAME/config.json" in text and "database" not in text
+
+
+@pytest.mark.parametrize("command", ["run", "individual"])
+def test_the_profile_help_of_run_and_individual_names_the_credential_and_the_database(command):
+    text = _profile_help(command)
+    assert "~/.aa/orgs/NAME/config.json" in text and "ahd.duckdb" in text

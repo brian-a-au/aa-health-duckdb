@@ -5,7 +5,7 @@ import pytest
 
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
-from ahd.store import SCHEMA_VERSION, VIEWS_VERSION, SchemaVersionError, Store
+from ahd.store import SCHEMA_VERSION, VIEWS_VERSION, SchemaVersionError, Store, StoreError
 
 
 def _comp(cid="metrics/pageviews"):
@@ -138,7 +138,7 @@ def test_a_run_records_whether_date_set_its_run_date(tmp_path):
         # A newer layout needs a newer ahd. A layout too old to import can only be started again.
         ("update schema_version set version = 99", "That version is newer. Update ahd"),
         ("update schema_version set version = 2", "Delete the file"),
-        ("drop table schema_version", "Delete the file"),
+        ("delete from schema_version", "Delete the file"),
     ],
 )
 def test_other_version_is_refused(tmp_path, setup, advice):
@@ -152,6 +152,55 @@ def test_other_version_is_refused(tmp_path, setup, advice):
     assert isinstance(e.value, ValueError)
     assert "different version of ahd" in str(e.value) and advice in str(e.value)
     duckdb.connect(str(p)).close()  # the refused file was closed again
+
+
+@pytest.mark.parametrize("read_only", [False, True])
+@pytest.mark.parametrize(
+    "setup",
+    [
+        "create table sales (amount integer); insert into sales values (5)",
+        # Every version of ahd that was released made a schema_version table.
+        "create table runs (run_id integer)",
+    ],
+)
+def test_a_file_that_ahd_did_not_make_is_named_and_kept(tmp_path, setup, read_only):
+    p = tmp_path / "mine.duckdb"
+    con = duckdb.connect(str(p))
+    con.execute(setup)
+    con.close()
+    with pytest.raises(StoreError) as e:
+        Store.open(p, read_only=read_only)
+    assert str(e.value) == (
+        f"The database {p} is not an ahd database. Choose another file with --db."
+    )
+    con = duckdb.connect(str(p))  # the refused file was closed again, and it was not changed
+    tables = con.execute("select table_name from information_schema.tables").fetchall()
+    con.close()
+    assert len(tables) == 1 and ("schema_version",) not in tables
+
+
+def test_an_empty_duckdb_file_becomes_a_new_database(tmp_path):
+    p = tmp_path / "empty.duckdb"
+    duckdb.connect(str(p)).close()
+    s = Store.open(p)
+    assert s.con.execute("select version from schema_version").fetchall() == [(SCHEMA_VERSION,)]
+    s.con.close()
+
+
+def test_a_new_file_that_stops_while_it_is_made_is_made_again(tmp_path, monkeypatch):
+    # The tables and the version are written in one transaction. A stop in between, e.g., on
+    # Ctrl-C, leaves a file with no tables, which the next open makes as new.
+    from ahd import store as store_module
+
+    p = tmp_path / "a.duckdb"
+    monkeypatch.setattr(store_module, "_SCHEMA", store_module._SCHEMA + "SELECT error('stop');")
+    with pytest.raises(duckdb.Error):
+        Store.open(p)
+    monkeypatch.undo()
+    s = Store.open(p)
+    assert s.con.execute("select version from schema_version").fetchall() == [(SCHEMA_VERSION,)]
+    assert s.con.execute("select version from views_version").fetchall() == [(VIEWS_VERSION,)]
+    s.con.close()
 
 
 def test_currency_and_metric_type_are_stored(tmp_path):
@@ -474,7 +523,7 @@ def test_failed_views_update_keeps_the_old_views(tmp_path, monkeypatch):
 
 # The SHA-256 of sql/views.sql. When you change views.sql, raise VIEWS_VERSION in store.py and
 # put the new hash here.
-VIEWS_SHA256 = "805f2f39b4ddd73eb4e676b138185b79da1b4f849b7d5a967201f18d14f68351"
+VIEWS_SHA256 = "c0143d110539c2633246a0c17eaa1c7331cec5baac825be2337ad35baaaeb628"
 
 
 def test_views_version_is_raised_when_views_sql_changes():
@@ -483,7 +532,7 @@ def test_views_version_is_raised_when_views_sql_changes():
     from ahd.store import _views
 
     found = hashlib.sha256(_views().encode("utf-8")).hexdigest()
-    assert VIEWS_VERSION == 8 and found == VIEWS_SHA256, (
+    assert VIEWS_VERSION == 9 and found == VIEWS_SHA256, (
         "sql/views.sql changed. Raise VIEWS_VERSION in store.py, and put the new version and hash"
         " in this test."
     )

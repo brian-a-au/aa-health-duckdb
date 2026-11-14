@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from ahd.api.auth import get_token, header_for, sign_in
 from ahd.config import Credentials
@@ -49,10 +50,18 @@ BUSY = Waits(retries=6, cap=30.0)
 # seconds in all, so that an Adobe outage or a missing network shows within seconds.
 FAILED = Waits(retries=3, cap=4.0)
 # The longest wait that a Retry-After header can ask for. A longer one waits this long.
+# The totals above hold only when Adobe sends no Retry-After header. With one, each wait can
+# be as long as 2 minutes. The 6 waits of BUSY can then take 12 minutes, and the 3 waits of
+# FAILED 6 minutes. Each kind has its own limit, so one request can wait as long as 18 minutes,
+# and each try can also take as long as TIMEOUT allows.
 RETRY_AFTER_CAP = 120.0
 # Seconds to wait for a connection, and then for the answer. The slowest report in the live
 # timing runs took 34 seconds. A computer with no network fails the connection within seconds.
 TIMEOUT = (10, 120)
+# Open connections kept for each host. requests keeps 10 by default, but `ahd run --workers`
+# allows 16. A worker without a kept connection would open a new one for each request.
+# test_client.py checks that this is not below the most workers the command allows.
+MAX_CONNECTIONS = 16
 # Adobe's "temporarily unavailable" code. It comes with HTTP 403 but clears on a retry.
 TEMPORARY_403 = "403025"
 NOT_JSON = "Adobe sent an answer that could not be read as JSON."
@@ -213,12 +222,15 @@ class AdobeClient:
     @classmethod
     def connect(cls, creds: Credentials, company_id: str | None = None) -> AdobeClient:
         session = requests.Session()
+        # The tool makes its own retries, so the adapter makes none.
+        session.mount("https://", HTTPAdapter(pool_maxsize=MAX_CONNECTIONS, max_retries=0))
         first = sign_in(session, creds, company_id)
+        stop = threading.Event()
 
         def relogin() -> dict:
-            return header_for(get_token(session, creds), creds, first.company_id)
+            # stop.wait ends a wait between the sign-in tries at once after stop().
+            return header_for(get_token(session, creds, wait=stop.wait), creds, first.company_id)
 
-        stop = threading.Event()
         return cls(
             session,
             first.header,
@@ -244,10 +256,12 @@ class AdobeClient:
         while True:
             if self._pacer is not None:
                 self._pacer.wait()
-            if self._stop.is_set():
-                raise Stopped("The client was stopped.")
             with self._header_lock:
                 header, gen, sign_ins = self._header, self._header_gen, self._sign_ins
+            # Checked after the lock, because another thread may hold it for a while to sign in
+            # again. A thread that waited for it then sends nothing after stop().
+            if self._stop.is_set():
+                raise Stopped("The client was stopped.")
             try:
                 resp = self._session.request(
                     method, url, headers=header, params=params, json=json, timeout=TIMEOUT
@@ -287,9 +301,12 @@ class AdobeClient:
         """Sign in again, unless another thread tried since this thread read the header.
 
         When that try worked, the next request uses its header. When it failed, this thread
-        raises the same error. A request made after the failure tries again.
+        raises the same error. A request made after the failure tries again. After stop(), it
+        raises Stopped and does not sign in.
         """
         with self._header_lock:
+            if self._stop.is_set():
+                raise Stopped("The client was stopped.")
             if self._header_gen != seen_gen:
                 return
             if self._sign_ins != seen_sign_ins and self._sign_in_error is not None:
@@ -299,6 +316,10 @@ class AdobeClient:
             try:
                 header = dict(self._relogin())
             except BaseException as e:
+                if self._stop.is_set() and isinstance(e, Exception):
+                    # The waits between the sign-in tries end at stop(), so the sign-in may
+                    # have failed only because of it. Ctrl-C itself is raised as it is.
+                    raise Stopped("The client was stopped.") from None
                 self._sign_in_error = e
                 raise
             self._sign_in_error = None

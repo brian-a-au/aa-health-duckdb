@@ -130,24 +130,73 @@
     if (type === "currency") return (Math.abs(v) >= 100 ? moneyRound : money).format(v);
     return Math.abs(v) >= 100 ? roundBig.format(v) : roundSmall.format(v);
   }
-  // digits: the decimals to keep for a value under 1,000, e.g., 2 for an axis in steps of 0.05.
+  // Formatters made once for each number of decimals, by make(digits).
+  function cached(make) {
+    var made = {};
+    return function (digits) {
+      if (!made[digits]) made[digits] = make(digits);
+      return made[digits];
+    };
+  }
+  // A value rounded to this many decimals, with 0 for -0, so that it never shows as "-0".
+  function rounded(v, digits) {
+    var f = Math.pow(10, digits);
+    var r = Math.round(v * f) / f;
+    return r === 0 ? 0 : r;
+  }
+  // A currency axis under 1,000 in steps of a whole amount, e.g., "$200", or with at least
+  // the currency's own decimals, e.g., "$0.05" and "$0.10".
+  var moneyAxis = cached(function (digits) {
+    var own = money ? money.resolvedOptions().maximumFractionDigits : 2;
+    return currencyFmt({ digits: digits > 0 ? Math.max(digits, own) : 0 });
+  });
+  // digits: the decimals to keep for a value under 1,000, e.g., 2 for an axis in steps of 0.05,
+  // and 0 for steps of a whole number.
   function fmtShort(v, type, digits) {
-    if (type === "currency" && moneyShort) return moneyShort.format(v);
     var a = Math.abs(v);
+    if (type === "currency" && moneyShort) {
+      if (digits === undefined || a >= 1e3) return moneyShort.format(v);
+      var f = moneyAxis(digits);
+      return f.format(rounded(v, f.resolvedOptions().maximumFractionDigits));
+    }
     if (a >= 1e9) return trim(v / 1e9) + "B";
     if (a >= 1e6) return trim(v / 1e6) + "M";
     if (a >= 1e3) return trim(v / 1e3) + "K";
     return trim(v, digits);
   }
+  // A short number in the browser's language, e.g., "1.5" in English and "1,5" in German.
+  var shortNum = cached(function (digits) {
+    return new Intl.NumberFormat(undefined, { maximumFractionDigits: digits, useGrouping: false });
+  });
   function trim(v, digits) {
-    var f = Math.pow(10, digits > 1 ? digits : 1);
-    return String(Math.round(v * f) / f);
+    var d = digits > 1 ? digits : 1;
+    return shortNum(d).format(rounded(v, d));
+  }
+  // A change in percent with one decimal and its sign, in the browser's language, e.g.,
+  // "+5%", "-12.5%" and "0%" in English and "-12,5 %" in German. fmtPctSize leaves out the sign.
+  var pctFmt = new Intl.NumberFormat(undefined,
+    { style: "percent", maximumFractionDigits: 1, useGrouping: false, signDisplay: "exceptZero" });
+  var pctSizeFmt = new Intl.NumberFormat(undefined,
+    { style: "percent", maximumFractionDigits: 1, useGrouping: false });
+  // An older browser without signDisplay shows no plus sign by itself.
+  var pctPlus = pctFmt.resolvedOptions().signDisplay !== "exceptZero";
+  function pctOf(p) {
+    if (p === null || p === undefined) return null;
+    var n = Math.round(p * 1000) / 10;
+    return n === 0 ? 0 : n / 100;
   }
   function fmtPct(p) {
-    if (p === null || p === undefined) return "";
-    var n = Math.round(p * 1000) / 10;
-    return (n > 0 ? "+" : "") + n + "%";
+    var n = pctOf(p);
+    if (n === null) return "";
+    return (pctPlus && n > 0 ? "+" : "") + pctFmt.format(n);
   }
+  function fmtPctSize(p) {
+    var n = pctOf(p);
+    return n === null ? "" : pctSizeFmt.format(Math.abs(n));
+  }
+  // A number with two decimals, e.g., "0.95" in English and "0,95" in German.
+  var twoDecimals = new Intl.NumberFormat(undefined,
+    { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   function parseDay(iso) {
     var p = iso.split("-");
     return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
@@ -472,14 +521,20 @@
       title: "This component had a value of 0 on every day in this run." }, "never collected data");
   }
 
+  // A threshold as the page writes it, with up to one decimal, e.g., 0.3 as "30%" and 0.275
+  // as "27.5%", as ahd alerts writes it. It follows the browser's language, as fmtPct does.
+  function thresholdText(share) {
+    return pctSizeFmt.format(Math.round(share * 1000) / 1000);
+  }
+
   function dropBadge() {
-    return badge("flag", "▼", "Large drop", "More than " + Math.round(state.t * 100) +
-      "% below the weekday average. Set the percent with the slider at the top of the page.");
+    return badge("flag", "▼", "Large drop", "More than " + thresholdText(state.t) +
+      " below the weekday average. Set the percent with the slider at the top of the page.");
   }
 
   function spikeBadge() {
-    return badge("flag", "▲", "Large spike", "More than " + Math.round(state.s * 100) +
-      "% above the weekday average. Set the percent with the slider at the top of the page.");
+    return badge("flag", "▲", "Large spike", "More than " + thresholdText(state.s) +
+      " above the weekday average. Set the percent with the slider at the top of the page.");
   }
 
   // An arrow for a change past a slider: the drop slider for down, the spike slider for up.
@@ -961,6 +1016,7 @@
   // with a short bar. Without it, or when the day is not in the chart, nothing is marked.
   // mark.look: a day to read and to show with the crosshair, e.g., a day chosen in the
   // calendar. The readout starts on it instead of the chosen day.
+  var chartCount = 0;
   function drawChart(host, points, title, type, mark) {
     clear(host);
     points = (points || []).filter(function (p) { return p && p[0]; });
@@ -1003,11 +1059,13 @@
     var bottom = Math.floor(min / step) * step;
     function y(v) { return T + (top - v) / (top - bottom) * ph; }
     // A step under 1 needs its own decimals, or two lines get the same label, e.g., 0.1 twice
-    // for steps of 0.05.
-    var axisDigits = stepDigits(step);
+    // for steps of 0.05. A step of a whole number needs none.
+    var axisDigits = step >= 1 && Math.abs(step - Math.round(step)) < 1e-6 ? 0 : stepDigits(step);
 
+    // A group, not an image: a screen reader then lets the arrow keys reach the chart, and the
+    // readout below it says each day aloud.
     var svg = sv("svg", {
-      viewBox: "0 0 " + W + " " + H, role: "img", tabindex: 0,
+      viewBox: "0 0 " + W + " " + H, role: "group", "aria-roledescription": "chart", tabindex: 0,
       "aria-label": "Trend chart for " + title + ", " + points.length + " days. " +
         (chosen >= 0 ? "A line marks the chosen day, " + fmtDay(points[chosen][0], false) + ". " : "") +
         (week ? "A band marks the chosen week, " + weekText() + ". " : "") +
@@ -1104,7 +1162,12 @@
     svg.appendChild(dot);
     var hit = sv("rect", { x: L, y: 0, width: pw, height: H, fill: "transparent" });
     svg.appendChild(hit);
-    var readout = el("p", { "class": "chart-readout", "aria-live": "polite" });
+    // The chart names its readout, so a screen reader also says the day in view when the chart
+    // gets the focus.
+    chartCount += 1;
+    var readout = el("p", { "class": "chart-readout", id: "chart-readout-" + chartCount,
+      "aria-live": "polite" });
+    svg.setAttribute("aria-describedby", readout.id);
     var last = points.length - 1;
     // At rest, the readout describes the look day, else the chosen day, else the last day.
     var look = -1;
@@ -1182,16 +1245,17 @@
     return fmtShortDay(weekDays[0]) + " to " + fmtShortDay(weekDays[6]) + ", " +
       weekDays[6].slice(0, 4);
   }
-  // How many of the week's days were flagged above and below the expected range. A component
-  // that never collected data has no flags, as in the daily view.
+  // How many of the week's days were flagged above and below the expected range. A day before
+  // the component's first day with data has no flags, as in the daily view. So a component
+  // that never collected data has none.
   var weekFlagCache = {};
   function weekFlags(row) {
     var cid = row.component_id;
     if (!(cid in weekFlagCache)) {
       var f = { high: 0, low: 0 };
-      if (!row.unused) {
+      if (!row.unused && row.first_data) {
         (data.series[cid] || []).forEach(function (p) {
-          if (weekDays.indexOf(p[0]) < 0) return;
+          if (weekDays.indexOf(p[0]) < 0 || p[0] < row.first_data) return;
           if (p[5] === "high") f.high++;
           if (p[5] === "low") f.low++;
         });
@@ -1365,7 +1429,8 @@
     }
 
     var svgHost = el("div", { "class": "calendar-grid" });
-    var readout = el("p", { "class": "chart-readout calendar-readout", "aria-live": "polite" });
+    var readout = el("p", { "class": "chart-readout calendar-readout", id: "calendar-readout",
+      "aria-live": "polite" });
     var lists = el("div", { "class": "calendar-lists" });
 
     function drawGrid() {
@@ -1374,7 +1439,9 @@
       var L = 40, R = 18, T = 16, gap = 3;
       var size = Math.max(10, Math.min(22, Math.floor((width - L - R) / cols) - gap));
       var W = L + cols * (size + gap) + R, H = T + 7 * (size + gap);
-      var svg = sv("svg", { viewBox: "0 0 " + W + " " + H, width: W, height: H, role: "img",
+      // A group and not an image, so that a screen reader lets the arrow keys reach it.
+      var svg = sv("svg", { viewBox: "0 0 " + W + " " + H, width: W, height: H, role: "group",
+        "aria-roledescription": "calendar", "aria-describedby": "calendar-readout",
         tabindex: 0, "class": "calendar-svg",
         "aria-label": "Alerts by day for the 13 weeks ending " + fmtDay(yesterday, false) +
           ". Use the arrow keys to move between days." });
@@ -1688,9 +1755,9 @@
       "below the expected range";
     if (a.anomaly === "high") return "above the expected range";
     if (!a.zero && a.pct_vs_usual > 0) {
-      return fmtPct(a.pct_vs_usual).replace("+", "") + " above the weekday average";
+      return fmtPctSize(a.pct_vs_usual) + " above the weekday average";
     }
-    if (!a.zero) return fmtPct(a.pct_vs_usual).replace("-", "") + " below the weekday average";
+    if (!a.zero) return fmtPctSize(a.pct_vs_usual) + " below the weekday average";
     return "value is 0";
   }
 
@@ -1814,9 +1881,9 @@
     if (key === "low") return "a value below the expected range";
     if (key === "high") return "a value above the expected range";
     if (key === "drop") {
-      return "a value more than " + Math.round(state.t * 100) + "% below the weekday average";
+      return "a value more than " + thresholdText(state.t) + " below the weekday average";
     }
-    return "a value more than " + Math.round(state.s * 100) + "% above the weekday average";
+    return "a value more than " + thresholdText(state.s) + " above the weekday average";
   }
   // For example "356 of the 356 components that collected data had a value of 0 on Wed, Nov 11
   // (yesterday). For 330 of them, this started on Nov 5. For the other 26, it started on other
@@ -1904,10 +1971,10 @@
       parts.zero.length);
   }
   function dropTitle() {
-    return "Drops of more than " + Math.round(state.t * 100) + "% below the weekday average";
+    return "Drops of more than " + thresholdText(state.t) + " below the weekday average";
   }
   function spikeTitle() {
-    return "Spikes of more than " + Math.round(state.s * 100) + "% above the weekday average";
+    return "Spikes of more than " + thresholdText(state.s) + " above the weekday average";
   }
 
   // The heading of an alert list, with how many components it holds and how many are new.
@@ -1936,7 +2003,7 @@
   // average week, and a day with its weekday average.
   function dropSummary(rows, when, week) {
     var base = week ? "the average week" : "the weekday average";
-    var pct = Math.round(state.t * 100) + "%";
+    var pct = thresholdText(state.t);
     var drops = rows.filter(function (r) { return isLargeDrop(r.value, r.baseline, r.pct, week); });
     var flagged = drops.length;
     var byMethod = drops.filter(function (r) { return !!r.anomaly; }).length;
@@ -1953,14 +2020,14 @@
         "") + "." :
       when + ": no component is more than " + pct + " below " + base + ".";
     if (!worst) return head + " No component is below " + base + ".";
-    return head + " The largest drop is " + fmtPct(worst.pct).replace("-", "") + " (" +
+    return head + " The largest drop is " + fmtPctSize(worst.pct) + " (" +
       componentLabel(worst) + ").";
   }
 
   // The same sentence for large spikes, naming the largest rise.
   function spikeSummary(rows, when, week) {
     var base = week ? "the average week" : "the weekday average";
-    var pct = Math.round(state.s * 100) + "%";
+    var pct = thresholdText(state.s);
     var spikes = rows.filter(function (r) { return isLargeSpike(r.value, r.baseline, r.pct, week); });
     var flagged = spikes.length;
     var byMethod = spikes.filter(function (r) { return !!r.anomaly; }).length;
@@ -1977,7 +2044,7 @@
         "") + "." :
       when + ": no component is more than " + pct + " above " + base + ".";
     if (!best) return head + " No component is above " + base + ".";
-    return head + " The largest rise is " + fmtPct(best.pct).replace("+", "") + " (" +
+    return head + " The largest rise is " + fmtPctSize(best.pct) + " (" +
       componentLabel(best) + ").";
   }
 
@@ -2067,7 +2134,7 @@
     var host = byId("alerts");
     clear(host);
     var parts = splitAlerts();
-    var pct = Math.round(state.t * 100) + "%";
+    var pct = thresholdText(state.t);
     var events = suiteEvents(parts);
     var of = eventOf(events);
     function outside(list) { return list.filter(function (a) { return !of[a.component_id]; }); }
@@ -2105,7 +2172,7 @@
       changeTable, "alerts-drops",
       dropSummary(data.views["day:" + state.alertDay] || [], alertDayText()));
 
-    var spct = Math.round(state.s * 100) + "%";
+    var spct = thresholdText(state.s);
     group("spikes-title", spikeTitle(), parts.spikes,
       "These values were more than " + spct + " above their weekday average, but " +
         flaggedBy(false) + " did not flag them. A value that doubled, e.g., from a tag that fires twice, is " +
@@ -2177,7 +2244,7 @@
       rows.map(function (d) {
         var r = weekRows[d.component_id], name = componentLabel(r);
         return [{ c: name, k: name }, weekBars(d), pct(d.per_week), pct(d.overall),
-          { c: d.fit.toFixed(2), k: d.fit }];
+          { c: twoDecimals.format(d.fit), k: d.fit }];
       }), null, "declines", { labelledby: "declines-title" }));
     fitTables();
   }
@@ -2354,6 +2421,9 @@
     var button = byId(buttonId);
     if (!button) return;
     button.addEventListener("click", function () {
+      // A large page may still wait to draw the last slider setting. Both versions of the copy
+      // and the page must show the same one.
+      drawWaiting();
       copyBoth(getHtml(), getText(), function (rich) {
         result.textContent = rich ?
           "Copied. An email program pastes it formatted, and a chat pastes plain text." :
@@ -2365,7 +2435,7 @@
       });
     });
   }
-  copyButton("copy-alerts", "copy-result", alertHtml, function () { return byId("alert-text").value; },
+  copyButton("copy-alerts", "copy-result", alertHtml, alertText,
     "Open \"Show the alert summary as text\" below and copy it from there.");
 
   // The problems as the status section shows them: one heading per problem code, then items.
@@ -2470,10 +2540,10 @@
         toAlerts, flagged.low);
     }
     tile("flag", "▼", "Large drops", numFmt.format(drops),
-      "More than " + Math.round(state.t * 100) + "% below the weekday average", toAlerts,
+      "More than " + thresholdText(state.t) + " below the weekday average", toAlerts,
       parts.drops);
     tile("flag", "▲", "Large spikes", numFmt.format(spikes),
-      "More than " + Math.round(state.s * 100) + "% above the weekday average", toAlerts,
+      "More than " + thresholdText(state.s) + " above the weekday average", toAlerts,
       parts.spikes);
     tile("zero", "●", "Dropped to zero", numFmt.format(zero),
       unused ? numFmt.format(unused) + " others never collected data" : "Had data on other days",
@@ -2529,14 +2599,24 @@
   // typing stays smooth. A smaller page draws at once.
   var SLOW_ROWS = 400, PAUSE_MS = 150;
   var slowPage = (data.views.week || []).length > SLOW_ROWS;
+  var waiting = [];
   function whenPaused(draw) {
     var timer = null;
+    function run() { timer = null; draw(); }
+    waiting.push(function () {
+      if (timer === null) return;
+      clearTimeout(timer);
+      run();
+    });
     return function () {
       if (!slowPage) { draw(); return; }
       clearTimeout(timer);
-      timer = setTimeout(draw, PAUSE_MS);
+      timer = setTimeout(run, PAUSE_MS);
     };
   }
+  // Draws at once what waits for the reader to pause, e.g., before a copy. The copy and the
+  // page then follow the same slider setting.
+  function drawWaiting() { waiting.forEach(function (f) { f(); }); }
   var drawFound = whenPaused(renderTables);
   byId("find").addEventListener("input", function (e) {
     state.find = e.target.value.trim();

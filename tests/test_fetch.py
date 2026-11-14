@@ -16,7 +16,7 @@ from fakes import (
 )
 
 from ahd.api.client import ApiError
-from ahd.api.reports import MALFORMED, Column
+from ahd.api.reports import MALFORMED, Column, trend_body
 from ahd.config import ConfigError
 from ahd.dates import RunWindow
 from ahd.fetch import RunOptions, fetch_catalog, probe_anomaly, run_fetch
@@ -76,13 +76,50 @@ def test_batches_respect_batch_size(store):
     fake = fake_for("rs1", events(44), custom_dims()[1:])  # 44 events + page = 45 columns
     run_fetch(fake, store, opts(metric="metrics/visits"))
     sizes = sorted(len(metric_ids(b)) for b in fake.trend_bodies())
-    # probe (1), individual (1), batches 20 + 20 + 5
-    assert sizes == [1, 1, 5, 20, 20]
-    # the probe is always the first call; every event appears exactly once after it
-    later = [i for b in fake.trend_bodies()[1:] for i in metric_ids(b)]
-    assert sorted(i for i in later if i.startswith("metrics/event")) == sorted(
+    # probe (1), individual (1), batches 20 + 20 + 4 of the columns after the probe's
+    assert sizes == [1, 1, 4, 20, 20]
+    # the probe is always the first call, and it holds the first column. Every event is
+    # asked for exactly once.
+    assert metric_ids(fake.trend_bodies()[0]) == ["metrics/event1"]
+    every = [i for b in fake.trend_bodies() for i in metric_ids(b)]
+    assert sorted(i for i in every if i.startswith("metrics/event")) == sorted(
         f"metrics/event{n}" for n in range(1, 45)
     )
+
+
+def test_the_probe_answer_is_stored_as_the_first_columns_trend(store):
+    fake = fake_for("rs1", events(3), custom_dims())
+    rid = run_fetch(fake, store, opts())
+    probe = fake.trend_bodies()[0]
+    assert is_anomaly_trend(probe) and metric_ids(probe) == ["metrics/event1"]
+    # The probe's body is the one that a batch of this column alone would send.
+    assert probe == trend_body(
+        "rs1", W.trend_range(), [Column("metrics/event1", "metrics/event1")], None, True
+    )
+    assert values_for(store, rid, "metrics/event1") == 92
+    assert sum(b == probe for b in fake.posted()) == 1
+    assert store.get_run(rid)["status"] == "ok"
+
+
+def test_a_probe_answer_that_cannot_be_read_is_an_issue_of_its_column(store):
+    fake = fake_for(
+        "rs1",
+        events(3),
+        custom_dims(),
+        posts=[(lambda b: is_trend(b) and metric_ids(b) == ["metrics/event1"], {"rows": "x"})],
+    )
+    rid = run_fetch(fake, store, opts())
+    assert [(r[1], r[2]) for r in issues(store, rid)] == [("metrics/event1", "invalid_response")]
+    assert values_for(store, rid, "metrics/event2") == 92
+
+
+def test_without_anomaly_detection_the_first_column_is_asked_for_again(store):
+    denied = ApiError(403, "anomaly detection not allowed", "invalid_access")
+    fake = fake_for("rs1", events(3), custom_dims(), posts=[(is_anomaly_trend, denied)])
+    rid = run_fetch(fake, store, opts())
+    batch = fake.trend_bodies()[1]
+    assert not is_anomaly_trend(batch) and metric_ids(batch)[0] == "metrics/event1"
+    assert values_for(store, rid, "metrics/event1") == 92
 
 
 def test_trend_bodies_use_full_window(store):
@@ -204,12 +241,14 @@ def test_batch_api_error_one_issue_per_column(store):
     )
     rid = run_fetch(fake, store, opts(batch_size=2))
     col_issues = [(r[1], r[2]) for r in issues(store, rid) if r[0] == "column"]
-    # catalog order: event1, event2, event3, prop1, page -> batch [event1, event2] fails
+    # catalog order: event1, event2, event3, prop1, page. The probe holds event1, so the
+    # batches are [event2, event3] and [prop1, page], and the first one fails.
     assert col_issues == [
-        ("metrics/event1", "invalid_request"),
         ("metrics/event2", "invalid_request"),
+        ("metrics/event3", "invalid_request"),
     ]
-    assert values_for(store, rid, "metrics/event3") == 92
+    assert values_for(store, rid, "metrics/event1") == 92
+    assert values_for(store, rid, "variables/prop1") == 92
     assert values_for(store, rid, "individual/1") == 92
     assert store.get_run(rid)["status"] == "partial"
 
@@ -219,7 +258,7 @@ def test_failed_when_no_values(store):
         "rs1",
         events(2),
         custom_dims(),
-        posts=[(after_probe(is_trend), ApiError(400, "nope", "invalid_request"))],
+        posts=[(is_trend, ApiError(400, "nope", "invalid_request"))],
     )
     rid = run_fetch(fake, store, opts())
     assert store.get_run(rid)["status"] == "failed"
@@ -499,8 +538,8 @@ def test_network_error_in_one_batch_continues(store):
     fake = fake_for("rs1", events(3), custom_dims(), posts=[(timed_out_batch, raise_timeout)])
     rid = run_fetch(fake, store, opts(batch_size=2))
     col_issues = [(r[1], r[2]) for r in issues(store, rid) if r[0] == "column"]
-    assert col_issues == [("metrics/event1", "network_error"), ("metrics/event2", "network_error")]
-    for cid in ["metrics/event3", "variables/prop1", "variables/page", "individual/1"]:
+    assert col_issues == [("metrics/event2", "network_error"), ("metrics/event3", "network_error")]
+    for cid in ["metrics/event1", "variables/prop1", "variables/page", "individual/1"]:
         assert values_for(store, rid, cid) == 92
     assert store.get_run(rid)["status"] == "partial"
 
@@ -519,10 +558,10 @@ def test_a_temporary_sign_in_problem_in_one_batch_continues(store):
     rid = run_fetch(fake, store, opts(batch_size=2))
     col_issues = [(r[1], r[2]) for r in issues(store, rid) if r[0] == "column"]
     assert col_issues == [
-        ("metrics/event1", "sign_in_unavailable"),
         ("metrics/event2", "sign_in_unavailable"),
+        ("metrics/event3", "sign_in_unavailable"),
     ]
-    for cid in ["metrics/event3", "variables/prop1", "variables/page", "individual/1"]:
+    for cid in ["metrics/event1", "variables/prop1", "variables/page", "individual/1"]:
         assert values_for(store, rid, cid) == 92
     assert store.get_run(rid)["status"] == "partial"
 
@@ -731,6 +770,133 @@ def test_add_pair_keeps_the_empty_pair_when_the_new_try_stops(store):
     assert any(r[1] == "individual/1" for r in issues(store, rid))
 
 
+def _interrupted_run(store):
+    """A run of 11 components that stops with Ctrl-C while a later trend batch is read."""
+    from fakes import auto_response
+
+    def post(body):
+        if is_trend(body) and "metrics/event7" in metric_ids(body):
+            raise KeyboardInterrupt
+        return auto_response(body)
+
+    fake = fake_for("rs1", events(10), custom_dims()[1:], default_post=post)
+    with pytest.raises(KeyboardInterrupt):
+        run_fetch(fake, store, opts(batch_size=5, workers=1))
+    return store.list_runs()[0]["run_id"]
+
+
+def test_an_interrupted_run_names_each_component_it_did_not_read(store):
+    from ahd.fetch import INTERRUPTED_MESSAGE
+
+    rid = _interrupted_run(store)
+    assert store.get_run(rid)["status"] == "failed"
+    read = {
+        r[0]
+        for r in store.con.execute(
+            "select distinct component_id from daily_values where run_id = ?", [rid]
+        ).fetchall()
+    }
+    stopped = [r for r in issues(store, rid) if r[2] == "interrupted"]
+    unread = {r[1] for r in stopped if r[0] == "column"}
+    catalog = {
+        r[0]
+        for r in store.con.execute(
+            "select component_id from components where run_id = ?", [rid]
+        ).fetchall()
+    }
+    assert len(catalog) == 11 and read and unread
+    assert read | unread == catalog and not read & unread
+    assert {r[3] for r in stopped if r[0] == "column"} == {INTERRUPTED_MESSAGE}
+    # The pair is read last, so it did not finish either.
+    assert [(r[0], r[1]) for r in stopped if r[0] != "column"] == [("individual", "individual/1")]
+
+
+def test_add_pair_keeps_an_interrupted_run_failed(store):
+    # The run lacks components without a word about why they are missing, so a pair added
+    # later must not make it a run that the report and the alerts use.
+    from ahd.fetch import add_pair
+
+    rid = _interrupted_run(store)
+    fake = fake_for("rs1", events(10), custom_dims()[1:])
+    assert add_pair(fake, store, rid, "variables/evar1", "metrics/orders") == (2, 0)
+    assert store.get_run(rid)["status"] == "failed"
+    assert add_pair(fake, store, rid, "variables/page", "metrics/occurrences") == (3, 0)
+    assert store.get_run(rid)["status"] == "failed"
+    assert store.con.execute("select count(*) from latest_runs").fetchone()[0] == 0
+
+
+def test_a_run_that_stopped_in_its_pair_is_ok_once_the_pair_is_tried_again(store):
+    from fakes import auto_response
+
+    from ahd.fetch import add_pair
+
+    def post(body):
+        if not is_trend(body):
+            raise KeyboardInterrupt
+        return auto_response(body)
+
+    with pytest.raises(KeyboardInterrupt):
+        run_fetch(fake_for("rs1", events(2), custom_dims(), default_post=post), store, opts())
+    rid = store.list_runs()[0]["run_id"]
+    assert store.get_run(rid)["status"] == "failed"
+    assert [(r[1], r[2]) for r in issues(store, rid)] == [("individual/1", "interrupted")]
+    fake = fake_for("rs1", events(2), custom_dims())
+    assert add_pair(fake, store, rid, "variables/page", "metrics/occurrences") == (2, 0)
+    assert issues(store, rid) == []
+    assert store.get_run(rid)["status"] == "ok"
+
+
+def test_add_pair_makes_a_partial_run_ok_when_it_replaces_the_only_problem(store):
+    from ahd.fetch import add_pair
+
+    def pair_request(body):
+        # The 4 tables, and the daily trend, which is the only trend of Occurrences alone.
+        return not is_trend(body) or metric_ids(body) == ["metrics/occurrences"]
+
+    fake = fake_for("rs1", events(2), custom_dims(), posts=[(pair_request, ApiError(500, "down"))])
+    rid = run_fetch(fake, store, opts())
+    assert store.get_run(rid)["status"] == "partial"
+    assert {r[1] for r in issues(store, rid)} == {"individual/1"} and len(issues(store, rid)) == 5
+    fine = fake_for("rs1", events(2), custom_dims())
+    assert add_pair(fine, store, rid, "variables/page", "metrics/occurrences") == (2, 0)
+    assert issues(store, rid) == []
+    assert store.get_run(rid)["status"] == "ok"
+
+
+def test_add_pair_keeps_a_partial_run_partial_while_other_problems_remain(store):
+    from ahd.fetch import add_pair
+
+    fake = fake_for(
+        "rs1",
+        events(2),
+        custom_dims(),
+        posts=[(is_anomaly_trend, ApiError(403, "no", "invalid_access"))],
+    )
+    rid = run_fetch(fake, store, opts())
+    assert store.get_run(rid)["status"] == "partial"
+    fake.posts = []
+    assert add_pair(fake, store, rid, "variables/evar1", "metrics/orders") == (2, 0)
+    assert store.get_run(rid)["status"] == "partial"
+
+
+def test_add_pair_can_try_again_a_pair_whose_tables_came_back_empty(store):
+    # The browser and the device tables answer with no rows and a total of 0, and the other
+    # requests fail. The pair holds no data, so the same pair can be tried again.
+    from ahd.fetch import add_pair
+
+    def post(body):
+        if breakdown_dimension(body):
+            return {"rows": [], "summaryData": {"totals": [0, 0, 0, 0, 0]}}
+        raise ApiError(500, "down")
+
+    rid = run_fetch(fake_for("rs1", events(1), custom_dims(), default_post=post), store, opts())
+    assert store.get_run(rid)["status"] == "failed"
+    fake = fake_for("rs1", events(1), custom_dims())
+    assert add_pair(fake, store, rid, "variables/page", "metrics/occurrences") == (2, 0)
+    assert [p["pair"] for p in store.list_pairs(rid)] == [2]
+    assert not any(r[1] == "individual/1" for r in issues(store, rid))
+
+
 def test_add_pair_refuses_duplicates_and_running_runs(store):
     from ahd.config import ConfigError
     from ahd.fetch import add_pair
@@ -834,7 +1000,7 @@ def test_a_batch_that_is_not_json_becomes_issues(store):
 def test_a_batch_of_the_wrong_shape_becomes_issues_and_the_run_goes_on(store):
     """A 200 answer that is JSON but not a report must not end the run with an error trace."""
     bad = {"rows": [{"itemId": "1260708", "value": "Aug 8, 2026", "data": [None]}]}
-    first_batch = after_probe(lambda b: is_trend(b) and "metrics/event1" in metric_ids(b))
+    first_batch = after_probe(lambda b: is_trend(b) and "metrics/event2" in metric_ids(b))
     fake = fake_for("rs1", events(3), custom_dims(), posts=[(first_batch, bad)])
     rid = run_fetch(fake, store, opts(batch_size=2))
     assert store.get_run(rid)["status"] == "partial"

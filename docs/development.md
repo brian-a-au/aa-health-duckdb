@@ -72,6 +72,7 @@ The tool is on PyPI as [aa-health-duckdb](https://pypi.org/project/aa-health-duc
    - builds the wheel and the source package
    - checks that every link in the README is a full web address, so the links work on PyPI
    - installs the wheel in a new environment and runs `ahd --help`
+   - runs `scripts/check_wheel.py` with the installed wheel. It makes a database with one run of made-up data, and runs `ahd runs`, `ahd alerts` and `ahd render` on it. So the release stops when the wheel lacks `views.sql`, the template or the page files. It needs no credential and no network.
    - writes SHA-256 sums
 2. **publish** uploads the same files to PyPI with trusted publishing, so no PyPI token is stored anywhere. It runs in the `pypi` environment, which accepts only tags `v*.*.*`. It does not wait for an approval, so a pushed tag goes to PyPI as soon as the build job passes. PyPI trusts this publisher: owner `brian-a-au`, repository `aa-health-duckdb`, workflow `release.yml` and environment `pypi`.
 3. **github-release** creates the GitHub release with the files, the sums and the changelog section as its notes.

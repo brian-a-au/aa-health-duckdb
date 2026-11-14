@@ -15,6 +15,7 @@ A source is a database file of any layout from IMPORT_FROM_VERSION on, or a fold
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -55,6 +56,16 @@ class ImportResult:
 def _text(value: str) -> str:
     """A SQL string. DuckDB takes no parameter for a file name in ATTACH and COPY."""
     return "'" + value.replace("'", "''") + "'"
+
+
+def _literal_path(path: Path) -> str:
+    """A path for read_parquet that DuckDB reads as it is, not as a pattern of file names.
+
+    read_parquet reads [ ], * and ? as a pattern, so the folder exp[1] would match exp1. Each of
+    the 3 characters in brackets stands for itself, e.g., [[] for [. ATTACH and COPY read a
+    path as it is.
+    """
+    return re.sub(r"([\[*?])", r"[\1]", str(path))
 
 
 def _name(value: str) -> str:
@@ -164,7 +175,7 @@ def _folder_source(source: Path) -> tuple[int, dict[str, str]]:
         )
     version = _check_version(manifest.get("schema_version"), source)
     relations = {
-        table: f"read_parquet({_text(str(source / f'{table}.parquet'))})"
+        table: f"read_parquet({_text(_literal_path(source / f'{table}.parquet'))})"
         for table in RUN_TABLES
         if (source / f"{table}.parquet").is_file()
     }

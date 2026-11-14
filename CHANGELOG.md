@@ -2,6 +2,62 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## 0.1.14 (2026-11-14)
+
+This release fixes bugs that a review of the whole tool found. The database layout stays at version 7, so files made by 0.1.2 to 0.1.13 keep working. The views version changes from 8 to 9, because two alert rules change and the `component_days` view gets a new column `first_data` at the end. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces the views and the macros in your file. `ahd render` and `ahd alerts` open the file read-only, so they do not replace them, but they use the new rules for their own session.
+
+**Alerts**
+
+- A day before a component's first day with data is never an alert, with any method. Before, a new component counted as "dropped to zero" on every day before it started. So the calendar, the lists, the suite-wide events and `alerts()` for an older day can show fewer alerts. The alerts of yesterday change only when Adobe flagged a day without data. The number of components that collected data, which the events use, does not change.
+- Adobe sometimes flags a value without the upper end of its range. Such a flag is now "Above range" when the value is above the expected value. Before, it was always "Below range", and it could join the wrong suite-wide event.
+- The report writes a drop or spike percent with its decimal, e.g., "27.5%", as `ahd alerts` does. Before, it wrote "28%" for a threshold of 27.5.
+- `ahd alerts --format csv` puts a single quote in front of a text that a spreadsheet would run as a formula, e.g., a component name that starts with `=`. Numbers stay as they are. See [Usage](docs/usage.md#the-formats).
+
+**The alert email**
+
+- `send_alerts.py` now checks the certificate and the host name of the mail server. Before, it sent `SMTP_PASSWORD` over a connection that it did not check.
+- It waits at most 60 seconds for the mail server. When it cannot send, it prints one line that says why and exits with 1. Before, a server that did not answer could hold the job forever, and an error printed a trace.
+- The rules text in the email gives the exact percent, e.g., 27.5% for `--threshold 0.275`.
+
+**Runs and their status**
+
+- A run stopped with Ctrl-C now records an issue for each component that it did not read, and its report says so. It stays "failed" after `ahd individual`. Before, `ahd individual` could make it "partial", and `ahd alerts` and the email then used a run that lacked components without saying so.
+- `ahd individual` sets a run to "ok" when the pair it replaced held the run's only issues. Before, the run stayed "partial".
+- `ahd individual` can try again a pair whose browser and device tables came back empty. Before, it said that the run already held the pair.
+- A trend day that Adobe sends without a value is now recorded as an issue. Before, the day was left out without a word.
+- A value of NaN, of infinity or a number too large to read now counts as an answer that could not be read. Before, it was stored, or it ended the run with an error trace.
+- Each run sends one request less, because the answer of the anomaly test is stored as the trend of its component.
+
+**Commands**
+
+- `--config` together with all four `AHD_*` credential variables now stops with a message. Before, the variables won and the file was ignored without a word, so a run could read another organization. See [Configuration](docs/configuration.md).
+- Options that cannot be used together now exit with 2 and print the usage, as [Usage](docs/usage.md) says, e.g., `--profile` with `--config`, or `ahd alerts --segment` with `--run`. Before, they exited with 1.
+- `ahd prune --run N` exits with 1 and deletes nothing when a run that it names is not stored. Before, it exited with 0.
+- `ahd run` no longer leaves a new empty database behind when it stops before it stores a run, e.g., after a failed sign-in.
+- The hint after a report that could not be written now names the `--db` or the profile in use.
+- A `~` at the start of a path option now means your home folder, also in quotes, e.g., `--db "~/ahd/ahd.duckdb"`.
+- A DuckDB file that ahd did not make now gets the message "The database ... is not an ahd database. Choose another file with --db." Before, it was told to delete the file. A new database file is made in one step, so Ctrl-C cannot leave it half made.
+- `ahd import` reads a folder whose name holds `[`, `]`, `*` or `?` as it is. Before, it could read another folder that the name matched as a pattern.
+- The help of `--profile` says what it chooses for each command: the credential, the database or both.
+
+**Sign-in and requests**
+
+- The Analytics discovery call at sign-in is now tried 3 times after a temporary error, like the token request. Before, one error there stopped the run.
+- `ahd run` keeps a connection open for each of up to 16 workers. Before, it kept 10, and with more workers it printed warnings and made new connections.
+- After Ctrl-C, no thread sends a request or signs in again, and a wait between sign-in tries ends at once.
+
+**The report**
+
+- The chart axis of a currency metric with small values gives each line its own label, e.g., $0.05 and $0.10. Before, two lines could both read $0.1.
+- Percent changes, thresholds and short numbers follow the language of the browser, e.g., "-12,5 %" in German, as the other numbers and the dates already did.
+- "Copy alerts" copies the last slider setting in both versions, also on a large report that is still waiting to draw.
+- A screen reader can enter the trend chart and the calendar with the arrow keys and says each day.
+
+**The package**
+
+- The source package now holds the files its tests read, so the tests pass in it.
+- The release workflow now checks that the wheel holds its SQL, its template and its page files, with the new `scripts/check_wheel.py`.
+
 ## 0.1.13 (2026-11-12)
 
 This release gives one line to a problem that hits most of a report suite at once, e.g., when its data stops. The database layout stays at version 7, so files made by 0.1.2 to 0.1.12 keep working. The views version changes from 7 to 8, because the `alerts()` macro gets a new column and a new macro `suite_events()` comes next to it. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces them in your file. `ahd render` and `ahd alerts` open the file read-only, so they do not replace them, but they use the new rules for their own session. Which components are alerts does not change, and neither do the counts in the tiles, the list headings, the alert line and the earlier runs.

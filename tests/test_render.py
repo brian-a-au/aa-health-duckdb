@@ -446,6 +446,8 @@ def test_issue_headings_for_known_codes():
         "no_rows",
         "anomaly_not_allowed",
         "no_custom_components",
+        "interrupted",
+        "invalid_response",
     ):
         assert ISSUE_HEADINGS[code] == issue_heading(code)
     assert issue_heading("unauthorized_metric") == (
@@ -632,6 +634,7 @@ ROW_KEYS = (
     "number",
     "metric_type",
     "unused",
+    "first_data",
     "value",
     "baseline",
     "pct",
@@ -909,3 +912,15 @@ def test_a_local_method_says_it_does_not_need_adobes_anomaly_detection():
         "Adobe&#39;s anomaly detection could not be tested, because the test request failed. "
         "This report does not need it, because it uses the Weekday median method."
     ) in render_html(view)
+
+
+def test_every_issue_code_of_fetch_has_a_heading():
+    from ahd import fetch
+
+    for code in (
+        fetch.NETWORK_ERROR,
+        fetch.SIGN_IN_UNAVAILABLE,
+        fetch.INVALID_RESPONSE,
+        fetch.INTERRUPTED,
+    ):
+        assert issue_heading(code) == ISSUE_HEADINGS[code]

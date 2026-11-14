@@ -313,18 +313,183 @@ def test_connect_signs_in_and_relogin_gets_a_new_token(monkeypatch):
 
     creds = Credentials("ORG@AdobeOrg", "cid", "sec", "openid")
     tokens = iter(["T1", "T2"])
+    waits = []
     monkeypatch.setattr(
         client_mod,
         "sign_in",
         lambda session, c, company_id=None: SignIn("co7", client_mod.header_for("T0", c, "co7")),
     )
-    monkeypatch.setattr(client_mod, "get_token", lambda session, c: next(tokens))
+
+    def get_token(session, c, wait=None):
+        waits.append(wait)
+        return next(tokens)
+
+    monkeypatch.setattr(client_mod, "get_token", get_token)
     c = AdobeClient.connect(creds)
     assert (c._pacer.limit, c._pacer.window) == (12, 6.0)
     assert c.company_id == "co7"
     assert c._header["Authorization"] == "Bearer T0"
     assert c._relogin()["Authorization"] == "Bearer T1"
     assert c._relogin()["x-proxy-global-company-id"] == "co7"
+    # The waits between the sign-in tries end when the client is stopped, e.g., on Ctrl-C.
+    assert waits == [c._stop.wait] * 2
+
+
+def _connected(monkeypatch):
+    from ahd.api import client as client_mod
+    from ahd.api.auth import SignIn
+    from ahd.config import Credentials
+
+    monkeypatch.setattr(
+        client_mod, "sign_in", lambda session, c, company_id=None: SignIn("co7", {})
+    )
+    return AdobeClient.connect(Credentials("ORG@AdobeOrg", "cid", "sec", "openid"))
+
+
+def test_the_connection_pool_holds_a_connection_for_each_worker(monkeypatch):
+    from ahd.api.auth import IMS_TOKEN_URL
+    from ahd.api.client import BASE, MAX_CONNECTIONS
+
+    c = _connected(monkeypatch)
+    for url in (BASE, IMS_TOKEN_URL):
+        adapter = c._session.get_adapter(url)
+        assert adapter._pool_maxsize >= MAX_CONNECTIONS
+        # The tool tries again itself, so the connection pool must not.
+        assert adapter.max_retries.total == 0
+
+
+def test_the_connection_pool_is_as_large_as_the_most_workers_the_command_allows():
+    import argparse
+
+    from ahd import cli
+    from ahd.api.client import MAX_CONNECTIONS
+
+    sub = next(a for a in cli._parser()._actions if isinstance(a, argparse._SubParsersAction))
+    workers = [
+        action.type
+        for parser in sub.choices.values()
+        for action in parser._actions
+        if action.dest == "workers"
+    ]
+    assert workers
+    for parse in workers:
+        assert parse(str(MAX_CONNECTIONS)) == MAX_CONNECTIONS
+        for too_many in range(MAX_CONNECTIONS + 1, MAX_CONNECTIONS + 100):
+            with pytest.raises(argparse.ArgumentTypeError):
+                parse(str(too_many))
+
+
+class WatchedLock:
+    """A lock that sets an event when the thread `watched` starts to wait for it."""
+
+    def __init__(self):
+        import threading
+
+        self._lock = threading.Lock()
+        self.watched = None
+        self.waiting = threading.Event()
+
+    def __enter__(self):
+        import threading
+
+        if threading.current_thread() is self.watched:
+            self.waiting.set()
+        self._lock.acquire()
+
+    def __exit__(self, *exc):
+        self._lock.release()
+
+
+def test_a_request_that_waited_for_a_sign_in_is_not_sent_after_stop():
+    """A thread that waits for the header while another thread signs in again checks the stop
+    signal after the wait, so it sends nothing after Ctrl-C."""
+    import threading
+
+    from ahd.api.client import Stopped
+
+    signing_in = threading.Event()
+    go_on = threading.Event()
+
+    def relogin():
+        signing_in.set()
+        assert go_on.wait(5)
+        return {"Authorization": "Bearer NEW"}
+
+    session = FakeSession([(401, None, {}), (200, {"a": 1}, {}), (200, {"b": 2}, {})])
+    c = AdobeClient._from_parts(session, dict(HEADER), "co1", relogin, sleep=lambda d: None)
+    lock = WatchedLock()
+    c._header_lock = lock
+    results = {}
+
+    def call(name):
+        try:
+            results[name] = c.get("/x")
+        except Stopped as e:
+            results[name] = e
+
+    first = threading.Thread(target=call, args=("first",))
+    first.start()
+    assert signing_in.wait(5)  # the first thread holds the header lock while it signs in
+    second = threading.Thread(target=call, args=("second",))
+    lock.watched = second
+    second.start()
+    assert lock.waiting.wait(5)
+    c.stop()
+    go_on.set()
+    first.join(5)
+    second.join(5)
+    assert isinstance(results["first"], Stopped) and isinstance(results["second"], Stopped)
+    assert len(session.calls) == 1
+
+
+def test_a_stopped_client_does_not_sign_in_again():
+    from ahd.api.client import Stopped
+
+    logins = []
+    session = FakeSession([(401, None, {})])
+    c = AdobeClient._from_parts(
+        session, dict(HEADER), "co1", lambda: logins.append(1) or dict(HEADER)
+    )
+    answer = session.request
+
+    def answer_then_stop(*a, **kw):
+        c.stop()
+        return answer(*a, **kw)
+
+    session.request = answer_then_stop
+    with pytest.raises(Stopped):
+        c.get("/x")
+    assert logins == [] and len(session.calls) == 1
+
+
+def test_a_sign_in_cut_short_by_stop_raises_stopped():
+    """A sign-in whose waits ended because of stop() fails. The request then says it was
+    stopped, and the error is not kept for the next sign-in."""
+    from ahd.api.auth import SignInUnavailable
+    from ahd.api.client import Stopped
+
+    c = None
+
+    def relogin():
+        c.stop()
+        raise SignInUnavailable("busy")
+
+    c, session, _ = make([(401, None, {})], relogin)
+    with pytest.raises(Stopped):
+        c.get("/x")
+    assert c._sign_in_error is None and len(session.calls) == 1
+
+
+def test_ctrl_c_during_a_sign_in_is_not_turned_into_stopped():
+    c = None
+
+    def relogin():
+        c.stop()
+        raise KeyboardInterrupt
+
+    c, _session, _ = make([(401, None, {})], relogin)
+    with pytest.raises(KeyboardInterrupt):
+        c.get("/x")
 
 
 @pytest.mark.parametrize("body", [None, "a string", 3])

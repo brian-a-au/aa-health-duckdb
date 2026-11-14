@@ -32,7 +32,7 @@ When sign-in fails, the tool says what is wrong and what to fix. The fixes happe
 
 Changes in the Admin Console can take a while to reach Analytics. Wait a little and run `ahd check` again.
 
-A message that says "This is a problem at Adobe, not with the credential" means that Adobe's sign-in service answered with a temporary error, e.g., HTTP 503, 3 times in a row. Wait a little and try again.
+A message that says "This is a problem at Adobe, not with the credential" means that Adobe answered a sign-in request with a temporary error, e.g., HTTP 503, 3 times in a row. Sign-in makes two requests. The first gets a token from Adobe's sign-in service. The second is the Analytics discovery call, which finds the login company. The message names the one that failed. Wait a little and try again.
 
 ## Limited access
 
@@ -99,7 +99,8 @@ When Adobe asks for a longer wait with a Retry-After header, the tool waits that
 - **"is not valid UTF-8 JSON"**: the file has a syntax error, e.g., a missing comma or quote.
 - **"must hold one JSON object"**: the file holds a list or a single value, not `{ ... }`.
 - **"No credential was found"**: there is no profile, none of the variables `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_SECRET` and `AHD_SCOPES`, and no `config.json` in the current folder. See [Configuration](configuration.md).
-- **"Use a profile or --config, not both"**: remove `--config`, or unset `AA_PROFILE` with `unset AA_PROFILE`.
+- **"Use a profile or --config, not both"**: the command got a profile and `--config`. Remove `--profile` or `--config`. When the message says that the profile comes from the `AA_PROFILE` variable, remove `--config`, or unset the variable with `unset AA_PROFILE`. With both options on the command line, the command exits with 2 and prints its usage. With the variable, it exits with 1.
+- **"Use --config or the four variables"**: all four of `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_SECRET` and `AHD_SCOPES` are set, and the command also got `--config`. The tool would have to ignore one of them, so it stops with exit code 1 before it signs in. Remove `--config` to use the variables, or unset them to use the file, e.g., `unset AHD_ORG_ID AHD_CLIENT_ID AHD_SECRET AHD_SCOPES`.
 - **"Missing credential keys"**: one of `org_id`, `client_id`, `secret` or `scopes` is missing or empty. The message names the key and where the tool looked.
 
 ## The database
@@ -124,7 +125,7 @@ There is no database at data/ahd.duckdb.
 
 Only `ahd run` and `ahd import` make a new file. Every other command needs a file that holds runs. Make a run first, or name the file with `--db` or a profile. [How runs are stored](runs.md#where-the-file-is) says where the file is.
 
-Two more messages name a file that is not usable. "holds no ahd runs" means the file is an empty DuckDB database. "is not a DuckDB database" means the file is something else. Choose the right file with `--db`.
+Three more messages name a file that is not usable. "holds no ahd runs" means the file is an empty DuckDB database. "is not an ahd database" means the file is a DuckDB database that another program made. The tool does not change it. "is not a DuckDB database" means the file is something else. Choose the right file with `--db`.
 
 ### The database is in use by another program
 
@@ -150,7 +151,7 @@ The `duckdb` command is older than 2.0. Update it, then check with `duckdb --ver
 
 ### A run stays "running"
 
-A run that you stop with Ctrl-C is marked "failed". The requests that were already sent finish first, and the rest are not sent. A request that was waiting to try again is not tried again.
+A run that you stop with Ctrl-C is marked "failed". The requests that were already sent finish first, and the rest are not sent. A request that was waiting to try again is not tried again. The run gets the issue "The run stopped before this component was read." for each component that it did not read. Such a run stays "failed" when `ahd individual` adds a pair to it, so `ahd alerts` does not use it. Make a new run instead.
 
 A run that stopped in another way, e.g., because you closed the window, keeps the status "running". Make a new run. To delete the old one, use `ahd prune --run N --force`.
 
@@ -161,7 +162,7 @@ A run that stopped in another way, e.g., because you closed the window, keeps th
 - **"holds no finished run of"**: the database has no run of that report suite ID that ended "ok" or "partial", with the segment you chose or, without `--segment`, without a segment. Check the ID with `ahd runs`. `ahd alerts` takes the ID, not the name, and the case must match. The command still prints the alerts of the other suites, and exits with 1. With `--all-suites`, the message says that the database holds no finished run with that segment or without one.
 - **"so it has no alerts"**: the run that `--run` names ended "failed". Choose another run.
 - **"so its alerts are not complete"**: the run that `--run` names is still marked "running". Wait for it to finish, or see [A run stays "running"](#a-run-stays-running).
-- **"--segment works only with --rsid or --all-suites"**: `--run` already names one run, with its own segment. Leave out `--segment`.
+- **"--segment works only with --rsid or --all-suites"**: `--run` already names one run, with its own segment. Leave out `--segment`. The command exits with 2 and prints its usage, as for any wrong option.
 
 ## Getting more detail
 

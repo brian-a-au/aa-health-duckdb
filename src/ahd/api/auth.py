@@ -9,6 +9,7 @@ token or header ever goes into a message.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,12 +21,16 @@ IMS_TOKEN_URL = "https://ims-na1.adobelogin.com/ims/token/v3"
 DISCOVERY_URL = "https://analytics.adobe.io/discovery/me"
 # Seconds to wait for a connection, and then for the answer.
 TIMEOUT = (10, 60)
-# Tries of the token request when Adobe's sign-in service is busy (HTTP 429 or 5xx) or the
-# network fails, and the waits in seconds between them. A wrong credential is never tried again.
+# Tries of the token request and of the discovery call when Adobe is busy (HTTP 429 or 5xx) or
+# the network fails, and the waits in seconds between them. A wrong credential is never tried
+# again.
 SIGN_IN_TRIES = 3
 SIGN_IN_WAITS = (1.0, 3.0)
 TEMPORARY_ERRORS = (requests.ConnectionError, requests.Timeout)
 _sleep = time.sleep
+# Waits a number of seconds. A true result means that the wait ended early and that no other
+# try should follow, as threading.Event.wait gives after the event is set.
+Wait = Callable[[float], object]
 
 # Without these, the token works but discovery returns no Analytics company.
 REQUIRED_SCOPES = ("openid", "AdobeID", "additional_info.projectedProductContext")
@@ -108,33 +113,50 @@ def _is_temporary(status: int) -> bool:
     return status == 429 or status >= 500
 
 
-def _post_token(session: Any, creds: Credentials) -> Any:
-    """The token answer. Tries again while the answer or the network error is temporary."""
+def _cut_short(wait: Wait | None, attempt: int) -> bool:
+    """Wait before the next try. True when the wait ended early, e.g., after Ctrl-C."""
+    return bool((wait or _sleep)(SIGN_IN_WAITS[min(attempt, len(SIGN_IN_WAITS)) - 1]))
+
+
+def _tried(send: Callable[[], Any], wait: Wait | None = None) -> Any:
+    """The answer of send(). Tries again while the answer or the network error is temporary.
+
+    wait(seconds) waits between the tries. When it returns True, e.g., the wait of a stop
+    signal that was set, there is no other try. The last answer is returned, or the last
+    network error is raised.
+    """
     attempt = 1
     while True:
         try:
-            resp = session.post(
-                IMS_TOKEN_URL,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": creds.client_id,
-                    "client_secret": creds.secret,
-                    "scope": creds.scopes,
-                },
-                timeout=TIMEOUT,
-            )
+            resp = send()
         except TEMPORARY_ERRORS:
-            if attempt >= SIGN_IN_TRIES:
+            if attempt >= SIGN_IN_TRIES or _cut_short(wait, attempt):
                 raise
         else:
-            if attempt >= SIGN_IN_TRIES or not _is_temporary(resp.status_code):
+            if (
+                attempt >= SIGN_IN_TRIES
+                or not _is_temporary(resp.status_code)
+                or _cut_short(wait, attempt)
+            ):
                 return resp
-        _sleep(SIGN_IN_WAITS[min(attempt, len(SIGN_IN_WAITS)) - 1])
         attempt += 1
 
 
-def get_token(session: Any, creds: Credentials) -> str:
-    resp = _post_token(session, creds)
+def get_token(session: Any, creds: Credentials, wait: Wait | None = None) -> str:
+    """A new access token. wait(seconds) waits between the tries, see _tried."""
+    resp = _tried(
+        lambda: session.post(
+            IMS_TOKEN_URL,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": creds.client_id,
+                "client_secret": creds.secret,
+                "scope": creds.scopes,
+            },
+            timeout=TIMEOUT,
+        ),
+        wait,
+    )
     body = _json(resp)
     body = body if isinstance(body, dict) else {}
     token = body.get("access_token")
@@ -175,16 +197,24 @@ def find_company(
     session: Any, token: str, creds: Credentials, company_id: str | None
 ) -> tuple[str, str, int]:
     """The chosen login company as (global company ID, name, how many the credential sees)."""
-    resp = session.get(
-        DISCOVERY_URL,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "x-api-key": creds.client_id,
-            "x-gw-ims-org-id": creds.org_id,
-        },
-        timeout=TIMEOUT,
+    resp = _tried(
+        lambda: session.get(
+            DISCOVERY_URL,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "x-api-key": creds.client_id,
+                "x-gw-ims-org-id": creds.org_id,
+            },
+            timeout=TIMEOUT,
+        )
     )
     body = _json(resp)
+    if _is_temporary(resp.status_code):
+        raise SignInUnavailable(
+            f"Sign-in worked, but the Analytics discovery call answered HTTP {resp.status_code} "
+            f"{SIGN_IN_TRIES} times. This is a problem at Adobe, not with the credential. Wait a "
+            "little and try again."
+        )
     if resp.status_code != 200 or not isinstance(body, dict):
         raise SignInError(
             f"Sign-in worked, but the Analytics discovery call answered HTTP {resp.status_code}. "

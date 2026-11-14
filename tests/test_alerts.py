@@ -13,6 +13,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from ahd.alerts import csv_value
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
 from ahd.cli import main
@@ -385,6 +386,57 @@ def test_csv_has_one_header_and_one_row_per_alert(tmp_path, capsys):
     assert (last["alert"], last["at_least"], last["is_new"]) == ("unusual", "true", "false")
 
 
+FORMULAS = {
+    "metrics/event1": '=HYPERLINK("https://example.com","Flagged")',
+    "metrics/event2": "+1+2",
+    "metrics/event3": "-2+3",
+    "metrics/event4": "@SUM(A1:A2)",
+    "metrics/event6": "\tTabbed",
+}
+
+
+def test_csv_keeps_text_that_looks_like_a_formula_as_text(tmp_path, capsys):
+    db = _db(tmp_path, names=FORMULAS, name="=Suite\rOne")
+    assert _alerts(db, "--run", "1", "--format", "csv") == 0
+    rows = [dict(zip(CSV_HEADER, r)) for r in csv.reader(io.StringIO(capsys.readouterr().out))]
+    by_id = {r["component_id"]: r for r in rows[1:]}
+    for cid, name in FORMULAS.items():
+        if cid in by_id:
+            assert by_id[cid]["name"] == "'" + name
+    assert set(by_id) == {"metrics/event1", "metrics/event2", "metrics/event3", "metrics/event4"}
+    assert all(r["rsid_name"] == "'=Suite\rOne" for r in rows[1:])
+    # Numbers stay numbers, also a negative one, and other text stays as it is.
+    drop = by_id["metrics/event3"]
+    assert drop["pct_vs_usual"] == "-0.5" and drop["value"] == "50.0"
+    assert drop["alert"] == "large drop" and drop["rsid"] == "rs1"
+    # The JSON keeps every value as it is.
+    assert _alerts(db, "--run", "1", "--format", "json") == 0
+    [run] = json.loads(capsys.readouterr().out)["runs"]
+    assert run["rsid_name"] == "=Suite\rOne"
+    assert {a["component_id"]: a["name"] for a in run["alerts"]}["metrics/event2"] == "+1+2"
+
+
+@pytest.mark.parametrize(
+    ("value", "cell"),
+    [
+        ("=1+1", "'=1+1"),
+        ("+1", "'+1"),
+        ("-1", "'-1"),
+        ("@A1", "'@A1"),
+        ("\tx", "'\tx"),
+        ("\rx", "'\rx"),
+        ("a=1", "a=1"),
+        ("", ""),
+        (-0.5, -0.5),
+        (-3, -3),
+        (True, "true"),
+        (None, None),
+    ],
+)
+def test_csv_value_quotes_only_text_that_starts_like_a_formula(value, cell):
+    assert csv_value(value) == cell
+
+
 def test_csv_without_alerts_is_only_the_header(tmp_path, capsys):
     db = _db(tmp_path, quiet=True)
     assert _alerts(db, "--run", "1", "--format", "csv") == 4
@@ -411,7 +463,8 @@ def test_odd_names_stay_inert_in_every_format(tmp_path, capsys):
     assert _alerts(db, "--run", "1", "--format", "csv") == 0
     rows = list(csv.reader(io.StringIO(capsys.readouterr().out, newline="")))
     found = {r[CSV_HEADER.index("component_id")]: r[CSV_HEADER.index("name")] for r in rows[1:]}
-    assert all(found[k] == v for k, v in ODD.items())
+    # A name that starts with = gets a quote in front, so that a spreadsheet keeps it as text.
+    assert all(found[k] == ("'" + v if v.startswith("=") else v) for k, v in ODD.items())
     assert len(rows) == 5
 
     assert _alerts(db, "--run", "1") == 0
@@ -526,9 +579,12 @@ def test_a_partial_run_has_alerts(many, capsys):
 
 
 def test_segment_does_not_go_with_run(many, capsys):
-    assert _alerts(many, "--run", "1", "--segment", "s300_mobile") == 1
-    assert capsys.readouterr().err == (
-        "Error: --segment works only with --rsid or --all-suites. The run that --run names "
+    # Two options that do not go together are a wrong option, with exit code 2 and the usage.
+    with pytest.raises(SystemExit) as stop:
+        _alerts(many, "--run", "1", "--segment", "s300_mobile")
+    assert stop.value.code == 2
+    assert capsys.readouterr().err.endswith(
+        "error: --segment works only with --rsid or --all-suites. The run that --run names "
         "already has its segment.\n"
     )
 
