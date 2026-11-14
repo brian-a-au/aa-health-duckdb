@@ -1,6 +1,9 @@
 """The package metadata, the README and the release workflow agree with each other."""
 
+import fnmatch
 import re
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -52,3 +55,34 @@ def test_codeql_scans_python_javascript_and_the_workflows():
     for language in ("python", "javascript-typescript", "actions"):
         assert f"- language: {language}" in workflow
     assert "queries: security-and-quality" in workflow and "security-events: write" in workflow
+
+
+def test_the_release_workflow_checks_the_package_data_of_the_wheel():
+    # ahd --help loads no package data. check_wheel.py reads views.sql, the template and the
+    # page files from the installed wheel.
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert '"$RUNNER_TEMP/try/bin/python" -I scripts/check_wheel.py' in workflow
+
+
+def test_check_wheel_runs_ahd_from_its_package_data(tmp_path):
+    done = subprocess.run(
+        [sys.executable, "-I", str(ROOT / "scripts" / "check_wheel.py"), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    assert "from its package data" in done.stdout
+    [page] = tmp_path.glob("*.html")
+    assert "Orders" in page.read_text(encoding="utf-8")
+
+
+def test_the_source_package_holds_the_files_its_tests_read():
+    # The tests in the source package read these files, e.g., test_docs checks the links of
+    # AGENTS.md and the README link to docs/showcase.png, and test_packaging reads the workflows.
+    tool = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]
+    excluded = tool["hatch"]["build"]["targets"]["sdist"]["exclude"]
+    needed_files = ("AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "README.md", ".github")
+    for needed in (*needed_files, "docs/showcase.png"):
+        assert (ROOT / needed).exists()
+        assert not any(fnmatch.fnmatch(needed, pattern) for pattern in excluded), needed

@@ -122,6 +122,9 @@ jobs:
           PYTHON
 
       # Installs the built wheel in a new environment, as a user would, and runs the command.
+      # check_wheel.py makes a database, lists its run, prints its alerts and writes its report
+      # with the installed ahd. So the views, the template and the page files must be in the
+      # wheel. It needs no credential and no network. -I keeps the repository off the path.
       - name: Install the wheel and run ahd
         run: |
           set -euo pipefail
@@ -129,6 +132,7 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/try" dist/packages/*.whl
           "$RUNNER_TEMP/try/bin/ahd" --help
           "$RUNNER_TEMP/try/bin/python" -c 'from importlib.metadata import version; print(version("aa-health-duckdb"))'
+          "$RUNNER_TEMP/try/bin/python" -I scripts/check_wheel.py "$RUNNER_TEMP/check"
 
       - name: Write SHA256SUMS
         run: cd dist/packages && sha256sum -- *.whl *.tar.gz > ../SHA256SUMS
