@@ -171,3 +171,24 @@ def test_profiles_folder_without_home(monkeypatch):
     monkeypatch.delenv("HOME", raising=False)
     assert profiles_base() == Path.home() / ".aa" / "orgs"
     assert profiles_base().is_absolute()
+
+
+def test_config_option_and_every_credential_variable_is_an_error(tmp_path, monkeypatch):
+    path = _write(tmp_path, KEYS)
+    for k, v in KEYS.items():
+        monkeypatch.setenv(f"AHD_{k.upper()}", v)
+    with pytest.raises(ConfigError) as e:
+        load_credentials(path, from_option=True)
+    assert str(e.value) == (
+        "Use --config or the four variables AHD_ORG_ID, AHD_CLIENT_ID, AHD_SECRET and "
+        "AHD_SCOPES, not both. To use the file, unset the variables."
+    )
+    assert "s3cr3t" not in str(e.value)
+    # The file ./config.json that the tool finds by itself still gives way to the variables.
+    assert load_credentials(path).source == "environment variables"
+
+
+def test_config_option_with_some_credential_variables_still_works(tmp_path, monkeypatch):
+    monkeypatch.setenv("AHD_SECRET", "from-env")
+    c = load_credentials(_write(tmp_path, KEYS), from_option=True)
+    assert c.secret == "from-env" and c.source == "config.json and environment variables"
