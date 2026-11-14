@@ -5,6 +5,9 @@ Credentials come from the first of these that is set:
 1. a profile (--profile or AA_PROFILE): ~/.aa/orgs/<name>/config.json, the file aa_auto_sdr uses
 2. the AHD_* environment variables, when all four are set
 3. a config file (--config, else ./config.json); an AHD_* variable wins over the same key
+
+--config together with all four AHD_* variables is an error, because one of them would be
+ignored. A ./config.json that the tool finds by itself gives way to the variables.
 """
 
 from __future__ import annotations
@@ -23,6 +26,11 @@ _PROFILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 NO_CREDENTIAL = (
     "No credential was found. Use --profile NAME, set the AHD_ORG_ID, AHD_CLIENT_ID, AHD_SECRET "
     "and AHD_SCOPES variables, or put a config.json file in this folder."
+)
+
+CONFIG_AND_VARIABLES = (
+    "Use --config or the four variables AHD_ORG_ID, AHD_CLIENT_ID, AHD_SECRET and AHD_SCOPES, "
+    "not both. To use the file, unset the variables."
 )
 
 
@@ -109,11 +117,20 @@ def load_profile(name: str) -> Credentials:
     return _build({k: _text(data.get(k)) for k in _KEYS}, f"profile {name}")
 
 
-def load_credentials(path: Path | None, profile: str | None = None) -> Credentials:
+def load_credentials(
+    path: Path | None, profile: str | None = None, *, from_option: bool = False
+) -> Credentials:
+    """The credential of the profile, else of the AHD_* variables, else of the file at path.
+
+    from_option is true when path came from --config. Then the file and all four variables
+    together are an error, so that neither is ignored without a word.
+    """
     if profile:
         return load_profile(profile)
     env = {k: _text(os.environ.get(f"AHD_{k.upper()}")) for k in _KEYS}
     if all(env.values()):
+        if path is not None and from_option:
+            raise ConfigError(CONFIG_AND_VARIABLES)
         return _build(env, "environment variables")
     if path is None:
         if not any(env.values()):
