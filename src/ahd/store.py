@@ -112,12 +112,28 @@ def _update_views(con: duckdb.DuckDBPyConnection) -> None:
         found = _first(con.execute("SELECT max(version) FROM views_version"))
         if found == VIEWS_VERSION:
             return
+    _in_transaction(con, _write_views)
+
+
+def _write_views(con: duckdb.DuckDBPyConnection) -> None:
+    con.execute(_views())
+    con.execute("CREATE TABLE IF NOT EXISTS views_version (version INTEGER)")
+    con.execute("DELETE FROM views_version")
+    con.execute("INSERT INTO views_version (version) VALUES (?)", [VIEWS_VERSION])
+
+
+def _make_new(con: duckdb.DuckDBPyConnection) -> None:
+    """Write the tables, their version, the views and the views version of a new file."""
+    con.execute(_SCHEMA)
+    con.execute("INSERT INTO schema_version (version) VALUES (?)", [SCHEMA_VERSION])
+    _write_views(con)
+
+
+def _in_transaction(con: duckdb.DuckDBPyConnection, write: Any) -> None:
+    """Run write(con) in one transaction, so that a failure or Ctrl-C changes nothing."""
     con.execute("BEGIN TRANSACTION")
     try:
-        con.execute(_views())
-        con.execute("CREATE TABLE IF NOT EXISTS views_version (version INTEGER)")
-        con.execute("DELETE FROM views_version")
-        con.execute("INSERT INTO views_version (version) VALUES (?)", [VIEWS_VERSION])
+        write(con)
     except BaseException:
         con.execute("ROLLBACK")
         raise
@@ -213,13 +229,15 @@ class Store:
             if not tables and read_only:
                 raise StoreError(f"The database {path} holds no ahd runs.")
             if not tables:
-                con.execute(_SCHEMA)
-                con.execute("INSERT INTO schema_version (version) VALUES (?)", [SCHEMA_VERSION])
-                _update_views(con)
+                _in_transaction(con, _make_new)
+            elif "schema_version" not in tables:
+                # Every released version of ahd made this table, so another program made the
+                # file. Its tables are not ours to delete.
+                raise StoreError(
+                    f"The database {path} is not an ahd database. Choose another file with --db."
+                )
             else:
-                found = None
-                if "schema_version" in tables:
-                    found = _first(con.execute("SELECT max(version) FROM schema_version"))
+                found = _first(con.execute("SELECT max(version) FROM schema_version"))
                 if found != SCHEMA_VERSION:
                     raise SchemaVersionError(_version_message(path, found))
                 # A read-only file cannot be changed. ahd render and ahd runs do not use the

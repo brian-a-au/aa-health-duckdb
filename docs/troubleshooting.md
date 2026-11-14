@@ -124,7 +124,7 @@ There is no database at data/ahd.duckdb.
 
 Only `ahd run` and `ahd import` make a new file. Every other command needs a file that holds runs. Make a run first, or name the file with `--db` or a profile. [How runs are stored](runs.md#where-the-file-is) says where the file is.
 
-Two more messages name a file that is not usable. "holds no ahd runs" means the file is an empty DuckDB database. "is not a DuckDB database" means the file is something else. Choose the right file with `--db`.
+Three more messages name a file that is not usable. "holds no ahd runs" means the file is an empty DuckDB database. "is not an ahd database" means the file is a DuckDB database that another program made. The tool does not change it. "is not a DuckDB database" means the file is something else. Choose the right file with `--db`.
 
 ### The database is in use by another program
 
