@@ -6,6 +6,8 @@ import importlib.util
 import json
 import math
 import random
+import smtplib
+import ssl
 import subprocess
 import sys
 from datetime import date, timedelta
@@ -95,8 +97,8 @@ def test_send_alerts_uses_smtp_when_configured(tmp_path, monkeypatch):
     sent = []
 
     class FakeSMTP:
-        def __init__(self, host, port):
-            sent.append(("connect", host, port))
+        def __init__(self, host, port, timeout):
+            sent.append(("connect", host, port, timeout))
 
         def __enter__(self):
             return self
@@ -104,8 +106,8 @@ def test_send_alerts_uses_smtp_when_configured(tmp_path, monkeypatch):
         def __exit__(self, *a):
             return False
 
-        def starttls(self):
-            sent.append(("tls",))
+        def starttls(self, context):
+            sent.append(("tls", context))
 
         def login(self, user, password):
             sent.append(("login", user))
@@ -122,9 +124,13 @@ def test_send_alerts_uses_smtp_when_configured(tmp_path, monkeypatch):
     }.items():
         monkeypatch.setenv(k, v)
     assert mod.main([str(_db(tmp_path, 1.0)), "rs1", "--threshold", "0.5"]) == 0
-    assert sent[0] == ("connect", "smtp.example.com", 587)
+    assert sent[0] == ("connect", "smtp.example.com", 587, 60)
     assert sent[-1][0:2] == ("send", "team@example.com")
     assert ("login", "me") in sent
+    # STARTTLS checks the certificate of the server and its host name.
+    [context] = [step[1] for step in sent if step[0] == "tls"]
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname
 
     # A server without a login, e.g. a relay on the local network.
     sent.clear()
@@ -132,6 +138,115 @@ def test_send_alerts_uses_smtp_when_configured(tmp_path, monkeypatch):
     monkeypatch.delenv("SMTP_PASSWORD")
     assert mod.main([str(_db(tmp_path / "x", 1.0)), "rs1"]) == 0
     assert not any(step[0] == "login" for step in sent)
+
+
+class _FailingSMTP:
+    """An SMTP server that fails at one step with an error."""
+
+    def __init__(self, step, error):
+        self.step, self.error = step, error
+
+    def __call__(self, host, port, timeout):
+        if self.step == "connect":
+            raise self.error
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def starttls(self, context):
+        if self.step == "tls":
+            raise self.error
+
+    def login(self, user, password):
+        if self.step == "login":
+            raise self.error
+
+    def send_message(self, msg):
+        if self.step == "send":
+            raise self.error
+
+
+@pytest.mark.parametrize(
+    ("step", "error", "said"),
+    [
+        ("connect", ConnectionRefusedError(61, "Connection refused"), "ConnectionRefusedError"),
+        ("connect", TimeoutError(), "did not answer within 60 seconds"),
+        (
+            "tls",
+            ssl.SSLCertVerificationError(1, "certificate verify failed"),
+            "certificate of the mail server could not be checked",
+        ),
+        ("tls", smtplib.SMTPNotSupportedError("no STARTTLS"), "does not offer STARTTLS"),
+        (
+            "login",
+            smtplib.SMTPAuthenticationError(535, b"bad login for me pw-secret"),
+            "refused the login",
+        ),
+        (
+            "send",
+            smtplib.SMTPRecipientsRefused({"team@example.com": (550, b"no")}),
+            "SMTPRecipientsRefused",
+        ),
+    ],
+)
+def test_send_alerts_says_why_it_could_not_send(tmp_path, monkeypatch, capsys, step, error, said):
+    """An SMTP error gives one plain line and exit code 1, not a traceback. The line names
+    only the kind of error, never the text of the error or a credential."""
+    mod = _load("send_alerts")
+    monkeypatch.setattr(mod.smtplib, "SMTP", _FailingSMTP(step, error))
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_USER", "me")
+    monkeypatch.setenv("SMTP_PASSWORD", "pw-secret")
+    assert mod.main([str(_db(tmp_path, 1.0)), "rs1"]) == 1
+    out = capsys.readouterr()
+    assert said in out.err
+    assert "Nothing was sent to smtp.example.com." in out.err
+    assert "pw-secret" not in out.err + out.out
+    assert "Traceback" not in out.err
+    assert "Sent" not in out.out
+
+
+@pytest.mark.parametrize("port", ["abc", "0", "70000", "5.87"])
+def test_send_alerts_refuses_a_wrong_smtp_port(tmp_path, monkeypatch, capsys, port):
+    mod = _load("send_alerts")
+    monkeypatch.setattr(mod.smtplib, "SMTP", _FailingSMTP("connect", AssertionError()))
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_PORT", port)
+    assert mod.main([str(_db(tmp_path, 1.0)), "rs1"]) == 1
+    assert "SMTP_PORT must be a port number from 1 to 65535" in capsys.readouterr().err
+
+
+def test_send_alerts_uses_port_587_for_an_empty_smtp_port(tmp_path, monkeypatch):
+    mod = _load("send_alerts")
+    ports = []
+
+    class FakeSMTP(_FailingSMTP):
+        def __call__(self, host, port, timeout):
+            ports.append(port)
+            return self
+
+    monkeypatch.setattr(mod.smtplib, "SMTP", FakeSMTP(None, None))
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_PORT", "")
+    monkeypatch.delenv("SMTP_USER", raising=False)
+    assert mod.main([str(_db(tmp_path, 1.0)), "rs1"]) == 0
+    assert ports == [587]
+
+
+def test_the_rules_text_gives_the_exact_percent():
+    """--threshold 0.275 is 27.5 percent, as ahd alerts uses it, not a rounded 28 percent."""
+    mod = _load("send_alerts")
+    rows = [("Large drop", "n", "metrics/x", 10.0, 1.0, -90.0, "", True, None, "2026-11-06")]
+    text = mod.build([("rs1", "Suite", rows)], 0.275, 0.5, "Adobe.").get_body(("plain",))
+    rules = text.get_content()
+    assert "more than 27.5% below" in rules and "more than 50% above" in rules
+    text = mod.build([("rs1", "Suite", rows)], 0.3, 1.25, "Adobe.").get_body(("plain",))
+    assert "more than 30% below" in text.get_content()
+    assert "more than 125% above" in text.get_content()
 
 
 def test_send_alerts_with_runs_with_and_without_a_segment(tmp_path, monkeypatch, capsys):
@@ -728,7 +843,7 @@ def test_the_email_lists_the_same_rows_as_the_old_query(tmp_path, monkeypatch, o
     argv += ["--spike-threshold", str(options["spike"]), "--anomaly-method", options["method"]]
     argv += ["--anomaly-sensitivity", options["sensitivity"]]
     built = []
-    monkeypatch.setattr(mod, "_send", lambda msg, count: None)
+    monkeypatch.setattr(mod, "_send", lambda msg, count: True)
     real_build = mod.build
 
     def build(sections, *a, **k):

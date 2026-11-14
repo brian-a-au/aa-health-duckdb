@@ -150,5 +150,6 @@ schtasks /Create /TN "ahd daily" /SC DAILY /ST 07:30 /TR "%USERPROFILE%\aa-healt
 ## Check that it works
 
 - Read the log file after the first scheduled run. Each suite has a line such as "Run 12 for my_suite finished with status: ok". The last line from `ahd run` counts the suites that ended "ok", "partial" and "failed". The lines from `send_alerts.py` come after it. When the credential sees only one suite, `ahd run` does not print the count line.
+- When the email could not be sent, the log has one line from `send_alerts.py` that says why, e.g., "The mail server refused the login. Check SMTP_USER and SMTP_PASSWORD." Fix the mail settings in the script and start the task once by hand.
 - Run `uv run ahd runs --profile prod` to list the stored runs.
 - The database grows by one run for each suite each day. To delete old runs, see [Deleting runs](runs.md#deleting-runs). In a schedule, add `--yes` to `ahd prune`, because there is no input to read the answer from.

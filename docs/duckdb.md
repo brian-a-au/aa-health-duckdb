@@ -463,10 +463,12 @@ Without these two options, `ahd alerts` reads the variables `AHD_ANOMALY_METHOD`
 
 Without `SMTP_HOST`, it writes `alerts.eml` in the current folder, which you can open and check first. To send, set `SMTP_HOST`, `MAIL_FROM` and `MAIL_TO`. Set `SMTP_PORT` when the server does not use 587. Set `SMTP_USER` and `SMTP_PASSWORD` when the server needs a login. The script connects without encryption and then turns it on with the STARTTLS command. It does not work with a server that needs encryption from the start, e.g., on port 465.
 
+The script checks the certificate of the server and that it was made for the name in `SMTP_HOST`. It waits at most 60 seconds for an answer from the server. When it cannot send, e.g., the server refuses the login or `SMTP_PORT` is not a number, it prints one line that says why and exits with 1. The line never holds the password.
+
 It exits with these codes:
 
 - 0 when it sent or wrote a message
-- 1 when something is wrong, e.g., the file holds no finished run of a suite. The alerts of the other suites are still sent. A wrong option also exits with 1 and prints the usage.
+- 1 when something is wrong, e.g., the file holds no finished run of a suite. The alerts of the other suites are still sent. A wrong option also exits with 1 and prints the usage. So does an email that the script could not send.
 - 2 when there was nothing to send
 
 To run the check and the email every morning on Windows, macOS or Linux, see [Run it every day](scheduling.md).
