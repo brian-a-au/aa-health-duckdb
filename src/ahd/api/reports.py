@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Any
 
 MALFORMED = "Adobe sent an answer in a form that the tool could not read."
+# The issue code of an answer that the tool could not read. fetch.py records the same code.
+INVALID_RESPONSE = "invalid_response"
 
 
 class MalformedResponse(Exception):
@@ -20,11 +24,20 @@ def _checked() -> Iterator[None]:
 
     Without it, e.g., a list in place of an object or a missing value would end the whole run
     with an error trace. The caller records the problem for that one request and goes on.
+    ArithmeticError covers a number too large for a float, e.g., one with 400 digits.
     """
     try:
         yield
-    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError, ArithmeticError):
         raise MalformedResponse(MALFORMED) from None
+
+
+def _count(value: Any) -> float:
+    """The value as a finite number. NaN and infinity, which JSON can hold, are not a count."""
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("not a finite number")
+    return number
 
 
 @dataclass(frozen=True)
@@ -204,38 +217,54 @@ def _trend(resp: dict, columns: list[Column]) -> tuple[list[DailyValue], list[Co
             )
         )
     values: list[DailyValue] = []
+    # The days on which Adobe sent no value for a column, for each column.
+    missing: dict[int, list[date]] = {}
     for row in resp.get("rows") or []:
         day = _parse_day(row)
         data = row.get("data") or []
         for i, col in enumerate(columns):
-            if i in failed or i >= len(data):
+            if i in failed:
+                continue
+            if i >= len(data):
+                missing.setdefault(i, []).append(day)
                 continue
             anomaly = _at(row.get("dataAnomalyDetected"), i)
             values.append(
                 DailyValue(
                     col.component_id,
                     day,
-                    float(data[i]),
+                    _count(data[i]),
                     _number_at(row.get("dataExpected"), i),
                     _number_at(row.get("dataUpperBound"), i),
                     _number_at(row.get("dataLowerBound"), i),
                     None if anomaly is None else bool(anomaly),
                 )
             )
+    for i in sorted(missing):
+        days = missing[i]
+        count = "1 day" if len(days) == 1 else f"{len(days)} days"
+        errors.append(
+            ColumnError(
+                columns[i].component_id,
+                INVALID_RESPONSE,
+                f"Adobe sent no value for {count} of this component, the first on "
+                f"{min(days).isoformat()}.",
+            )
+        )
     return values, errors
 
 
 def _ranked(resp: dict) -> tuple[list[tuple[int, str, float]], int]:
     rows = [
-        (n, _text(r["value"]), float(r["data"][0]))
+        (n, _text(r["value"]), _count(r["data"][0]))
         for n, r in enumerate(resp.get("rows") or [], start=1)
     ]
     return rows, int(resp.get("totalElements", len(rows)))
 
 
 def _breakdown(resp: dict) -> tuple[list[tuple[str, list[float]]], list[float]]:
-    rows = [(_text(r["value"]), [float(x) for x in r["data"]]) for r in resp.get("rows") or []]
-    totals = [float(x) for x in (resp.get("summaryData") or {}).get("totals") or []]
+    rows = [(_text(r["value"]), [_count(x) for x in r["data"]]) for r in resp.get("rows") or []]
+    totals = [_count(x) for x in (resp.get("summaryData") or {}).get("totals") or []]
     return rows, totals
 
 
