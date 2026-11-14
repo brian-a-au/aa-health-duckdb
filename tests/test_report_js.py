@@ -2972,3 +2972,220 @@ def test_the_copied_html_starts_with_the_event_and_keeps_names_inert(chrome, tog
     # The first 5 are the new drops, which hold the two odd names, as text.
     assert "&lt;img src=x" in rich and "&lt;/script&gt;&lt;b&gt;bold" in rich
     assert "<img" not in rich and "<b>" not in rich
+
+
+# ---- the currency axis -------------------------------------------------------------------
+
+
+def _money_page(tmp_path, values, currency="USD"):
+    """The report of a run with one currency metric, metrics/event1, and these daily values."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    store = Store.open(tmp_path / "money.duckdb")
+    rid = store.create_run(
+        "rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0", currency=currency
+    )
+    cid = "metrics/event1"
+    revenue = Component(
+        cid, "Revenue", "metric", "custom_events", 1, Column(cid, cid), True, "currency"
+    )
+    store.add_components(rid, [revenue])
+    store.add_daily_values(rid, [_dv(cid, d, values(d)) for d in _days() if d != TODAY])
+    store.finish_run(rid, "ok")
+    page = render_html(build_view(store, rid))
+    store.con.close()
+    return page
+
+
+# The labels of the value axis, from the bottom up. They stand at the left edge of the chart.
+AXIS_PROBE = """
+return [].map.call(document.querySelectorAll("#metric-chart svg text.axis"), function (t) {
+  return Number(t.getAttribute("x")) < 40 && t.getAttribute("text-anchor") === "end" ?
+    t.textContent : null;
+}).filter(function (t) { return t !== null; });
+"""
+
+
+@pytest.mark.parametrize(
+    ("low", "high", "labels"),
+    [
+        # Steps of 0.05 need two decimals, or two lines are both "$0.1".
+        (0.02, 0.18, ["$0.00", "$0.05", "$0.10", "$0.15", "$0.20"]),
+        # Steps of a whole amount need none, and from 1,000 the axis is short.
+        (200.0, 900.0, ["$0", "$250", "$500", "$750", "$1K"]),
+    ],
+)
+def test_a_currency_axis_gives_each_line_its_own_label(chrome, tmp_path, low, high, labels):
+    page = _money_page(tmp_path, lambda d: high if d.day % 3 else low)
+    assert run_probe(chrome, page, AXIS_PROBE, tmp_path) == labels
+
+
+# ---- numbers in the browser's language ----------------------------------------------------
+
+# Makes German the language of the browser before the page script runs. Headless Chrome on
+# macOS does not take the language from --lang, so the page gets German formats this way.
+GERMAN = """<script>(function () {
+  var N = Intl.NumberFormat;
+  function German(locales, options) {
+    return new N(locales === undefined ? "de-DE" : locales, options);
+  }
+  German.prototype = N.prototype;
+  German.supportedLocalesOf = N.supportedLocalesOf;
+  Intl.NumberFormat = German;
+  var day = Date.prototype.toLocaleDateString;
+  Date.prototype.toLocaleDateString = function (locales, options) {
+    return day.call(this, locales === undefined ? "de-DE" : locales, options);
+  };
+})();</script>"""
+
+
+def _german(page):
+    return page.replace("<body>", "<body>" + GERMAN, 1)
+
+
+GERMAN_PROBE = """
+document.getElementById("tab-alerts").click();
+function cells(sel) {
+  return [].map.call(document.querySelectorAll(sel), function (c) { return c.textContent; });
+}
+return {
+  declines: [].map.call(document.querySelectorAll("#declines tbody tr"), function (tr) {
+    return [].map.call(tr.cells, function (c) { return c.textContent; });
+  }),
+  percents: cells("#tables td, #alerts td").filter(function (t) { return /%/.test(t); }),
+  text: document.getElementById("alert-text").value,
+  status: document.getElementById("change-alert-result").textContent,
+  axis: cells("#metric-chart svg text.axis")
+};
+"""
+
+
+def test_a_german_browser_writes_every_number_the_german_way(chrome, showcase, tmp_path):
+    page = _german(render_html(build_view(*showcase)))
+    got = run_probe(chrome, page, GERMAN_PROBE, tmp_path)
+    # A space that does not break stands before the percent sign, as German writes it.
+    assert got["declines"] == [["event12: Video Completes", "", "-3,4 %", "-29,4 %", "0,95"]]
+    assert got["percents"]
+    for cell in got["percents"]:
+        assert re.fullmatch(r"(▲ |▼ )?([+-]\d+(,\d)?|0) %", cell), cell
+    # The copied text and the status line write each percent change with a decimal comma.
+    for text in (got["text"], got["status"]):
+        assert not re.search(r"\d\.\d+ ?%", text), text
+    assert re.search(r"\d,\d %", got["status"]), got["status"]
+    assert not any(re.search(r"\d\.\d", t) for t in got["axis"]), got["axis"]
+
+
+def test_a_german_browser_writes_small_axis_values_the_german_way(chrome, tmp_path):
+    values = [_dv("metrics/event1", d, 0.2 if d.day % 2 else 0.1) for d in _days() if d != TODAY]
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    page = _german(_one_metric_page(plain, values))
+    assert run_probe(chrome, page, AXIS_PROBE, plain) == ["0", "0,05", "0,1", "0,15", "0,2"]
+    money = tmp_path / "money"
+    page = _german(_money_page(money, lambda d: 0.18 if d.day % 3 else 0.02, currency="EUR"))
+    euros = ["0,00", "0,05", "0,10", "0,15", "0,20"]
+    assert run_probe(chrome, page, AXIS_PROBE, money) == [e + " €" for e in euros]
+
+
+PERCENT_PROBE = """
+return [].map.call(document.querySelectorAll("#tables td"), function (c) {
+  return c.textContent;
+}).filter(function (s) { return /%/.test(s); });
+"""
+
+
+def test_percent_changes_keep_their_english_form(chrome, tmp_path):
+    # A rise shows its plus sign, a fall its minus, and a change that rounds to 0 shows no sign.
+    # A large change has no thousands separator, as before.
+    yesterday = [105.0, 87.5, 99.96, 1334.5]
+
+    def one(value):
+        return lambda cid: [
+            _dv(cid, d, value if d == YESTERDAY else 100.0) for d in _days() if d != TODAY
+        ]
+
+    got = run_probe(
+        chrome, _page_of(tmp_path, [one(v) for v in yesterday]), PERCENT_PROBE, tmp_path
+    )
+    for text in ("+5%", "-12.5%", "0%", "+1234.5%"):
+        assert any(cell == text or cell.endswith(" " + text) for cell in got), (text, got)
+
+
+# ---- copying on a large page ----------------------------------------------------------------
+
+LARGE_COPY_PROBE = """
+var copied = {};
+Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+  write: function (items) {
+    return Promise.all([items[0].getType("text/html"), items[0].getType("text/plain")])
+      .then(function (b) { return Promise.all([b[0].text(), b[1].text()]); })
+      .then(function (t) { copied.html = t[0]; copied.text = t[1]; });
+  },
+  writeText: function () { return Promise.reject(new Error("not used")); }
+}});
+var text = document.getElementById("alert-text");
+var out = { before: text.value };
+var slider = document.getElementById("change-alert");
+slider.value = "-50";
+slider.dispatchEvent(new Event("input"));
+out.waiting = text.value;
+document.getElementById("copy-alerts").click();
+out.after = text.value;
+out.status = document.getElementById("change-alert-result").textContent;
+var result = document.getElementById("copy-result");
+// Waits for the page's message after each turn of its task queue, not for a set time.
+function shown(tries) {
+  if (result.textContent || tries > 200) return Promise.resolve();
+  return new Promise(function (r) { setTimeout(r, 0); }).then(function () {
+    return shown(tries + 1);
+  });
+}
+return shown(0).then(function () { out.copied = copied; return out; });
+"""
+
+
+def test_a_copy_on_a_large_page_follows_the_last_slider_setting(chrome, tmp_path):
+    # With more than 400 components, the page waits for a pause before it draws the lists again.
+    # A copy right after the slider moved must not mix the old lists with the new setting.
+    def fell(cid):
+        return [_dv(cid, d, 60.0 if d == YESTERDAY else 100.0) for d in _days() if d != TODAY]
+
+    def flat(cid):
+        return [_dv(cid, d, 100.0) for d in _days() if d != TODAY]
+
+    page = _page_of(tmp_path, [fell] * 10 + [flat] * 391)
+    got = run_probe(chrome, page, LARGE_COPY_PROBE, tmp_path)
+    assert "Drops of more than 30% below the weekday average (10):" in got["before"]
+    # The page had not drawn the new setting yet when the copy began.
+    assert got["waiting"] == got["before"]
+    # The copy drew it first, so both versions and the page agree.
+    assert got["copied"]["text"] == got["after"]
+    assert "No alerts for this day." in got["after"]
+    assert "No alerts for this day." in got["copied"]["html"]
+    assert "metrics/event1 " not in got["copied"]["html"]
+    assert "more than 50%" in got["status"]
+
+
+# ---- the chart for a screen reader --------------------------------------------------------
+
+CHART_ROLE_PROBE = """
+var svg = document.querySelector("#metric-chart svg");
+var readout = document.querySelector("#metric-chart .chart-readout");
+return {
+  role: svg.getAttribute("role"), kind: svg.getAttribute("aria-roledescription"),
+  label: svg.getAttribute("aria-label"), focusable: svg.getAttribute("tabindex"),
+  describedby: svg.getAttribute("aria-describedby"), readoutId: readout.id,
+  live: readout.getAttribute("aria-live"), readout: readout.textContent
+};
+"""
+
+
+def test_the_chart_is_a_group_that_a_screen_reader_can_enter(chrome, showcase, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*showcase)), CHART_ROLE_PROBE, tmp_path)
+    # role="img" would hide the parts of the chart and keep the arrow keys from reaching it.
+    assert got["role"] == "group" and got["kind"] == "chart" and got["focusable"] == "0"
+    assert got["label"].startswith("Trend chart for ")
+    assert got["label"].endswith("Use the left and right arrow keys to read each day.")
+    # The chart names its readout, which says each day aloud as the keys move.
+    assert got["live"] == "polite" and got["readoutId"]
+    assert got["describedby"] == got["readoutId"]
+    assert got["readout"].startswith("Fri, Nov 6, 2026: ")
