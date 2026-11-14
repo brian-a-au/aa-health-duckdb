@@ -1714,7 +1714,9 @@ def test_a_failed_sign_in_keeps_a_database_that_was_there(tmp_path, cfg, capsys)
     db = tmp_path / "t.duckdb"
     Store.open(db).con.close()
     assert main(["run", "--config", str(cfg), "--db", str(db), "--rsid", "rs1"], factory) == 1
-    assert db.exists() and Store.open(db, read_only=True).list_runs() == []
+    assert db.exists()
+    runs = Store.open(db, read_only=True).list_runs()
+    assert runs == []
 
 
 def test_a_failed_run_keeps_the_new_database_with_its_run(tmp_path, cfg):
@@ -1724,7 +1726,8 @@ def test_a_failed_run_keeps_the_new_database_with_its_run(tmp_path, cfg):
     db = tmp_path / "new" / "t.duckdb"
     argv = _run_args("--config", str(cfg), "--db", str(db), "--out", str(tmp_path / "o"))
     assert main(argv, client_factory=lambda c, company_id=None: fake) == 1
-    assert [r["status"] for r in Store.open(db, read_only=True).list_runs()] == ["failed"]
+    runs = Store.open(db, read_only=True).list_runs()
+    assert [r["status"] for r in runs] == ["failed"]
 
 
 def test_a_failed_sign_in_keeps_the_profile_folder(tmp_path, capsys):
