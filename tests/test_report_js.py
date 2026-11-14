@@ -3317,3 +3317,43 @@ def test_the_page_writes_a_threshold_with_its_decimal(chrome, tmp_path):
     assert any(b and b.startswith("More than 62.5% above") for b in got["badges"])
     for words in (got["result"], got["text"], *got["tiles"].values()):
         assert "28%" not in (words or "") and "63%" not in (words or "")
+
+
+def test_a_german_browser_writes_a_threshold_the_german_way(chrome, tmp_path):
+    store = Store.open(tmp_path / "t.duckdb")
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
+    comps = [
+        Component(cid, cid, "metric", "custom_events", i, Column(cid, cid), True)
+        for i, cid in enumerate(("metrics/event1", "metrics/event2"), start=1)
+    ]
+    store.add_components(rid, comps)
+    store.add_daily_values(
+        rid, _series("metrics/event1", 100.0, 60.0) + _series("metrics/event2", 100.0, 180.0)
+    )
+    store.finish_run(rid, "ok")
+    view = build_view(store, rid, change_alert=0.275, spike_alert=0.625)
+    got = run_probe(chrome, _german(render_html(view)), THRESHOLD_PROBE, tmp_path)
+    store.con.close()
+    # The thresholds follow the language of the browser, as the percent changes do.
+    assert got["tiles"]["Large drops"] == "More than 27,5 % below the weekday average"
+    assert got["drops"] == "Drops of more than 27,5 % below the weekday average"
+    assert "Spikes of more than 62,5 % above the weekday average (1):" in got["text"]
+
+
+CALENDAR_ROLE_PROBE = """
+document.getElementById("tab-alerts").click();
+var svg = document.querySelector("#calendar svg");
+var readout = document.querySelector("#calendar .calendar-readout");
+return {
+  role: svg.getAttribute("role"), kind: svg.getAttribute("aria-roledescription"),
+  focusable: svg.getAttribute("tabindex"), describedby: svg.getAttribute("aria-describedby"),
+  readoutId: readout.id, live: readout.getAttribute("aria-live")
+};
+"""
+
+
+def test_the_calendar_is_a_group_that_a_screen_reader_can_enter(chrome, showcase, tmp_path):
+    got = run_probe(chrome, render_html(build_view(*showcase)), CALENDAR_ROLE_PROBE, tmp_path)
+    # role="img" would keep the arrow keys of a screen reader from reaching the days.
+    assert got["role"] == "group" and got["kind"] == "calendar" and got["focusable"] == "0"
+    assert got["live"] == "polite" and got["describedby"] == got["readoutId"] != ""

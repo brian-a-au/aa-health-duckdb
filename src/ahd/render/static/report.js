@@ -522,9 +522,9 @@
   }
 
   // A threshold as the page writes it, with up to one decimal, e.g., 0.3 as "30%" and 0.275
-  // as "27.5%", as ahd alerts writes it.
+  // as "27.5%", as ahd alerts writes it. It follows the browser's language, as fmtPct does.
   function thresholdText(share) {
-    return String(Math.round(share * 1000) / 10) + "%";
+    return pctSizeFmt.format(Math.round(share * 1000) / 1000);
   }
 
   function dropBadge() {
@@ -1429,7 +1429,8 @@
     }
 
     var svgHost = el("div", { "class": "calendar-grid" });
-    var readout = el("p", { "class": "chart-readout calendar-readout", "aria-live": "polite" });
+    var readout = el("p", { "class": "chart-readout calendar-readout", id: "calendar-readout",
+      "aria-live": "polite" });
     var lists = el("div", { "class": "calendar-lists" });
 
     function drawGrid() {
@@ -1438,7 +1439,9 @@
       var L = 40, R = 18, T = 16, gap = 3;
       var size = Math.max(10, Math.min(22, Math.floor((width - L - R) / cols) - gap));
       var W = L + cols * (size + gap) + R, H = T + 7 * (size + gap);
-      var svg = sv("svg", { viewBox: "0 0 " + W + " " + H, width: W, height: H, role: "img",
+      // A group and not an image, so that a screen reader lets the arrow keys reach it.
+      var svg = sv("svg", { viewBox: "0 0 " + W + " " + H, width: W, height: H, role: "group",
+        "aria-roledescription": "calendar", "aria-describedby": "calendar-readout",
         tabindex: 0, "class": "calendar-svg",
         "aria-label": "Alerts by day for the 13 weeks ending " + fmtDay(yesterday, false) +
           ". Use the arrow keys to move between days." });
