@@ -79,9 +79,10 @@ def test_check_wheel_runs_ahd_from_its_package_data(tmp_path):
 
 def test_the_source_package_holds_the_files_its_tests_read():
     # The tests in the source package read these files, e.g., test_docs checks the links of
-    # AGENTS.md and test_packaging reads the workflows.
+    # AGENTS.md and the README link to docs/showcase.png, and test_packaging reads the workflows.
     tool = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]
     excluded = tool["hatch"]["build"]["targets"]["sdist"]["exclude"]
-    for needed in ("AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "README.md", ".github"):
+    needed_files = ("AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "README.md", ".github")
+    for needed in (*needed_files, "docs/showcase.png"):
         assert (ROOT / needed).exists()
         assert not any(fnmatch.fnmatch(needed, pattern) for pattern in excluded), needed

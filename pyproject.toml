@@ -60,13 +60,12 @@ build-backend = "hatchling.build"
 packages = ["src/ahd"]
 
 # The source package holds what it takes to build and test the tool. The tests read AGENTS.md
-# and the workflows in .github, so they are in it. The planning notes, the slideshow images and
-# CLAUDE.md stay in the repository only.
+# and the workflows in .github, and check that the README link to docs/showcase.png works, so
+# they are in it. The planning notes, the slideshow GIF and CLAUDE.md stay in the repository.
 [tool.hatch.build.targets.sdist]
 exclude = [
     "docs/superpowers",
     "docs/*.gif",
-    "docs/*.png",
     "CLAUDE.md",
 ]
 
