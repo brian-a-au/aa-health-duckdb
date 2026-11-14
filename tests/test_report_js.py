@@ -3044,3 +3044,59 @@ def test_a_new_component_is_no_alert_before_it_collects_data(chrome, tmp_path):
     # The weekly view counts no flag of Event 2 on a day before it started.
     assert got["week"] == []
 
+
+# Reads every text of the page that names the drop and spike thresholds.
+THRESHOLD_PROBE = """
+var tiles = {};
+[].forEach.call(document.querySelectorAll("#tiles .tile"), function (t) {
+  var note = t.querySelector(".tile-note");
+  tiles[t.querySelector(".tile-label").lastChild.textContent] = note ? note.textContent : null;
+});
+return {
+  tiles: tiles,
+  drops: document.querySelector("#alerts h3#drops-title").firstChild.textContent,
+  spikes: document.querySelector("#alerts h3#spikes-title").firstChild.textContent,
+  hints: [].map.call(document.querySelectorAll("#alerts .hint"), function (p) {
+    return p.textContent;
+  }),
+  result: document.getElementById("change-alert-result").textContent,
+  spikeResult: document.getElementById("spike-alert-result").textContent,
+  text: document.getElementById("alert-text").value,
+  badges: [].map.call(document.querySelectorAll("#tables .badge"), function (b) {
+    return b.getAttribute("title");
+  })
+};
+"""
+
+
+def test_the_page_writes_a_threshold_with_its_decimal(chrome, tmp_path):
+    # A drop of 40 percent and a spike of 80 percent, past thresholds of 27.5 and 62.5 percent.
+    # The page writes them as ahd alerts does, and does not round them to 28 and 63.
+    store = Store.open(tmp_path / "t.duckdb")
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
+    comps = [
+        Component(cid, cid, "metric", "custom_events", i, Column(cid, cid), True)
+        for i, cid in enumerate(("metrics/event1", "metrics/event2"), start=1)
+    ]
+    store.add_components(rid, comps)
+    store.add_daily_values(
+        rid, _series("metrics/event1", 100.0, 60.0) + _series("metrics/event2", 100.0, 180.0)
+    )
+    store.finish_run(rid, "ok")
+    view = build_view(store, rid, change_alert=0.275, spike_alert=0.625)
+    got = run_probe(chrome, render_html(view), THRESHOLD_PROBE, tmp_path)
+    store.con.close()
+    assert got["tiles"]["Large drops"] == "More than 27.5% below the weekday average"
+    assert got["tiles"]["Large spikes"] == "More than 62.5% above the weekday average"
+    assert got["drops"] == "Drops of more than 27.5% below the weekday average"
+    assert got["spikes"] == "Spikes of more than 62.5% above the weekday average"
+    assert any("more than 27.5% below their weekday average" in h for h in got["hints"])
+    assert any("more than 62.5% above their weekday average" in h for h in got["hints"])
+    assert "more than 27.5% below the weekday average" in got["result"]
+    assert "more than 62.5% above the weekday average" in got["spikeResult"]
+    assert "Drops of more than 27.5% below the weekday average (1):" in got["text"]
+    assert "Spikes of more than 62.5% above the weekday average (1):" in got["text"]
+    assert any(b and b.startswith("More than 27.5% below") for b in got["badges"])
+    assert any(b and b.startswith("More than 62.5% above") for b in got["badges"])
+    for words in (got["result"], got["text"], *got["tiles"].values()):
+        assert "28%" not in (words or "") and "63%" not in (words or "")

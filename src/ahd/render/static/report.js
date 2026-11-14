@@ -472,14 +472,20 @@
       title: "This component had a value of 0 on every day in this run." }, "never collected data");
   }
 
+  // A threshold as the page writes it, with up to one decimal, e.g., 0.3 as "30%" and 0.275
+  // as "27.5%", as ahd alerts writes it.
+  function thresholdText(share) {
+    return String(Math.round(share * 1000) / 10) + "%";
+  }
+
   function dropBadge() {
-    return badge("flag", "▼", "Large drop", "More than " + Math.round(state.t * 100) +
-      "% below the weekday average. Set the percent with the slider at the top of the page.");
+    return badge("flag", "▼", "Large drop", "More than " + thresholdText(state.t) +
+      " below the weekday average. Set the percent with the slider at the top of the page.");
   }
 
   function spikeBadge() {
-    return badge("flag", "▲", "Large spike", "More than " + Math.round(state.s * 100) +
-      "% above the weekday average. Set the percent with the slider at the top of the page.");
+    return badge("flag", "▲", "Large spike", "More than " + thresholdText(state.s) +
+      " above the weekday average. Set the percent with the slider at the top of the page.");
   }
 
   // An arrow for a change past a slider: the drop slider for down, the spike slider for up.
@@ -1815,9 +1821,9 @@
     if (key === "low") return "a value below the expected range";
     if (key === "high") return "a value above the expected range";
     if (key === "drop") {
-      return "a value more than " + Math.round(state.t * 100) + "% below the weekday average";
+      return "a value more than " + thresholdText(state.t) + " below the weekday average";
     }
-    return "a value more than " + Math.round(state.s * 100) + "% above the weekday average";
+    return "a value more than " + thresholdText(state.s) + " above the weekday average";
   }
   // For example "356 of the 356 components that collected data had a value of 0 on Wed, Nov 11
   // (yesterday). For 330 of them, this started on Nov 5. For the other 26, it started on other
@@ -1905,10 +1911,10 @@
       parts.zero.length);
   }
   function dropTitle() {
-    return "Drops of more than " + Math.round(state.t * 100) + "% below the weekday average";
+    return "Drops of more than " + thresholdText(state.t) + " below the weekday average";
   }
   function spikeTitle() {
-    return "Spikes of more than " + Math.round(state.s * 100) + "% above the weekday average";
+    return "Spikes of more than " + thresholdText(state.s) + " above the weekday average";
   }
 
   // The heading of an alert list, with how many components it holds and how many are new.
@@ -1937,7 +1943,7 @@
   // average week, and a day with its weekday average.
   function dropSummary(rows, when, week) {
     var base = week ? "the average week" : "the weekday average";
-    var pct = Math.round(state.t * 100) + "%";
+    var pct = thresholdText(state.t);
     var drops = rows.filter(function (r) { return isLargeDrop(r.value, r.baseline, r.pct, week); });
     var flagged = drops.length;
     var byMethod = drops.filter(function (r) { return !!r.anomaly; }).length;
@@ -1961,7 +1967,7 @@
   // The same sentence for large spikes, naming the largest rise.
   function spikeSummary(rows, when, week) {
     var base = week ? "the average week" : "the weekday average";
-    var pct = Math.round(state.s * 100) + "%";
+    var pct = thresholdText(state.s);
     var spikes = rows.filter(function (r) { return isLargeSpike(r.value, r.baseline, r.pct, week); });
     var flagged = spikes.length;
     var byMethod = spikes.filter(function (r) { return !!r.anomaly; }).length;
@@ -2068,7 +2074,7 @@
     var host = byId("alerts");
     clear(host);
     var parts = splitAlerts();
-    var pct = Math.round(state.t * 100) + "%";
+    var pct = thresholdText(state.t);
     var events = suiteEvents(parts);
     var of = eventOf(events);
     function outside(list) { return list.filter(function (a) { return !of[a.component_id]; }); }
@@ -2106,7 +2112,7 @@
       changeTable, "alerts-drops",
       dropSummary(data.views["day:" + state.alertDay] || [], alertDayText()));
 
-    var spct = Math.round(state.s * 100) + "%";
+    var spct = thresholdText(state.s);
     group("spikes-title", spikeTitle(), parts.spikes,
       "These values were more than " + spct + " above their weekday average, but " +
         flaggedBy(false) + " did not flag them. A value that doubled, e.g., from a tag that fires twice, is " +
@@ -2471,10 +2477,10 @@
         toAlerts, flagged.low);
     }
     tile("flag", "▼", "Large drops", numFmt.format(drops),
-      "More than " + Math.round(state.t * 100) + "% below the weekday average", toAlerts,
+      "More than " + thresholdText(state.t) + " below the weekday average", toAlerts,
       parts.drops);
     tile("flag", "▲", "Large spikes", numFmt.format(spikes),
-      "More than " + Math.round(state.s * 100) + "% above the weekday average", toAlerts,
+      "More than " + thresholdText(state.s) + " above the weekday average", toAlerts,
       parts.spikes);
     tile("zero", "●", "Dropped to zero", numFmt.format(zero),
       unused ? numFmt.format(unused) + " others never collected data" : "Had data on other days",
