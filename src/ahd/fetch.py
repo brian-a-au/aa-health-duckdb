@@ -59,6 +59,9 @@ NO_ANOMALY_CODES = ("anomaly_not_allowed", "anomaly_probe_failed")
 NETWORK_ERROR = "network_error"
 SIGN_IN_UNAVAILABLE = "sign_in_unavailable"
 INVALID_RESPONSE = "invalid_response"
+INTERRUPTED = "interrupted"
+INTERRUPTED_MESSAGE = "The run stopped before this component was read."
+INTERRUPTED_PAIR_MESSAGE = "The run stopped before the Individual Component Summary was read."
 
 # The 5 requests of one Individual Component Summary pair.
 PairKind = Literal["current", "historical", "browser", "device", "trend"]
@@ -260,10 +263,27 @@ def run_fetch(
     try:
         status = _run(client, store, opts, run_id, catalog, window, progress)
     except BaseException:
-        store.finish_run(run_id, "failed")
+        try:
+            _note_interrupted(store, run_id)
+        finally:
+            store.finish_run(run_id, "failed")
         raise
     store.finish_run(run_id, status)
     return run_id
+
+
+def _note_interrupted(store: Store, run_id: int) -> None:
+    """Say what a run that stopped part way, e.g., on Ctrl-C, did not read.
+
+    Each component without a daily value or an issue gets an issue. The pair gets one too,
+    because the pair is read last. add_pair keeps a failed run failed while such an issue is
+    there, so a pair added later cannot make the run look whole.
+    """
+    store.add_unread_issues(run_id, INTERRUPTED, INTERRUPTED_MESSAGE)
+    for p in store.list_pairs(run_id):
+        store.add_issue(
+            run_id, "individual", pair_series_id(p["pair"]), INTERRUPTED, INTERRUPTED_PAIR_MESSAGE
+        )
 
 
 def _run(
@@ -487,9 +507,10 @@ def add_pair(
 ) -> tuple[int, int]:
     """Fetch one more pair for a stored run, for the same suite, segment and dates.
 
-    Returns the pair number and how many problems it had. A run that was "ok" becomes
-    "partial" when the new pair had problems. A run that was "failed" becomes "partial" when
-    the new pair stored some data.
+    Returns the pair number and how many problems it had. The status of the run then follows
+    the issues it holds, as _status_after_pair says: e.g., a run that was "ok" becomes
+    "partial" when the new pair had problems, and a run that was "failed" becomes "partial"
+    when the new pair stored some data, unless the run stopped part way.
     """
     run = store.get_run(run_id)
     if run["status"] == "running":
@@ -543,9 +564,19 @@ def add_pair(
         raise
     if empty is not None:
         store.delete_pair(run_id, empty, pair_series_id(empty))
-    if problems and run["status"] == "ok":
-        store.set_status(run_id, "partial")
-    elif stored and run["status"] == "failed":
-        # The run now holds some data, so "Failed. No data could be read." is no longer true.
-        store.set_status(run_id, "partial")
+    status = _status_after_pair(run["status"], stored, store.issue_codes(run_id))
+    if status != run["status"]:
+        store.set_status(run_id, status)
     return pair, problems
+
+
+def _status_after_pair(old: str, stored: int, codes: set[str]) -> str:
+    """The status of a run after add_pair, from the issues the run holds now.
+
+    A failed run stays failed when the new pair stored nothing, or when the run stopped part
+    way and its issues still say so. Else the run is "partial" while it holds an issue, and "ok"
+    when it holds none, e.g., after the pair replaced an empty pair that held the only issues.
+    """
+    if old == "failed" and (not stored or INTERRUPTED in codes):
+        return "failed"
+    return "partial" if codes else "ok"

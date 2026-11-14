@@ -417,6 +417,24 @@ class Store:
             [run_id, scope, component_id, code, message],
         )
 
+    def add_unread_issues(self, run_id: int, code: str, message: str) -> None:
+        """Add a column issue for each component of the run with no daily value and no issue."""
+        self.con.execute(
+            "INSERT INTO issues (run_id, scope, component_id, code, message)"
+            " SELECT c.run_id, 'column', c.component_id, $code, $message FROM components c"
+            " WHERE c.run_id = $r"
+            " AND NOT EXISTS (FROM daily_values v WHERE v.run_id = $r"
+            " AND v.component_id = c.component_id)"
+            " AND NOT EXISTS (FROM issues i WHERE i.run_id = $r AND i.component_id = c.component_id)"
+            " ORDER BY c.rowid",
+            {"r": run_id, "code": code, "message": message},
+        )
+
+    def issue_codes(self, run_id: int) -> set[str]:
+        """The codes of the issues that the run holds."""
+        cur = self.con.execute("SELECT DISTINCT code FROM issues WHERE run_id = ?", [run_id])
+        return {r[0] for r in cur.fetchall()}
+
     def list_runs(self) -> list[dict]:
         cur = self.con.execute("SELECT * FROM runs ORDER BY run_id DESC")
         cols = [d[0] for d in cur.description]
@@ -461,13 +479,16 @@ class Store:
         self.con.execute("CHECKPOINT")
 
     def pair_has_data(self, run_id: int, pair: int, series_id: str) -> bool:
-        """Whether the pair stored any row: a top 100 item, a breakdown or a daily value."""
+        """Whether the pair stored any row: a top 100 item, a breakdown row or a daily value.
+
+        The totals of a browser or device table do not count. A table that came back with no
+        rows still has totals, e.g., 0, and the run calls it "no rows came back".
+        """
         return bool(
             _first(
                 self.con.execute(
                     "SELECT EXISTS (FROM top_items WHERE run_id = $r AND pair = $p)"
                     " OR EXISTS (FROM breakdowns WHERE run_id = $r AND pair = $p)"
-                    " OR EXISTS (FROM breakdown_totals WHERE run_id = $r AND pair = $p)"
                     " OR EXISTS (FROM daily_values WHERE run_id = $r AND component_id = $s)",
                     {"r": run_id, "p": pair, "s": series_id},
                 )
