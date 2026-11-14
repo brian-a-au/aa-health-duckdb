@@ -224,6 +224,98 @@ def test_discovery_failure(discovery):
     assert "discovery call answered" in _fails(Session(GOOD_TOKEN, discovery))
 
 
+class ScriptedDiscovery(Session):
+    """Answers the discovery calls in turn. An exception in the script is raised."""
+
+    def __init__(self, *answers):
+        super().__init__(GOOD_TOKEN)
+        self.answers = list(answers)
+
+    def get(self, url, headers=None, timeout=None):
+        self.calls.append(("GET", url, headers))
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return Resp(*answer)
+
+
+def _gets(session):
+    return [c for c in session.calls if c[0] == "GET"]
+
+
+@pytest.mark.parametrize("status", [429, 500, 503])
+def test_a_temporary_discovery_error_is_tried_again(waits, status):
+    s = ScriptedDiscovery((status, None), (status, {"error": "x"}), orgs(org()))
+    assert sign_in(s, CREDS).company_id == "co1"
+    assert len(_gets(s)) == 3 and waits == [1.0, 3.0]
+
+
+def test_a_network_error_in_discovery_is_tried_again(waits):
+    import requests
+
+    s = ScriptedDiscovery(requests.ConnectionError("https://analytics/x"), orgs(org()))
+    assert sign_in(s, CREDS).company_id == "co1"
+    assert len(_gets(s)) == 2 and len(waits) == 1
+
+
+def test_a_lasting_network_error_in_discovery_is_raised(waits):
+    import requests
+
+    s = ScriptedDiscovery(*[requests.Timeout("t")] * SIGN_IN_TRIES)
+    with pytest.raises(requests.Timeout):
+        sign_in(s, CREDS)
+    assert len(_gets(s)) == SIGN_IN_TRIES
+
+
+def test_a_lasting_discovery_server_error_says_it_is_temporary(waits):
+    from ahd.api.auth import SignInUnavailable
+
+    s = ScriptedDiscovery(*[(503, None)] * SIGN_IN_TRIES)
+    with pytest.raises(SignInUnavailable) as e:
+        sign_in(s, CREDS)
+    text = str(e.value)
+    assert "discovery call answered HTTP 503 3 times" in text
+    assert "This is a problem at Adobe, not with the credential" in text
+    assert "secret-xyz" not in text and "TOKEN-1" not in text and "https" not in text
+    assert len(_gets(s)) == SIGN_IN_TRIES and len(waits) == SIGN_IN_TRIES - 1
+
+
+def test_a_discovery_error_that_is_not_temporary_is_not_tried_again(waits):
+    s = ScriptedDiscovery((403, {"error": "x"}))
+    assert "discovery call answered HTTP 403" in _fails(s)
+    assert len(_gets(s)) == 1 and waits == []
+
+
+def test_a_wait_that_is_cut_short_ends_the_tries(waits):
+    """The client passes the wait of its stop signal, so Ctrl-C ends the tries at once."""
+    from ahd.api.auth import SignInUnavailable, get_token
+
+    cut = []
+    s = ScriptedSession(*[(503, None)] * SIGN_IN_TRIES)
+    with pytest.raises(SignInUnavailable):
+        get_token(s, CREDS, wait=lambda seconds: cut.append(seconds) or True)
+    assert len(_posts(s)) == 1 and cut == [1.0] and waits == []
+
+
+def test_a_wait_that_is_cut_short_after_a_network_error_raises_it(waits):
+    import requests
+
+    from ahd.api.auth import get_token
+
+    s = ScriptedSession(requests.ConnectionError("c"), GOOD_TOKEN)
+    with pytest.raises(requests.ConnectionError):
+        get_token(s, CREDS, wait=lambda seconds: True)
+    assert len(_posts(s)) == 1
+
+
+def test_a_wait_that_runs_its_full_time_goes_on(waits):
+    from ahd.api.auth import get_token
+
+    s = ScriptedSession((503, None), GOOD_TOKEN)
+    assert get_token(s, CREDS, wait=lambda seconds: False) == "TOKEN-1"
+    assert len(_posts(s)) == 2
+
+
 @pytest.mark.parametrize("companies", [5, "text", {"globalCompanyId": "co1"}])
 def test_companies_in_another_form_are_no_company(companies):
     entry = {"imsOrgId": "ORG1@AdobeOrg", "companies": companies}

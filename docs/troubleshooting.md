@@ -32,7 +32,7 @@ When sign-in fails, the tool says what is wrong and what to fix. The fixes happe
 
 Changes in the Admin Console can take a while to reach Analytics. Wait a little and run `ahd check` again.
 
-A message that says "This is a problem at Adobe, not with the credential" means that Adobe's sign-in service answered with a temporary error, e.g., HTTP 503, 3 times in a row. Wait a little and try again.
+A message that says "This is a problem at Adobe, not with the credential" means that Adobe answered a sign-in request with a temporary error, e.g., HTTP 503, 3 times in a row. Sign-in makes two requests. The first gets a token from Adobe's sign-in service. The second is the Analytics discovery call, which finds the login company. The message names the one that failed. Wait a little and try again.
 
 ## Limited access
 

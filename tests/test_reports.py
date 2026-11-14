@@ -239,3 +239,119 @@ def test_live_browser_breakdown_parse():
     assert len(rows) == 10
     assert all(len(vals) == 5 for _, vals in rows)
     assert totals == [213974.0, 65324.0, 83695.0, 12170.0, 56776.0]
+
+
+def test_a_row_with_too_few_values_records_an_issue_for_each_missing_column():
+    """A day without a value is not dropped in silence. The run records an issue instead."""
+    from ahd.api.reports import INVALID_RESPONSE
+
+    cols = [Column(f"metrics/m{i}", f"metrics/m{i}") for i in range(3)]
+    resp = {
+        "rows": [
+            {"value": "Aug 8, 2026", "data": [1, 2, 3]},
+            {"value": "Aug 9, 2026", "data": [4]},
+            {"value": "Aug 10, 2026", "data": [5, 6]},
+            {"value": "Aug 11, 2026"},
+        ]
+    }
+    vals, errs = parse_trend(resp, cols)
+    by = {(v.component_id, v.day.day): v.value for v in vals}
+    assert by == {
+        ("metrics/m0", 8): 1.0,
+        ("metrics/m1", 8): 2.0,
+        ("metrics/m2", 8): 3.0,
+        ("metrics/m0", 9): 4.0,
+        ("metrics/m0", 10): 5.0,
+        ("metrics/m1", 10): 6.0,
+    }
+    assert [(e.component_id, e.error_code, e.message) for e in errs] == [
+        (
+            "metrics/m0",
+            INVALID_RESPONSE,
+            "Adobe sent no value for 1 day of this component, the first on 2026-08-11.",
+        ),
+        (
+            "metrics/m1",
+            INVALID_RESPONSE,
+            "Adobe sent no value for 2 days of this component, the first on 2026-08-09.",
+        ),
+        (
+            "metrics/m2",
+            INVALID_RESPONSE,
+            "Adobe sent no value for 3 days of this component, the first on 2026-08-09.",
+        ),
+    ]
+
+
+def test_a_refused_column_is_not_also_named_for_its_missing_values():
+    cols = [Column("metrics/a", "metrics/a"), Column("metrics/b", "metrics/b")]
+    resp = {
+        "columns": {"columnErrors": [{"columnId": "1", "errorCode": "unauthorized_metric"}]},
+        "rows": [{"value": "Aug 8, 2026", "data": [1]}],
+    }
+    vals, errs = parse_trend(resp, cols)
+    assert [(v.component_id, v.value) for v in vals] == [("metrics/a", 1.0)]
+    assert [(e.component_id, e.error_code) for e in errs] == [("metrics/b", "unauthorized_metric")]
+
+
+def test_the_issue_code_for_missing_values_is_the_one_fetch_uses():
+    from ahd import fetch
+    from ahd.api import reports
+
+    assert reports.INVALID_RESPONSE == fetch.INVALID_RESPONSE
+
+
+# A number too large for a float, e.g., 400 digits, and the values that JSON can give for
+# NaN and 1e400. None of them is a count.
+NOT_FINITE = [10**400, float("nan"), float("inf"), float("-inf"), "1e400", "NaN"]
+
+
+@pytest.mark.parametrize(
+    "bad", NOT_FINITE, ids=["400 digits", "nan", "inf", "-inf", "1e400", "NaN"]
+)
+def test_a_value_that_is_not_a_finite_number_is_a_malformed_answer(bad):
+    row = {"value": "Aug 8, 2026", "data": [bad]}
+    with pytest.raises(MalformedResponse):
+        parse_trend({"rows": [row]}, [Column("metrics/a", "metrics/a")])
+    with pytest.raises(MalformedResponse):
+        parse_ranked({"rows": [{"value": "x", "data": [bad]}]})
+    with pytest.raises(MalformedResponse):
+        parse_breakdown({"rows": [{"value": "x", "data": [1, bad]}]})
+    with pytest.raises(MalformedResponse):
+        parse_breakdown({"rows": [], "summaryData": {"totals": [bad]}})
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_a_total_count_that_is_not_a_whole_number_is_a_malformed_answer(bad):
+    with pytest.raises(MalformedResponse):
+        parse_ranked({"rows": [], "totalElements": bad})
+
+
+def test_json_nan_and_1e400_in_a_trend_are_malformed():
+    text = '{"rows": [{"value": "Aug 8, 2026", "data": [NaN, 1e400]}]}'
+    cols = [Column("metrics/a", "metrics/a"), Column("metrics/b", "metrics/b")]
+    with pytest.raises(MalformedResponse):
+        parse_trend(json.loads(text), cols)
+
+
+def test_bounds_that_are_not_finite_are_kept_for_the_anomaly_sql():
+    """The anomaly SQL ignores a bound that is not finite, so the value of that day is kept."""
+    import math
+
+    row = {
+        "value": "Aug 8, 2026",
+        "data": [7],
+        "dataExpected": [float("nan")],
+        "dataUpperBound": [float("inf")],
+        "dataLowerBound": [float("-inf")],
+    }
+    [v], errs = parse_trend({"rows": [row]}, [Column("metrics/a", "metrics/a")])
+    assert errs == [] and v.value == 7.0
+    assert v.expected is not None and math.isnan(v.expected)
+    assert (v.upper, v.lower) == (math.inf, -math.inf)
+
+
+def test_a_bound_too_large_for_a_float_is_a_malformed_answer():
+    row = {"value": "Aug 8, 2026", "data": [7], "dataExpected": [10**400]}
+    with pytest.raises(MalformedResponse):
+        parse_trend({"rows": [row]}, [Column("metrics/a", "metrics/a")])
