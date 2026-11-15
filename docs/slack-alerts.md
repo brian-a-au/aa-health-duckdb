@@ -8,20 +8,25 @@ The example script [`examples/send_slack.py`](examples/send_slack.py) posts the 
 
 These steps take you from nothing to a first message in Slack. The commands use the profile `prod` and the report suite ID `my_suite`. Put your own profile and suite ID in their place. The sections after this one explain each part in more detail.
 
-1. **Get the script.** Clone this repository and install the tool:
+1. **Install the tool and download the script.** You do not need a clone of this repository. Install `ahd` from PyPI, and download the one script file into a folder of your choice, e.g., `~/ahd`. The link holds a version, `v0.1.15`, so you get the script of that release:
 
    ```
-   git clone https://github.com/brian-a-au/aa-health-duckdb.git
-   cd aa-health-duckdb
-   uv sync
+   uv tool install aa-health-duckdb
+   curl -fLO https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.15/docs/examples/send_slack.py
    ```
 
-   Run every command below from the `aa-health-duckdb` folder. To use the script without a clone, see [Run it](#run-it).
+   In Windows PowerShell, download it with `Invoke-WebRequest https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.15/docs/examples/send_slack.py -OutFile send_slack.py`. You can also open the link in a browser and save the page as `send_slack.py`.
+
+   The script needs `ahd` 0.1.13 or newer. If you installed `ahd` before, update it with `uv tool upgrade aa-health-duckdb`. If the terminal then says it cannot find `ahd`, run `uv tool update-shell` and open a new terminal. With pipx, install the tool with `pipx install aa-health-duckdb`, and run the script with `python3 send_slack.py` in place of `uv run python send_slack.py`.
+
+   When you install a newer `ahd`, download the script again with the new version in the link, e.g., `v0.1.16`. `uv tool list` shows the version you have. The script and the tool then come from the same release.
+
+   Run every command below in the folder that holds the script. To work from a clone instead, see [Run it](#run-it).
 
 2. **Check the suite once.** The script posts the alerts of runs that are already in the database, so make a run first:
 
    ```
-   uv run ahd run --profile prod --rsid my_suite
+   ahd run --profile prod --rsid my_suite
    ```
 
    With a profile, the database is `~/.aa/orgs/prod/ahd.duckdb`. Without a profile, it is `./data/ahd.duckdb`.
@@ -29,7 +34,7 @@ These steps take you from nothing to a first message in Slack. The commands use 
 3. **Find the report suite ID.** The script takes IDs, not names. List the stored runs and copy the ID from the report suite column:
 
    ```
-   uv run ahd runs --profile prod
+   ahd runs --profile prod
    ```
 
    The script uses the latest run of the suite that has the status "ok" or "partial". A run that failed does not count.
@@ -37,7 +42,7 @@ These steps take you from nothing to a first message in Slack. The commands use 
 4. **Write the messages to a file.** Run the script without `SLACK_WEBHOOK_URL`:
 
    ```
-   uv run python docs/examples/send_slack.py ~/.aa/orgs/prod/ahd.duckdb my_suite
+   uv run python send_slack.py ~/.aa/orgs/prod/ahd.duckdb my_suite
    ```
 
    It prints a line that counts the messages and the alerts. It writes `slack.json` in the current folder and posts nothing. When it prints "No alerts for my_suite." and "Nothing to send.", the latest run of the suite has no alerts. The script then writes no file and exits with 2. Use `--all` in place of `my_suite` to include every suite in the file.
@@ -61,7 +66,7 @@ These steps take you from nothing to a first message in Slack. The commands use 
 10. **Post the messages.** Run the same command as in step 4:
 
     ```
-    uv run python docs/examples/send_slack.py ~/.aa/orgs/prod/ahd.duckdb my_suite
+    uv run python send_slack.py ~/.aa/orgs/prod/ahd.duckdb my_suite
     ```
 
     It prints a line that counts the messages and the alerts, e.g., "Posted 2 messages with 20 alerts to Slack." with `--all` and two suites. The messages appear in the channel. When Slack does not take a message, the script prints one line that says why. See [When Slack does not take a message](#when-slack-does-not-take-a-message).
@@ -88,7 +93,12 @@ The URL is a secret. Anyone who has it can post to the channel. Keep it out of t
 
 ## Run it
 
-The script needs `ahd` 0.1.13 or newer, and nothing else. It gets its alerts from `ahd alerts --format json`, as the email script does. Run it from a clone of this repository, where `uv run` already has `ahd`. Without a clone, download the file and run it with `ahd` added, e.g., `uv run --with aa-health-duckdb python send_slack.py ...`. The script looks for `ahd` in the Python that runs it first, then for the `ahd` program on your `PATH`. Without either, or with an older `ahd`, it stops with exit code 1 and says how to install it.
+The script needs `ahd` 0.1.13 or newer, and nothing else. It gets its alerts from `ahd alerts --format json`, as the email script does. You can run the script in two ways:
+
+- Download only the script and install `ahd` from PyPI, as in [Step by step](#step-by-step). The script then uses the `ahd` program that `uv tool install` put on your `PATH`. To run it without installing `ahd`, add it to the command, e.g., `uv run --with aa-health-duckdb python send_slack.py ...`.
+- Run it from a clone of this repository, where `uv run` already has `ahd`. The commands below are for a clone.
+
+The script looks for `ahd` in the Python that runs it first, then for the `ahd` program on your `PATH`. Without either, or with an older `ahd`, it stops with exit code 1 and says how to install it.
 
 First run it without `SLACK_WEBHOOK_URL`. It then writes the messages to `slack.json` in the current folder and posts nothing:
 
