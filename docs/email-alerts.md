@@ -32,7 +32,7 @@ These steps take you from nothing to a first email. The commands use the profile
    uv run ahd runs --profile prod
    ```
 
-   The run must have the status "ok" or "partial". The script skips a run that failed.
+   The script uses the latest run of the suite that has the status "ok" or "partial". A run that failed does not count.
 
 4. **Write the email to a file.** Run the script without any mail settings:
 
@@ -40,7 +40,7 @@ These steps take you from nothing to a first email. The commands use the profile
    uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
    ```
 
-   It prints "Wrote alerts.eml with 13 alerts. Set SMTP_HOST to send it." and writes `alerts.eml` in the current folder. When it prints "Nothing to send.", the suite has no alerts today and there is no file to check. Use `--all` in place of `my_suite` to include every suite in the file.
+   It prints "Wrote alerts.eml with 13 alerts. Set SMTP_HOST to send it." and writes `alerts.eml` in the current folder. When it prints "No alerts for my_suite." and "Nothing to send.", the latest run of the suite has no alerts. The script then writes no file and exits with 2. Use `--all` in place of `my_suite` to include every suite in the file.
 
 5. **Open `alerts.eml`.** Double click it, or open it with your mail program, e.g., Apple Mail, Outlook or Thunderbird. Check that the table and the counts look right.
 
@@ -78,11 +78,11 @@ These steps take you from nothing to a first email. The commands use the profile
 
 Each section lists the alerts that are new on the day first, and its heading counts them, e.g., "Adobe Store (dgeo1xxpnwcidadobestore), 2026-11-11: 13 alerts, 1 new". Each alert says since when it has held, e.g., "since 2026-11-09, 3 days". The Since column needs `ahd` 0.1.12 or newer. With 0.1.11, it stays empty.
 
-When a suite has a [suite-wide event](duckdb.md#suite_eventsrun-), its section starts with one line for the event, e.g., "356 of the 356 components that collected data had a value of 0 on 2026-11-11". A table of the first 5 alerts of the event follows, and a line counts the others. Then "Other alerts" lists the alerts outside the event. So when the data of a whole suite stops, the email has 5 rows for it, not 356. The subject still counts every alert. This needs `ahd` 0.1.13 or newer. With an older `ahd`, the email lists every alert.
+When a suite has a [suite-wide event](duckdb.md#suite_eventsrun-), its section starts with one line for the event, e.g., "Suite-wide event: 356 of the 356 components that collected data had a value of 0 on 2026-11-11". A table of the first 5 alerts of the event follows, and a line counts the others. Then "Other alerts" lists the alerts outside the event. So when the data of a whole suite stops, the email has 5 rows for it, not 356. The subject still counts every alert. This needs `ahd` 0.1.13 or newer. With an older `ahd`, the email lists every alert.
 
 ## Run it
 
-The script gets its alerts from `ahd alerts --format json`, and builds and sends the email itself. So it needs `ahd` 0.1.11 or newer. Before 0.1.11, it needed only DuckDB, and it read the file with its own copy of the rules for the anomaly options. The script is in this repository. Run it from a clone, as below, where `uv run` already has `ahd`. Without a clone, download the file and run it with `ahd` added, e.g., `uv run --with aa-health-duckdb python send_alerts.py ...`. The script looks for `ahd` in the Python that runs it first, then for the `ahd` program on your `PATH`. Without either, it stops with exit code 1 and says how to install it.
+The script gets its alerts from `ahd alerts --format json`, and builds and sends the email itself. So it needs `ahd` 0.1.11 or newer. Before 0.1.11, it needed only DuckDB, and it read the file with its own copy of the rules for the anomaly options. The script is in this repository. Run it from a clone, as below, where `uv run` already has `ahd`. Without a clone, download the file and run it with `ahd` added, e.g., `uv run --with aa-health-duckdb python send_alerts.py ...`. The script looks for `ahd` in the Python that runs it first, then for the `ahd` program on your `PATH`. Without either, it stops with exit code 1 and says how to install it. With an `ahd` older than 0.1.11, it stops with exit code 1 and says how to update it.
 
 ```
 uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
@@ -92,7 +92,7 @@ uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb --all
 
 ## Options
 
-It reads the latest run of each suite without a segment, from `latest_runs`. `--all` uses every suite that has such a run in the file. Add `--segment ID` for the latest runs with that segment. The script takes only report suite IDs and segment IDs, not names, and they must match exactly. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`. `--spike-threshold` sets the large spike percent the same way, up to `2`. The default is `0.50`. The script gives each share to `ahd alerts` as the exact percent, e.g., `0.275` as `--change-alert 27.5`, so the email lists the same alerts as before.
+It reads the latest run of each suite without a segment, from `latest_runs`. `--all` uses every suite that has such a run in the file. Add `--segment ID` for the latest runs with that segment. The script takes only report suite IDs and segment IDs, not names, and they must match exactly. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`. `--spike-threshold` sets the large spike percent the same way, up to `2`. The default is `0.50`. The script gives each share to `ahd alerts` as the exact percent, e.g., `0.275` as `--change-alert 27.5`. It does not round the percent.
 
 `--anomaly-method` chooses the anomaly method that flags the unusual values, and `--anomaly-sensitivity` sets how wide the range of a local method is. The script gives both to `ahd alerts`, so they take the same values as on `ahd run`, and the defaults are the same, `adobe` and `normal`. So by default the script uses Adobe's flags. With `adobe`, `low` or `high` stops the script with exit code 1 and the message of `ahd`, because Adobe returns its own range. The email says which method flagged the unusual values, and it names the sensitivity when it is not `normal`, e.g., "The Weekday median method with high sensitivity flagged the unusual values."
 
