@@ -1,6 +1,6 @@
 # Use the database with DuckDB
 
-[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · **DuckDB guide** · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · **DuckDB guide** · [Run it every day](scheduling.md) · [Email alerts](email-alerts.md) · [Slack alerts](slack-alerts.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 Every `ahd` run is saved in one DuckDB file. The HTML report shows one run at a time. The file holds every run, for every report suite, and you can ask it any question with SQL. This guide shows what you can do with it, from a daily alert email to an audit of unused variables across all your organizations.
 
@@ -116,7 +116,7 @@ To see every column of a table, run `DESCRIBE daily_values`. To see a quick prof
 
 Every file comes with two views and three table macros. A view is a saved query that you use like a table. A table macro is a saved query that takes options. They use the same rules as the report, and the tests check that they agree.
 
-When a new version of `ahd` changes these rules, the next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces the views and the macros in your file. Until then, your own SQL uses the old rules. If you built your own views on top of `component_days`, they follow the new rules after the update. [`ahd alerts`](#print-the-alerts-with-ahd-alerts) and the [alert email script](#send-an-alert-email-every-morning) always use the rules of the `ahd` that you run, also on a file with older views.
+When a new version of `ahd` changes these rules, the next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces the views and the macros in your file. Until then, your own SQL uses the old rules. If you built your own views on top of `component_days`, they follow the new rules after the update. [`ahd alerts`](#print-the-alerts-with-ahd-alerts) and the [alert email script](email-alerts.md) always use the rules of the `ahd` that you run, also on a file with older views.
 
 ### `latest_runs`
 
@@ -442,39 +442,7 @@ The 10 large spikes are a [suite-wide event](#suite_eventsrun-), so the text giv
 
 ### Send an alert email every morning
 
-[`examples/send_alerts.py`](examples/send_alerts.py) emails the latest alerts for one or more report suites, with an HTML table and a plain text part. The email has one section for each suite that has alerts. It sends nothing when no suite has alerts. That way an empty inbox means healthy suites.
-
-Each section lists the alerts that are new on the day first, and its heading counts them, e.g., "Adobe Store (dgeo1xxpnwcidadobestore), 2026-11-11: 13 alerts, 1 new". Each alert says since when it has held, e.g., "since 2026-11-09, 3 days". The Since column needs `ahd` 0.1.12 or newer. With 0.1.11, it stays empty.
-
-When a suite has a [suite-wide event](#suite_eventsrun-), its section starts with one line for the event, e.g., "356 of the 356 components that collected data had a value of 0 on 2026-11-11". A table of the first 5 alerts of the event follows, and a line counts the others. Then "Other alerts" lists the alerts outside the event. So when the data of a whole suite stops, the email has 5 rows for it, not 356. The subject still counts every alert. This needs `ahd` 0.1.13 or newer. With an older `ahd`, the email lists every alert.
-
-The script gets its alerts from `ahd alerts --format json`, and builds and sends the email itself. So it needs `ahd` 0.1.11 or newer. Before 0.1.11, it needed only DuckDB, and it read the file with its own copy of the rules for the anomaly options. The script is in this repository. Run it from a clone, as below, where `uv run` already has `ahd`. Without a clone, download the file and run it with `ahd` added, e.g., `uv run --with aa-health-duckdb python send_alerts.py ...`. The script looks for `ahd` in the Python that runs it first, then for the `ahd` program on your `PATH`. Without either, it stops with exit code 1 and says how to install it.
-
-```
-uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
-uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite other_suite
-uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb --all
-```
-
-It reads the latest run of each suite without a segment, from `latest_runs`. `--all` uses every suite that has such a run in the file. Add `--segment ID` for the latest runs with that segment. The script takes only report suite IDs and segment IDs, not names, and they must match exactly. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`. `--spike-threshold` sets the large spike percent the same way, up to `2`. The default is `0.50`. The script gives each share to `ahd alerts` as the exact percent, e.g., `0.275` as `--change-alert 27.5`, so the email lists the same alerts as before.
-
-`--anomaly-method` chooses the anomaly method that flags the unusual values, and `--anomaly-sensitivity` sets how wide the range of a local method is. The script gives both to `ahd alerts`, so they take the same values as on `ahd run`, and the defaults are the same, `adobe` and `normal`. So by default the script uses Adobe's flags. With `adobe`, `low` or `high` stops the script with exit code 1 and the message of `ahd`, because Adobe returns its own range. The email says which method flagged the unusual values, and it names the sensitivity when it is not `normal`, e.g., "The Weekday median method with high sensitivity flagged the unusual values."
-
-Without these two options, `ahd alerts` reads the variables `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`, as `ahd run` does. Set them once for a scheduled job, and the reports and the email use the same method. An option wins over its variable, and an empty variable counts as not set. A value that is not a method or a sensitivity stops the script with exit code 1, and the message names the variable. See [Set the anomaly method once](usage.md#set-the-anomaly-method-once).
-
-`ahd alerts` uses the rules of the installed `ahd`, also on a file that an older version wrote, so every method and sensitivity works on any file. Before 0.1.11, the script used the macro in the file, and on a file that an older version had written last, it stopped and said to run `ahd run` once.
-
-Without `SMTP_HOST`, it writes `alerts.eml` in the current folder, which you can open and check first. To send, set `SMTP_HOST`, `MAIL_FROM` and `MAIL_TO`. Set `SMTP_PORT` when the server does not use 587. Set `SMTP_USER` and `SMTP_PASSWORD` when the server needs a login. The script connects without encryption and then turns it on with the STARTTLS command. It does not work with a server that needs encryption from the start, e.g., on port 465.
-
-The script checks the certificate of the server and that it was made for the name in `SMTP_HOST`. It waits at most 60 seconds for an answer from the server. When it cannot send, e.g., the server refuses the login or `SMTP_PORT` is not a number, it prints one line that says why and exits with 1. The line never holds the password.
-
-It exits with these codes:
-
-- 0 when it sent or wrote a message
-- 1 when something is wrong, e.g., the file holds no finished run of a suite. The alerts of the other suites are still sent. A wrong option also exits with 1 and prints the usage. So does an email that the script could not send.
-- 2 when there was nothing to send
-
-To run the check and the email every morning on Windows, macOS or Linux, see [Run it every day](scheduling.md).
+The example script [`examples/send_alerts.py`](examples/send_alerts.py) emails the latest alerts for one or more report suites, and sends nothing when no suite has alerts. [Email alerts](email-alerts.md) explains how to run it and its options. To post the alerts to a Slack channel instead, see [Slack alerts](slack-alerts.md).
 
 ### Send only what is new since the last run
 
