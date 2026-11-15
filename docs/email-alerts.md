@@ -4,6 +4,76 @@
 
 The example script [`examples/send_alerts.py`](examples/send_alerts.py) emails the latest alerts for one or more report suites, with an HTML table and a plain text part. The email has one section for each suite that has alerts. It sends nothing when no suite has alerts. That way an empty inbox means healthy suites. To post the alerts to a Slack channel instead, see [Slack alerts](slack-alerts.md).
 
+## Step by step
+
+These steps take you from nothing to a first email. The commands use the profile `prod` and the report suite ID `my_suite`. Put your own profile and suite ID in their place. The sections after this one explain each part in more detail.
+
+1. **Get the script.** Clone this repository and install the tool:
+
+   ```
+   git clone https://github.com/brian-a-au/aa-health-duckdb.git
+   cd aa-health-duckdb
+   uv sync
+   ```
+
+   Run every command below from the `aa-health-duckdb` folder. To use the script without a clone, see [Run it](#run-it).
+
+2. **Check the suite once.** The script emails the alerts of runs that are already in the database, so make a run first:
+
+   ```
+   uv run ahd run --profile prod --rsid my_suite
+   ```
+
+   With a profile, the database is `~/.aa/orgs/prod/ahd.duckdb`. Without a profile, it is `./data/ahd.duckdb`.
+
+3. **Find the report suite ID.** The script takes IDs, not names. List the stored runs and copy the ID from the report suite column:
+
+   ```
+   uv run ahd runs --profile prod
+   ```
+
+   The run must have the status "ok" or "partial". The script skips a run that failed.
+
+4. **Write the email to a file.** Run the script without any mail settings:
+
+   ```
+   uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
+   ```
+
+   It prints "Wrote alerts.eml with 13 alerts. Set SMTP_HOST to send it." and writes `alerts.eml` in the current folder. When it prints "Nothing to send.", the suite has no alerts today and there is no file to check. Use `--all` in place of `my_suite` to include every suite in the file.
+
+5. **Open `alerts.eml`.** Double click it, or open it with your mail program, e.g., Apple Mail, Outlook or Thunderbird. Check that the table and the counts look right.
+
+6. **Get the settings of your mail server.** You need these from your mail provider or your IT team:
+
+   - The host name of the outgoing mail server, e.g., `smtp.example.com`.
+   - The port. The script uses 587 unless you set another one. The server must accept STARTTLS on that port. Port 465 does not work.
+   - The user name and password, when the server needs a login. Some providers want an app password here in place of your normal password, e.g., Gmail.
+   - The address the email comes from, and the address it goes to. To send to several people, separate their addresses with commas in `MAIL_TO`.
+
+7. **Set the mail settings.** On macOS or Linux:
+
+   ```sh
+   export SMTP_HOST='smtp.example.com'
+   export SMTP_PORT='587'
+   export SMTP_USER='alerts@example.com'
+   export SMTP_PASSWORD='your password'
+   export MAIL_FROM='alerts@example.com'
+   export MAIL_TO='team@example.com'
+   ```
+
+   On Windows, in the Command Prompt, use `set` in place of `export` and leave out the quotes, e.g., `set SMTP_HOST=smtp.example.com`. In PowerShell, write `$env:SMTP_HOST = 'smtp.example.com'`. Leave out `SMTP_USER` and `SMTP_PASSWORD` when the server needs no login. The settings last until you close the terminal.
+
+8. **Send the email.** Run the same command as in step 4:
+
+   ```
+   uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
+   ```
+
+   It prints "Sent 13 alerts to team@example.com." When it cannot send, it prints one line that says why and sends nothing, e.g., "The mail server refused the login. Check SMTP_USER and SMTP_PASSWORD. Nothing was sent to smtp.example.com." Fix the setting and run it again.
+
+9. **Run it every day.** To run the check and the email each morning, follow [Run it every day](scheduling.md). The scheduled script holds the same mail settings.
+
 ## What the email holds
 
 Each section lists the alerts that are new on the day first, and its heading counts them, e.g., "Adobe Store (dgeo1xxpnwcidadobestore), 2026-11-11: 13 alerts, 1 new". Each alert says since when it has held, e.g., "since 2026-11-09, 3 days". The Since column needs `ahd` 0.1.12 or newer. With 0.1.11, it stays empty.
