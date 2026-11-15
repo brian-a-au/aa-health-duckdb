@@ -1,6 +1,6 @@
 # Troubleshooting
 
-[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · **Troubleshooting** · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Email alerts](email-alerts.md) · [Slack alerts](slack-alerts.md) · **Troubleshooting** · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 Start with `ahd check --rsid <suite>`. It signs in, counts what the credential can see, tests anomaly detection, and explains any fix in plain words. The sections below cover each message in more detail.
 
@@ -83,7 +83,7 @@ When Adobe asks for a longer wait with a Retry-After header, the tool waits that
 
 ## Anomaly detection options
 
-- **"--anomaly-sensitivity works only with a local anomaly method"**: the command got `--anomaly-sensitivity low` or `high` with the method `adobe`, which is the default. Adobe returns its own expected range, so ahd cannot make it wider or narrower. Add a local method, e.g., `--anomaly-method weekday-median`, or leave out `--anomaly-sensitivity`. The command stops before it signs in or opens the database. The alert email script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning) stops with the same message and exit code 1. See [The report](report.md#the-sensitivity-of-the-local-methods).
+- **"--anomaly-sensitivity works only with a local anomaly method"**: the command got `--anomaly-sensitivity low` or `high` with the method `adobe`, which is the default. Adobe returns its own expected range, so ahd cannot make it wider or narrower. Add a local method, e.g., `--anomaly-method weekday-median`, or leave out `--anomaly-sensitivity`. The command stops before it signs in or opens the database. The alert email script [`send_alerts.py`](email-alerts.md) stops with the same message and exit code 1. See [The report](report.md#the-sensitivity-of-the-local-methods).
   - When the sensitivity comes from the variable `AHD_ANOMALY_SENSITIVITY`, the message starts with "The anomaly sensitivity" and names the variable. Unset the variable, set it to `normal`, or choose a local method with `--anomaly-method` or `AHD_ANOMALY_METHOD`.
   - When the method `adobe` comes from the variable `AHD_ANOMALY_METHOD`, the message says so. Set the variable to a local method, or give `--anomaly-method` with a local method.
 - **"variable is set to 'x', which is not an anomaly"**: the variable `AHD_ANOMALY_METHOD` or `AHD_ANOMALY_SENSITIVITY` holds a value that is not a method or a sensitivity, e.g., `weekday_median` with an underscore or `High` with a capital letter. The message names the variable and the values it takes. Fix the value, or unset the variable. An option on the command line wins over the variable, so the command does not read the variable then. The command stops with exit code 1 before it signs in or opens the database, and `send_alerts.py` stops in the same way. See [Set the anomaly method once](usage.md#set-the-anomaly-method-once).

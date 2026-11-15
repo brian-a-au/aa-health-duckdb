@@ -1,6 +1,6 @@
 # Run it every day
 
-[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · **Run it every day** · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
+[README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · **Run it every day** · [Email alerts](email-alerts.md) · [Slack alerts](slack-alerts.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 This page shows how to check every report suite each morning and get one email with the alerts. The schedule runs two commands:
 
@@ -19,7 +19,7 @@ These steps run from a clone of this repository, because the email script is in 
   uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb --all
   ```
 
-- **Check the email first.** Without `SMTP_HOST`, the script writes `alerts.eml` in the current folder. Open it, and set the mail settings when it looks right. See [Send an alert email every morning](duckdb.md#send-an-alert-email-every-morning).
+- **Check the email first.** Without `SMTP_HOST`, the script writes `alerts.eml` in the current folder. Open it, and set the mail settings when it looks right. See [Email alerts](email-alerts.md). To post the alerts to a Slack channel instead, use [`send_slack.py`](slack-alerts.md) in place of the email script. It takes the same arguments.
 - **Choose the anomaly method once for the job.** The scripts below set the variables `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`. `ahd run` reads them, and so does `ahd alerts`, which `send_alerts.py` runs. So the reports and the email always flag the same values. The scripts set the defaults, `adobe` and `normal`, which use Adobe's anomaly detection. To use a local method, change the two values, e.g., to `weekday-median` and `high`. Do not also give `--anomaly-method` or `--anomaly-sensitivity` to only one of the commands, because an option wins over the variable. See [Set the anomaly method once](usage.md#set-the-anomaly-method-once) and [The report](report.md#anomaly-detection-methods).
 - **Keep the reports where you want them.** Reports go to `./reports/` in the folder the schedule starts in. To choose another folder, add `--out`, e.g., `--out ~/ahd-reports`.
 

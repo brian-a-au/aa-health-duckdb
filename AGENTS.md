@@ -52,8 +52,9 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 | `scripts/check_wheel.py` | The release workflow runs it with the built wheel. It checks that the wheel has its SQL, template and page files |
 | `docs/` | The user documentation. The README is a short landing page that links to it. Update the matching page when behavior changes |
 | `tests/test_docs.py` | Checks the docs: every link and heading link, every option in `docs/usage.md`, and the messages that `docs/troubleshooting.md` quotes |
-| `docs/duckdb.md` | SQL recipes for the database, including alert emails |
+| `docs/duckdb.md` | SQL recipes for the database, including alert emails. `docs/email-alerts.md` and `docs/slack-alerts.md` document the two example alert scripts |
 | `docs/examples/send_alerts.py` | The example alert email script. It gets its alerts from `ahd alerts --format json`. Its tests are in `tests/test_examples.py`. They also run every SQL example in `docs/duckdb.md` |
+| `docs/examples/send_slack.py` | The example Slack script, documented in `docs/slack-alerts.md`. It gets its alerts from `ahd alerts --format json` and posts with an incoming webhook. Its tests are in `tests/test_slack_example.py` and never post |
 | `.github/workflows/` | Tests, lint, the type check, actionlint, the lockfile check, CodeQL, and the release from a `v*.*.*` tag |
 
 ## Rules
@@ -93,7 +94,7 @@ The rules for unusual values, large drops, large spikes, zero values and compone
 2. `src/ahd/summary.py`, which selects the candidate rows for the page
 3. `src/ahd/sql/views.sql`, which holds the `alerts` macro for your own SQL
 
-Change all three together. `ahd alerts` and `docs/examples/send_alerts.py` print the rows of the `alerts` macro and hold no rule of their own. `test_alert_lists_match_the_alerts_macro` and `test_tiles_match_the_alerts_macro` in `tests/test_report_js.py` fail when the page and the macro disagree. `test_alerts_macro` in `tests/test_summary.py` checks the macro on its own.
+Change all three together. `ahd alerts`, `docs/examples/send_alerts.py` and `docs/examples/send_slack.py` print the rows of the `alerts` macro and hold no rule of their own. `test_alert_lists_match_the_alerts_macro` and `test_tiles_match_the_alerts_macro` in `tests/test_report_js.py` fail when the page and the macro disagree. `test_alerts_macro` in `tests/test_summary.py` checks the macro on its own.
 
 The same three places say since when each alert has held: the columns `since`, `days`, `at_least` and `is_new` of the `alerts` macro, the fields `since_days`, `since_open` and `changes` that `summary.py` gives the page, and `sinceOf` in `report.js`, which counts the days of a large drop or spike for the slider. An alert follows one condition: a value of 0, else the direction of its flag, else a change past the threshold. Change the streak in all three together. `test_alerts_macro_says_since_when_each_alert_held` and the tests after it in `tests/test_summary.py` check the macro with hand-computed streaks. `test_page_and_macro_agree_on_since` checks the page data against the macro for every method and sensitivity and several slider settings. In `tests/test_report_js.py`, `test_alert_lists_match_the_alerts_macro` and `test_tiles_match_the_alerts_macro` also compare the Since column, the order and the counts of new alerts, and `test_alert_lists_say_since_when` moves the slider.
 

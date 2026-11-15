@@ -89,6 +89,8 @@ If something fails, see [Troubleshooting](https://github.com/brian-a-au/aa-healt
 | [The report](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/report.md) | A walkthrough of the HTML report: the sliders, tiles, tabs, alerts and copying, and the anomaly detection methods |
 | [How runs are stored](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/runs.md) | The DuckDB file, run numbers, deleting runs, keeping runs when the layout changes, and the tables inside |
 | [Run it every day](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/scheduling.md) | A daily check of every suite with an alert email, on Windows, macOS and Linux |
+| [Email alerts](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/email-alerts.md) | An example script that emails the alerts each morning, and only when there are any |
+| [Slack alerts](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/slack-alerts.md) | An example script that posts the alerts to a Slack channel, with a table for each suite |
 | [DuckDB guide](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/duckdb.md) | SQL recipes: alert emails, owner routing, digests across suites and organizations, audits and exports |
 | [Troubleshooting](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/troubleshooting.md) | Sign-in problems, limited access, warnings and database errors |
 | [Compared with the Excel workbook](https://github.com/brian-a-au/aa-health-duckdb/blob/main/docs/excel-comparison.md) | How the numbers differ, what the tool adds, and what it leaves out |

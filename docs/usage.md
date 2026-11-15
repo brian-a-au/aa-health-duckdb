@@ -1,6 +1,6 @@
 # Usage
 
-[README](../README.md) · **Usage** · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
+[README](../README.md) · **Usage** · [Configuration](configuration.md) · [The report](report.md) · [How runs are stored](runs.md) · [DuckDB guide](duckdb.md) · [Run it every day](scheduling.md) · [Email alerts](email-alerts.md) · [Slack alerts](slack-alerts.md) · [Troubleshooting](troubleshooting.md) · [Compared with the Excel workbook](excel-comparison.md) · [Development](development.md)
 
 This page describes every `ahd` command, with its options and exit codes. Add `--help` to any command to see its options. If you work from a clone of the repository instead of an installed tool, put `uv run` in front of each command, e.g., `uv run ahd check`.
 
@@ -68,7 +68,7 @@ When nothing matches a dimension or metric, the tool suggests an ID such as `eva
 
 With several `--rsid` options, `ahd run` matches each one before it checks any suite. If one does not match, the command stops and checks no suite. A suite that you give twice, e.g., once by ID and once by name, is checked once.
 
-`ahd alerts` and the example script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning) do not look up names, because they never call Adobe. They take only report suite IDs and segment IDs, and they must match exactly.
+`ahd alerts` and the example script [`send_alerts.py`](email-alerts.md) do not look up names, because they never call Adobe. They take only report suite IDs and segment IDs, and they must match exactly.
 
 ### Compared with aa_auto_sdr
 
@@ -161,7 +161,7 @@ export AHD_ANOMALY_SENSITIVITY=high
 ahd run --rsid my_suite
 ```
 
-- `ahd run`, `ahd individual`, `ahd render` and `ahd alerts` read them. The alert email script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning) gets its alerts from `ahd alerts`, so it uses them too. A scheduled job that sets them once gives the reports and the email the same method. See [Run it every day](scheduling.md).
+- `ahd run`, `ahd individual`, `ahd render` and `ahd alerts` read them. The alert email script [`send_alerts.py`](email-alerts.md) gets its alerts from `ahd alerts`, so it uses them too. A scheduled job that sets them once gives the reports and the email the same method. See [Run it every day](scheduling.md).
 - An option on the command line wins over its variable, e.g., `--anomaly-sensitivity normal` with `AHD_ANOMALY_SENSITIVITY=high` gives `normal`.
 - Without the option and the variable, the defaults are `adobe` and `normal`. An empty variable counts as not set.
 - A value that is not in the list stops the command with exit code 1, before it signs in or opens the database. The message names the variable and the values it takes.
@@ -412,7 +412,7 @@ So a scheduled job can send the alerts only when there are any, e.g., with a `ma
 ahd alerts --profile prod --all-suites > alerts.txt && mail -s "Analytics Health alerts" team@example.com < alerts.txt
 ```
 
-The example script [`send_alerts.py`](duckdb.md#send-an-alert-email-every-morning) builds an HTML email from `ahd alerts --format json`.
+The example script [`send_alerts.py`](email-alerts.md) builds an HTML email from `ahd alerts --format json`, and [`send_slack.py`](slack-alerts.md) builds Slack messages from it.
 
 ## runs
 
