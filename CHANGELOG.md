@@ -2,6 +2,20 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## 0.1.15 (2026-11-15)
+
+This release changes no code of the tool. It adds an example script for Slack and makes the alert scripts easy to use without a clone of this repository. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is.
+
+**Alerts in Slack**
+
+- The new example script `docs/examples/send_slack.py` posts the alerts of the latest runs to a Slack channel, with one message for each suite that has alerts. It posts with an incoming webhook, which is a URL that Slack makes for one channel. It takes the options of `send_alerts.py` and has its exit codes. It needs `ahd` 0.1.13 or newer. See [Slack alerts](docs/slack-alerts.md).
+
+**The docs**
+
+- Email alerts and Slack alerts each have their own page, with numbered steps from the install to a first email or Slack message. See [Email alerts](docs/email-alerts.md#step-by-step).
+- The steps no longer need a clone of this repository. You install `ahd` from PyPI and download only the script. The download link holds the version of the release, e.g., `v0.1.15`, so the script and the tool come from the same release.
+- [Run it every day](docs/scheduling.md) now uses `ahd` from PyPI and the downloaded script, in one folder. The daily job adds `~/.local/bin` to `PATH`, so a scheduled job finds `ahd` and `uv`. The steps for a clone are still there.
+
 ## 0.1.14 (2026-11-14)
 
 This release fixes bugs that a review of the whole tool found. The database layout stays at version 7, so files made by 0.1.2 to 0.1.13 keep working. The views version changes from 8 to 9, because two alert rules change and the `component_days` view gets a new column `first_data` at the end. The next `ahd run`, `ahd individual`, `ahd prune` or `ahd import` replaces the views and the macros in your file. `ahd render` and `ahd alerts` open the file read-only, so they do not replace them, but they use the new rules for their own session.

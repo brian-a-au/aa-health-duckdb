@@ -1,6 +1,7 @@
 """The docs agree with the code: links, command options and quoted messages."""
 
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -131,3 +132,25 @@ def test_the_messages_that_troubleshooting_quotes_are_in_the_code():
         pieces = [p.strip(" .") for p in re.split(r"'x'|\.\.\.", message)]
         for piece in pieces:
             assert piece in source, f'troubleshooting.md quotes "{message}", which the code lacks'
+
+
+RAW = "https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/"
+
+
+def test_script_downloads_link_to_the_release_of_this_version():
+    """The docs tell users to download a script from the tag of the current version, so that
+    the script matches the ahd they install from PyPI. A version bump without the links fails
+    here."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    tag = "v" + pyproject["project"]["version"]
+    links = [
+        (page.name, link)
+        for page in PAGES
+        for link in re.findall(re.escape(RAW) + r"[^\s)`]+", page.read_text(encoding="utf-8"))
+        if "/docs/examples/" in link
+    ]
+    assert links, "no page links to a script download"
+    for name, link in links:
+        ref, _, path = link.removeprefix(RAW).partition("/")
+        assert ref == tag, f"{name} links to {ref} in {link}, not to {tag}"
+        assert (ROOT / path).is_file(), f"{name} links to {path}, which does not exist"

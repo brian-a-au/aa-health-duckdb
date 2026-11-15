@@ -7,21 +7,21 @@ This page shows how to check every report suite each morning and get one email w
 1. `ahd run --all-suites` checks every suite the credential can see. It stores one run and writes one report for each suite.
 2. [`docs/examples/send_alerts.py`](examples/send_alerts.py) emails the alerts of the latest runs. It gets them from `ahd alerts`. It sends nothing when no suite has alerts.
 
-These steps run from a clone of this repository, because the email script is in it. [Development](development.md#work-from-a-clone) shows how to make one. The commands start with `uv run` for that reason. The script needs `ahd` 0.1.11 or newer, which `uv run` in a clone has. With 0.1.12 or newer, the email lists the new alerts first and says since when each alert has held. With 0.1.13 or newer, a suite whose components mostly have the same kind of alert, e.g., when its data stopped, gets one line for it and only its first 5 alerts, so the email stays short. Before 0.1.11, the script needed only DuckDB, so a job that runs it on a computer without `ahd` now stops with exit code 1 and a message that says how to install it.
+These steps use `ahd` from PyPI and the email script on its own, without a clone of this repository. They keep everything in one folder, `~/ahd`, or `%USERPROFILE%\ahd` on Windows. The folder holds the email script, the daily job and the reports. Step 1 of [Email alerts](email-alerts.md#step-by-step) shows how to install `ahd` and download the script. Download it into this folder. The script needs `ahd` 0.1.11 or newer. With 0.1.12 or newer, the email lists the new alerts first and says since when each alert has held. With 0.1.13 or newer, a suite whose components mostly have the same kind of alert, e.g., when its data stopped, gets one line for it and only its first 5 alerts, so the email stays short. Before 0.1.11, the script needed only DuckDB, so a job that runs it on a computer without `ahd` now stops with exit code 1 and a message that says how to install it.
 
 ## Before you start
 
 - **Use a profile.** With `--profile prod`, the tool reads the credential from `~/.aa/orgs/prod/config.json` and keeps the database in `~/.aa/orgs/prod/ahd.duckdb`. Both paths stay the same, whatever folder the schedule starts in. See [Configuration](configuration.md#profiles).
-- **Run both commands once by hand** from the project folder. Fix any problem before you schedule them.
+- **Run both commands once by hand** in the `ahd` folder. Fix any problem before you schedule them.
 
   ```
-  uv run ahd run --profile prod --all-suites
-  uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb --all
+  ahd run --profile prod --all-suites
+  uv run python send_alerts.py ~/.aa/orgs/prod/ahd.duckdb --all
   ```
 
-- **Check the email first.** Without `SMTP_HOST`, the script writes `alerts.eml` in the current folder. Open it, and set the mail settings when it looks right. See [Email alerts](email-alerts.md). To post the alerts to a Slack channel instead, use [`send_slack.py`](slack-alerts.md) in place of the email script. It takes the same arguments.
+- **Check the email first.** Without `SMTP_HOST`, the script writes `alerts.eml` in the current folder. Open it, and set the mail settings when it looks right. See [Email alerts](email-alerts.md). To post the alerts to a Slack channel instead, download [`send_slack.py`](slack-alerts.md) into the folder and use it in place of the email script. It takes the same arguments. Set `SLACK_WEBHOOK_URL` in place of the mail settings.
 - **Choose the anomaly method once for the job.** The scripts below set the variables `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`. `ahd run` reads them, and so does `ahd alerts`, which `send_alerts.py` runs. So the reports and the email always flag the same values. The scripts set the defaults, `adobe` and `normal`, which use Adobe's anomaly detection. To use a local method, change the two values, e.g., to `weekday-median` and `high`. Do not also give `--anomaly-method` or `--anomaly-sensitivity` to only one of the commands, because an option wins over the variable. See [Set the anomaly method once](usage.md#set-the-anomaly-method-once) and [The report](report.md#anomaly-detection-methods).
-- **Keep the reports where you want them.** Reports go to `./reports/` in the folder the schedule starts in. To choose another folder, add `--out`, e.g., `--out ~/ahd-reports`.
+- **Keep the reports where you want them.** Reports go to `./reports/` in the folder the schedule starts in, which is the `ahd` folder below. To choose another folder, add `--out`, e.g., `--out ~/ahd-reports`.
 
 The script with the commands holds your mail password when your server needs a login. Only your user account should be able to read it. The steps below show how.
 
@@ -36,18 +36,19 @@ The email uses the latest run of each suite that ended "ok" or "partial". For a 
 `ahd alerts` prints the alerts as plain text, and exits with 4 when there are none. So a job that has its own way to send mail can run it after `ahd run`, e.g., with a `mail` program:
 
 ```sh
-uv run ahd alerts --profile prod --all-suites > alerts.txt && mail -s "Analytics Health alerts" team@example.com < alerts.txt
+ahd alerts --profile prod --all-suites > alerts.txt && mail -s "Analytics Health alerts" team@example.com < alerts.txt
 ```
 
 The `&&` sends the mail only when the command exits with 0, which means that it printed at least one alert. See [Exit codes of alerts](usage.md#exit-codes-of-alerts). The steps below use the email script, which sends one HTML email.
 
 ## macOS and Linux
 
-Save the commands in a script, e.g., `~/aa-health-duckdb/daily.sh`. Change the paths and the mail settings to yours:
+Save the commands in a script in the `ahd` folder, e.g., `~/ahd/daily.sh`. Change the paths and the mail settings to yours:
 
 ```sh
 #!/bin/sh
-cd "$HOME/aa-health-duckdb" || exit 1
+cd "$HOME/ahd" || exit 1
+export PATH="$HOME/.local/bin:$PATH"
 export SMTP_HOST=smtp.example.com
 export MAIL_FROM=ahd@example.com
 export MAIL_TO=team@example.com
@@ -55,20 +56,20 @@ export SMTP_USER=ahd@example.com
 export SMTP_PASSWORD='your mail password'
 export AHD_ANOMALY_METHOD=adobe
 export AHD_ANOMALY_SENSITIVITY=normal
-UV="$HOME/.local/bin/uv"
-"$UV" run ahd run --profile prod --all-suites
-"$UV" run python docs/examples/send_alerts.py "$HOME/.aa/orgs/prod/ahd.duckdb" --all
+ahd run --profile prod --all-suites
+uv run python send_alerts.py "$HOME/.aa/orgs/prod/ahd.duckdb" --all
 ```
 
-- A scheduled job does not read your shell settings, so it may not find `uv` by name. The script gives its full path. Run `command -v uv` to see where `uv` is on your computer, e.g., `/opt/homebrew/bin/uv` on a Mac with Homebrew.
-- Make the script readable only by you: `chmod 700 ~/aa-health-duckdb/daily.sh`.
+- A scheduled job does not read your shell settings, so it may not find `ahd` or `uv` by name. The `export PATH` line adds `~/.local/bin`, where `uv tool install` puts `ahd` and where the uv installer puts `uv`. The email script also needs it, because it runs the `ahd` program it finds there. Run `command -v ahd` and `command -v uv` to see where they are on your computer. If one is in another folder, e.g., `/opt/homebrew/bin` on a Mac with Homebrew, add that folder to the line, e.g., `export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"`.
+- Make the script readable only by you: `chmod 700 ~/ahd/daily.sh`.
+- From a clone of this repository, start the script with `cd` to the clone, put `uv run` in front of `ahd`, and use `docs/examples/send_alerts.py` as the path of the email script.
 
 ### With cron
 
 Run `crontab -e` and add this line. It starts the script at 7:30 every morning and adds its output to a log file:
 
 ```
-30 7 * * * /bin/sh "$HOME/aa-health-duckdb/daily.sh" >> "$HOME/ahd-daily.log" 2>&1
+30 7 * * * /bin/sh "$HOME/ahd/daily.sh" >> "$HOME/ahd-daily.log" 2>&1
 ```
 
 cron does not run a job while the computer sleeps or is off. On a Mac, use launchd instead, as shown next.
@@ -87,7 +88,7 @@ launchd runs a job that it missed when the Mac was asleep, as soon as the Mac wa
   <key>ProgramArguments</key>
   <array>
     <string>/bin/sh</string>
-    <string>/Users/you/aa-health-duckdb/daily.sh</string>
+    <string>/Users/you/ahd/daily.sh</string>
   </array>
   <key>StartCalendarInterval</key>
   <dict>
@@ -114,11 +115,12 @@ To start it once now and check the log, run `launchctl kickstart gui/$(id -u)/lo
 
 ## Windows
 
-Save the commands in a file, e.g., `C:\Users\you\aa-health-duckdb\daily.cmd`. Change the paths and the mail settings to yours:
+Save the commands in a file in the `ahd` folder, e.g., `C:\Users\you\ahd\daily.cmd`. Change the paths and the mail settings to yours:
 
 ```bat
 @echo off
-cd /d "%USERPROFILE%\aa-health-duckdb" || exit /b 1
+cd /d "%USERPROFILE%\ahd" || exit /b 1
+set PATH=%USERPROFILE%\.local\bin;%PATH%
 set SMTP_HOST=smtp.example.com
 set MAIL_FROM=ahd@example.com
 set MAIL_TO=team@example.com
@@ -126,21 +128,21 @@ set SMTP_USER=ahd@example.com
 set SMTP_PASSWORD=your mail password
 set AHD_ANOMALY_METHOD=adobe
 set AHD_ANOMALY_SENSITIVITY=normal
-set UV=%USERPROFILE%\.local\bin\uv.exe
 (
-  "%UV%" run ahd run --profile prod --all-suites
-  "%UV%" run python docs\examples\send_alerts.py "%USERPROFILE%\.aa\orgs\prod\ahd.duckdb" --all
+  ahd run --profile prod --all-suites
+  uv run python send_alerts.py "%USERPROFILE%\.aa\orgs\prod\ahd.duckdb" --all
 ) >> "%USERPROFILE%\ahd-daily.log" 2>&1
 ```
 
-- A scheduled task may not find `uv` by name, so the file gives its full path. The uv installer puts `uv.exe` in `%USERPROFILE%\.local\bin` by default. Run `where uv` in Command Prompt to see where it is on your computer.
+- A scheduled task may not find `ahd` or `uv` by name. The `set PATH` line adds `%USERPROFILE%\.local\bin`, where `uv tool install` puts `ahd.exe` and where the uv installer puts `uv.exe` by default. The email script also needs it, because it runs the `ahd` program it finds there. Run `where ahd` and `where uv` in Command Prompt to see where they are on your computer. If one is in another folder, add that folder to the line.
+- From a clone of this repository, use `cd` to the clone, put `uv run` in front of `ahd`, and use `docs\examples\send_alerts.py` as the path of the email script.
 - The file is in your user folder. By default, other users of the computer cannot read it, except administrators.
 - The part in brackets adds the output of both commands to `ahd-daily.log` in your user folder.
 
 Open Command Prompt and create a task that starts the file at 7:30 every morning:
 
 ```
-schtasks /Create /TN "ahd daily" /SC DAILY /ST 07:30 /TR "%USERPROFILE%\aa-health-duckdb\daily.cmd"
+schtasks /Create /TN "ahd daily" /SC DAILY /ST 07:30 /TR "%USERPROFILE%\ahd\daily.cmd"
 ```
 
 - The task runs only while you are signed in to Windows. To run it when you are not signed in, open Task Scheduler, open the task, and choose "Run whether user is logged on or not".
@@ -151,5 +153,5 @@ schtasks /Create /TN "ahd daily" /SC DAILY /ST 07:30 /TR "%USERPROFILE%\aa-healt
 
 - Read the log file after the first scheduled run. Each suite has a line such as "Run 12 for my_suite finished with status: ok". The last line from `ahd run` counts the suites that ended "ok", "partial" and "failed". The lines from `send_alerts.py` come after it. When the credential sees only one suite, `ahd run` does not print the count line.
 - When the email could not be sent, the log has one line from `send_alerts.py` that says why, e.g., "The mail server refused the login. Check SMTP_USER and SMTP_PASSWORD." Fix the mail settings in the script and start the task once by hand.
-- Run `uv run ahd runs --profile prod` to list the stored runs.
+- Run `ahd runs --profile prod` to list the stored runs.
 - The database grows by one run for each suite each day. To delete old runs, see [Deleting runs](runs.md#deleting-runs). In a schedule, add `--yes` to `ahd prune`, because there is no input to read the answer from.
