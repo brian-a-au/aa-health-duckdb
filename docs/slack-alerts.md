@@ -32,7 +32,7 @@ These steps take you from nothing to a first message in Slack. The commands use 
    uv run ahd runs --profile prod
    ```
 
-   The run must have the status "ok" or "partial". The script skips a run that failed.
+   The script uses the latest run of the suite that has the status "ok" or "partial". A run that failed does not count.
 
 4. **Write the messages to a file.** Run the script without `SLACK_WEBHOOK_URL`:
 
@@ -40,7 +40,7 @@ These steps take you from nothing to a first message in Slack. The commands use 
    uv run python docs/examples/send_slack.py ~/.aa/orgs/prod/ahd.duckdb my_suite
    ```
 
-   It prints a line that counts the messages and the alerts. It writes `slack.json` in the current folder and posts nothing. When it prints "Nothing to send.", the suite has no alerts today and there is no file to check. Use `--all` in place of `my_suite` to include every suite in the file.
+   It prints a line that counts the messages and the alerts. It writes `slack.json` in the current folder and posts nothing. When it prints "No alerts for my_suite." and "Nothing to send.", the latest run of the suite has no alerts. The script then writes no file and exits with 2. Use `--all` in place of `my_suite` to include every suite in the file.
 
 5. **Look at a message.** Open `slack.json` in a text editor. It holds a list with one message for each suite. Copy one message, from its `{` to its matching `}`, and paste it into Slack's [Block Kit Builder](https://app.slack.com/block-kit-builder). The builder shows the message as Slack will show it.
 
@@ -74,7 +74,7 @@ A message starts with the name of the suite and counts its alerts, e.g., "Adobe 
 
 Slack does not show HTML, so the script cannot post the HTML table of the email. It uses Slack's own table instead. A chat message should stay short, so the table lists at most 10 alerts, and a line below counts the others, e.g., "3 more alerts are not listed." Slack also limits the text of a table, so a cell longer than 120 characters ends with "...". When an alert has no change, e.g., because its weekday average is 0, the Change cell says "Not known".
 
-When a suite has a [suite-wide event](duckdb.md#suite_eventsrun-), the message starts with one line for the event, e.g., "356 of the 356 components that collected data had a value of 0 on 2026-11-11". Its alerts are not in the table. "Other alerts" and the table then list up to 10 alerts outside the event. `ahd alerts --every-alert` lists every alert. See [Print the alerts with ahd alerts](duckdb.md#print-the-alerts-with-ahd-alerts).
+When a suite has a [suite-wide event](duckdb.md#suite_eventsrun-), the message has one line for the event below the rules, e.g., "Suite-wide event: 356 of the 356 components that collected data had a value of 0 on 2026-11-11". Its alerts are not in the table. "Other alerts" and the table then list up to 10 alerts outside the event. `ahd alerts --every-alert` lists every alert. See [Print the alerts with ahd alerts](duckdb.md#print-the-alerts-with-ahd-alerts).
 
 The names of components come from Adobe. The script posts them as plain text, so Slack shows them as they are. A name cannot mention a channel, make a link or change the formatting.
 
@@ -104,7 +104,7 @@ export SLACK_WEBHOOK_URL='https://hooks.slack.com/services/...'
 uv run python docs/examples/send_slack.py ~/.aa/orgs/prod/ahd.duckdb --all
 ```
 
-On Windows, use `set SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...` in place of `export`.
+On Windows, set the variable as step 9 of [Step by step](#step-by-step) shows.
 
 ## Options
 
@@ -122,6 +122,8 @@ The script waits at most 30 seconds for Slack, and about 1 second between two me
 - "Slack refused the message (404 no_service). Check SLACK_WEBHOOK_URL. Posted 0 of 2 messages." The webhook was removed, or the URL is wrong.
 - "Slack refused the message (410 channel_is_archived). ..." The channel of the webhook was archived.
 - "Slack asked the script to send fewer messages (429). Try again later."
+- "Slack did not answer within 30 seconds."
+- "Could not reach Slack (URLError). Check SLACK_WEBHOOK_URL." The computer cannot connect to Slack, e.g., because it is offline. The script names only the kind of error, because the text of the error can hold the URL.
 - "SLACK_WEBHOOK_URL must start with https://." The script does not send the URL over a connection without encryption.
 
 ## Exit codes
