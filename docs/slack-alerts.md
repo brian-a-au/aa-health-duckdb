@@ -4,6 +4,70 @@
 
 The example script [`examples/send_slack.py`](examples/send_slack.py) posts the latest alerts for one or more report suites to a Slack channel. It posts one message for each suite that has alerts. It posts nothing when no suite has alerts, so a quiet channel means healthy suites. It takes the same options as the [email script](email-alerts.md) and has the same exit codes.
 
+## Step by step
+
+These steps take you from nothing to a first message in Slack. The commands use the profile `prod` and the report suite ID `my_suite`. Put your own profile and suite ID in their place. The sections after this one explain each part in more detail.
+
+1. **Get the script.** Clone this repository and install the tool:
+
+   ```
+   git clone https://github.com/brian-a-au/aa-health-duckdb.git
+   cd aa-health-duckdb
+   uv sync
+   ```
+
+   Run every command below from the `aa-health-duckdb` folder. To use the script without a clone, see [Run it](#run-it).
+
+2. **Check the suite once.** The script posts the alerts of runs that are already in the database, so make a run first:
+
+   ```
+   uv run ahd run --profile prod --rsid my_suite
+   ```
+
+   With a profile, the database is `~/.aa/orgs/prod/ahd.duckdb`. Without a profile, it is `./data/ahd.duckdb`.
+
+3. **Find the report suite ID.** The script takes IDs, not names. List the stored runs and copy the ID from the report suite column:
+
+   ```
+   uv run ahd runs --profile prod
+   ```
+
+   The run must have the status "ok" or "partial". The script skips a run that failed.
+
+4. **Write the messages to a file.** Run the script without `SLACK_WEBHOOK_URL`:
+
+   ```
+   uv run python docs/examples/send_slack.py ~/.aa/orgs/prod/ahd.duckdb my_suite
+   ```
+
+   It prints a line that counts the messages and the alerts. It writes `slack.json` in the current folder and posts nothing. When it prints "Nothing to send.", the suite has no alerts today and there is no file to check. Use `--all` in place of `my_suite` to include every suite in the file.
+
+5. **Look at a message.** Open `slack.json` in a text editor. It holds a list with one message for each suite. Copy one message, from its `{` to its matching `}`, and paste it into Slack's [Block Kit Builder](https://app.slack.com/block-kit-builder). The builder shows the message as Slack will show it.
+
+6. **Make a Slack app.** Open [api.slack.com/apps](https://api.slack.com/apps) and sign in to your workspace. Choose **Create New App**, then **From scratch**. Give it a name, e.g., "Analytics alerts", and choose the workspace. You can also use an app your workspace already has.
+
+7. **Add a webhook for the channel.** In the settings of the app, open **Incoming Webhooks** and turn them on. Choose **Add New Webhook to Workspace**, pick the channel that should get the alerts, and choose **Allow**. When your workspace needs an admin to approve apps, Slack asks the admin first, and the webhook works after the approval.
+
+8. **Copy the webhook URL.** Slack lists it under **Webhook URLs for Your Workspace**. It starts with `https://hooks.slack.com/`. Keep it secret, because anyone who has it can post to the channel. See [Make a webhook](#make-a-webhook).
+
+9. **Set the URL.** On macOS or Linux:
+
+   ```sh
+   export SLACK_WEBHOOK_URL='https://hooks.slack.com/services/...'
+   ```
+
+   On Windows, in the Command Prompt, write `set SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...` without quotes. In PowerShell, write `$env:SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/...'`. The setting lasts until you close the terminal.
+
+10. **Post the messages.** Run the same command as in step 4:
+
+    ```
+    uv run python docs/examples/send_slack.py ~/.aa/orgs/prod/ahd.duckdb my_suite
+    ```
+
+    It prints a line that counts the messages and the alerts, e.g., "Posted 2 messages with 20 alerts to Slack." with `--all` and two suites. The messages appear in the channel. When Slack does not take a message, the script prints one line that says why. See [When Slack does not take a message](#when-slack-does-not-take-a-message).
+
+11. **Run it every day.** To post the alerts each morning, put the script in the daily job of [Run it every day](scheduling.md). Set `SLACK_WEBHOOK_URL` in the scheduled script, and make sure only your user account can read that script.
+
 ## What a message holds
 
 A message starts with the name of the suite and counts its alerts, e.g., "Adobe Store: 13 alerts, 1 new". A line below gives the report suite ID, the day of the alerts and the rules. Then a table lists the alerts, with the columns of the email: Alert, Component, ID, Weekday average, Actual, Change and Since. The new alerts come first, and the Since column says since when each alert has held, e.g., "since 2026-11-09, 3 days".
@@ -13,13 +77,12 @@ Slack does not show HTML, so the script cannot post the HTML table of the email.
 When a suite has a [suite-wide event](duckdb.md#suite_eventsrun-), the message starts with one line for the event, e.g., "356 of the 356 components that collected data had a value of 0 on 2026-11-11". Its alerts are not in the table. "Other alerts" and the table then list up to 10 alerts outside the event. `ahd alerts --every-alert` lists every alert. See [Print the alerts with ahd alerts](duckdb.md#print-the-alerts-with-ahd-alerts).
 
 The names of components come from Adobe. The script posts them as plain text, so Slack shows them as they are. A name cannot mention a channel, make a link or change the formatting.
+
 ## Make a webhook
 
 The script posts with an incoming webhook. A webhook is a URL that Slack makes for one channel. A message sent to the URL appears in that channel.
 
-1. Make a Slack app for your workspace at [api.slack.com/apps](https://api.slack.com/apps), or use one your workspace already has. You may need an admin of the workspace to approve it.
-2. Under **Incoming Webhooks**, turn them on, and add a webhook for the channel that should get the alerts.
-3. Copy the webhook URL. It starts with `https://hooks.slack.com/`.
+Steps 6 to 8 of [Step by step](#step-by-step) show how to make one. In short, make a Slack app at [api.slack.com/apps](https://api.slack.com/apps), turn on **Incoming Webhooks** for it, add a webhook for the channel, and copy its URL. The URL starts with `https://hooks.slack.com/`.
 
 The URL is a secret. Anyone who has it can post to the channel. Keep it out of the repository and out of shared files. The script reads it from the variable `SLACK_WEBHOOK_URL` and never prints it, also not in an error message.
 
