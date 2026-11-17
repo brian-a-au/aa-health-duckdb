@@ -14,6 +14,7 @@ Start with `ahd check --rsid <suite>`. It signs in, counts what the credential c
 - [Time zones](#time-zones)
 - [Profiles and config files](#profiles-and-config-files)
 - [The database](#the-database): a file from another version, no file, a file in use, an older `duckdb`, a run that stays "running", and runs that `ahd alerts` cannot read
+- [Email and Slack alerts](#email-and-slack-alerts): a warning about an old run, `--test` and `--new-only`
 - [Getting more detail](#getting-more-detail)
 
 ## Sign-in problems
@@ -163,6 +164,15 @@ A run that stopped in another way, e.g., because you closed the window, keeps th
 - **"so it has no alerts"**: the run that `--run` names ended "failed". Choose another run.
 - **"so its alerts are not complete"**: the run that `--run` names is still marked "running". Wait for it to finish, or see [A run stays "running"](#a-run-stays-running).
 - **"--segment works only with --rsid or --all-suites"**: `--run` already names one run, with its own segment. Leave out `--segment`. The command exits with 2 and prints its usage, as for any wrong option.
+
+## Email and Slack alerts
+
+These messages come from `ahd alerts` and from the example scripts [`send_alerts.py`](email-alerts.md) and [`send_slack.py`](slack-alerts.md):
+
+- **"The latest finished run of ... has the alerts of"**: the latest run of the suite that ended "ok" or "partial" is for a day before yesterday in the time zone of the suite. When the message goes on with "later runs of it failed", the runs after it failed. Run `ahd runs` to see them, and read the log of the daily job for the reason, e.g., a sign-in that failed. When no later run is named, no run was made. Check that the daily job still runs, see [Run it every day](scheduling.md). The scripts send the warning also without alerts, and exit with 1.
+- **"--test needs SMTP_HOST, MAIL_FROM and MAIL_TO"**: the email script needs these three settings to send a test message. The message names the ones that are missing. See [Email alerts](email-alerts.md#step-by-step).
+- **"--test needs SLACK_WEBHOOK_URL"**: set the webhook URL of the channel. See [Slack alerts](slack-alerts.md#make-a-webhook).
+- **"--new-only needs ahd 0.1.16 or newer"**: the `ahd` that the script found does not know `--new-only`. Update it with `uv tool upgrade aa-health-duckdb`, or leave out `--new-only`.
 
 ## Getting more detail
 

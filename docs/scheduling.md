@@ -31,6 +31,20 @@ The script with the commands holds your mail password when your server needs a l
 
 The email uses the latest run of each suite that ended "ok" or "partial". For a suite whose run failed today, that is an older run. Each section of the email gives the date of its alerts, so you can see this.
 
+## Know when the job stops
+
+The email script sends nothing on a day without alerts. A day without an email then means one of two things: the suites are healthy, or the job did not run. To tell the two apart, add `--always` to the command of the script, e.g.:
+
+```
+uv run python send_alerts.py "$HOME/.aa/orgs/prod/ahd.duckdb" --all --always
+```
+
+The script then sends a short message, e.g., "No Analytics Health alerts for 3 report suites", on a day without alerts. A day without any email means that the job did not run. `send_slack.py` takes `--always` too.
+
+When the run of a suite fails, or no run was made, the latest finished run of the suite is old. With `ahd` 0.1.16 or newer, the email then has a warning for the suite, also without `--always` and without alerts, e.g., "The latest finished run of my_suite has the alerts of 2026-11-13, but yesterday was 2026-11-16 in the time zone of the suite. 2 later runs of it failed." The script exits with 1 after it sent the email. See [Troubleshooting](troubleshooting.md#email-and-slack-alerts).
+
+Before you schedule the job, check the mail settings with `uv run python send_alerts.py --test`, or the webhook with `uv run python send_slack.py --test`.
+
 ## Without the email script
 
 `ahd alerts` prints the alerts as plain text, and exits with 4 when there are none. So a job that has its own way to send mail can run it after `ahd run`, e.g., with a `mail` program:
