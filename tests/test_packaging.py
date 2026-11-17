@@ -57,6 +57,16 @@ def test_codeql_scans_python_javascript_and_the_workflows():
     assert "queries: security-and-quality" in workflow and "security-events: write" in workflow
 
 
+def test_dependabot_auto_merge_is_only_for_minor_and_patch_updates():
+    workflow = (ROOT / ".github" / "workflows" / "dependabot-auto-merge.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "github.event.pull_request.user.login == 'dependabot[bot]'" in workflow
+    assert "version-update:semver-minor" in workflow and "version-update:semver-patch" in workflow
+    assert "semver-major" not in workflow
+    assert 'gh pr merge --auto --merge "$PR_URL"' in workflow
+
+
 def test_the_release_workflow_checks_the_package_data_of_the_wheel():
     # ahd --help loads no package data. check_wheel.py reads views.sql, the template and the
     # page files from the installed wheel.
