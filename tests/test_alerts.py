@@ -7,13 +7,13 @@ import math
 import shutil
 import subprocess
 import sys
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import duckdb
 import pytest
 
-from ahd.alerts import csv_value
+from ahd.alerts import csv_value, run_age
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
 from ahd.cli import main
@@ -75,8 +75,11 @@ def _db(tmp_path, **kw):
 
 
 def _alerts(db, *options, client_factory=None):
-    """The exit code and the output of ahd alerts on this database."""
+    """The exit code and the output of ahd alerts on this database. Without --date, today is
+    TODAY, so the runs of TODAY are not old."""
     kw = {} if client_factory is None else {"client_factory": client_factory}
+    if not any(str(o).startswith("--date") for o in options):
+        options = (*options, "--date", TODAY.isoformat())
     return main(["alerts", "--db", str(db), *options], **kw)
 
 
@@ -221,6 +224,10 @@ def test_json_holds_the_run_and_every_column_of_the_macro(tmp_path, capsys):
         "sensitivity": "normal",
         "threshold": 0.3,
         "spike_threshold": 0.5,
+        "current_day": "2026-11-07",
+        "stale": False,
+        "failed_after": 0,
+        "warning": None,
     }
     rows = _macro(db, 1)
     # Each alert has every column of the macro. Its run_id and day are those of the run. The
@@ -321,6 +328,9 @@ CSV_HEADER = [
     "sensitivity",
     "threshold",
     "spike_threshold",
+    "current_day",
+    "stale",
+    "failed_after",
     "alert",
     "anomaly",
     "component_id",
@@ -363,6 +373,9 @@ def test_csv_has_one_header_and_one_row_per_alert(tmp_path, capsys):
         "sensitivity": "normal",
         "threshold": "0.3",
         "spike_threshold": "0.5",
+        "current_day": "2026-11-07",
+        "stale": "false",
+        "failed_after": "0",
         # New alerts come first.
         "alert": "large spike",
         "anomaly": "",
@@ -476,6 +489,143 @@ def test_odd_names_stay_inert_in_every_format(tmp_path, capsys):
     assert '- large drop: =HYPERLINK("x")?second line??[31mred? (metrics/event3)' in text
     assert "- large spike: 日本サイト?next (metrics/event4)" in text
     assert not any(c in text for c in "\x1b\x07\r\u202e\u2028")
+
+
+# ---- old runs ---------------------------------------------------------------------------
+
+
+def _run_dict(store, rid):
+    """The row of a run as choose_runs gives it."""
+    cur = store.con.execute("FROM runs WHERE run_id = ?", [rid])
+    cols = [d[0] for d in cur.description]
+    return dict(zip(cols, cur.fetchone()))
+
+
+def _bare_run(store, today, zone="UTC", status="ok", rsid="rs1", segment=None):
+    rid = store.create_run(rsid, "One", segment, today, zone, "0.1")
+    if status != "running":
+        store.finish_run(rid, status)
+    return rid
+
+
+def test_a_run_is_old_by_the_day_of_its_suite_not_of_the_computer(tmp_path):
+    # Auckland is UTC+13 in November. At 12:00 UTC on Nov 6 it is Nov 7 there.
+    store = Store.open(tmp_path / "ahd.duckdb")
+    rid = _bare_run(store, date(2026, 11, 7), "Pacific/Auckland")
+    age = run_age(store, _run_dict(store, rid), datetime(2026, 11, 6, 12, tzinfo=UTC))
+    assert age == {
+        "current_day": date(2026, 11, 7),
+        "stale": False,
+        "failed_after": 0,
+        "warning": None,
+    }
+
+
+def test_a_run_behind_utc_is_not_old_on_its_own_day(tmp_path):
+    # Los Angeles at 05:00 UTC on Nov 7 is still Nov 6.
+    store = Store.open(tmp_path / "ahd.duckdb")
+    rid = _bare_run(store, date(2026, 11, 6), "America/Los_Angeles")
+    age = run_age(store, _run_dict(store, rid), datetime(2026, 11, 7, 5, tzinfo=UTC))
+    assert age["current_day"] == date(2026, 11, 6) and age["stale"] is False
+
+
+def test_an_old_run_says_when_its_alerts_are_from_and_counts_the_failed_runs_after_it(tmp_path):
+    store = Store.open(tmp_path / "ahd.duckdb")
+    _bare_run(store, date(2026, 11, 4), status="failed")  # before it: not counted
+    rid = _bare_run(store, date(2026, 11, 5))
+    _bare_run(store, date(2026, 11, 6), status="failed")
+    _bare_run(store, date(2026, 11, 7), status="failed")
+    _bare_run(store, date(2026, 11, 7), status="running")  # still running: not counted
+    _bare_run(store, date(2026, 11, 7), status="failed", segment="s1")  # another segment
+    _bare_run(store, date(2026, 11, 7), status="failed", rsid="rs2")  # another suite
+    age = run_age(store, _run_dict(store, rid), datetime(2026, 11, 7, 8, tzinfo=UTC))
+    assert age["stale"] is True and age["failed_after"] == 2
+    assert age["warning"] == (
+        "The latest finished run of rs1 has the alerts of 2026-11-04, but yesterday was "
+        "2026-11-06 in the time zone of the suite. 2 later runs of it failed."
+    )
+
+
+def test_a_failed_run_of_the_same_day_made_later_counts(tmp_path):
+    store = Store.open(tmp_path / "ahd.duckdb")
+    rid = _bare_run(store, date(2026, 11, 5))
+    _bare_run(store, date(2026, 11, 5), status="failed")
+    age = run_age(store, _run_dict(store, rid), datetime(2026, 11, 7, 8, tzinfo=UTC))
+    assert age["warning"].endswith(" 1 later run of it failed.")
+
+
+def test_an_old_run_without_failed_runs_after_it_says_only_the_days(tmp_path):
+    store = Store.open(tmp_path / "ahd.duckdb")
+    rid = _bare_run(store, date(2026, 11, 5))
+    age = run_age(store, _run_dict(store, rid), datetime(2026, 11, 7, 8, tzinfo=UTC))
+    assert age["warning"] == (
+        "The latest finished run of rs1 has the alerts of 2026-11-04, but yesterday was "
+        "2026-11-06 in the time zone of the suite."
+    )
+
+
+@pytest.mark.parametrize("zone", ["Mars/Base", None])
+def test_an_unknown_time_zone_does_not_make_a_run_old(tmp_path, zone):
+    store = Store.open(tmp_path / "ahd.duckdb")
+    rid = _bare_run(store, date(2026, 11, 1), zone)
+    age = run_age(store, _run_dict(store, rid), datetime(2026, 11, 7, 8, tzinfo=UTC))
+    assert age == {"current_day": None, "stale": None, "failed_after": 0, "warning": None}
+
+
+def test_a_given_date_sets_today_for_every_suite(tmp_path, capsys):
+    db = _db(tmp_path)
+    assert _alerts(db, "--rsid", "rs1", "--format", "json", "--date", "2026-11-09") == 0
+    run = json.loads(capsys.readouterr().out)["runs"][0]
+    assert run["current_day"] == "2026-11-09" and run["stale"] is True
+    assert run["warning"].startswith(
+        "The latest finished run of rs1 has the alerts of 2026-11-06, but yesterday was 2026-11-08"
+    )
+
+
+def test_a_fresh_run_has_no_warning(tmp_path, capsys):
+    assert _alerts(_db(tmp_path), "--rsid", "rs1", "--format", "json") == 0
+    run = json.loads(capsys.readouterr().out)["runs"][0]
+    assert run["stale"] is False and run["warning"] is None and run["failed_after"] == 0
+
+
+def test_without_a_date_today_comes_from_the_clock(tmp_path, capsys, monkeypatch):
+    import ahd.cli
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 20, 8, tzinfo=UTC)
+
+    monkeypatch.setattr(ahd.cli, "datetime", Clock)
+    assert main(["alerts", "--db", str(_db(tmp_path)), "--run", "1", "--format", "json"]) == 0
+    assert json.loads(capsys.readouterr().out)["runs"][0]["current_day"] == "2026-11-20"
+
+
+def test_the_text_warns_under_the_heading_of_an_old_run(tmp_path, capsys):
+    _alerts(_db(tmp_path), "--rsid", "rs1", "--date", "2026-11-09")
+    lines = capsys.readouterr().out.splitlines()
+    heading = next(i for i, line in enumerate(lines) if line.startswith("Run 1,"))
+    assert lines[heading + 1] == (
+        "Warning: The latest finished run of rs1 has the alerts of 2026-11-06, but yesterday "
+        "was 2026-11-08 in the time zone of the suite."
+    )
+
+
+def test_an_old_run_keeps_the_exit_code_of_its_alerts(tmp_path):
+    assert _alerts(_db(tmp_path, quiet=True), "--rsid", "rs1", "--date", "2026-11-09") == 4
+
+
+def test_the_warning_keeps_an_odd_rsid_inert(tmp_path, capsys):
+    _alerts(_db(tmp_path, rsid="rs\u202eevil"), "--run", "1", "--date", "2026-11-09")
+    out = capsys.readouterr().out
+    assert "Warning: The latest finished run of rs?evil has" in out
+    assert "\u202e" not in out
+
+
+def test_the_date_must_be_a_date(tmp_path):
+    with pytest.raises(SystemExit) as stop:
+        _alerts(_db(tmp_path), "--rsid", "rs1", "--date", "11/09/2026")
+    assert stop.value.code == 2
 
 
 # ---- which runs -------------------------------------------------------------------------

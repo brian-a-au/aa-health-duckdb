@@ -19,7 +19,16 @@ from typing import Any
 import duckdb
 import requests
 
-from ahd.alerts import FORMATS, Rules, alerts_day, choose_runs, counts_line, read_alerts, write
+from ahd.alerts import (
+    FORMATS,
+    Rules,
+    alerts_day,
+    choose_runs,
+    counts_line,
+    read_alerts,
+    run_age,
+    write,
+)
 from ahd.api.auth import NO_REPORT_SUITES, SignInError, SignInUnavailable
 from ahd.api.client import AdobeClient, ApiError
 from ahd.catalog import CUSTOM_GROUPS
@@ -398,6 +407,12 @@ def _parser() -> argparse.ArgumentParser:
         metavar="PERCENT",
         help="A large spike is more than this percent above the weekday average. Above 0 and "
         "up to 200 (default 50).",
+    )
+    alerts.add_argument(
+        "--date",
+        type=_day,
+        help="Check the runs as if today were this date (YYYY-MM-DD) in the time zone of each "
+        "suite. A run is old when its alerts are for a day before yesterday. Default: today.",
     )
     anomaly(alerts)
 
@@ -869,7 +884,10 @@ def _alerts(args: argparse.Namespace) -> int:
     try:
         store.use_current_views()
         runs, missing = choose_runs(store, path, args.run, args.rsid, args.all_suites, args.segment)
-        results = [read_alerts(store, run, rules) for run in runs]
+        now = datetime.now(UTC)
+        results = [
+            read_alerts(store, run, rules, run_age(store, run, now, args.date)) for run in runs
+        ]
     finally:
         store.con.close()
     for message in missing:

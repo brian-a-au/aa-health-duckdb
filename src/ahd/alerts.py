@@ -12,11 +12,12 @@ import json
 import math
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, TextIO
 
 from ahd.config import ConfigError
+from ahd.dates import today_in_zone
 from ahd.store import Store
 from ahd.summary import ANOMALY_LABELS, DEFAULT_ANOMALY_METHOD, DEFAULT_SENSITIVITY
 
@@ -33,7 +34,9 @@ ALERT_NAMES = (
     ("dropped to zero", "drop to zero", "drops to zero"),
 )
 
-# The fields of a run in the JSON, and its columns in the CSV, in this order.
+# The fields of a run in the JSON, and its columns in the CSV, in this order. current_day, stale
+# and failed_after say whether the run is old, see run_age(). The JSON also has warning, the
+# sentence that the text output prints for an old run.
 RUN_FIELDS = (
     "run_id",
     "rsid",
@@ -46,6 +49,9 @@ RUN_FIELDS = (
     "sensitivity",
     "threshold",
     "spike_threshold",
+    "current_day",
+    "stale",
+    "failed_after",
 )
 # The columns of the alerts() macro without run_id and day, which are those of the run. since,
 # days, at_least and is_new say since when the alert has held. ahd 0.1.12 added them. event
@@ -186,9 +192,56 @@ def choose_runs(
     return runs, missing
 
 
-def read_alerts(store: Store, run: dict[str, Any], rules: Rules) -> RunAlerts:
+def run_age(
+    store: Store, run: dict[str, Any], now_utc: datetime, today: date | None = None
+) -> dict[str, Any]:
+    """Whether a run is old, as the fields current_day, stale, failed_after and warning.
+
+    current_day is today, or else today in the time zone of the run at now_utc. The run is old
+    when its run date is before current_day, so its alerts are for a day before yesterday. A
+    time zone that this computer does not know gives None for current_day and stale.
+    failed_after counts the failed runs of the same suite and segment that come after the run
+    in the order of latest_runs. A run that is still running does not count.
+    """
+    current = today
+    if current is None and run["timezone"]:
+        try:
+            current = today_in_zone(run["timezone"], now_utc)
+        except ConfigError:
+            current = None
+    stale = None if current is None else run["today"] < current
+    found = store.con.execute(
+        "SELECT count(*) FROM runs f, runs r WHERE r.run_id = ? AND f.rsid = r.rsid"
+        " AND f.segment_id IS NOT DISTINCT FROM r.segment_id AND f.status = 'failed'"
+        " AND (f.today > r.today OR (f.today = r.today AND (f.started_at > r.started_at"
+        " OR (f.started_at = r.started_at AND f.run_id > r.run_id))))",
+        [run["run_id"]],
+    ).fetchone()
+    failed_after = int(found[0]) if found else 0
+    warning = None
+    if stale and current is not None:
+        warning = (
+            f"The latest finished run of {inert(run['rsid'])} has the alerts of "
+            f"{alerts_day(run).isoformat()}, but yesterday was "
+            f"{(current - timedelta(days=1)).isoformat()} in the time zone of the suite."
+        )
+        if failed_after == 1:
+            warning += " 1 later run of it failed."
+        elif failed_after:
+            warning += f" {failed_after} later runs of it failed."
+    return {
+        "current_day": current,
+        "stale": stale,
+        "failed_after": failed_after,
+        "warning": warning,
+    }
+
+
+def read_alerts(
+    store: Store, run: dict[str, Any], rules: Rules, age: dict[str, Any] | None = None
+) -> RunAlerts:
     """The alerts of one run by the alerts() macro, and its events by the suite_events() macro,
-    with the fields of the run."""
+    with the fields of the run. age holds the fields of run_age(), which are added to them."""
     options = (
         "(?, threshold := ?, spike_threshold := ?, method := ?, sensitivity := ?)",
         [run["run_id"], rules.threshold, rules.spike_threshold, rules.method, rules.sensitivity],
@@ -207,6 +260,7 @@ def read_alerts(store: Store, run: dict[str, Any], rules: Rules) -> RunAlerts:
         "sensitivity": rules.sensitivity,
         "threshold": rules.threshold,
         "spike_threshold": rules.spike_threshold,
+        **(age or {}),
     }
     # The new alerts come first. Each part keeps the order of the macro.
     rows = [r for r in rows if r["is_new"]] + [r for r in rows if not r["is_new"]]
@@ -395,6 +449,8 @@ def write_text(
         for a in r.alerts:
             counts[a["alert"]] = counts.get(a["alert"], 0) + 1
         out.write(f"\nRun {run['run_id']}, {suite}{segment}, status {run['status']}\n")
+        if run.get("warning"):
+            out.write(f"Warning: {run['warning']}\n")
         out.write(counts_line(run["day"], counts) + "\n")
         if r.alerts:
             out.write(new_line(run["day"], sum(1 for a in r.alerts if a["is_new"])) + "\n")
