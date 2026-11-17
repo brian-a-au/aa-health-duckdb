@@ -6,10 +6,21 @@ import http.client
 import io
 import json
 import subprocess
+import sys
 import urllib.error
+from datetime import date
 
 import pytest
-from test_examples import EXAMPLES, _db, _event_db, _load, _suites_db
+from test_examples import (
+    EXAMPLES,
+    NEW_ONLY_TOO_OLD,
+    WARNING,
+    _db,
+    _event_db,
+    _load,
+    _old_drop_db,
+    _suites_db,
+)
 
 URL = "https://hooks.slack.com/services/T000/B000/secretpart"
 
@@ -59,7 +70,15 @@ def _alert(n, **kw):
 
 
 def _run(alerts, events=(), **kw):
-    run = {"rsid": "rs1", "rsid_name": "Suite", "day": "2026-11-06", "events": list(events)}
+    run = {
+        "rsid": "rs1",
+        "rsid_name": "Suite",
+        "day": "2026-11-06",
+        "method": "adobe",
+        "method_name": "Adobe",
+        "sensitivity": "normal",
+        "events": list(events),
+    }
     return run | {"alerts": alerts} | kw
 
 
@@ -367,6 +386,7 @@ def test_it_shares_the_options_and_texts_of_the_email_script(slack):
         segment="s1",
         anomaly_method="weekday-trend",
         anomaly_sensitivity="high",
+        new_only=True,
     )
     assert slack._ahd_options(args) == mail._ahd_options(args)
     for method in (("adobe", "Adobe", "normal"), ("weekday-iqr", "Weekday IQR", "low")):
@@ -381,3 +401,157 @@ def test_the_script_writes_nothing_into_the_examples_folder(slack, tmp_path):
     assert slack.main([str(_db(tmp_path, 5_000_000.0)), "rs1"]) == 0
     assert [p.name for p in tmp_path.iterdir() if p.suffix == ".json"] == ["slack.json"]
     assert not (EXAMPLES / "slack.json").exists()
+
+
+# ---- --new-only, the old-run warning, --always and --test ---------------------------------
+
+
+def test_new_only_lists_only_the_new_alerts_and_says_so(slack, tmp_path):
+    assert slack.main([str(_db(tmp_path, 5_000_000.0)), "rs1", "--new-only"]) == 0
+    [payload] = _written(tmp_path)
+    assert payload["text"] == "1 new Analytics Health alerts for Suite (rs1) on 2026-11-06"
+    assert _texts(payload)[0] == "Suite: 1 new alerts"
+
+
+def test_new_only_with_only_old_alerts_says_no_new_alerts(slack, tmp_path, capsys):
+    assert slack.main([str(_old_drop_db(tmp_path)), "rs1", "--new-only"]) == 2
+    out = capsys.readouterr().out
+    assert "No new alerts for rs1." in out and "Nothing to send." in out
+
+
+def test_new_only_needs_a_newer_ahd(slack, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(slack, "_ahd_command", lambda: [sys.executable, "-c", NEW_ONLY_TOO_OLD])
+    assert slack.main([str(_db(tmp_path, 5_000_000.0)), "rs1", "--new-only"]) == 1
+    assert "--new-only needs ahd 0.1.16 or newer." in capsys.readouterr().err
+
+
+def test_an_event_without_new_alerts_still_gets_its_message(slack, tmp_path, monkeypatch):
+    event = {"event": "zero", "alerts": 12, "new": 0, "text": "12 of the 21 components ..."}
+    _answer(monkeypatch, slack, 0, json.dumps({"runs": [_run([], events=[event])]}))
+    assert slack.main(["db", "rs1", "--new-only"]) == 0
+    [payload] = _written(tmp_path)
+    texts = _texts(payload)
+    assert texts[0] == "Suite: no new alerts"
+    assert (
+        "Suite-wide event: 12 of the 21 components ... None of its alerts are new on 2026-11-06."
+    ) in texts
+
+
+def test_an_old_run_without_alerts_is_still_posted_and_exits_with_1(tmp_path, monkeypatch):
+    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.chdir(tmp_path)
+    slack = _load("send_slack", today=date(2026, 11, 9))
+    assert slack.main([str(_db(tmp_path, 24_000_000.0)), "rs1"]) == 1
+    [payload] = _written(tmp_path)
+    assert payload["text"] == "Analytics Health warning for Suite (rs1)"
+    texts = _texts(payload)
+    assert texts[0] == "Suite: no alerts"
+    assert texts[2] == "Warning: " + WARNING
+    assert not _tables(payload)
+
+
+def test_an_old_run_with_alerts_puts_the_warning_after_the_note(tmp_path, monkeypatch):
+    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.chdir(tmp_path)
+    slack = _load("send_slack", today=date(2026, 11, 9))
+    assert slack.main([str(_db(tmp_path, 5_000_000.0)), "rs1"]) == 1
+    [payload] = _written(tmp_path)
+    assert _texts(payload)[2] == "Warning: " + WARNING
+    assert len(_tables(payload)) == 1
+
+
+def test_a_missing_suite_does_not_stop_the_warning_of_another(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.chdir(tmp_path)
+    slack = _load("send_slack", today=date(2026, 11, 9))
+    assert slack.main([str(_db(tmp_path, 24_000_000.0)), "rs1", "nope"]) == 1
+    assert "holds no finished run of nope" in capsys.readouterr().err
+    assert "Warning: " + WARNING in _texts(_written(tmp_path)[0])
+
+
+def test_the_warning_cannot_mention_a_channel(slack):
+    run = _run([], warning="The latest finished run of <!channel> has the alerts of ...")
+    payload = slack.message(run, "Rules.")
+    assert "<!channel>" not in payload["text"]
+    block = payload["blocks"][2]["text"]
+    assert block["type"] == "plain_text" and block["emoji"] is False
+
+
+def test_an_ahd_without_the_warning_fields_posts_as_before(slack, tmp_path, monkeypatch):
+    _answer(monkeypatch, slack, 0, json.dumps({"runs": [_run([_alert(1)])]}))
+    assert slack.main(["db", "rs1"]) == 0
+    assert not any(t.startswith("Warning") for t in _texts(_written(tmp_path)[0]))
+
+
+def test_always_posts_an_all_clear_message(slack, tmp_path, capsys):
+    db = _suites_db(tmp_path, {"rs1": 24_000_000.0, "rs2": 24_000_000.0, "rs3": 24_000_000.0})
+    assert slack.main([db, "--all", "--always"]) == 0
+    [payload] = _written(tmp_path)
+    assert payload["text"] == "No Analytics Health alerts for 3 report suites"
+    texts = _texts(payload)
+    assert texts[0] == "No Analytics Health alerts"
+    assert "No alerts for Suite rs1 (rs1) on 2026-11-06." in texts[1]
+    assert "Wrote slack.json with the all-clear message." in capsys.readouterr().out
+
+
+def test_always_with_new_only_says_no_new_alerts(slack, tmp_path):
+    assert slack.main([str(_old_drop_db(tmp_path)), "rs1", "--always", "--new-only"]) == 0
+    [payload] = _written(tmp_path)
+    assert payload["text"] == "No new Analytics Health alerts for rs1"
+    assert _texts(payload)[0] == "No new Analytics Health alerts"
+    assert "No new alerts for Suite (rs1) on 2026-11-06." in _texts(payload)[1]
+
+
+def test_without_always_a_quiet_day_posts_nothing(slack, tmp_path):
+    assert slack.main([str(_db(tmp_path, 24_000_000.0)), "rs1"]) == 2
+    assert not (tmp_path / "slack.json").exists()
+
+
+def test_test_posts_a_test_message(slack, monkeypatch, capsys):
+    fake = _Slack()
+    monkeypatch.setattr(slack.urllib.request, "urlopen", fake)
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", URL)
+    assert slack.main(["--test"]) == 0
+    [(request, _timeout)] = fake.posts
+    assert json.loads(request.data) == {
+        "text": "ahd can post Analytics Health alerts to this channel. This is a test message "
+        "from send_slack.py."
+    }
+    assert capsys.readouterr().out == "Posted a test message to Slack.\n"
+
+
+def test_test_needs_the_webhook(slack, tmp_path, capsys):
+    assert slack.main(["--test"]) == 1
+    assert capsys.readouterr().err == (
+        "--test needs SLACK_WEBHOOK_URL. Set it to the webhook URL of the channel.\n"
+    )
+    assert not (tmp_path / "slack.json").exists()
+
+
+def test_test_says_why_slack_did_not_take_it(slack, monkeypatch, capsys):
+    monkeypatch.setattr(slack.urllib.request, "urlopen", _Slack(_http(404, b"no_service")))
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", URL)
+    assert slack.main(["--test"]) == 1
+    err = capsys.readouterr().err
+    assert err == "Slack refused the message (404 no_service). Check SLACK_WEBHOOK_URL.\n"
+    assert URL not in err
+
+
+def test_test_refuses_a_webhook_without_encryption(slack, monkeypatch, capsys):
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "http://hooks.slack.com/x")
+    assert slack.main(["--test"]) == 1
+    assert "SLACK_WEBHOOK_URL must start with https://." in capsys.readouterr().err
+
+
+def test_test_does_not_start_ahd(slack, monkeypatch):
+    monkeypatch.setattr(slack.urllib.request, "urlopen", _Slack())
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", URL)
+    monkeypatch.setattr(slack, "_ahd_command", lambda: pytest.fail("ahd was started"))
+    assert slack.main(["db.duckdb", "rs1", "--test"]) == 0
+
+
+def test_a_database_is_needed_without_test(slack, capsys):
+    with pytest.raises(SystemExit) as e:
+        slack.main([])
+    assert e.value.code == 1
+    assert "error: give the ahd DuckDB file" in capsys.readouterr().err

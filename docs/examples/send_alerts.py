@@ -511,6 +511,10 @@ def _send(msg: EmailMessage, what: str) -> bool:
     return True
 
 
+def _warnings(n: int) -> str:
+    return "the warning" if n == 1 else "the warnings"
+
+
 def _send_test() -> int:
     """--test: sends the test message. It needs the settings of TEST_SETTINGS."""
     missing = [name for name in TEST_SETTINGS if not os.environ.get(name)]
@@ -600,7 +604,7 @@ def main(argv: list[str]) -> int:
             args.new_only,
         )
         count = sum(len(rows) for _, _, rows in sections)
-        if not _send(msg, f"{count} alerts" if count else "the warning"):
+        if not _send(msg, f"{count} alerts" if count else _warnings(len(sections))):
             return 1
         sent = True
     elif runs and args.always:
