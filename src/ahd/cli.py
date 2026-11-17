@@ -892,7 +892,10 @@ def _alerts(args: argparse.Namespace) -> int:
         runs, missing = choose_runs(store, path, args.run, args.rsid, args.all_suites, args.segment)
         now = datetime.now(UTC)
         results = [
-            read_alerts(store, run, rules, run_age(store, run, now, args.date)) for run in runs
+            read_alerts(
+                store, run, rules, run_age(store, run, now, args.date, args.run is not None)
+            )
+            for run in runs
         ]
     finally:
         store.con.close()

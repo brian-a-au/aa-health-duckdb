@@ -321,6 +321,20 @@ def _table(rows: list[tuple]) -> tuple[list[str], str]:
     return text, f"<table style='border-collapse:collapse'><tr>{th}</tr>{trs}</table>"
 
 
+def missing_line(rsid: str) -> str:
+    """The line for a suite that has no finished run in the database."""
+    return (
+        f"There is no finished run of {rsid} in the database. Check the report suite ID, or run "
+        "ahd runs to list the runs."
+    )
+
+
+def _missing(args: argparse.Namespace, runs: list[dict]) -> list[str]:
+    """The suites that were asked for and have no finished run."""
+    found = {run["rsid"] for run in runs}
+    return [rsid for rsid in dict.fromkeys(args.rsids) if rsid not in found]
+
+
 def _message(subject: str, text: list[str], parts: list[str]) -> EmailMessage:
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -339,6 +353,7 @@ def build(
     events: dict[str, list[dict]] | None = None,
     warnings: dict[str, tuple[str, str | None]] | None = None,
     new_only: bool = False,
+    missing: list[str] | None = None,
 ) -> EmailMessage:
     """One email. Each section is (rsid, suite name, alert rows), for a suite with alerts, a
     warning or a suite-wide event. flagged_by is the sentence that names the anomaly method.
@@ -346,7 +361,7 @@ def build(
     section with events starts with each event and its first EVENT_SHOWN alerts, and then
     lists the other alerts. warnings gives the day of the alerts of each suite by its rsid, and
     the warning of ahd alerts for an old run, or None. new_only says that the rows hold only the
-    new alerts."""
+    new alerts. missing names the suites that have no finished run."""
     events = events or {}
     warnings = warnings or {}
     total = sum(len(rows) for _, _, rows in sections)
@@ -370,6 +385,9 @@ def build(
     )
     text = [subject, "", rules, ""]
     parts = [f"<p>{html.escape(subject)}. {html.escape(rules, quote=False)}</p>"]
+    for rsid in missing or []:
+        text += [missing_line(rsid), ""]
+        parts.append(f"<p><b>Warning:</b> {html.escape(missing_line(rsid))}</p>")
     for rsid, name, rows in sections:
         day, warning = warnings.get(rsid, (rows[0][-1] if rows else "", None))
         if not rows:
@@ -419,12 +437,19 @@ def build(
     return _message(subject, text, parts)
 
 
-def all_clear(runs: list[dict], new_only: bool) -> EmailMessage:
-    """The short email for a day without alerts, with one line for each suite."""
+def all_clear(runs: list[dict], new_only: bool, missing: list[str] | None = None) -> EmailMessage:
+    """The short email for a day without alerts, with one line for each suite. A suite in
+    missing has no finished run, so the email is then a warning and not an all-clear."""
     new = "new " if new_only else ""
-    where = runs[0]["rsid"] if len(runs) == 1 else f"{len(runs)} report suites"
-    subject = f"No {new}Analytics Health alerts for {where}"
-    lines = [
+    missing = missing or []
+    if len(missing) == 1:
+        subject = f"Analytics Health warning for {missing[0]}"
+    elif missing:
+        subject = f"Analytics Health warnings for {len(missing)} report suites"
+    else:
+        where = runs[0]["rsid"] if len(runs) == 1 else f"{len(runs)} report suites"
+        subject = f"No {new}Analytics Health alerts for {where}"
+    lines = [missing_line(rsid) for rsid in missing] + [
         f"No {new}alerts for {run['rsid_name'] or run['rsid']} ({run['rsid']}) on {run['day']}."
         for run in runs
     ]
@@ -602,13 +627,16 @@ def main(argv: list[str]) -> int:
             events,
             warnings,
             args.new_only,
+            _missing(args, runs),
         )
         count = sum(len(rows) for _, _, rows in sections)
         if not _send(msg, f"{count} alerts" if count else _warnings(len(sections))):
             return 1
         sent = True
     elif runs and args.always:
-        if not _send(all_clear(runs, args.new_only), "the all-clear message"):
+        missing = _missing(args, runs)
+        what = _warnings(len(missing)) if missing else "the all-clear message"
+        if not _send(all_clear(runs, args.new_only, missing), what):
             return 1
         sent = True
     elif runs:

@@ -365,14 +365,47 @@ def message(run: dict, rules: str, new_only: bool = False) -> dict:
     return {"text": _mrkdwn(text), "blocks": blocks}
 
 
-def all_clear(runs: list[dict], new_only: bool) -> dict:
-    """The short message for a day without alerts, with one line for each suite."""
+def missing_line(rsid: str) -> str:
+    """The line for a suite that has no finished run in the database."""
+    return (
+        f"There is no finished run of {rsid} in the database. Check the report suite ID, or run "
+        "ahd runs to list the runs."
+    )
+
+
+def _missing(args: argparse.Namespace, runs: list[dict]) -> list[str]:
+    """The suites that were asked for and have no finished run."""
+    found = {run["rsid"] for run in runs}
+    return [rsid for rsid in dict.fromkeys(args.rsids) if rsid not in found]
+
+
+def missing_message(missing: list[str]) -> dict:
+    """The message for the suites that have no finished run."""
+    where = missing[0] if len(missing) == 1 else f"{len(missing)} report suites"
+    warning = "warning" if len(missing) == 1 else "warnings"
+    return {
+        "text": _mrkdwn(f"Analytics Health {warning} for {where}"),
+        "blocks": [
+            {"type": "header", "text": _plain(f"Analytics Health {warning}", HEADER_LIMIT)},
+            {"type": "section", "text": _plain("\n".join(missing_line(r) for r in missing))},
+        ],
+    }
+
+
+def all_clear(runs: list[dict], new_only: bool, missing: list[str] | None = None) -> dict:
+    """The short message for a day without alerts, with one line for each suite. A suite in
+    missing has no finished run, so the message is then a warning and not an all-clear."""
     new = "new " if new_only else ""
-    where = runs[0]["rsid"] if len(runs) == 1 else f"{len(runs)} report suites"
-    lines = [
+    missing = missing or []
+    lines = [missing_line(rsid) for rsid in missing] + [
         f"No {new}alerts for {run['rsid_name'] or run['rsid']} ({run['rsid']}) on {run['day']}."
         for run in runs
     ]
+    if missing:
+        payload = missing_message(missing)
+        payload["blocks"][1] = {"type": "section", "text": _plain("\n".join(lines))}
+        return payload
+    where = runs[0]["rsid"] if len(runs) == 1 else f"{len(runs)} report suites"
     return {
         "text": _mrkdwn(f"No {new}Analytics Health alerts for {where}"),
         "blocks": [
@@ -548,13 +581,17 @@ def main(argv: list[str]) -> int:
         payloads.append(message(run, rules, args.new_only))
         count += len(run["alerts"])
     stale = any(run.get("stale") for run in runs)
+    missing = _missing(args, runs)
     sent = False
+    if payloads and missing:
+        payloads.append(missing_message(missing))
     if payloads:
         if not _send(payloads, count, None if count else _warnings(len(payloads))):
             return 1
         sent = True
     elif runs and args.always:
-        if not _send([all_clear(runs, args.new_only)], 0, "the all-clear message"):
+        what = _warnings(len(missing)) if missing else "the all-clear message"
+        if not _send([all_clear(runs, args.new_only, missing)], 0, what):
             return 1
         sent = True
     elif runs:

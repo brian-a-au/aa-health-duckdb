@@ -193,7 +193,11 @@ def choose_runs(
 
 
 def run_age(
-    store: Store, run: dict[str, Any], now_utc: datetime, today: date | None = None
+    store: Store,
+    run: dict[str, Any],
+    now_utc: datetime,
+    today: date | None = None,
+    chosen: bool = False,
 ) -> dict[str, Any]:
     """Whether a run is old, as the fields current_day, stale, failed_after and warning.
 
@@ -201,7 +205,8 @@ def run_age(
     when its run date is before current_day, so its alerts are for a day before yesterday. A
     time zone that this computer does not know gives None for current_day and stale.
     failed_after counts the failed runs of the same suite and segment that come after the run
-    in the order of latest_runs. A run that is still running does not count.
+    in the order of latest_runs. A run that is still running does not count. chosen says that
+    --run chose the run, so the warning names the run and does not call it the latest.
     """
     current = today
     if current is None and run["timezone"]:
@@ -220,8 +225,13 @@ def run_age(
     failed_after = int(found[0]) if found else 0
     warning = None
     if stale and current is not None:
+        which = (
+            f"Run {run['run_id']} of {inert(run['rsid'])}"
+            if chosen
+            else f"The latest finished run of {inert(run['rsid'])}"
+        )
         warning = (
-            f"The latest finished run of {inert(run['rsid'])} has the alerts of "
+            f"{which} has the alerts of "
             f"{alerts_day(run).isoformat()}, but yesterday was "
             f"{(current - timedelta(days=1)).isoformat()} in the time zone of the suite."
         )

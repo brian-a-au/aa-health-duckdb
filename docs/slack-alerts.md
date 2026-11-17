@@ -133,7 +133,7 @@ The options are those of the email script. [Email alerts](email-alerts.md#option
 - `--threshold` and `--spike-threshold`: the large drop and the large spike percent, as shares. The defaults are `0.30` and `0.50`.
 - `--anomaly-method` and `--anomaly-sensitivity`: the method that flags the unusual values, as on `ahd run`. Without them, `ahd alerts` reads `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`.
 - `--new-only`: lists only the alerts that are new on the day. The header then says "new", e.g., "Adobe Store: 2 new alerts". A suite-wide event keeps its line also when none of its alerts is new, so a suite whose data stopped days ago is still named every day. It needs `ahd` 0.1.16 or newer. With an older `ahd`, the script stops with exit code 1 and says how to update it.
-- `--always`: posts a short message when there are no alerts, e.g., "No Analytics Health alerts" with one line for each suite. Then a quiet channel no longer means healthy suites. It means that the daily job did not run, so you notice a job that stopped.
+- `--always`: posts a short message when there are no alerts, e.g., "No Analytics Health alerts" with one line for each suite. Then a quiet channel no longer means healthy suites. It means that the daily job did not run, so you notice a job that stopped. When a report suite ID that you gave has no finished run, the message names it, e.g., "There is no finished run of my_suite in the database.", and is a warning, not an all-clear. The script then exits with 1.
 - `--test`: posts a test message to check the webhook, see step 10 of [Step by step](#step-by-step). It does not read the database and does not need `ahd`.
 
 ### When the latest run is old

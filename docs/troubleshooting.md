@@ -169,9 +169,10 @@ A run that stopped in another way, e.g., because you closed the window, keeps th
 
 These messages come from `ahd alerts` and from the example scripts [`send_alerts.py`](email-alerts.md) and [`send_slack.py`](slack-alerts.md):
 
-- **"The latest finished run of ... has the alerts of"**: the latest run of the suite that ended "ok" or "partial" is for a day before yesterday in the time zone of the suite. When the message goes on with "later runs of it failed", the runs after it failed. Run `ahd runs` to see them, and read the log of the daily job for the reason, e.g., a sign-in that failed. When no later run is named, no run was made. Check that the daily job still runs, see [Run it every day](scheduling.md). The scripts send the warning also without alerts, and exit with 1.
+- **"The latest finished run of ... has the alerts of"**: the latest run of the suite that ended "ok" or "partial" is for a day before yesterday in the time zone of the suite. When the message goes on with "later runs of it failed", the runs after it failed. Run `ahd runs` to see them, and read the log of the daily job for the reason, e.g., a sign-in that failed. When no later run is named, ahd stored no run after it. This happens when the daily job stopped, when the sign-in failed, because ahd stores a run only after it signed in, or when a run stays "running". Read the log of the daily job to find which, and see [Run it every day](scheduling.md). The scripts send the warning also without alerts, and exit with 1.
 - **"--test needs SMTP_HOST, MAIL_FROM and MAIL_TO"**: the email script needs these three settings to send a test message. The message names the ones that are missing. See [Email alerts](email-alerts.md#step-by-step).
 - **"--test needs SLACK_WEBHOOK_URL"**: set the webhook URL of the channel. See [Slack alerts](slack-alerts.md#make-a-webhook).
+- **"There is no finished run of ... in the database"**: you gave the scripts a report suite ID that has no run that ended "ok" or "partial". The email or the Slack message names it, also with `--always`, so it never reads as an all-clear. Check the ID with `ahd runs`.
 - **"--new-only needs ahd 0.1.16 or newer"**: the `ahd` that the script found does not know `--new-only`. Update it with `uv tool upgrade aa-health-duckdb`, or leave out `--new-only`.
 
 ## Getting more detail

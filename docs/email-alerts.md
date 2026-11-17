@@ -124,7 +124,7 @@ Without these two options, `ahd alerts` reads the variables `AHD_ANOMALY_METHOD`
 
 `--new-only` lists only the alerts that are new on the day, e.g., a large drop that started yesterday, and leaves out the alerts that have held for longer. The subject then says "new", e.g., "2 new Analytics Health alerts for my_suite on 2026-11-16". A suite-wide event keeps its line also when none of its alerts is new, so a suite whose data stopped days ago is still named every day. This needs `ahd` 0.1.16 or newer. With an older `ahd`, the script stops with exit code 1 and says how to update it.
 
-`--always` sends a short message when there are no alerts, e.g., with the subject "No Analytics Health alerts for 3 report suites". Then an empty inbox no longer means healthy suites. It means that the daily job did not run, so you notice a job that stopped. Without `--always`, the script sends nothing on a day without alerts.
+`--always` sends a short message when there are no alerts, e.g., with the subject "No Analytics Health alerts for 3 report suites". Then an empty inbox no longer means healthy suites. It means that the daily job did not run, so you notice a job that stopped. When a report suite ID that you gave has no finished run, the email names it, e.g., "There is no finished run of my_suite in the database.", and is a warning, not an all-clear. The script then exits with 1. Without `--always`, the script sends nothing on a day without alerts.
 
 `--test` sends a test message to check the mail settings, see step 8 of [Step by step](#step-by-step). It needs `SMTP_HOST`, `MAIL_FROM` and `MAIL_TO`, and writes no `alerts.eml`. It does not read the database and does not need `ahd`, so you can give it alone.
 

@@ -616,7 +616,7 @@ def test_an_old_run_keeps_the_exit_code_of_its_alerts(tmp_path):
 
 
 def test_the_warning_keeps_an_odd_rsid_inert(tmp_path, capsys):
-    _alerts(_db(tmp_path, rsid="rs\u202eevil"), "--run", "1", "--date", "2026-11-09")
+    _alerts(_db(tmp_path, rsid="rs\u202eevil"), "--rsid", "rs\u202eevil", "--date", "2026-11-09")
     out = capsys.readouterr().out
     assert "Warning: The latest finished run of rs?evil has" in out
     assert "\u202e" not in out
@@ -1383,3 +1383,12 @@ def test_new_only_goes_with_every_way_to_choose_runs(tmp_path, capsys, options):
     assert _alerts(_db(tmp_path), *options, "--format", "json", "--new-only") == 0
     [run] = json.loads(capsys.readouterr().out)["runs"]
     assert len(run["alerts"]) == 3
+
+
+def test_a_run_chosen_by_its_number_is_not_called_the_latest(tmp_path, capsys):
+    """--run can name an older run, so its warning names the run, not the latest run."""
+    _alerts(_db(tmp_path), "--run", "1", "--date", "2026-11-09")
+    assert (
+        "Warning: Run 1 of rs1 has the alerts of 2026-11-06, but yesterday was 2026-11-08 in "
+        "the time zone of the suite.\n"
+    ) in capsys.readouterr().out

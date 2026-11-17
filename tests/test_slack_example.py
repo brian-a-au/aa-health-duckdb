@@ -13,6 +13,7 @@ from datetime import date
 import pytest
 from test_examples import (
     EXAMPLES,
+    MISSING,
     NEW_ONLY_TOO_OLD,
     WARNING,
     _db,
@@ -315,7 +316,10 @@ def test_it_posts_the_others_when_one_suite_is_missing(slack, tmp_path, capsys):
     db = _suites_db(tmp_path, {"rs1": 5_000_000.0})
     assert slack.main([db, "rs1", "rs_typo"]) == 1
     assert "holds no finished run of rs_typo" in capsys.readouterr().err
-    assert len(_written(tmp_path)) == 1
+    # The alerts of rs1, then one message that names the missing suite.
+    payloads = _written(tmp_path)
+    assert len(payloads) == 2
+    assert payloads[1]["text"] == "Analytics Health warning for rs_typo"
 
 
 @pytest.mark.parametrize(
@@ -555,3 +559,19 @@ def test_a_database_is_needed_without_test(slack, capsys):
         slack.main([])
     assert e.value.code == 1
     assert "error: give the ahd DuckDB file" in capsys.readouterr().err
+
+
+def test_always_with_a_missing_suite_is_not_an_all_clear(slack, tmp_path):
+    assert slack.main([str(_db(tmp_path, 24_000_000.0)), "rs1", "nope", "--always"]) == 1
+    [payload] = _written(tmp_path)
+    assert payload["text"] == "Analytics Health warning for nope"
+    texts = _texts(payload)
+    assert texts[0] == "Analytics Health warning"
+    assert MISSING in texts[1] and "No alerts for Suite (rs1) on 2026-11-06." in texts[1]
+
+
+def test_messages_with_alerts_name_a_missing_suite(slack, tmp_path):
+    assert slack.main([str(_db(tmp_path, 5_000_000.0)), "rs1", "nope"]) == 1
+    payloads = _written(tmp_path)
+    assert len(payloads) == 2
+    assert MISSING in _texts(payloads[-1])

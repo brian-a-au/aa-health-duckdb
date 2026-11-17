@@ -258,7 +258,7 @@ A run is old when its alerts are for a day before yesterday in the time zone of 
 Warning: The latest finished run of my_suite has the alerts of 2026-11-13, but yesterday was 2026-11-16 in the time zone of the suite. 2 later runs of it failed.
 ```
 
-The last sentence counts the runs of the same suite and segment that ended "failed" after the old run. A run that is still "running" does not count. The time zone is the one stored with the run, so the computer's own time zone does not matter. When the computer does not know the time zone, the command does not say whether the run is old. An old run does not change the exit code.
+For a run that `--run` chose, the line starts with the run, e.g., "Run 3 of my_suite has the alerts of", because it may not be the latest run. The last sentence counts the runs of the same suite and segment that ended "failed" after the old run. A run that is still "running" does not count. The time zone is the one stored with the run, so the computer's own time zone does not matter. When the computer does not know the time zone, the command does not say whether the run is old. An old run does not change the exit code.
 
 The command opens the database read-only, so it works while a `duckdb -readonly` session has the file open. While `ahd run` or another command writes to the file, it stops with "is in use by another program". It uses the rules of the version of `ahd` that you run, also on a file that an older version wrote. Such a file keeps the views and macros of that version, e.g., an `alerts()` macro without `sensitivity`. The command makes the current views and macros for its own use and leaves the file as it is.
 

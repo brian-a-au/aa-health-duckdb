@@ -1342,10 +1342,33 @@ def test_always_with_new_only_says_no_new_alerts(tmp_path, draft):
     assert "No new alerts for Suite (rs1) on 2026-11-06." in _mail(tmp_path)[0]
 
 
-def test_always_with_a_missing_suite_exits_with_1(tmp_path, draft):
+MISSING = (
+    "There is no finished run of nope in the database. Check the report suite ID, or run ahd "
+    "runs to list the runs."
+)
+
+
+def test_always_with_a_missing_suite_is_not_an_all_clear(tmp_path, draft):
+    """A suite without a finished run must not hide behind "No alerts"."""
     mod = _load("send_alerts")
     assert mod.main([str(_db(tmp_path, 24_000_000.0)), "rs1", "nope", "--always"]) == 1
-    assert _eml(tmp_path)["Subject"] == "No Analytics Health alerts for rs1"
+    assert _eml(tmp_path)["Subject"] == "Analytics Health warning for nope"
+    text, page = _mail(tmp_path)
+    assert MISSING in text and MISSING in page
+    assert "No alerts for Suite (rs1) on 2026-11-06." in text
+
+
+def test_two_missing_suites_are_counted_in_the_subject(tmp_path, draft):
+    mod = _load("send_alerts")
+    assert mod.main([str(_db(tmp_path, 24_000_000.0)), "rs1", "a", "b", "--always"]) == 1
+    assert _eml(tmp_path)["Subject"] == "Analytics Health warnings for 2 report suites"
+
+
+def test_an_email_with_alerts_names_a_missing_suite(tmp_path, draft):
+    mod = _load("send_alerts")
+    assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs1", "nope"]) == 1
+    text, page = _mail(tmp_path)
+    assert MISSING in text and MISSING in page
 
 
 class _Recorder:
