@@ -1289,3 +1289,97 @@ def test_odd_names_in_an_event_stay_inert(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "- dropped to zero: Zero?fake line?[31m? (metrics/event1)" in out
     assert "\x1b" not in out and "\u202e" not in out
+
+
+# ---- only the new alerts ----------------------------------------------------------------
+
+
+def test_new_only_keeps_only_the_new_alerts_in_the_json(tmp_path, capsys):
+    assert _alerts(_db(tmp_path), "--run", "1", "--format", "json", "--new-only") == 0
+    [run] = json.loads(capsys.readouterr().out)["runs"]
+    # The flag holds since an earlier day, so only the other three are new.
+    assert [a["alert"] for a in run["alerts"]] == ["large spike", "large drop", "dropped to zero"]
+    assert all(a["is_new"] for a in run["alerts"])
+
+
+def test_new_only_keeps_only_the_new_alerts_in_the_csv(tmp_path, capsys):
+    assert _alerts(_db(tmp_path), "--run", "1", "--format", "csv", "--new-only") == 0
+    rows = list(csv.reader(io.StringIO(capsys.readouterr().out)))
+    assert len(rows) == 1 + 3
+    assert {r[CSV_HEADER.index("is_new")] for r in rows[1:]} == {"true"}
+
+
+def test_new_only_says_so_in_place_of_the_new_line(tmp_path, capsys):
+    assert _alerts(_db(tmp_path), "--run", "1", "--new-only") == 0
+    out = capsys.readouterr().out
+    assert (
+        "Alerts for 2026-11-06: 0 unusual values, 1 large drop, 1 large spike, 1 drop to zero\n"
+        "Only the alerts that are new on 2026-11-06 are listed.\n"
+    ) in out
+    assert "of these alerts are new on" not in out
+    assert "- unusual:" not in out
+
+
+def test_new_only_keeps_an_event_line_without_new_alerts(tmp_path, capsys):
+    # 12 components at 0 for 3 days: an event, and none of its alerts is new.
+    db = _event_db(tmp_path, zeros=0, earlier=12)
+    assert _alerts(db, "--run", "1", "--new-only") == 0
+    lines = capsys.readouterr().out.splitlines()
+    at = next(i for i, line in enumerate(lines) if line.startswith("Suite-wide event: "))
+    assert lines[at + 1] == "None of its alerts are new on 2026-11-06."
+    # The large drop is new and outside the event.
+    assert lines[at + 2 :] == ["Other alerts:", OTHER_LINES[0]]
+
+
+def test_new_only_lists_the_new_alerts_of_an_event(tmp_path, capsys):
+    db = _event_db(tmp_path)
+    assert _alerts(db, "--run", "1", "--new-only") == 0
+    out = capsys.readouterr().out
+    assert "Suite-wide event: " in out and "None of its alerts are new" not in out
+    assert _zero_line(_by_id(12)[0]) in out
+
+
+def test_new_only_keeps_every_event_in_the_json(tmp_path, capsys):
+    db = _event_db(tmp_path, zeros=0, earlier=12)
+    assert _alerts(db, "--run", "1", "--format", "json", "--new-only") == 0
+    [run] = json.loads(capsys.readouterr().out)["runs"]
+    assert [(e["event"], e["alerts"], e["new"]) for e in run["events"]] == [("zero", 12, 0)]
+    assert [a["alert"] for a in run["alerts"]] == ["large drop"]
+
+
+def test_new_only_without_new_alerts_exits_with_4(tmp_path, capsys):
+    db = tmp_path / "ahd.duckdb"
+    store = Store.open(db)
+    rid = store.create_run("rs1", "One", None, TODAY, "UTC", "0.1")
+    cid = "metrics/event1"
+    store.add_components(
+        rid, [Component(cid, "Old", "metric", "custom_events", 1, Column(cid, cid), True)]
+    )
+    store.add_daily_values(
+        rid,
+        [
+            DailyValue(
+                cid,
+                TODAY - timedelta(days=91 - n),
+                0.0 if n >= 88 else 100.0,
+                None,
+                None,
+                None,
+                None,
+            )
+            for n in range(91)
+        ],
+    )
+    store.finish_run(rid, "ok")
+    store.con.close()
+    assert _alerts(db, "--run", "1") == 0
+    capsys.readouterr()
+    assert _alerts(db, "--run", "1", "--new-only") == 4
+    assert "Alerts for 2026-11-06: 0 unusual values" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("options", [["--run", "1"], ["--rsid", "rs1"], ["--all-suites"]])
+def test_new_only_goes_with_every_way_to_choose_runs(tmp_path, capsys, options):
+    assert _alerts(_db(tmp_path), *options, "--format", "json", "--new-only") == 0
+    [run] = json.loads(capsys.readouterr().out)["runs"]
+    assert len(run["alerts"]) == 3

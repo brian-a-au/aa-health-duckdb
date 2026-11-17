@@ -274,6 +274,12 @@ def read_alerts(
     )
 
 
+def only_new(result: RunAlerts) -> RunAlerts:
+    """The run with only the alerts that are new on its day. Every event stays, so that a
+    problem that started before the day still gets its line."""
+    return RunAlerts(result.run, [a for a in result.alerts if a["is_new"]], result.events)
+
+
 def json_value(value: Any) -> Any:
     """A value as JSON has it: a day as YYYY-MM-DD, and a number that is not finite as null."""
     if isinstance(value, date):
@@ -425,13 +431,20 @@ def _alert_text(a: dict[str, Any]) -> str:
 
 
 def write_text(
-    results: list[RunAlerts], rules: Rules, out: TextIO, every_alert: bool = False
+    results: list[RunAlerts],
+    rules: Rules,
+    out: TextIO,
+    every_alert: bool = False,
+    new_only: bool = False,
 ) -> None:
     """The rules, then for each run a heading, the alert line, how many alerts are new and one
     line for each alert, new alerts first.
 
     A run with suite-wide events gives each event its sentence and its first EVENT_SHOWN
     alerts, or all of them with every_alert, and then lists the other alerts.
+
+    new_only says that the results hold only the new alerts. The text then says so in place of
+    the number of new alerts, and an event without new alerts says that none is new.
     """
     out.write(
         f"A large drop is more than {_percent(rules.threshold)} below the weekday average, and "
@@ -452,15 +465,19 @@ def write_text(
         if run.get("warning"):
             out.write(f"Warning: {run['warning']}\n")
         out.write(counts_line(run["day"], counts) + "\n")
-        if r.alerts:
+        if new_only:
+            out.write(f"Only the alerts that are new on {run['day'].isoformat()} are listed.\n")
+        elif r.alerts:
             out.write(new_line(run["day"], sum(1 for a in r.alerts if a["is_new"])) + "\n")
         for e in r.events:
             out.write(f"Suite-wide event: {e['text']}\n")
             mine = [a for a in r.alerts if a["event"] == e["event"]]
             shown = mine if every_alert else mine[:EVENT_SHOWN]
+            if not mine:
+                out.write(f"None of its alerts are new on {run['day'].isoformat()}.\n")
             for a in shown:
                 out.write(_alert_text(a) + "\n")
-            # An event has at least 10 alerts, so at least 5 are left out.
+            # An event has at least 10 alerts. With new_only, fewer may be left.
             if len(mine) > len(shown):
                 more = len(mine) - len(shown)
                 out.write(
@@ -475,13 +492,19 @@ def write_text(
 
 
 def write(
-    results: list[RunAlerts], rules: Rules, fmt: str, out: TextIO, every_alert: bool = False
+    results: list[RunAlerts],
+    rules: Rules,
+    fmt: str,
+    out: TextIO,
+    every_alert: bool = False,
+    new_only: bool = False,
 ) -> None:
     """every_alert lists every alert of a suite-wide event in the text. JSON and CSV always
-    hold every alert."""
+    hold every alert of the results. new_only says that the results hold only the new
+    alerts."""
     if fmt == "json":
         write_json(results, out)
     elif fmt == "csv":
         write_csv(results, out)
     else:
-        write_text(results, rules, out, every_alert)
+        write_text(results, rules, out, every_alert, new_only)

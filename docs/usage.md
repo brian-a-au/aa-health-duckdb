@@ -238,12 +238,17 @@ ahd alerts --rsid my_suite --change-alert 27.5 --anomaly-method weekday-median
 | `--segment` | With `--rsid` or `--all-suites`, uses the latest runs with this segment ID. Without it, the command uses the runs without a segment. It does not work with `--run`, because a run already has its segment. The command then exits with 2. |
 | `--format` | `text`, the default, for a person or the body of a plain email. `json` or `csv` for another program. See [The formats](#the-formats). |
 | `--every-alert` | In the text, lists every alert of a suite-wide event, not only its first 5. JSON and CSV always hold every alert. See [Suite-wide events in the output](#suite-wide-events-in-the-output). |
+| `--new-only` | Lists only the alerts that are new on the day, in every format. Each suite-wide event keeps its line, also when none of its alerts is new, so a problem that started earlier is still named. See [Only the new alerts](#only-the-new-alerts). |
 | `--change-alert` | A large drop is a value more than this percent below the weekday average. The default is 30. Any percent above 0 and up to 100 works, e.g., `27.5`, because there is no slider here. |
 | `--spike-alert` | A large spike is a value more than this percent above the weekday average. The default is 50. Any percent above 0 and up to 200 works. |
 | `--anomaly-method`, `--anomaly-sensitivity` | Work as in `run`, with the same defaults and the same variables `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`. With `adobe`, `low` or `high` stops the command with exit code 1. See [Set the anomaly method once](#set-the-anomaly-method-once). |
 | `--date` | Checks the runs as if today were this date (YYYY-MM-DD) in the time zone of each suite. Without it, today comes from the clock of the computer, in the time zone of each suite. It only decides whether a run is old, see [Old runs](#old-runs). |
 
 You need one of `--run`, `--rsid` or `--all-suites`. When a suite has no finished run, the command says so on stderr, e.g., "holds no finished run of my_suite without a segment". It still prints the alerts of the other suites, and exits with 1.
+
+### Only the new alerts
+
+An alert is new when it started on the day of the alerts. With `--new-only`, the counts line counts only the new alerts, and the next line says "Only the alerts that are new on 2026-11-16 are listed." A suite-wide event keeps its line, so a suite whose data stopped 6 days ago still gets one line each day. When none of the alerts of an event is new, the line after it says "None of its alerts are new on 2026-11-16." In the JSON, every event stays as it is, with its `new` count, and the list of alerts holds only the new ones. The exit code is 4 when no alert is new.
 
 ### Old runs
 

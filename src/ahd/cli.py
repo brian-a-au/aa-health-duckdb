@@ -25,6 +25,7 @@ from ahd.alerts import (
     alerts_day,
     choose_runs,
     counts_line,
+    only_new,
     read_alerts,
     run_age,
     write,
@@ -407,6 +408,11 @@ def _parser() -> argparse.ArgumentParser:
         metavar="PERCENT",
         help="A large spike is more than this percent above the weekday average. Above 0 and "
         "up to 200 (default 50).",
+    )
+    alerts.add_argument(
+        "--new-only",
+        action="store_true",
+        help="List only the alerts that are new on the day. Each suite-wide event keeps its line.",
     )
     alerts.add_argument(
         "--date",
@@ -892,7 +898,9 @@ def _alerts(args: argparse.Namespace) -> int:
         store.con.close()
     for message in missing:
         print(f"Error: {message}", file=sys.stderr)
-    write(results, rules, args.format, sys.stdout, args.every_alert)
+    if args.new_only:
+        results = [only_new(r) for r in results]
+    write(results, rules, args.format, sys.stdout, args.every_alert, args.new_only)
     if missing:
         return 1
     return 0 if any(r.alerts for r in results) else EXIT_NO_ALERTS
