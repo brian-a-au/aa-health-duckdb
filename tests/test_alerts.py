@@ -589,14 +589,12 @@ def test_a_fresh_run_has_no_warning(tmp_path, capsys):
 
 
 def test_without_a_date_today_comes_from_the_clock(tmp_path, capsys, monkeypatch):
-    import ahd.cli
-
     class Clock(datetime):
         @classmethod
         def now(cls, tz=None):
             return datetime(2026, 11, 20, 8, tzinfo=UTC)
 
-    monkeypatch.setattr(ahd.cli, "datetime", Clock)
+    monkeypatch.setattr("ahd.cli.datetime", Clock)
     assert main(["alerts", "--db", str(_db(tmp_path)), "--run", "1", "--format", "json"]) == 0
     assert json.loads(capsys.readouterr().out)["runs"][0]["current_day"] == "2026-11-20"
 
