@@ -24,10 +24,15 @@ EXAMPLES = Path(__file__).resolve().parent.parent / "docs" / "examples"
 TODAY = date(2026, 11, 7)
 
 
-def _load(name):
+def _load(name, today=TODAY):
+    """The script. With today, it runs ahd alerts with --date, so the runs of TODAY are not
+    old. With None, it runs ahd alerts as it is."""
     spec = importlib.util.spec_from_file_location(name, EXAMPLES / f"{name}.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    if today is not None:
+        options = mod._ahd_options
+        mod._ahd_options = lambda args: [*options(args), f"--date={today.isoformat()}"]
     return mod
 
 
@@ -726,14 +731,17 @@ def test_send_alerts_runs_ahd_alerts_with_its_options(tmp_path, monkeypatch):
         "--rsid=rs1",
         "--segment=s1",
         "--anomaly-method=weekday-iqr",
+        "--date=2026-11-07",  # from _load
     ]
     calls.clear()
-    assert mod.main([db, "--all"]) == 0
+    assert mod.main([db, "--all", "--new-only"]) == 0
     assert calls[0][5:] == [
         "--format=json",
         "--change-alert=30",
         "--spike-alert=50",
         "--all-suites",
+        "--new-only",
+        "--date=2026-11-07",
     ]
 
 
@@ -1129,3 +1137,305 @@ def test_the_email_reads_the_json_of_ahd_0_1_12(tmp_path, monkeypatch):
     msg = mod.build([("rs1", "Suite", rows)], 0.3, 0.5, "Adobe.", events={"rs1": []})
     body = msg.get_body(("plain",)).get_content()
     assert "- large drop: E (metrics/event1)" in body and "Suite-wide event" not in body
+
+
+# ---- --new-only, the old-run warning, --always and --test ---------------------------------
+
+
+def _old_drop_db(tmp_path):
+    """rs1 with a large drop that started 3 days ago, so it is not new."""
+    db = tmp_path / "ahd.duckdb"
+    s = Store.open(db)
+    _add_run(s, 5_000_000.0, None, earlier=lambda n: 5_000_000.0 if n >= 88 else 25_000_000.0)
+    s.con.close()
+    return db
+
+
+def _eml(tmp_path):
+    return email.message_from_bytes(
+        (tmp_path / "alerts.eml").read_bytes(), policy=email.policy.default
+    )
+
+
+@pytest.fixture
+def draft(tmp_path, monkeypatch):
+    """Without SMTP_HOST, in tmp_path: the script writes alerts.eml."""
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+
+def _fake_ahd(monkeypatch, mod, runs, code=0):
+    out = json.dumps({"format_version": 1, "runs": runs})
+    done = subprocess.CompletedProcess([], code, out, "")
+    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **kw: done)
+
+
+def _json_run(alerts=(), events=(), **fields):
+    run = {
+        "run_id": 1,
+        "rsid": "rs1",
+        "rsid_name": "Suite",
+        "segment_id": None,
+        "status": "ok",
+        "day": "2026-11-06",
+        "method": "adobe",
+        "method_name": "Adobe",
+        "sensitivity": "normal",
+        "threshold": 0.3,
+        "spike_threshold": 0.5,
+        "events": list(events),
+        "alerts": list(alerts),
+    }
+    return {**run, **fields}
+
+
+DROP = {
+    "alert": "large drop",
+    "anomaly": None,
+    "component_id": "metrics/event1",
+    "name": "Big",
+    "group": "custom_events",
+    "metric_type": None,
+    "value": 50.0,
+    "usual": 100.0,
+    "expected": None,
+    "pct_vs_usual": -0.5,
+    "since": "2026-11-06",
+    "days": 1,
+    "at_least": False,
+    "is_new": True,
+    "event": None,
+}
+
+WARNING = (
+    "The latest finished run of rs1 has the alerts of 2026-11-06, but yesterday was "
+    "2026-11-08 in the time zone of the suite."
+)
+
+
+def test_new_only_lists_only_the_new_alerts_and_says_so_in_the_subject(tmp_path, draft):
+    mod = _load("send_alerts")
+    assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs1", "--new-only"]) == 0
+    msg = _eml(tmp_path)
+    assert msg["Subject"] == "1 new Analytics Health alerts for rs1 on 2026-11-06"
+    text = msg.get_body(("plain",)).get_content()
+    assert "Suite (rs1), 2026-11-06: 1 new alerts" in text
+
+
+def test_new_only_with_only_old_alerts_says_no_new_alerts(tmp_path, draft, capsys):
+    mod = _load("send_alerts")
+    assert mod.main([str(_old_drop_db(tmp_path)), "rs1", "--new-only"]) == 2
+    out = capsys.readouterr().out
+    assert "No new alerts for rs1." in out and "Nothing to send." in out
+    assert not (tmp_path / "alerts.eml").exists()
+
+
+NEW_ONLY_TOO_OLD = (
+    "import sys; sys.stderr.write('usage: ahd alerts\\nahd: error: unrecognized arguments: "
+    "--new-only\\n'); sys.exit(2)"
+)
+
+
+def test_new_only_needs_a_newer_ahd(tmp_path, monkeypatch, capsys):
+    mod = _load("send_alerts")
+    monkeypatch.setattr(mod, "_ahd_command", lambda: [sys.executable, "-c", NEW_ONLY_TOO_OLD])
+    assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs1", "--new-only"]) == 1
+    assert capsys.readouterr().err == (
+        "--new-only needs ahd 0.1.16 or newer. Update it, e.g., with uv tool upgrade "
+        "aa-health-duckdb.\n"
+    )
+
+
+def test_an_event_without_new_alerts_still_gets_its_line(tmp_path, draft, monkeypatch):
+    """A suite whose data stopped days ago must not go quiet with --new-only."""
+    mod = _load("send_alerts")
+    event = {"event": "zero", "alerts": 12, "new": 0, "text": "12 of the 21 components ..."}
+    _fake_ahd(monkeypatch, mod, [_json_run(events=[event])])
+    assert mod.main(["db", "rs1", "--new-only"]) == 0
+    text = _eml(tmp_path).get_body(("plain",)).get_content()
+    assert "Suite (rs1), 2026-11-06: no new alerts" in text
+    assert "Suite-wide event: 12 of the 21 components ...\n" in text
+    assert "None of its alerts are new on 2026-11-06." in text
+
+
+def test_an_old_run_without_alerts_is_still_sent_and_exits_with_1(tmp_path, draft):
+    mod = _load("send_alerts", today=date(2026, 11, 9))
+    assert mod.main([str(_db(tmp_path, 24_000_000.0)), "rs1"]) == 1
+    msg = _eml(tmp_path)
+    assert msg["Subject"] == "Analytics Health warning for rs1"
+    text, page = _mail(tmp_path)
+    assert "Suite (rs1), 2026-11-06: no alerts\nWarning: " + WARNING in text
+    assert WARNING in page
+
+
+def test_an_old_run_with_alerts_puts_the_warning_first(tmp_path, draft):
+    mod = _load("send_alerts", today=date(2026, 11, 9))
+    assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs1"]) == 1
+    assert _eml(tmp_path)["Subject"] == "1 Analytics Health alerts for rs1 on 2026-11-06"
+    text, _page = _mail(tmp_path)
+    assert (
+        "Suite (rs1), 2026-11-06: 1 alerts, 1 new\nWarning: " + WARNING + "\n- large drop" in text
+    )
+
+
+def test_several_old_runs_without_alerts_count_the_suites(tmp_path, draft):
+    db = tmp_path / "ahd.duckdb"
+    s = Store.open(db)
+    _add_run(s, 24_000_000.0, None)
+    _add_run(s, 24_000_000.0, None, rsid="rs2", name="Two")
+    s.con.close()
+    mod = _load("send_alerts", today=date(2026, 11, 9))
+    assert mod.main([str(db), "--all"]) == 1
+    assert _eml(tmp_path)["Subject"] == "Analytics Health warnings for 2 report suites"
+
+
+def test_a_missing_suite_does_not_stop_the_warning_of_another(tmp_path, draft, capsys):
+    mod = _load("send_alerts", today=date(2026, 11, 9))
+    assert mod.main([str(_db(tmp_path, 24_000_000.0)), "rs1", "nope"]) == 1
+    assert "holds no finished run of nope" in capsys.readouterr().err
+    assert WARNING in _mail(tmp_path)[0]
+
+
+def test_the_warning_is_escaped_in_the_html(tmp_path, draft):
+    db = tmp_path / "ahd.duckdb"
+    s = Store.open(db)
+    _add_run(s, 24_000_000.0, None, rsid="<b>x</b>")
+    s.con.close()
+    mod = _load("send_alerts", today=date(2026, 11, 9))
+    assert mod.main([str(db), "<b>x</b>"]) == 1
+    _text, page = _mail(tmp_path)
+    assert "of &lt;b&gt;x&lt;/b&gt; has the alerts" in page
+    assert "<b>x</b>" not in page
+
+
+def test_an_ahd_without_the_warning_fields_sends_as_before(tmp_path, draft, monkeypatch):
+    mod = _load("send_alerts")
+    _fake_ahd(monkeypatch, mod, [_json_run(alerts=[DROP])])
+    assert mod.main(["db", "rs1"]) == 0
+    assert "Warning" not in _mail(tmp_path)[0]
+
+
+def test_always_sends_an_all_clear_message(tmp_path, draft, capsys):
+    mod = _load("send_alerts")
+    assert mod.main([str(_db(tmp_path, 24_000_000.0)), "rs1", "--always"]) == 0
+    msg = _eml(tmp_path)
+    assert msg["Subject"] == "No Analytics Health alerts for rs1"
+    assert "No alerts for Suite (rs1) on 2026-11-06." in _mail(tmp_path)[0]
+    assert "Wrote alerts.eml with the all-clear message." in capsys.readouterr().out
+
+
+def test_always_counts_the_suites(tmp_path, draft):
+    db = tmp_path / "ahd.duckdb"
+    s = Store.open(db)
+    for rsid in ("rs1", "rs2", "rs3"):
+        _add_run(s, 24_000_000.0, None, rsid=rsid)
+    s.con.close()
+    mod = _load("send_alerts")
+    assert mod.main([str(db), "--all", "--always"]) == 0
+    assert _eml(tmp_path)["Subject"] == "No Analytics Health alerts for 3 report suites"
+
+
+def test_always_with_new_only_says_no_new_alerts(tmp_path, draft):
+    mod = _load("send_alerts")
+    assert mod.main([str(_old_drop_db(tmp_path)), "rs1", "--always", "--new-only"]) == 0
+    assert _eml(tmp_path)["Subject"] == "No new Analytics Health alerts for rs1"
+    assert "No new alerts for Suite (rs1) on 2026-11-06." in _mail(tmp_path)[0]
+
+
+def test_always_with_a_missing_suite_exits_with_1(tmp_path, draft):
+    mod = _load("send_alerts")
+    assert mod.main([str(_db(tmp_path, 24_000_000.0)), "rs1", "nope", "--always"]) == 1
+    assert _eml(tmp_path)["Subject"] == "No Analytics Health alerts for rs1"
+
+
+class _Recorder:
+    """An SMTP server that keeps the messages it was given."""
+
+    def __init__(self):
+        self.sent = []
+
+    def __call__(self, host, port, timeout):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def starttls(self, context):
+        pass
+
+    def login(self, user, password):
+        pass
+
+    def send_message(self, msg):
+        self.sent.append(msg)
+
+
+@pytest.fixture
+def mail_settings(monkeypatch):
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("MAIL_FROM", "ahd@example.com")
+    monkeypatch.setenv("MAIL_TO", "team@example.com")
+    monkeypatch.delenv("SMTP_USER", raising=False)
+
+
+def test_test_sends_a_test_message(monkeypatch, capsys, mail_settings):
+    mod = _load("send_alerts")
+    server = _Recorder()
+    monkeypatch.setattr(mod.smtplib, "SMTP", server)
+    assert mod.main(["--test"]) == 0
+    [msg] = server.sent
+    assert msg["Subject"] == "Analytics Health test message"
+    assert msg["To"] == "team@example.com" and msg["From"] == "ahd@example.com"
+    assert msg.get_content() == (
+        "ahd can send alerts to this address. This is a test message from send_alerts.py. It "
+        "holds no alerts.\n"
+    )
+    assert capsys.readouterr().out == "Sent a test message to team@example.com.\n"
+
+
+@pytest.mark.parametrize(
+    ("unset", "said"),
+    [
+        (["MAIL_FROM", "MAIL_TO"], "Set MAIL_FROM and MAIL_TO."),
+        (["SMTP_HOST", "MAIL_FROM", "MAIL_TO"], "Set SMTP_HOST, MAIL_FROM and MAIL_TO."),
+        (["MAIL_TO"], "Set MAIL_TO."),
+    ],
+)
+def test_test_needs_the_mail_settings(tmp_path, monkeypatch, capsys, mail_settings, unset, said):
+    monkeypatch.chdir(tmp_path)
+    for name in unset:
+        monkeypatch.delenv(name)
+    mod = _load("send_alerts")
+    assert mod.main(["--test"]) == 1
+    assert capsys.readouterr().err == f"--test needs SMTP_HOST, MAIL_FROM and MAIL_TO. {said}\n"
+    assert not (tmp_path / "alerts.eml").exists()
+
+
+def test_test_says_why_it_could_not_send(monkeypatch, capsys, mail_settings):
+    mod = _load("send_alerts")
+    error = smtplib.SMTPAuthenticationError(535, b"no")
+    monkeypatch.setattr(mod.smtplib, "SMTP", _FailingSMTP("login", error))
+    monkeypatch.setenv("SMTP_USER", "me")
+    assert mod.main(["--test"]) == 1
+    assert capsys.readouterr().err == (
+        "The mail server refused the login. Check SMTP_USER and SMTP_PASSWORD. Nothing was "
+        "sent to smtp.example.com.\n"
+    )
+
+
+def test_test_does_not_start_ahd(monkeypatch, mail_settings):
+    mod = _load("send_alerts")
+    monkeypatch.setattr(mod.smtplib, "SMTP", _Recorder())
+    monkeypatch.setattr(mod, "_ahd_command", lambda: pytest.fail("ahd was started"))
+    assert mod.main(["db.duckdb", "rs1", "--test"]) == 0
+
+
+def test_a_database_is_needed_without_test(capsys):
+    mod = _load("send_alerts")
+    with pytest.raises(SystemExit) as e:
+        mod.main([])
+    assert e.value.code == 1
+    assert "error: give the ahd DuckDB file" in capsys.readouterr().err
