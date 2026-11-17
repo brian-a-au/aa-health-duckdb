@@ -60,7 +60,7 @@ Dependabot keeps the dependencies up to date. `.github/dependabot.yml` sets it u
 - The minor and patch updates of each kind come in one pull request. Each major update comes in its own pull request.
 - It also opens a pull request soon after GitHub learns of a security problem in a dependency. Its alerts are under Security, Dependabot on GitHub.
 
-These pull requests run the same checks as any other. Review each one and merge it with a merge commit when its checks pass.
+These pull requests run the same checks as any other. `.github/workflows/dependabot-auto-merge.yml` turns on auto-merge for a pull request that holds only minor or patch updates. GitHub then merges it with a merge commit once every required check passes. Review each major update yourself and merge it with a merge commit when its checks pass.
 
 ## Release a new version
 
