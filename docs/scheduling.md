@@ -135,13 +135,13 @@ Save the commands in a file in the `ahd` folder, e.g., `C:\Users\you\ahd\daily.c
 @echo off
 cd /d "%USERPROFILE%\ahd" || exit /b 1
 set PATH=%USERPROFILE%\.local\bin;%PATH%
-set SMTP_HOST=smtp.example.com
-set MAIL_FROM=ahd@example.com
-set MAIL_TO=team@example.com
-set SMTP_USER=ahd@example.com
-set SMTP_PASSWORD=your mail password
-set AHD_ANOMALY_METHOD=adobe
-set AHD_ANOMALY_SENSITIVITY=normal
+set "SMTP_HOST=smtp.example.com"
+set "MAIL_FROM=ahd@example.com"
+set "MAIL_TO=team@example.com"
+set "SMTP_USER=ahd@example.com"
+set "SMTP_PASSWORD=your mail password"
+set "AHD_ANOMALY_METHOD=adobe"
+set "AHD_ANOMALY_SENSITIVITY=normal"
 (
   ahd run --profile prod --all-suites
   uv run python send_alerts.py "%USERPROFILE%\.aa\orgs\prod\ahd.duckdb" --all
@@ -149,6 +149,7 @@ set AHD_ANOMALY_SENSITIVITY=normal
 ```
 
 - A scheduled task may not find `ahd` or `uv` by name. The `set PATH` line adds `%USERPROFILE%\.local\bin`, where `uv tool install` puts `ahd.exe` and where the uv installer puts `uv.exe` by default. The email script also needs it, because it runs the `ahd` program it finds there. Run `where ahd` and `where uv` in Command Prompt to see where they are on your computer. If one is in another folder, add that folder to the line.
+- Keep the quotes around the name, the `=` and the value of each `set` line. Without them, a character such as `&`, `|`, `<`, `>` or `^` in the password ends the line or changes it. The Command Prompt also reads a `%` in a `.cmd` file as the start of a variable, so write each `%` of a password as `%%`, e.g., `set "SMTP_PASSWORD=50%%off"` for the password `50%off`.
 - From a clone of this repository, use `cd` to the clone, put `uv run` in front of `ahd`, and use `docs\examples\send_alerts.py` as the path of the email script.
 - The file is in your user folder. By default, other users of the computer cannot read it, except administrators.
 - The part in brackets adds the output of both commands to `ahd-daily.log` in your user folder.
