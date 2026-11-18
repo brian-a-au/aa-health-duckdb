@@ -15,7 +15,14 @@ from typing import Any
 import requests
 from requests.adapters import HTTPAdapter
 
-from ahd.api.auth import get_token, header_for, sign_in
+from ahd.api.auth import (
+    RETRY_AFTER_CAP as RETRY_AFTER_CAP,
+    TEMPORARY_ERRORS,
+    get_token,
+    header_for,
+    retry_after,
+    sign_in,
+)
 from ahd.config import Credentials
 
 log = logging.getLogger(__name__)
@@ -49,12 +56,11 @@ BUSY = Waits(retries=6, cap=30.0)
 # A server error (HTTP 5xx) or a network error. Waits of about 1, 2 and 4 seconds, 3.5 to 7
 # seconds in all, so that an Adobe outage or a missing network shows within seconds.
 FAILED = Waits(retries=3, cap=4.0)
-# The longest wait that a Retry-After header can ask for. A longer one waits this long.
-# The totals above hold only when Adobe sends no Retry-After header. With one, each wait can
-# be as long as 2 minutes. The 6 waits of BUSY can then take 12 minutes, and the 3 waits of
-# FAILED 6 minutes. Each kind has its own limit, so one request can wait as long as 18 minutes,
-# and each try can also take as long as TIMEOUT allows.
-RETRY_AFTER_CAP = 120.0
+# RETRY_AFTER_CAP, from auth.py, is the longest wait that a Retry-After header can ask for.
+# A longer one waits this long. The totals above hold only when Adobe sends no Retry-After
+# header. With one, each wait can be as long as 2 minutes. The 6 waits of BUSY can then take
+# 12 minutes, and the 3 waits of FAILED 6 minutes. Each kind has its own limit, so one request
+# can wait as long as 18 minutes, and each try can also take as long as TIMEOUT allows.
 # Seconds to wait for a connection, and then for the answer. The slowest report in the live
 # timing runs took 34 seconds. A computer with no network fails the connection within seconds.
 TIMEOUT = (10, 120)
@@ -65,13 +71,9 @@ MAX_CONNECTIONS = 16
 # Adobe's "temporarily unavailable" code. It comes with HTTP 403 but clears on a retry.
 TEMPORARY_403 = "403025"
 NOT_JSON = "Adobe sent an answer that could not be read as JSON."
-# Network errors that are worth another try. ChunkedEncodingError means the connection
-# dropped while the answer was being read.
-RETRIED_ERRORS = (
-    requests.ConnectionError,
-    requests.Timeout,
-    requests.exceptions.ChunkedEncodingError,
-)
+# Network errors that are worth another try, the same as for the sign-in. ChunkedEncodingError
+# means the connection dropped while the answer was being read.
+RETRIED_ERRORS = TEMPORARY_ERRORS
 
 
 class ApiError(Exception):
@@ -280,14 +282,7 @@ class AdobeClient:
                 continue
             kind = self._temporary(resp)
             if kind is not None and tries[kind] < kind.retries:
-                delay = kind.delay(tries[kind])
-                retry_after = resp.headers.get("Retry-After")
-                try:
-                    if retry_after:
-                        delay = min(RETRY_AFTER_CAP, max(delay, float(retry_after)))
-                except ValueError:
-                    # Retry-After may also be a date. Then the tool keeps its own delay.
-                    pass
+                delay = retry_after(kind.delay(tries[kind]), resp.headers)
                 tries[kind] += 1
                 self._wait(f"HTTP {status}", method, path, tries[kind], delay)
                 continue
