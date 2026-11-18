@@ -629,15 +629,30 @@ def test_past_the_cap_the_rest_of_the_suites_are_counted(slack):
     assert sections[-1].endswith(f"\n{3000 - named} more suites have no alerts.")
 
 
+def _run_of_length(n, length):
+    """A run whose all-clear line is length characters long."""
+    rest = len(f"No alerts for  (rs{n}) on 2026-11-06.")
+    return _run([], rsid=f"rs{n}", rsid_name="n" * (length - rest))
+
+
+def test_one_suite_past_the_cap_is_counted_in_the_singular(slack):
+    full = slack.SECTION_LIMIT - 1
+    runs = [_run_of_length(n, full) for n in range(slack.MAX_SECTIONS - 1)]
+    runs += [_run_of_length(90, 2900), _run_of_length(91, 200)]
+    sections = _section_texts(slack.all_clear(runs, False))
+    assert len(sections) == slack.MAX_SECTIONS
+    assert sections[-1].endswith("\n1 more suite has no alerts.")
+
+
 def test_lines_that_fill_the_cap_exactly_get_no_count(slack):
     line = "x" * (slack.SECTION_LIMIT - 1)
-    blocks = slack._sections([line] * slack.MAX_SECTIONS, "{} more.")
+    blocks = slack._sections([line] * slack.MAX_SECTIONS, "1 more.", "{} more.")
     assert len(blocks) == slack.MAX_SECTIONS
     assert not any("more." in b["text"]["text"] for b in blocks)
 
 
 def test_a_line_longer_than_a_section_is_cut(slack):
-    [block] = slack._sections(["y" * (slack.SECTION_LIMIT + 500)], "{} more.")
+    [block] = slack._sections(["y" * (slack.SECTION_LIMIT + 500)], "1 more.", "{} more.")
     assert len(block["text"]["text"]) == slack.SECTION_LIMIT
 
 

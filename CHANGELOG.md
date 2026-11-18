@@ -2,6 +2,13 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+**Fixes**
+
+- When an email holds no alerts, its subject now counts a suite without a finished run together with the suites that have a warning or a suite-wide event, e.g., "Analytics Health warnings for 2 report suites". Before, a suite with an event next to a missing suite gave the subject "Analytics Health warning for my_suite", which named only the suite with the event.
+- In a long Slack list, the line that counts the suites left out now uses the singular for one suite. It says "1 more suite has no alerts." where it said "1 more suites have no alerts." before.
+
 ## 0.1.17 (2026-11-18)
 
 This release fixes three small faults in the alert messages. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is.
