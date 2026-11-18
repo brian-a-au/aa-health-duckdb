@@ -367,7 +367,14 @@ def build(
     warnings = warnings or {}
     total = sum(len(rows) for _, _, rows in sections)
     new = "new " if new_only else ""
-    if total == 0:
+    if total == 0 and not (missing or any(w for _day, w in warnings.values())):
+        # With new_only: only suite-wide events that hold since an earlier day.
+        subject = (
+            f"Analytics Health: a suite-wide event goes on in {sections[0][0]}"
+            if len(sections) == 1
+            else f"Analytics Health: suite-wide events go on in {len(sections)} report suites"
+        )
+    elif total == 0:
         # Only warnings and events without new alerts.
         subject = (
             f"Analytics Health warning for {sections[0][0]}"
@@ -541,6 +548,10 @@ def _warnings(n: int) -> str:
     return "the warning" if n == 1 else "the warnings"
 
 
+def _events(n: int) -> str:
+    return "the event message" if n == 1 else "the event messages"
+
+
 def _send_test() -> int:
     """--test: sends the test message. It needs the settings of TEST_SETTINGS."""
     missing = [name for name in TEST_SETTINGS if not os.environ.get(name)]
@@ -617,6 +628,7 @@ def main(argv: list[str]) -> int:
             print(f"No {new}alerts for {run['rsid']}.")
     stale = any(run.get("stale") for run in runs)
     sent = False
+    missing = _missing(args, runs)
     if sections:
         first = runs[0]
         said = _flagged_by(first["method"], first["method_name"], first["sensitivity"])
@@ -628,14 +640,19 @@ def main(argv: list[str]) -> int:
             events,
             warnings,
             args.new_only,
-            _missing(args, runs),
+            missing,
         )
         count = sum(len(rows) for _, _, rows in sections)
-        if not _send(msg, f"{count} alerts" if count else _warnings(len(sections))):
+        if count:
+            what = f"{count} alerts"
+        elif missing or any(w for _day, w in warnings.values()):
+            what = _warnings(len(sections))
+        else:
+            what = _events(1)
+        if not _send(msg, what):
             return 1
         sent = True
     elif runs and args.always:
-        missing = _missing(args, runs)
         what = _warnings(len(missing)) if missing else "the all-clear message"
         if not _send(all_clear(runs, args.new_only, missing), what):
             return 1

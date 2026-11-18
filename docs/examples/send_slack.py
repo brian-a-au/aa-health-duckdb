@@ -388,8 +388,11 @@ def message(run: dict, rules: str, new_only: bool = False) -> dict:
         text = (
             f"{len(alerts)} {new}Analytics Health alerts for {name} ({run['rsid']}) on {run['day']}"
         )
-    else:
+    elif run.get("warning"):
         text = f"Analytics Health warning for {name} ({run['rsid']})"
+    else:
+        # With new_only: only suite-wide events that hold since an earlier day.
+        text = f"Analytics Health: a suite-wide event goes on in {name} ({run['rsid']})"
     return {"text": _mrkdwn(text), "blocks": blocks}
 
 
@@ -489,6 +492,10 @@ def _post(url: str, payload: dict) -> None:
 
 def _warnings(n: int) -> str:
     return "the warning" if n == 1 else "the warnings"
+
+
+def _events(n: int) -> str:
+    return "the event message" if n == 1 else "the event messages"
 
 
 def _send_test() -> int:
@@ -615,7 +622,13 @@ def main(argv: list[str]) -> int:
     if payloads and missing:
         payloads.append(missing_message(missing))
     if payloads:
-        if not _send(payloads, count, None if count else _warnings(len(payloads))):
+        if count:
+            what = None
+        elif missing or any(run.get("warning") for run in runs):
+            what = _warnings(len(payloads))
+        else:
+            what = _events(len(payloads))
+        if not _send(payloads, count, what):
             return 1
         sent = True
     elif runs and args.always:

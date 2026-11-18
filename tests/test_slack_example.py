@@ -429,16 +429,39 @@ def test_new_only_needs_a_newer_ahd(slack, tmp_path, monkeypatch, capsys):
     assert "--new-only needs ahd 0.1.16 or newer." in capsys.readouterr().err
 
 
-def test_an_event_without_new_alerts_still_gets_its_message(slack, tmp_path, monkeypatch):
-    event = {"event": "zero", "alerts": 12, "new": 0, "text": "12 of the 21 components ..."}
+EVENT = {"event": "zero", "alerts": 12, "new": 0, "text": "12 of the 21 components ..."}
+
+
+def test_an_event_without_new_alerts_still_gets_its_message(slack, tmp_path, monkeypatch, capsys):
+    event = EVENT
     _answer(monkeypatch, slack, 0, json.dumps({"runs": [_run([], events=[event])]}))
     assert slack.main(["db", "rs1", "--new-only"]) == 0
+    assert "Wrote slack.json with the event message." in capsys.readouterr().out
     [payload] = _written(tmp_path)
+    assert payload["text"] == "Analytics Health: a suite-wide event goes on in Suite (rs1)"
     texts = _texts(payload)
     assert texts[0] == "Suite: no new alerts"
     assert (
         "Suite-wide event: 12 of the 21 components ... None of its alerts are new on 2026-11-06."
     ) in texts
+
+
+def test_events_in_two_suites_are_two_event_messages(slack, tmp_path, monkeypatch, capsys):
+    runs = [_run([], events=[EVENT]), _run([], events=[EVENT], rsid="rs2", rsid_name="Two")]
+    _answer(monkeypatch, slack, 0, json.dumps({"runs": runs}))
+    assert slack.main(["db", "--all", "--new-only"]) == 0
+    assert "Wrote slack.json with the event messages." in capsys.readouterr().out
+
+
+def test_an_event_beside_a_missing_suite_is_posted_as_warnings(
+    slack, tmp_path, monkeypatch, capsys
+):
+    _answer(monkeypatch, slack, 0, json.dumps({"runs": [_run([], events=[EVENT])]}))
+    assert slack.main(["db", "rs1", "nope", "--new-only"]) == 0
+    assert "Wrote slack.json with the warnings." in capsys.readouterr().out
+    first, second = _written(tmp_path)
+    assert first["text"] == "Analytics Health: a suite-wide event goes on in Suite (rs1)"
+    assert second["text"] == "Analytics Health warning for nope"
 
 
 def test_an_old_run_without_alerts_is_still_posted_and_exits_with_1(tmp_path, monkeypatch):
