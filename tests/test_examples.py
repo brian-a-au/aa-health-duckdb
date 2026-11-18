@@ -1246,16 +1246,53 @@ def test_new_only_needs_a_newer_ahd(tmp_path, monkeypatch, capsys):
     )
 
 
-def test_an_event_without_new_alerts_still_gets_its_line(tmp_path, draft, monkeypatch):
+EVENT = {"event": "zero", "alerts": 12, "new": 0, "text": "12 of the 21 components ..."}
+
+
+def test_an_event_without_new_alerts_still_gets_its_line(tmp_path, draft, monkeypatch, capsys):
     """A suite whose data stopped days ago must not go quiet with --new-only."""
     mod = _load("send_alerts")
-    event = {"event": "zero", "alerts": 12, "new": 0, "text": "12 of the 21 components ..."}
+    event = EVENT
     _fake_ahd(monkeypatch, mod, [_json_run(events=[event])])
     assert mod.main(["db", "rs1", "--new-only"]) == 0
+    assert _eml(tmp_path)["Subject"] == "Analytics Health: a suite-wide event goes on in rs1"
+    assert "Wrote alerts.eml with the event message." in capsys.readouterr().out
     text = _eml(tmp_path).get_body(("plain",)).get_content()
     assert "Suite (rs1), 2026-11-06: no new alerts" in text
     assert "Suite-wide event: 12 of the 21 components ...\n" in text
     assert "None of its alerts are new on 2026-11-06." in text
+
+
+def test_events_in_several_suites_are_counted_in_the_subject(tmp_path, draft, monkeypatch, capsys):
+    mod = _load("send_alerts")
+    runs = [
+        _json_run(events=[EVENT]),
+        _json_run(events=[EVENT], run_id=2, rsid="rs2", rsid_name="Two"),
+    ]
+    _fake_ahd(monkeypatch, mod, runs)
+    assert mod.main(["db", "--all", "--new-only"]) == 0
+    subject = "Analytics Health: suite-wide events go on in 2 report suites"
+    assert _eml(tmp_path)["Subject"] == subject
+    assert "Wrote alerts.eml with the event message." in capsys.readouterr().out
+
+
+def test_a_warning_beside_an_event_keeps_the_warning_subject(tmp_path, draft, monkeypatch, capsys):
+    mod = _load("send_alerts")
+    runs = [
+        _json_run(stale=True, warning="The latest finished run of rs1 is old."),
+        _json_run(events=[EVENT], run_id=2, rsid="rs2", rsid_name="Two"),
+    ]
+    _fake_ahd(monkeypatch, mod, runs)
+    assert mod.main(["db", "--all", "--new-only"]) == 1
+    assert _eml(tmp_path)["Subject"] == "Analytics Health warnings for 2 report suites"
+    assert "Wrote alerts.eml with the warnings." in capsys.readouterr().out
+
+
+def test_an_event_beside_a_missing_suite_keeps_the_warning_subject(tmp_path, draft, monkeypatch):
+    mod = _load("send_alerts")
+    _fake_ahd(monkeypatch, mod, [_json_run(events=[EVENT])])
+    assert mod.main(["db", "rs1", "nope", "--new-only"]) == 0
+    assert _eml(tmp_path)["Subject"] == "Analytics Health warning for rs1"
 
 
 def test_an_old_run_without_alerts_is_still_sent_and_exits_with_1(tmp_path, draft):

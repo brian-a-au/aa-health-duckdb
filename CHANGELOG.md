@@ -2,6 +2,16 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## 0.1.17 (2026-11-18)
+
+This release fixes three small faults in the alert messages. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is.
+
+**Fixes**
+
+- `ahd alerts` now counts the failed runs after a run in the same order as `latest_runs`, also when a run has no start time. A file filled by `ahd import` from an older layout can hold such runs. Before, the warning could leave out a failed run of the same day.
+- The Slack all-clear message and the message for missing suites name every suite. Before, past about 50 suites, or about 25 suites without a finished run, the text passed Slack's limit of 3000 characters a section, and the last suites were cut off without notice. For a very large list, the message names the suites that fit and counts the rest.
+- With `--new-only`, an email or Slack message that holds only an ongoing suite-wide event no longer says "warning" in its subject or notification text. It says, e.g., "Analytics Health: a suite-wide event goes on in my_suite". An old run or a missing suite still gets a warning.
+
 ## 0.1.16 (2026-11-17)
 
 This release makes the alert emails and Slack messages easier to trust. A quiet inbox could mean healthy suites or a daily job that had stopped, and now the two look different. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is.

@@ -8,18 +8,18 @@ The example script [`examples/send_alerts.py`](examples/send_alerts.py) emails t
 
 These steps take you from nothing to a first email. The commands use the profile `prod` and the report suite ID `my_suite`. Put your own profile and suite ID in their place. The sections after this one explain each part in more detail.
 
-1. **Install the tool and download the script.** You do not need a clone of this repository. Install `ahd` from PyPI, and download the one script file into a folder of your choice, e.g., `~/ahd`. The link holds a version, `v0.1.16`, so you get the script of that release:
+1. **Install the tool and download the script.** You do not need a clone of this repository. Install `ahd` from PyPI, and download the one script file into a folder of your choice, e.g., `~/ahd`. The link holds a version, `v0.1.17`, so you get the script of that release:
 
    ```
    uv tool install aa-health-duckdb
-   curl -fLO https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.16/docs/examples/send_alerts.py
+   curl -fLO https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.17/docs/examples/send_alerts.py
    ```
 
-   In Windows PowerShell, download it with `Invoke-WebRequest https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.16/docs/examples/send_alerts.py -OutFile send_alerts.py`. You can also open the link in a browser and save the page as `send_alerts.py`.
+   In Windows PowerShell, download it with `Invoke-WebRequest https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.17/docs/examples/send_alerts.py -OutFile send_alerts.py`. You can also open the link in a browser and save the page as `send_alerts.py`.
 
    The script needs `ahd` 0.1.11 or newer. If you installed `ahd` before, update it with `uv tool upgrade aa-health-duckdb`. If the terminal then says it cannot find `ahd`, run `uv tool update-shell` and open a new terminal. With pipx, install the tool with `pipx install aa-health-duckdb`, and run the script with `python3 send_alerts.py` in place of `uv run python send_alerts.py`.
 
-   When you install a newer `ahd`, download the script again with the new version in the link, e.g., `v0.1.17`. `uv tool list` shows the version you have. The script and the tool then come from the same release.
+   When you install a newer `ahd`, download the script again with the new version in the link, e.g., `v0.1.18`. `uv tool list` shows the version you have. The script and the tool then come from the same release.
 
    Run every command below in the folder that holds the script. To work from a clone instead, see [Run it](#run-it).
 
@@ -122,7 +122,7 @@ Without these two options, `ahd alerts` reads the variables `AHD_ANOMALY_METHOD`
 
 `ahd alerts` uses the rules of the installed `ahd`, also on a file that an older version wrote, so every method and sensitivity works on any file. Before 0.1.11, the script used the macro in the file, and on a file that an older version had written last, it stopped and said to run `ahd run` once.
 
-`--new-only` lists only the alerts that are new on the day, e.g., a large drop that started yesterday, and leaves out the alerts that have held for longer. The subject then says "new", e.g., "2 new Analytics Health alerts for my_suite on 2026-11-16". A suite-wide event keeps its line also when none of its alerts is new, so a suite whose data stopped days ago is still named every day. This needs `ahd` 0.1.16 or newer. With an older `ahd`, the script stops with exit code 1 and says how to update it.
+`--new-only` lists only the alerts that are new on the day, e.g., a large drop that started yesterday, and leaves out the alerts that have held for longer. The subject then says "new", e.g., "2 new Analytics Health alerts for my_suite on 2026-11-16". A suite-wide event keeps its line also when none of its alerts is new, so a suite whose data stopped days ago is still named every day. When the email holds only such events, the subject says so, e.g., "Analytics Health: a suite-wide event goes on in my_suite". This needs `ahd` 0.1.16 or newer. With an older `ahd`, the script stops with exit code 1 and says how to update it.
 
 `--always` sends a short message when there are no alerts, e.g., with the subject "No Analytics Health alerts for 3 report suites". Then an empty inbox no longer means healthy suites. It means that the daily job did not run, so you notice a job that stopped. When a report suite ID that you gave has no finished run, the email names it, e.g., "There is no finished run of my_suite in the database.", and is a warning, not an all-clear. The script then exits with 1. Without `--always`, the script sends nothing on a day without alerts.
 
