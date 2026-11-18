@@ -1288,11 +1288,19 @@ def test_a_warning_beside_an_event_keeps_the_warning_subject(tmp_path, draft, mo
     assert "Wrote alerts.eml with the warnings." in capsys.readouterr().out
 
 
-def test_an_event_beside_a_missing_suite_keeps_the_warning_subject(tmp_path, draft, monkeypatch):
+def test_an_event_beside_a_missing_suite_counts_both_in_the_subject(tmp_path, draft, monkeypatch):
     mod = _load("send_alerts")
     _fake_ahd(monkeypatch, mod, [_json_run(events=[EVENT])])
     assert mod.main(["db", "rs1", "nope", "--new-only"]) == 0
-    assert _eml(tmp_path)["Subject"] == "Analytics Health warning for rs1"
+    assert _eml(tmp_path)["Subject"] == "Analytics Health warnings for 2 report suites"
+
+
+def test_an_old_run_beside_a_missing_suite_counts_both_in_the_subject(tmp_path, draft, monkeypatch):
+    mod = _load("send_alerts")
+    run = _json_run(stale=True, warning="The latest finished run of rs1 is old.")
+    _fake_ahd(monkeypatch, mod, [run])
+    mod.main(["db", "rs1", "nope"])
+    assert _eml(tmp_path)["Subject"] == "Analytics Health warnings for 2 report suites"
 
 
 def test_an_old_run_without_alerts_is_still_sent_and_exits_with_1(tmp_path, draft):

@@ -375,11 +375,12 @@ def build(
             else f"Analytics Health: suite-wide events go on in {len(sections)} report suites"
         )
     elif total == 0:
-        # Only warnings and events without new alerts.
+        # Only warnings and events without new alerts. A missing suite counts too.
+        suites = len(sections) + len(missing or [])
         subject = (
             f"Analytics Health warning for {sections[0][0]}"
-            if len(sections) == 1
-            else f"Analytics Health warnings for {len(sections)} report suites"
+            if suites == 1
+            else f"Analytics Health warnings for {suites} report suites"
         )
     elif len(sections) == 1:
         rsid, _name, rows = sections[0]
