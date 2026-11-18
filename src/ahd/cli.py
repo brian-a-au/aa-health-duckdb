@@ -1011,7 +1011,9 @@ def _print_runs(rows: list[dict]) -> None:
     print(f"{'run':>4}  {'report suite':<24} {'date':<10}  {'status':<8}  took")
     for r in rows:
         took = duration_text(r["started_at"], r["finished_at"]) or ""
-        print(f"{r['run_id']:>4}  {inert(r['rsid']):<24} {r['today']!s:<10}  {r['status']:<8}  {took}")
+        print(
+            f"{r['run_id']:>4}  {inert(r['rsid']):<24} {r['today']!s:<10}  {r['status']:<8}  {took}"
+        )
 
 
 def _confirm(question: str) -> bool:
