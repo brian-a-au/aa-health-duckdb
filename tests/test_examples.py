@@ -1291,7 +1291,7 @@ def test_a_warning_beside_an_event_keeps_the_warning_subject(tmp_path, draft, mo
 def test_an_event_beside_a_missing_suite_counts_both_in_the_subject(tmp_path, draft, monkeypatch):
     mod = _load("send_alerts")
     _fake_ahd(monkeypatch, mod, [_json_run(events=[EVENT])])
-    assert mod.main(["db", "rs1", "nope", "--new-only"]) == 0
+    assert mod.main(["db", "rs1", "nope", "--new-only"]) == 1
     assert _eml(tmp_path)["Subject"] == "Analytics Health warnings for 2 report suites"
 
 
@@ -1507,3 +1507,147 @@ def test_a_database_is_needed_without_test(capsys):
         mod.main([])
     assert e.value.code == 1
     assert "error: give the ahd DuckDB file" in capsys.readouterr().err
+
+
+# ---- 0.1.18: a missing suite alone, the mail errors, the segment and the event count ---------
+
+
+@pytest.mark.parametrize("always", [[], ["--always"]])
+def test_a_missing_suite_alone_gets_its_warning(tmp_path, draft, monkeypatch, capsys, always):
+    """ahd alerts gives no run and exits with 1. The warning is still sent."""
+    mod = _load("send_alerts")
+    _fake_ahd(monkeypatch, mod, [], code=1)
+    assert mod.main(["db", "nope", *always]) == 1
+    assert _eml(tmp_path)["Subject"] == "Analytics Health warning for nope"
+    text, page = _mail(tmp_path)
+    assert MISSING in text and MISSING in page
+    assert "Wrote alerts.eml with the warning." in capsys.readouterr().out
+
+
+def test_a_missing_suite_beside_a_quiet_suite_gets_its_warning(tmp_path, draft, monkeypatch):
+    mod = _load("send_alerts")
+    _fake_ahd(monkeypatch, mod, [_json_run()], code=1)
+    assert mod.main(["db", "nope", "rs1"]) == 1
+    assert _eml(tmp_path)["Subject"] == "Analytics Health warning for nope"
+    text, _page = _mail(tmp_path)
+    assert MISSING in text
+    assert "No alerts for Suite (rs1) on 2026-11-06." in text
+
+
+def test_a_missing_suite_exits_with_1_also_when_ahd_says_0(tmp_path, draft, monkeypatch):
+    mod = _load("send_alerts")
+    _fake_ahd(monkeypatch, mod, [_json_run()], code=0)
+    assert mod.main(["db", "nope", "rs1"]) == 1
+
+
+@pytest.mark.parametrize("user", ["me", "mé"])
+def test_a_password_that_is_not_ascii_is_named_without_its_characters(
+    tmp_path, monkeypatch, capsys, user
+):
+    """smtplib encodes the login as ASCII. Its error holds a character of the password and its
+    position, so the script must not print it."""
+    mod = _load("send_alerts")
+
+    class AsciiLogin(_Recorder):
+        def login(self, user, password):
+            (user + "\0" + password).encode("ascii")
+
+    monkeypatch.setattr(mod.smtplib, "SMTP", AsciiLogin())
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_USER", user)
+    monkeypatch.setenv("SMTP_PASSWORD", "geheim-pässwort")
+    assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs1"]) == 1
+    out = capsys.readouterr()
+    assert out.err == (
+        "SMTP_USER and SMTP_PASSWORD must hold only ASCII characters, because the mail login "
+        "takes no other. Nothing was sent to smtp.example.com.\n"
+    )
+    assert "ä" not in out.err + out.out and "geheim" not in out.err + out.out
+    assert "Sent" not in out.out
+
+
+@pytest.mark.parametrize(
+    ("step", "said"),
+    [
+        ("tls", "The mail server does not offer STARTTLS, so the script did not send."),
+        (
+            "login",
+            (
+                "The mail server does not offer a login (AUTH). Leave out SMTP_USER and "
+                "SMTP_PASSWORD when the server needs no login."
+            ),
+        ),
+        (
+            "send",
+            (
+                "The mail server does not take an address that is not ASCII (SMTPUTF8). Check "
+                "MAIL_FROM and MAIL_TO."
+            ),
+        ),
+    ],
+)
+def test_a_missing_server_feature_is_named(tmp_path, monkeypatch, capsys, step, said):
+    mod = _load("send_alerts")
+    error = smtplib.SMTPNotSupportedError("not supported")
+    monkeypatch.setattr(mod.smtplib, "SMTP", _FailingSMTP(step, error))
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_USER", "me")
+    assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs1"]) == 1
+    assert capsys.readouterr().err == f"{said} Nothing was sent to smtp.example.com.\n"
+
+
+def test_the_email_names_the_segment(tmp_path, draft, monkeypatch):
+    mod = _load("send_alerts")
+    _fake_ahd(monkeypatch, mod, [_json_run(alerts=[DROP], segment_id="s300_x")])
+    assert mod.main(["db", "rs1", "--segment", "s300_x"]) == 0
+    assert (
+        _eml(tmp_path)["Subject"]
+        == "1 Analytics Health alerts for rs1, segment s300_x, on 2026-11-06"
+    )
+    text, page = _mail(tmp_path)
+    assert "Suite (rs1), segment s300_x, 2026-11-06: 1 alerts, 1 new" in text
+    assert "<h3>Suite (rs1), segment s300_x, 2026-11-06: 1 alerts, 1 new</h3>" in page
+
+
+def test_the_email_names_the_segment_of_several_suites(tmp_path, draft, monkeypatch):
+    mod = _load("send_alerts")
+    runs = [
+        _json_run(alerts=[DROP], segment_id="s300_x"),
+        _json_run(alerts=[DROP], segment_id="s300_x", run_id=2, rsid="rs2", rsid_name="Two"),
+    ]
+    _fake_ahd(monkeypatch, mod, runs)
+    assert mod.main(["db", "--all", "--segment", "s300_x"]) == 0
+    subject = "2 Analytics Health alerts for 2 report suites, segment s300_x"
+    assert _eml(tmp_path)["Subject"] == subject
+
+
+def test_the_all_clear_names_the_segment(tmp_path, draft, monkeypatch):
+    mod = _load("send_alerts")
+    _fake_ahd(monkeypatch, mod, [_json_run(segment_id="s300_x")])
+    assert mod.main(["db", "rs1", "--segment", "s300_x", "--always"]) == 0
+    assert _eml(tmp_path)["Subject"] == "No Analytics Health alerts for rs1, segment s300_x"
+    assert "No alerts for Suite (rs1), segment s300_x, on 2026-11-06." in _mail(tmp_path)[0]
+
+
+def test_a_missing_suite_with_a_segment_names_the_segment(tmp_path, draft, monkeypatch):
+    mod = _load("send_alerts")
+    _fake_ahd(monkeypatch, mod, [], code=1)
+    assert mod.main(["db", "nope", "--segment", "s300_x"]) == 1
+    assert _eml(tmp_path)["Subject"] == "Analytics Health warning for nope, segment s300_x"
+    assert (
+        "There is no finished run of nope with the segment s300_x in the database. Check the "
+        "report suite ID and the segment ID, or run ahd runs to list the runs."
+    ) in _mail(tmp_path)[0]
+
+
+def test_one_more_alert_of_an_event_is_said_in_the_singular():
+    mod = _load("send_alerts")
+    event = {"event": "zero", "text": "6 of the 12 components ..."}
+    alerts = [
+        DROP | {"alert": "dropped to zero", "component_id": f"metrics/event{n}", "event": "zero"}
+        for n in range(6)
+    ]
+    run = _json_run(alerts=alerts, events=[event])
+    msg = mod.build([("rs1", "Suite", mod._rows(run))], 0.3, 0.5, "Adobe.", {"rs1": [event]})
+    text = msg.get_body(("plain",)).get_content()
+    assert "1 more alert of this event is not listed. ahd alerts --every-alert lists them" in text
