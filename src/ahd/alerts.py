@@ -215,12 +215,16 @@ def run_age(
         except ConfigError:
             current = None
     stale = None if current is None else run["today"] < current
+    # The order must be the one of latest_runs in views.sql. It sorts a missing start time last.
     found = store.con.execute(
-        "SELECT count(*) FROM runs f, runs r WHERE r.run_id = ? AND f.rsid = r.rsid"
-        " AND f.segment_id IS NOT DISTINCT FROM r.segment_id AND f.status = 'failed'"
-        " AND (f.today > r.today OR (f.today = r.today AND (f.started_at > r.started_at"
-        " OR (f.started_at = r.started_at AND f.run_id > r.run_id))))",
-        [run["run_id"]],
+        "WITH ranked AS (SELECT run_id, status, coalesce(segment_id, '') AS seg,"
+        " row_number() OVER (PARTITION BY rsid, seg"
+        " ORDER BY today DESC, started_at DESC, run_id DESC) AS pos"
+        " FROM runs WHERE rsid = (SELECT rsid FROM runs WHERE run_id = $run))"
+        " SELECT count(*) FROM ranked f, ranked r WHERE r.run_id = $run"
+        " AND f.seg = r.seg"
+        " AND f.status = 'failed' AND f.pos < r.pos",
+        {"run": run["run_id"]},
     ).fetchone()
     failed_after = int(found[0]) if found else 0
     warning = None

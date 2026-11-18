@@ -2,6 +2,12 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+**Fixes**
+
+- `ahd alerts` now counts the failed runs after a run in the same order as `latest_runs`, also when a run has no start time. A file filled by `ahd import` from an older layout can hold such runs. Before, the warning could leave out a failed run of the same day.
+
 ## 0.1.16 (2026-11-17)
 
 This release makes the alert emails and Slack messages easier to trust. A quiet inbox could mean healthy suites or a daily job that had stopped, and now the two look different. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is.

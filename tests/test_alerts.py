@@ -554,6 +554,41 @@ def test_a_failed_run_of_the_same_day_made_later_counts(tmp_path):
     assert age["warning"].endswith(" 1 later run of it failed.")
 
 
+NOW = datetime(2026, 11, 7, 8, tzinfo=UTC)
+
+
+def _no_start(store, rid):
+    """A run without a start time, as ahd import can give from an older layout."""
+    store.con.execute("UPDATE runs SET started_at = NULL WHERE run_id = ?", [rid])
+
+
+def test_a_failed_run_without_a_start_time_ranks_last_of_its_day(tmp_path):
+    # latest_runs sorts a missing start time last, so this failed run is older than the run.
+    store = Store.open(tmp_path / "ahd.duckdb")
+    rid = _bare_run(store, date(2026, 11, 5))
+    failed = _bare_run(store, date(2026, 11, 5), status="failed")
+    _no_start(store, failed)
+    assert run_age(store, _run_dict(store, rid), NOW)["failed_after"] == 0
+
+
+def test_a_failed_run_counts_when_the_run_has_no_start_time(tmp_path):
+    store = Store.open(tmp_path / "ahd.duckdb")
+    rid = _bare_run(store, date(2026, 11, 5))
+    _bare_run(store, date(2026, 11, 5), status="failed")
+    _no_start(store, rid)
+    assert run_age(store, _run_dict(store, rid), NOW)["failed_after"] == 1
+
+
+def test_the_run_number_decides_when_neither_run_has_a_start_time(tmp_path):
+    store = Store.open(tmp_path / "ahd.duckdb")
+    before = _bare_run(store, date(2026, 11, 5), status="failed")
+    rid = _bare_run(store, date(2026, 11, 5))
+    after = _bare_run(store, date(2026, 11, 5), status="failed")
+    for r in (before, rid, after):
+        _no_start(store, r)
+    assert run_age(store, _run_dict(store, rid), NOW)["failed_after"] == 1
+
+
 def test_an_old_run_without_failed_runs_after_it_says_only_the_days(tmp_path):
     store = Store.open(tmp_path / "ahd.duckdb")
     rid = _bare_run(store, date(2026, 11, 5))
