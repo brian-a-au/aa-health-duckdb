@@ -873,6 +873,21 @@ def test_calendar_leaves_out_a_day_without_data(tmp_path):
     assert len(days) == 90 and gap.isoformat() not in days
 
 
+def test_calendar_leaves_out_a_day_whose_values_are_all_empty(tmp_path):
+    # Adobe sent NaN for every component on that day. Nothing was read, so it is not a day
+    # with 0 alerts.
+    a, b = "metrics/event1", "metrics/event2"
+    gap = date(2026, 10, 1)
+    vals = [
+        _dv(cid, d, float("nan") if d == gap else 100.0)
+        for cid in (a, b)
+        for d in _days(START, YESTERDAY)
+    ]
+    store, rid = _build(tmp_path, [_comp(a, "A", number=1), _comp(b, "B", number=2)], vals)
+    days = [c["day"] for c in build_view(store, rid)["calendar"]]
+    assert len(days) == 90 and gap.isoformat() not in days
+
+
 def _falling(cid, per_week, base=1000.0, factor=None, skip=None):
     """A value that changes by per_week each week, the same on every day of a week."""
     out = []

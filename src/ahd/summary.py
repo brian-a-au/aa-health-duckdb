@@ -559,11 +559,12 @@ ORDER BY s.sel_day
 # Every day of the trend, with the components that had an alert by the rules that hold for
 # any day: Adobe flagged the value, or it dropped to 0 on or after the first day the component
 # had data. Large drops need a weekday average, which only the last 7 days have, so they are not
-# here. A day with no stored value at all is left out, so the page can show it as missing.
+# here. A day with no stored value at all, or only empty ones, e.g., NaN, is left out, so the
+# page can show it as a day where no data was read.
 _CALENDAR_SQL = f"""
 WITH {_DV}, {_COMPS},
 v AS (
-    SELECT d.day, c.component_id, c.gpos, c.number,
+    SELECT d.day, d.value, c.component_id, c.gpos, c.number,
         {_ALERT_ANOMALY} AS anomaly,
         coalesce(d.value = 0 AND d.day >= c.first_data, false) AS zero
     FROM dv d JOIN comps c ON c.component_id = d.component_id
@@ -579,6 +580,7 @@ SELECT CAST(day AS VARCHAR) AS day,
     count(*) FILTER (WHERE anomaly IS NOT NULL OR zero) AS alerts
 FROM v
 GROUP BY day
+HAVING count(value) > 0
 ORDER BY day
 """
 

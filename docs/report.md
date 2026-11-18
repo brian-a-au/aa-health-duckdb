@@ -273,7 +273,7 @@ A calendar shows the last 13 weeks. Each square is one day, and a darker square 
 - The anomaly method flagged the value above or below its expected range.
 - The value dropped to 0, and the component had data on an earlier day.
 
-Large drops and spikes are not counted, because only the last 7 days have a weekday average. The days before a component's first day with data are not counted for it, so a new component does not darken every day before it started. A day with no data at all is an outline.
+Large drops and spikes are not counted, because only the last 7 days have a weekday average. The days before a component's first day with data are not counted for it, so a new component does not darken every day before it started. A day with no data at all is an outline. So is a day whose values were all empty, e.g., because Adobe sent no number. Its text says that no data was read.
 
 A release that breaks tracking usually breaks many components on the same day, so it shows as one dark square. Choose a square, or move with the arrow keys, to list that day's components. The left and right keys move a week, and the up and down keys move a day. Choose a component in the list to see it on the metric or dimension chart. The text under the chart is then about that day.
 

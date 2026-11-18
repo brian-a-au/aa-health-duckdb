@@ -1564,6 +1564,20 @@ def test_the_calendar_marks_missing_days_and_folds_long_lists(chrome, showcase, 
     assert got["more"] == ["Show 3 more"]
 
 
+def test_the_calendar_says_no_data_was_read_on_a_day_of_empty_values(chrome, tmp_path):
+    # Adobe sent NaN for every component on Oct 1. The page must not count 0 alerts there.
+    gap = date(2026, 10, 1)
+
+    def series(cid):
+        return [_dv(cid, d, NAN if d == gap else 100.0) for d in _days() if d != TODAY]
+
+    page = _page_of(tmp_path, [series, series])
+    probe = CALENDAR_JS + 'click("2026-10-01"); return cal();'
+    got = run_probe(chrome, page, probe, tmp_path)
+    assert got["cells"]["2026-10-01"] == "missing"
+    assert got["readout"] == "Thu, Oct 1, 2026: no data was read."
+
+
 def test_a_calendar_without_alerts_says_so(chrome, showcase, tmp_path):
     view = build_view(*showcase)
     for c in view["calendar"]:
