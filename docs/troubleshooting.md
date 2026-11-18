@@ -103,7 +103,7 @@ When Adobe asks for a longer wait with a Retry-After header, the tool waits that
 - **"No credential was found"**: there is no profile, none of the variables `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_SECRET` and `AHD_SCOPES`, and no `config.json` in the current folder. See [Configuration](configuration.md).
 - **"Use a profile or --config, not both"**: the command got a profile and `--config`. Remove `--profile` or `--config`. When the message says that the profile comes from the `AA_PROFILE` variable, remove `--config`, or unset the variable with `unset AA_PROFILE`. With both options on the command line, the command exits with 2 and prints its usage. With the variable, it exits with 1.
 - **"Use --config or the four variables"**: all four of `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_SECRET` and `AHD_SCOPES` are set, and the command also got `--config`. The tool would have to ignore one of them, so it stops with exit code 1 before it signs in. Remove `--config` to use the variables, or unset them to use the file, e.g., `unset AHD_ORG_ID AHD_CLIENT_ID AHD_SECRET AHD_SCOPES`.
-- **"Missing credential keys"**: one of `org_id`, `client_id`, `secret` or `scopes` is missing or empty. The message names the key and where the tool looked. When the tool read only the variables, the message names the variables instead, e.g., `AHD_SECRET, AHD_SCOPES`. Set them, or unset all four to use a profile or `config.json`.
+- **"Missing credential keys"**: one of `org_id`, `client_id`, `secret` or `scopes` is missing or empty. The message names the key and where the tool looked. When the tool read only the variables, the message names the variables instead, e.g., `AHD_SECRET, AHD_SCOPES`. Set the variables it names.
 
 ## The database
 
