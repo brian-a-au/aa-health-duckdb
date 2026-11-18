@@ -61,7 +61,7 @@ These steps take you from nothing to a first message in Slack. The commands use 
    export SLACK_WEBHOOK_URL='https://hooks.slack.com/services/...'
    ```
 
-   On Windows, in the Command Prompt, write `set SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...` without quotes. In PowerShell, write `$env:SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/...'`. The setting lasts until you close the terminal.
+   On Windows, in the Command Prompt, write `set "SLACK_WEBHOOK_URL=https://hooks.slack.com/services/..."`, with the quotes around the name, the `=` and the URL. In a `.cmd` file, write each `%` of the URL as `%%`. In PowerShell, write `$env:SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/...'`. The setting lasts until you close the terminal.
 
 10. **Check the webhook.** Post a test message:
 
@@ -129,11 +129,11 @@ On Windows, set the variable as step 9 of [Step by step](#step-by-step) shows.
 The options are those of the email script. [Email alerts](email-alerts.md#options) explains each of them.
 
 - `RSID` or `--all`: the report suites. `--all` uses every suite that has a finished run in the file.
-- `--segment ID`: the latest runs with this segment. Without it, the latest runs without a segment.
+- `--segment ID`: the latest runs with this segment. Without it, the latest runs without a segment. The header and the notification text then name the segment, e.g., "Adobe Store, segment s300_x: 3 alerts, 1 new".
 - `--threshold` and `--spike-threshold`: the large drop and the large spike percent, as shares. The defaults are `0.30` and `0.50`.
 - `--anomaly-method` and `--anomaly-sensitivity`: the method that flags the unusual values, as on `ahd run`. Without them, `ahd alerts` reads `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`.
 - `--new-only`: lists only the alerts that are new on the day. The header then says "new", e.g., "Adobe Store: 2 new alerts". A suite-wide event keeps its line also when none of its alerts is new, so a suite whose data stopped days ago is still named every day. The notification text of such a message then says, e.g., "Analytics Health: a suite-wide event goes on in Adobe Store (my_suite)". It needs `ahd` 0.1.16 or newer. With an older `ahd`, the script stops with exit code 1 and says how to update it.
-- `--always`: posts a short message when there are no alerts, e.g., "No Analytics Health alerts" with one line for each suite. Then a quiet channel no longer means healthy suites. It means that the daily job did not run, so you notice a job that stopped. When a report suite ID that you gave has no finished run, the message names it, e.g., "There is no finished run of my_suite in the database.", and is a warning, not an all-clear. The script then exits with 1.
+- `--always`: posts a short message when there are no alerts, e.g., "No Analytics Health alerts" with one line for each suite. Then a quiet channel no longer means healthy suites. It means that the daily job did not run, so you notice a job that stopped. When a report suite ID that you gave has no finished run, the message names it, e.g., "There is no finished run of my_suite in the database.", and is a warning, not an all-clear. The script posts this warning also when no suite has alerts, and also without `--always`. It then exits with 1.
 - `--test`: posts a test message to check the webhook, see step 10 of [Step by step](#step-by-step). It does not read the database and does not need `ahd`.
 
 ### When the latest run is old

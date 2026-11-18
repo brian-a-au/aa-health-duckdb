@@ -457,7 +457,7 @@ def test_an_event_beside_a_missing_suite_is_posted_as_warnings(
     slack, tmp_path, monkeypatch, capsys
 ):
     _answer(monkeypatch, slack, 0, json.dumps({"runs": [_run([], events=[EVENT])]}))
-    assert slack.main(["db", "rs1", "nope", "--new-only"]) == 0
+    assert slack.main(["db", "rs1", "nope", "--new-only"]) == 1
     assert "Wrote slack.json with the warnings." in capsys.readouterr().out
     first, second = _written(tmp_path)
     assert first["text"] == "Analytics Health: a suite-wide event goes on in Suite (rs1)"
@@ -661,3 +661,86 @@ def test_messages_with_alerts_name_a_missing_suite(slack, tmp_path):
     payloads = _written(tmp_path)
     assert len(payloads) == 2
     assert MISSING in _texts(payloads[-1])
+
+
+# ---- 0.1.18: a missing suite alone, an old ahd on a quiet day, and the segment -------------
+
+
+@pytest.mark.parametrize("always", [[], ["--always"]])
+def test_a_missing_suite_alone_gets_its_warning(slack, tmp_path, monkeypatch, capsys, always):
+    """ahd alerts gives no run and exits with 1. The warning is still posted."""
+    _answer(monkeypatch, slack, 1, json.dumps({"runs": []}))
+    assert slack.main(["db", "nope", *always]) == 1
+    [payload] = _written(tmp_path)
+    assert payload["text"] == "Analytics Health warning for nope"
+    assert MISSING in _texts(payload)[1]
+    assert "Wrote slack.json with the warning." in capsys.readouterr().out
+
+
+def test_a_missing_suite_beside_a_quiet_suite_gets_its_warning(slack, tmp_path, monkeypatch):
+    _answer(monkeypatch, slack, 1, json.dumps({"runs": [_run([])]}))
+    assert slack.main(["db", "nope", "rs1"]) == 1
+    [payload] = _written(tmp_path)
+    assert payload["text"] == "Analytics Health warning for nope"
+    texts = _texts(payload)
+    assert MISSING in texts[1] and "No alerts for Suite (rs1) on 2026-11-06." in texts[1]
+
+
+def test_a_missing_suite_exits_with_1_also_when_ahd_says_0(slack, tmp_path, monkeypatch):
+    _answer(monkeypatch, slack, 0, json.dumps({"runs": [_run([])]}))
+    assert slack.main(["db", "nope", "rs1"]) == 1
+
+
+def test_an_ahd_without_events_is_too_old_also_on_a_quiet_day(slack, monkeypatch, capsys):
+    """ahd 0.1.12 gives no events, also for a run without alerts."""
+    old = {"runs": [_run([])]}
+    del old["runs"][0]["events"]
+    _answer(monkeypatch, slack, 4, json.dumps(old))
+    assert slack.main(["db", "rs1", "--always"]) == 1
+    assert capsys.readouterr().err == slack.NEEDS_AHD + "\n"
+
+
+def test_the_message_names_the_segment(slack):
+    payload = slack.message(_run([_alert(1)], segment_id="s300_x"), "Rules.")
+    assert payload["text"] == (
+        "1 Analytics Health alerts for Suite (rs1), segment s300_x, on 2026-11-06"
+    )
+    texts = _texts(payload)
+    assert texts[0] == "Suite, segment s300_x: 1 alerts, 1 new"
+    assert texts[1] == "Report suite rs1, segment s300_x, alerts of 2026-11-06. Rules."
+    warned = slack.message(_run([], segment_id="s300_x", warning="Old."), "Rules.")
+    assert warned["text"] == "Analytics Health warning for Suite (rs1), segment s300_x"
+    event = slack.message(_run([], events=[EVENT], segment_id="s300_x"), "Rules.", True)
+    assert event["text"] == (
+        "Analytics Health: a suite-wide event goes on in Suite (rs1), segment s300_x"
+    )
+
+
+def test_the_message_without_a_segment_names_none(slack):
+    payload = slack.message(_run([_alert(1)], segment_id=None), "Rules.")
+    assert "segment" not in payload["text"] + "".join(_texts(payload))
+
+
+def test_the_all_clear_names_the_segment(slack, tmp_path, monkeypatch):
+    _answer(monkeypatch, slack, 4, json.dumps({"runs": [_run([], segment_id="s300_x")]}))
+    assert slack.main(["db", "rs1", "--segment", "s300_x", "--always"]) == 0
+    [payload] = _written(tmp_path)
+    assert payload["text"] == "No Analytics Health alerts for rs1, segment s300_x"
+    assert "No alerts for Suite (rs1), segment s300_x, on 2026-11-06." in _texts(payload)[1]
+
+
+def test_a_missing_suite_with_a_segment_names_the_segment(slack, tmp_path, monkeypatch):
+    _answer(monkeypatch, slack, 1, json.dumps({"runs": []}))
+    assert slack.main(["db", "nope", "--segment", "s300_x"]) == 1
+    [payload] = _written(tmp_path)
+    assert payload["text"] == "Analytics Health warning for nope, segment s300_x"
+    assert (
+        "There is no finished run of nope with the segment s300_x in the database. Check the "
+        "report suite ID and the segment ID, or run ahd runs to list the runs."
+    ) in _texts(payload)[1]
+
+
+def test_the_missing_line_is_the_line_of_the_email_script(slack):
+    mail = _load("send_alerts")
+    for segment in (None, "s300_x"):
+        assert slack.missing_line("nope", segment) == mail.missing_line("nope", segment)

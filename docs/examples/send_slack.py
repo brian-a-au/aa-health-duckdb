@@ -38,7 +38,9 @@ them, ahd alerts reads the variables AHD_ANOMALY_METHOD and AHD_ANOMALY_SENSITIV
 --new-only lists only the alerts that are new on the day. A suite-wide event that started
 earlier keeps its line. It needs ahd 0.1.16 or newer. With ahd 0.1.16 or newer, a suite whose
 latest finished run is old gets a warning in its message, also without alerts, and the script
-then exits with 1. --always posts a short all-clear message when there are no alerts, so that a
+then exits with 1. A report suite ID that has no finished run gets a warning too, also when no
+suite has alerts and without --always, and the script then exits with 1. With --segment, the
+messages name the segment. --always posts a short all-clear message when there are no alerts, so that a
 quiet channel means that the job did not run. --test posts a test message to check the webhook.
 It reads no alerts and does not need ahd.
 
@@ -351,23 +353,36 @@ def _table(alerts: list[dict]) -> dict:
     }
 
 
+def _segment(segment: str | None) -> str:
+    """The words that name the segment after a suite, e.g., ", segment s300_x", or nothing."""
+    return f", segment {segment}" if segment else ""
+
+
+def _before_on(segment: str | None) -> str:
+    """The words that name the segment before "on" and a day, e.g., ", segment s300_x,"."""
+    return f"{_segment(segment)}," if segment else ""
+
+
 def message(run: dict, rules: str, new_only: bool = False) -> dict:
     """The Slack message for one run with alerts, a warning or a suite-wide event. ahd alerts
     gives the new alerts first.
 
     A warning of an old run comes first. Each suite-wide event gets one line. A table lists the
-    other alerts, at most SHOWN. new_only says that the run holds only the new alerts."""
+    other alerts, at most SHOWN. new_only says that the run holds only the new alerts. A run
+    with a segment names it in the header, the note and the notification text."""
     alerts = run["alerts"]
     name = run["rsid_name"] or run["rsid"]
+    segment = run.get("segment_id")
+    seg = _segment(segment)
     if not alerts:
-        heading = f"{name}: no {'new ' if new_only else ''}alerts"
+        heading = f"{name}{seg}: no {'new ' if new_only else ''}alerts"
     elif new_only:
-        heading = f"{name}: {len(alerts)} new alerts"
+        heading = f"{name}{seg}: {len(alerts)} new alerts"
     else:
-        heading = f"{name}: {len(alerts)} alerts, {sum(1 for a in alerts if a['is_new'])} new"
+        heading = f"{name}{seg}: {len(alerts)} alerts, {sum(1 for a in alerts if a['is_new'])} new"
     blocks: list[dict] = [
         {"type": "header", "text": _plain(heading, HEADER_LIMIT)},
-        _note(f"Report suite {run['rsid']}, alerts of {run['day']}. {rules}"),
+        _note(f"Report suite {run['rsid']}{seg}, alerts of {run['day']}. {rules}"),
     ]
     if run.get("warning"):
         blocks.append({"type": "section", "text": _plain(f"Warning: {run['warning']}")})
@@ -391,18 +406,25 @@ def message(run: dict, rules: str, new_only: bool = False) -> dict:
     if alerts:
         new = "new " if new_only else ""
         text = (
-            f"{len(alerts)} {new}Analytics Health alerts for {name} ({run['rsid']}) on {run['day']}"
+            f"{len(alerts)} {new}Analytics Health alerts for {name} ({run['rsid']})"
+            f"{_before_on(segment)} on {run['day']}"
         )
     elif run.get("warning"):
-        text = f"Analytics Health warning for {name} ({run['rsid']})"
+        text = f"Analytics Health warning for {name} ({run['rsid']}){seg}"
     else:
         # With new_only: only suite-wide events that hold since an earlier day.
-        text = f"Analytics Health: a suite-wide event goes on in {name} ({run['rsid']})"
+        text = f"Analytics Health: a suite-wide event goes on in {name} ({run['rsid']}){seg}"
     return {"text": _mrkdwn(text), "blocks": blocks}
 
 
-def missing_line(rsid: str) -> str:
-    """The line for a suite that has no finished run in the database."""
+def missing_line(rsid: str, segment: str | None = None) -> str:
+    """The line for a suite that has no finished run in the database, with the segment of the
+    runs when there is one."""
+    if segment:
+        return (
+            f"There is no finished run of {rsid} with the segment {segment} in the database. "
+            "Check the report suite ID and the segment ID, or run ahd runs to list the runs."
+        )
     return (
         f"There is no finished run of {rsid} in the database. Check the report suite ID, or run "
         "ahd runs to list the runs."
@@ -415,16 +437,17 @@ def _missing(args: argparse.Namespace, runs: list[dict]) -> list[str]:
     return [rsid for rsid in dict.fromkeys(args.rsids) if rsid not in found]
 
 
-def missing_message(missing: list[str]) -> dict:
-    """The message for the suites that have no finished run."""
+def missing_message(missing: list[str], segment: str | None = None) -> dict:
+    """The message for the suites that have no finished run. segment is the segment ID of the
+    runs, or None."""
     where = missing[0] if len(missing) == 1 else f"{len(missing)} report suites"
     warning = "warning" if len(missing) == 1 else "warnings"
     return {
-        "text": _mrkdwn(f"Analytics Health {warning} for {where}"),
+        "text": _mrkdwn(f"Analytics Health {warning} for {where}{_segment(segment)}"),
         "blocks": [
             {"type": "header", "text": _plain(f"Analytics Health {warning}", HEADER_LIMIT)},
             *_sections(
-                [missing_line(r) for r in missing],
+                [missing_line(r, segment) for r in missing],
                 "1 more suite has no finished run.",
                 "{} more suites have no finished run.",
             ),
@@ -432,17 +455,24 @@ def missing_message(missing: list[str]) -> dict:
     }
 
 
-def all_clear(runs: list[dict], new_only: bool, missing: list[str] | None = None) -> dict:
+def all_clear(
+    runs: list[dict],
+    new_only: bool,
+    missing: list[str] | None = None,
+    segment: str | None = None,
+) -> dict:
     """The short message for a day without alerts, with one line for each suite. A suite in
-    missing has no finished run, so the message is then a warning and not an all-clear."""
+    missing has no finished run, so the message is then a warning and not an all-clear. runs
+    may then be empty. segment is the segment ID of the runs, or None."""
     new = "new " if new_only else ""
     missing = missing or []
-    lines = [missing_line(rsid) for rsid in missing] + [
-        f"No {new}alerts for {run['rsid_name'] or run['rsid']} ({run['rsid']}) on {run['day']}."
+    lines = [missing_line(rsid, segment) for rsid in missing] + [
+        f"No {new}alerts for {run['rsid_name'] or run['rsid']} ({run['rsid']})"
+        f"{_before_on(segment)} on {run['day']}."
         for run in runs
     ]
     if missing:
-        payload = missing_message(missing)
+        payload = missing_message(missing, segment)
         # The suites without a finished run come first, so the count can hold both kinds.
         payload["blocks"][1:] = _sections(
             lines, "1 more suite is not listed.", "{} more suites are not listed."
@@ -450,7 +480,7 @@ def all_clear(runs: list[dict], new_only: bool, missing: list[str] | None = None
         return payload
     where = runs[0]["rsid"] if len(runs) == 1 else f"{len(runs)} report suites"
     return {
-        "text": _mrkdwn(f"No {new}Analytics Health alerts for {where}"),
+        "text": _mrkdwn(f"No {new}Analytics Health alerts for {where}{_segment(segment)}"),
         "blocks": [
             {"type": "header", "text": _plain(f"No {new}Analytics Health alerts", HEADER_LIMIT)},
             *_sections(
@@ -610,7 +640,8 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
-    if any(run["alerts"] and "events" not in run for run in runs):
+    # ahd 0.1.12 and older give no events, also for a run without alerts.
+    if any("events" not in run for run in runs):
         print(NEEDS_AHD, file=sys.stderr)
         return 1
     payloads = []
@@ -633,9 +664,11 @@ def main(argv: list[str]) -> int:
         count += len(run["alerts"])
     stale = any(run.get("stale") for run in runs)
     missing = _missing(args, runs)
+    # Every run of ahd alerts has the segment of --segment, so the first run names it.
+    segment = runs[0].get("segment_id") if runs else args.segment
     sent = False
     if payloads and missing:
-        payloads.append(missing_message(missing))
+        payloads.append(missing_message(missing, segment))
     if payloads:
         if count:
             what = None
@@ -646,14 +679,15 @@ def main(argv: list[str]) -> int:
         if not _send(payloads, count, what):
             return 1
         sent = True
-    elif runs and args.always:
+    elif missing or (runs and args.always):
+        # A suite without a finished run gets its warning also without --always.
         what = _warnings(len(missing)) if missing else "the all-clear message"
-        if not _send([all_clear(runs, args.new_only, missing)], 0, what):
+        if not _send([all_clear(runs, args.new_only, missing, segment)], 0, what):
             return 1
         sent = True
     elif runs:
         print("Nothing to send.")
-    if done.returncode == AHD_ERROR or stale:
+    if done.returncode == AHD_ERROR or stale or missing:
         return 1
     return 0 if sent else 2
 
