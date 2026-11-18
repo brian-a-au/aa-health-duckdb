@@ -1,6 +1,7 @@
 """ahd run with several report suites: --rsid more than once, or --all-suites."""
 
 import json
+from datetime import date
 
 import duckdb
 import pytest
@@ -265,3 +266,23 @@ def test_a_suite_with_an_answer_in_another_form_does_not_stop_the_others(run, tm
     assert stored(tmp_path) == [("rs1", "ok"), ("rs3", "ok")]
     assert "Error for rs2: " in captured.err and "the report suite" in captured.err
     assert captured.out.rstrip().endswith("Checked 3 report suites: 2 ok, 0 partial, 1 failed.")
+
+
+def test_the_lines_of_several_suites_cannot_change_the_terminal(run, tmp_path, capsys):
+    client = fake(suites=[("rs\x1b1", "Alpha"), ("rs\u202e2", "Beta")], broken=("rs\x1b1",))
+    run(client, "--all-suites")
+    captured = capsys.readouterr()
+    out = captured.out + captured.err
+    assert "Report suite 1 of 2: rs?1" in out and "Error for rs?1: " in out
+    assert "Report suite 2 of 2: rs?2" in out and " for rs?2 finished with status: " in out
+    assert "\x1b" not in out and "\u202e" not in out
+
+
+def test_ahd_runs_prints_a_stored_suite_id_that_cannot_change_the_terminal(tmp_path, capsys):
+    store = Store.open(tmp_path / "t.duckdb")
+    rid = store.create_run("rs\x1b1", "Alpha", None, date(2026, 11, 7), "UTC", "0.1")
+    store.finish_run(rid, "ok")
+    store.con.close()
+    assert main(["runs", "--db", str(tmp_path / "t.duckdb")]) == 0
+    out = capsys.readouterr().out
+    assert " rs?1 " in out and "\x1b" not in out

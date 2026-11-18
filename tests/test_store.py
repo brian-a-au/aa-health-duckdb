@@ -248,6 +248,7 @@ def test_prune_finds_by_number_and_date(tmp_path):
     assert [r["run_id"] for r in s.runs_to_prune([], date(2026, 10, 1))] == [a]
     assert [r["run_id"] for r in s.runs_to_prune([c, 99], date(2026, 10, 1))] == [a, c]
     assert s.runs_to_prune([], None) == []
+    assert s.runs_to_prune([99999999999], None) == []
     assert b not in [r["run_id"] for r in s.runs_to_prune([c], date(2026, 10, 1))]
 
 
@@ -262,6 +263,8 @@ def test_delete_runs_clears_every_table(tmp_path):
         ids = {r[0] for r in s.con.execute(f"SELECT DISTINCT run_id FROM {table}").fetchall()}
         assert ids == {b}, table
     s.delete_runs([])
+    # A number past the 32-bit limit deletes nothing.
+    s.delete_runs([99999999999])
     # Run numbers are never reused, so report file names stay unique.
     assert _fill(s) == b + 1
 

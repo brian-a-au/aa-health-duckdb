@@ -8,18 +8,18 @@ The example script [`examples/send_alerts.py`](examples/send_alerts.py) emails t
 
 These steps take you from nothing to a first email. The commands use the profile `prod` and the report suite ID `my_suite`. Put your own profile and suite ID in their place. The sections after this one explain each part in more detail.
 
-1. **Install the tool and download the script.** You do not need a clone of this repository. Install `ahd` from PyPI, and download the one script file into a folder of your choice, e.g., `~/ahd`. The link holds a version, `v0.1.17`, so you get the script of that release:
+1. **Install the tool and download the script.** You do not need a clone of this repository. Install `ahd` from PyPI, and download the one script file into a folder of your choice, e.g., `~/ahd`. The link holds a version, `v0.1.18`, so you get the script of that release:
 
    ```
    uv tool install aa-health-duckdb
-   curl -fLO https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.17/docs/examples/send_alerts.py
+   curl -fLO https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.18/docs/examples/send_alerts.py
    ```
 
-   In Windows PowerShell, download it with `Invoke-WebRequest https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.17/docs/examples/send_alerts.py -OutFile send_alerts.py`. You can also open the link in a browser and save the page as `send_alerts.py`.
+   In Windows PowerShell, download it with `Invoke-WebRequest https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.18/docs/examples/send_alerts.py -OutFile send_alerts.py`. You can also open the link in a browser and save the page as `send_alerts.py`.
 
    The script needs `ahd` 0.1.11 or newer. If you installed `ahd` before, update it with `uv tool upgrade aa-health-duckdb`. If the terminal then says it cannot find `ahd`, run `uv tool update-shell` and open a new terminal. With pipx, install the tool with `pipx install aa-health-duckdb`, and run the script with `python3 send_alerts.py` in place of `uv run python send_alerts.py`.
 
-   When you install a newer `ahd`, download the script again with the new version in the link, e.g., `v0.1.18`. `uv tool list` shows the version you have. The script and the tool then come from the same release.
+   When you install a newer `ahd`, download the script again with the new version in the link, e.g., `v0.1.19`. `uv tool list` shows the version you have. The script and the tool then come from the same release.
 
    Run every command below in the folder that holds the script. To work from a clone instead, see [Run it](#run-it).
 
@@ -67,7 +67,7 @@ These steps take you from nothing to a first email. The commands use the profile
    export MAIL_TO='team@example.com'
    ```
 
-   On Windows, in the Command Prompt, use `set` in place of `export` and leave out the quotes, e.g., `set SMTP_HOST=smtp.example.com`. In PowerShell, write `$env:SMTP_HOST = 'smtp.example.com'`. Leave out `SMTP_USER` and `SMTP_PASSWORD` when the server needs no login. The settings last until you close the terminal.
+   On Windows, in the Command Prompt, use `set` in place of `export` and put the quotes around the name, the `=` and the value, e.g., `set "SMTP_PASSWORD=your password"`. Then a character such as `&` or `^` in the password stays part of it. In a `.cmd` file, write each `%` of a value as `%%`. See [Windows](scheduling.md#windows). In PowerShell, write `$env:SMTP_HOST = 'smtp.example.com'`. Leave out `SMTP_USER` and `SMTP_PASSWORD` when the server needs no login. The settings last until you close the terminal.
 
 8. **Check the mail settings.** Send a test message:
 
@@ -114,7 +114,7 @@ uv run python docs/examples/send_alerts.py ~/.aa/orgs/prod/ahd.duckdb --all
 
 ## Options
 
-It reads the latest run of each suite without a segment, from `latest_runs`. `--all` uses every suite that has such a run in the file. Add `--segment ID` for the latest runs with that segment. The script takes only report suite IDs and segment IDs, not names, and they must match exactly. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`. `--spike-threshold` sets the large spike percent the same way, up to `2`. The default is `0.50`. The script gives each share to `ahd alerts` as the exact percent, e.g., `0.275` as `--change-alert 27.5`. It does not round the percent.
+It reads the latest run of each suite without a segment, from `latest_runs`. `--all` uses every suite that has such a run in the file. Add `--segment ID` for the latest runs with that segment. The subject and the heading of each section then name the segment, e.g., "Adobe Store (my_suite), segment s300_x, 2026-11-16: 3 alerts". The script takes only report suite IDs and segment IDs, not names, and they must match exactly. `--threshold` sets the large drop percent as a share, e.g., `--threshold 0.20` for 20 percent. The default is `0.30`. `--spike-threshold` sets the large spike percent the same way, up to `2`. The default is `0.50`. The script gives each share to `ahd alerts` as the exact percent, e.g., `0.275` as `--change-alert 27.5`. It does not round the percent.
 
 `--anomaly-method` chooses the anomaly method that flags the unusual values, and `--anomaly-sensitivity` sets how wide the range of a local method is. The script gives both to `ahd alerts`, so they take the same values as on `ahd run`, and the defaults are the same, `adobe` and `normal`. So by default the script uses Adobe's flags. With `adobe`, `low` or `high` stops the script with exit code 1 and the message of `ahd`, because Adobe returns its own range. The email says which method flagged the unusual values, and it names the sensitivity when it is not `normal`, e.g., "The Weekday median method with high sensitivity flagged the unusual values."
 
@@ -124,7 +124,9 @@ Without these two options, `ahd alerts` reads the variables `AHD_ANOMALY_METHOD`
 
 `--new-only` lists only the alerts that are new on the day, e.g., a large drop that started yesterday, and leaves out the alerts that have held for longer. The subject then says "new", e.g., "2 new Analytics Health alerts for my_suite on 2026-11-16". A suite-wide event keeps its line also when none of its alerts is new, so a suite whose data stopped days ago is still named every day. When the email holds only such events, the subject says so, e.g., "Analytics Health: a suite-wide event goes on in my_suite". This needs `ahd` 0.1.16 or newer. With an older `ahd`, the script stops with exit code 1 and says how to update it.
 
-`--always` sends a short message when there are no alerts, e.g., with the subject "No Analytics Health alerts for 3 report suites". Then an empty inbox no longer means healthy suites. It means that the daily job did not run, so you notice a job that stopped. When a report suite ID that you gave has no finished run, the email names it, e.g., "There is no finished run of my_suite in the database.", and is a warning, not an all-clear. The script then exits with 1. Without `--always`, the script sends nothing on a day without alerts.
+`--always` sends a short message when there are no alerts, e.g., with the subject "No Analytics Health alerts for 3 report suites". Then an empty inbox no longer means healthy suites. It means that the daily job did not run, so you notice a job that stopped. Without `--always`, the script sends nothing on a day without alerts.
+
+When a report suite ID that you gave has no finished run, the email names it, e.g., "There is no finished run of my_suite in the database.", and is a warning, not an all-clear. The script sends this warning also when no suite has alerts, and also without `--always`. It then exits with 1. With `--segment`, the line names the segment, e.g., "There is no finished run of my_suite with the segment s300_x in the database."
 
 `--test` sends a test message to check the mail settings, see step 8 of [Step by step](#step-by-step). It needs `SMTP_HOST`, `MAIL_FROM` and `MAIL_TO`, and writes no `alerts.eml`. It does not read the database and does not need `ahd`, so you can give it alone.
 
@@ -132,7 +134,7 @@ Without these two options, `ahd alerts` reads the variables `AHD_ANOMALY_METHOD`
 
 Without `SMTP_HOST`, it writes `alerts.eml` in the current folder, which you can open and check first. To send, set `SMTP_HOST`, `MAIL_FROM` and `MAIL_TO`. Set `SMTP_PORT` when the server does not use 587. Set `SMTP_USER` and `SMTP_PASSWORD` when the server needs a login. The script connects without encryption and then turns it on with the STARTTLS command. It does not work with a server that needs encryption from the start, e.g., on port 465.
 
-The script checks the certificate of the server and that it was made for the name in `SMTP_HOST`. It waits at most 60 seconds for an answer from the server. When it cannot send, e.g., the server refuses the login or `SMTP_PORT` is not a number, it prints one line that says why and exits with 1. The line never holds the password.
+The script checks the certificate of the server and that it was made for the name in `SMTP_HOST`. It waits at most 60 seconds for an answer from the server. When it cannot send, e.g., the server refuses the login or `SMTP_PORT` is not a number, it prints one line that says why and exits with 1. The line never holds the password. The mail login takes only ASCII characters, which are the English letters without accents, the digits and the usual signs. So `SMTP_USER` and `SMTP_PASSWORD` must not hold a letter such as `ä`. See [Troubleshooting](troubleshooting.md#email-and-slack-alerts) for each line.
 
 ## Exit codes
 

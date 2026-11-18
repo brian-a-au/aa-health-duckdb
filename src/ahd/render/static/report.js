@@ -560,6 +560,14 @@
       usual !== null && usual >= minUsual(week);
   }
 
+  // A row of the weekly view whose week lacks the value of a day. Its sum is shown, but it is
+  // not compared with the average week, so it gets no large drop, no large spike and no zero.
+  // A daily row has no missing_days.
+  function shortWeek(row) { return !!row.missing_days; }
+  function missingNote(n) {
+    return el("span", { "class": "muted" }, n + (n === 1 ? " day" : " days") + " without a value");
+  }
+
   function changeCell(arrow, pct) {
     var span = el("span");
     if (arrow === "up" || arrow === "down") {
@@ -602,7 +610,7 @@
   }
 
   function nameCell(row) {
-    if (!row.zero) return { c: row.name, k: row.name };
+    if (!row.zero || (shortWeek(row) && !row.unused)) return { c: row.name, k: row.name };
     var span = el("span");
     span.appendChild(document.createTextNode(row.name));
     span.appendChild(row.unused ? unusedMark() : zeroBadge());
@@ -631,13 +639,14 @@
   function flagCell(row, daily) {
     if (!daily) {
       var wf = weekFlags(row), flags = weekFlagBadges(row);
-      var extra = isLargeDrop(row.value, row.baseline, row.pct, true) ? dropBadge() :
+      var extra = shortWeek(row) ? missingNote(row.missing_days) :
+        isLargeDrop(row.value, row.baseline, row.pct, true) ? dropBadge() :
         isLargeSpike(row.value, row.baseline, row.pct, true) ? spikeBadge() : null;
       if (!flags && !extra) return { c: "", k: null };
       var cell = el("span", { "class": "week-flags" });
       if (flags) cell.appendChild(flags);
       if (extra) cell.appendChild(extra);
-      return { c: cell, k: wf.high * 2 + wf.low + (extra ? 0.5 : 0) };
+      return { c: cell, k: wf.high * 2 + wf.low + (extra && !shortWeek(row) ? 0.5 : 0) };
     }
     var a = anomalyCell(row.anomaly);
     if (row.anomaly) return a;
@@ -651,6 +660,7 @@
     if (week) {
       var wf = weekFlags(row);
       if (wf.high || wf.low) return true;
+      if (shortWeek(row)) return false;
     }
     return !!(row.anomaly || (row.zero && !row.unused) ||
       isLargeDrop(row.value, row.baseline, row.pct, week) ||
@@ -817,7 +827,8 @@
       cells.push(sparkCell(r));
       cells.push({ c: fmtNum(r.value, r.metric_type), k: r.value });
       cells.push({ c: fmtRound(r.baseline, r.metric_type), k: r.baseline });
-      cells.push(devCell(arrowFor(r.pct), r.pct));
+      // A short week is not compared with the average week, so it gets no change.
+      cells.push(shortWeek(r) ? devCell(null, null) : devCell(arrowFor(r.pct), r.pct));
       cells.push(flagCell(r, daily));
       return cells;
     });
@@ -989,9 +1000,14 @@
   }
 
   // average: the weekday average, given only for the chosen day.
-  // The readout of the weekly view: the week's total and the average week.
-  function describeWeek(week, type) {
+  // The readout of the weekly view: the week's total and the average week. A week that lacks
+  // the value of a day is not compared with the average week, as in the tables.
+  function describeWeek(week, type, missing) {
     var text = weekText() + ": " + fmtNum(week.total, type) + " in total";
+    if (missing) {
+      return text + ". " + missing + " of the 7 days " + (missing === 1 ? "has" : "have") +
+        " no value, so the week is not compared with the average week.";
+    }
     if (week.average !== null && week.average !== undefined) {
       text += ", average week " + fmtRound(week.average, type);
     }
@@ -1040,9 +1056,12 @@
     var average = chosen >= 0 && typeof mark.average === "number" ? mark.average : null;
     // In the weekly view, mark.week gives the week's days, its total and the average week.
     var week = mark && mark.week ? mark.week : null;
-    var weekAt = [];
+    // weekMissing: how many of the week's days have no value.
+    var weekAt = [], weekMissing = 0;
     if (week) {
       points.forEach(function (p, k) { if (week.days.indexOf(p[0]) >= 0) weekAt.push(k); });
+      weekMissing = week.days.length -
+        weekAt.filter(function (k) { return points[k][1] !== null; }).length;
       if (!weekAt.length) week = null;
     }
     var max = average !== null && average > 0 ? average : 0;
@@ -1179,7 +1198,7 @@
     function show(k, visible) {
       active = Math.max(0, Math.min(last, k));
       var p = points[active];
-      readout.textContent = !visible && week && look < 0 ? describeWeek(week, type) :
+      readout.textContent = !visible && week && look < 0 ? describeWeek(week, type, weekMissing) :
         describe(p, type, active === chosen ? average : null);
       var cx = x(p);
       cross.setAttribute("x1", cx);
@@ -2002,6 +2021,7 @@
   // under the slider, so a reader can see why nothing was flagged. A week is compared with the
   // average week, and a day with its weekday average.
   function dropSummary(rows, when, week) {
+    rows = rows.filter(function (r) { return !shortWeek(r); });
     var base = week ? "the average week" : "the weekday average";
     var pct = thresholdText(state.t);
     var drops = rows.filter(function (r) { return isLargeDrop(r.value, r.baseline, r.pct, week); });
@@ -2026,6 +2046,7 @@
 
   // The same sentence for large spikes, naming the largest rise.
   function spikeSummary(rows, when, week) {
+    rows = rows.filter(function (r) { return !shortWeek(r); });
     var base = week ? "the average week" : "the weekday average";
     var pct = thresholdText(state.s);
     var spikes = rows.filter(function (r) { return isLargeSpike(r.value, r.baseline, r.pct, week); });
@@ -2527,7 +2548,12 @@
       selectTab(t);
       t.focus();
     }
-    function toStatus() { byId("status").scrollIntoView(); }
+    // The focus moves too, so that a keyboard or screen reader user lands on the problems.
+    function toStatus() {
+      var s = byId("status");
+      s.scrollIntoView();
+      s.focus();
+    }
 
     tile("plain", "●", "Components checked", numFmt.format(rows.length), dayText);
     if (anomalyBlocked) {

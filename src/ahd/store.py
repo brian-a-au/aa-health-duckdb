@@ -471,7 +471,7 @@ class Store:
         if not run_ids and before is None:
             return []
         cur = self.con.execute(
-            "SELECT * FROM runs WHERE list_contains(?::INTEGER[], run_id)"
+            "SELECT * FROM runs WHERE list_contains(?::BIGINT[], run_id)"
             " OR (?::DATE IS NOT NULL AND today < ?::DATE) ORDER BY run_id",
             [list(run_ids), before, before],
         )
@@ -487,7 +487,7 @@ class Store:
         try:
             for table in RUN_TABLES:
                 self.con.execute(
-                    f"DELETE FROM {table} WHERE list_contains(?::INTEGER[], run_id)", [ids]
+                    f"DELETE FROM {table} WHERE list_contains(?::BIGINT[], run_id)", [ids]
                 )
         except BaseException:
             self.con.execute("ROLLBACK")

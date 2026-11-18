@@ -1564,6 +1564,20 @@ def test_the_calendar_marks_missing_days_and_folds_long_lists(chrome, showcase, 
     assert got["more"] == ["Show 3 more"]
 
 
+def test_the_calendar_says_no_data_was_read_on_a_day_of_empty_values(chrome, tmp_path):
+    # Adobe sent NaN for every component on Oct 1. The page must not count 0 alerts there.
+    gap = date(2026, 10, 1)
+
+    def series(cid):
+        return [_dv(cid, d, NAN if d == gap else 100.0) for d in _days() if d != TODAY]
+
+    page = _page_of(tmp_path, [series, series])
+    probe = CALENDAR_JS + 'click("2026-10-01"); return cal();'
+    got = run_probe(chrome, page, probe, tmp_path)
+    assert got["cells"]["2026-10-01"] == "missing"
+    assert got["readout"] == "Thu, Oct 1, 2026: no data was read."
+
+
 def test_a_calendar_without_alerts_says_so(chrome, showcase, tmp_path):
     view = build_view(*showcase)
     for c in view["calendar"]:
@@ -2203,6 +2217,111 @@ def test_the_weekly_view_skips_a_component_with_a_small_average_week(chrome, tmp
     assert got["flagged"] == ["Event 2"]
     assert ": 1 component is more than 30% below the average week." in got["text"]
     assert "under 70" in page
+
+
+def _short_week(during, missing=3):
+    """100 on every day before the week, during on its days, and no value on its last days."""
+    week = {YESTERDAY - timedelta(days=n) for n in range(7)}
+    gone = {YESTERDAY - timedelta(days=n) for n in range(missing)}
+    return lambda cid: [
+        _dv(cid, d, during if d in week else 100.0) for d in _days() if d != TODAY and d not in gone
+    ]
+
+
+SHORT_WEEK_PROBE = (
+    MARKS_JS
+    + """
+var g = document.getElementById("granularity");
+g.value = "week";
+g.dispatchEvent(new Event("change"));
+function read() {
+  var o = { rows: {}, drop: document.getElementById("change-alert-result").textContent,
+    spike: document.getElementById("spike-alert-result").textContent };
+  [].forEach.call(document.querySelectorAll("#tables tbody tr"), function (tr) {
+    o.rows[tr.querySelector("td.name").firstChild.textContent] = tr.textContent;
+  });
+  return o;
+}
+function slide(id, v) {
+  var s = document.getElementById(id);
+  s.value = String(v);
+  s.dispatchEvent(new Event("input"));
+}
+var out = { start: read() };
+// The slider ends: every drop past 10 percent and every spike past 10 percent.
+slide("change-alert", -10);
+slide("spike-alert", 10);
+out.ends = read();
+var only = document.getElementById("flagged-only");
+only.click();
+out.flagged = [].map.call(document.querySelectorAll("#tables tbody tr"), function (tr) {
+  return tr.querySelector("td.name").firstChild.textContent;
+});
+only.click();
+var pick = document.getElementById("metric-pick");
+pick.value = "metrics/event1";
+pick.dispatchEvent(new Event("change"));
+out.chart = marks("metric-chart").readout;
+pick.value = "metrics/event5";
+pick.dispatchEvent(new Event("change"));
+out.full = marks("metric-chart").readout;
+document.getElementById("tab-individual").click();
+out.individual = marks("individual-chart").readout;
+return out;
+"""
+)
+
+
+def test_the_weekly_view_does_not_flag_a_week_that_lacks_a_day(chrome, tmp_path):
+    # Event 1 has 100 on 4 days and no value on the last 3: 400 against an average week of 700.
+    # Event 2 is a spike and Event 3 a zero of a short week. Event 4 lacks one day of 0. Event 5
+    # is a full week at half: the one large drop.
+    store = Store.open(tmp_path / "short.duckdb")
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
+    store.add_pair(rid, "variables/page", "metrics/occurrences", "Page", "Occurrences", "int")
+    makes = [_short_week(100.0), _short_week(300.0), _short_week(0.0), _short_week(0.0, 1)]
+    makes.append(_halved_last_week(100.0))
+    comps, values = [], []
+    for i, make in enumerate(makes, start=1):
+        cid = f"metrics/event{i}"
+        comps.append(
+            Component(cid, f"Event {i}", "metric", "custom_events", i, Column(cid, cid), True)
+        )
+        values += make(cid)
+    values += _short_week(100.0)("individual/1")
+    store.add_components(rid, comps)
+    store.add_daily_values(rid, values)
+    store.finish_run(rid, "ok")
+    page = render_html(build_view(store, rid))
+    store.con.close()
+    got = run_probe(chrome, page, SHORT_WEEK_PROBE, tmp_path)
+    for when in ("start", "ends"):
+        rows = got[when]["rows"]
+        # The sum still shows, with no flag, no arrow and no zero badge.
+        assert "400" in rows["Event 1"] and "700" in rows["Event 1"]
+        for name in ("Event 1", "Event 2", "Event 3", "Event 4"):
+            for mark in ("Large drop", "Large spike", "Zero data", "▼", "▲"):
+                assert mark not in rows[name], (when, name, mark)
+            assert "days without a value" in rows[name] or "day without a value" in rows[name]
+            # No change against the average week either, since the week is not compared.
+            assert "%" not in rows[name], (when, name)
+        assert "Large drop" in rows["Event 5"]
+        # The slider lines count and name only the full week.
+        assert ": 1 component is more than" in got[when]["drop"]
+        assert "Event 1" not in got[when]["drop"] and "Event 3" not in got[when]["drop"]
+        assert ": no component is more than" in got[when]["spike"]
+        assert "No component is above the average week." in got[when]["spike"]
+    assert "3 days without a value" in got["start"]["rows"]["Event 1"]
+    assert "1 day without a value" in got["start"]["rows"]["Event 4"]
+    assert got["flagged"] == ["Event 5"]
+    # The chart readouts give the sum, but no average week to compare it with.
+    week = "Oct 31 to Nov 6, 2026"
+    short = (
+        f"{week}: 400 in total. 3 of the 7 days have no value, so the week is not compared "
+        "with the average week."
+    )
+    assert got["chart"] == short and got["individual"] == short
+    assert got["full"] == f"{week}: 350 in total, average week 700."
 
 
 SLOW_PROBE = """
@@ -3357,3 +3476,32 @@ def test_the_calendar_is_a_group_that_a_screen_reader_can_enter(chrome, showcase
     # role="img" would keep the arrow keys of a screen reader from reaching the days.
     assert got["role"] == "group" and got["kind"] == "calendar" and got["focusable"] == "0"
     assert got["live"] == "polite" and got["describedby"] == got["readoutId"] != ""
+
+
+PROBLEMS_TILE_PROBE = """
+var tile = [].filter.call(document.querySelectorAll("#tiles .tile"), function (t) {
+  return t.querySelector(".tile-label").lastChild.textContent === "Problems in this run";
+})[0];
+tile.focus();
+tile.click();
+var status = document.getElementById("status");
+return { value: tile.querySelector(".tile-value").textContent,
+  focused: document.activeElement === status, tabindex: status.getAttribute("tabindex") };
+"""
+
+
+def test_the_problems_tile_moves_the_focus_to_the_status_section(chrome, tmp_path):
+    # A keyboard user who chooses the tile must land on the list of problems, not only see it.
+    store = Store.open(tmp_path / "problems.duckdb")
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
+    cid = "metrics/event1"
+    store.add_components(
+        rid, [Component(cid, "Event 1", "metric", "custom_events", 1, Column(cid, cid), True)]
+    )
+    store.add_daily_values(rid, _series(cid, 100.0, 100.0, 100.0))
+    store.add_issue(rid, "column", "metrics/x", "unauthorized_metric", "no access")
+    store.finish_run(rid, "partial")
+    page = render_html(build_view(store, rid))
+    store.con.close()
+    got = run_probe(chrome, page, PROBLEMS_TILE_PROBE, tmp_path)
+    assert got == {"value": "1", "focused": True, "tabindex": "-1"}

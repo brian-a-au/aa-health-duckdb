@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ahd.api.client import unreadable
 from ahd.config import ConfigError
+from ahd.text import inert
 
 PAGE_SIZE = 1000
+
+# The shape of a segment ID, e.g., s300_5f1a2b9c: "s", the company's number, "_" and letters or
+# digits.
+SEGMENT_ID = re.compile(r"s[0-9]+_[0-9A-Za-z]+")
 
 
 def _text(value: Any) -> str:
@@ -52,8 +58,11 @@ def list_segments(client: Any, rsid: str) -> list[dict]:
     return sorted((r for r in out if r["id"]), key=lambda r: (r["name"].lower(), r["id"]))
 
 
-def _pick(value: str, rows: list[dict], what: str, hint: str) -> str:
-    """An exact ID wins. Else a name that matches in any case. Else a clear error."""
+def _pick(
+    value: str, rows: list[dict], what: str, hint: str, id_shape: re.Pattern[str] | None = None
+) -> str:
+    """An exact ID wins. Else a name that matches in any case. Else a value with the shape of
+    an ID, when id_shape is given. Else a clear error."""
     for r in rows:
         if r["id"] == value:
             return value
@@ -62,8 +71,10 @@ def _pick(value: str, rows: list[dict], what: str, hint: str) -> str:
     if len(named) == 1:
         return named[0]["id"]
     if len(named) > 1:
-        ids = ", ".join(r["id"] for r in named)
+        ids = ", ".join(inert(r["id"]) for r in named)
         raise ConfigError(f"More than one {what} is named {value!r}: {ids}. Use the ID instead.")
+    if id_shape is not None and id_shape.fullmatch(value):
+        return value
     raise ConfigError(f"No {what} has the ID or name {value!r}. {hint}")
 
 
@@ -74,8 +85,13 @@ def resolve_suite(client: Any, value: str, suites: list[dict] | None = None) -> 
 
 
 def resolve_segment(client: Any, rsid: str, value: str) -> str:
+    """A segment ID from an ID or a name.
+
+    A value with the shape of a segment ID that the list does not hold goes through unchanged,
+    because the list may leave out a segment that the credential can still use.
+    """
     hint = f"Run ahd segments --rsid {rsid} to list them."
-    return _pick(value, list_segments(client, rsid), "segment", hint)
+    return _pick(value, list_segments(client, rsid), "segment", hint, SEGMENT_ID)
 
 
 _PREFIX = {"dimension": "variables/", "metric": "metrics/"}
@@ -113,7 +129,7 @@ def resolve_component(client: Any, rsid: str, kind: str, value: str) -> dict:
     if len(named) == 1:
         return named[0]
     if named:
-        found = ", ".join(r["id"] for r in named)
+        found = ", ".join(inert(r["id"]) for r in named)
         raise ConfigError(f"More than one {kind} is named {value!r}: {found}. Use the ID instead.")
     raise ConfigError(
         f"No {kind} in report suite {rsid} has the ID or name {value!r}. Use an ID such as "

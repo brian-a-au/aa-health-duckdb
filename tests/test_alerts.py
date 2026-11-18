@@ -1372,6 +1372,15 @@ def test_new_only_lists_the_new_alerts_of_an_event(tmp_path, capsys):
     assert _zero_line(_by_id(12)[0]) in out
 
 
+def test_one_more_alert_of_an_event_reads_well(tmp_path, capsys):
+    # An event of 12 zeros, 6 of them new. With new_only, 5 are listed and 1 is left.
+    db = _event_db(tmp_path, zeros=6, earlier=6)
+    assert _alerts(db, "--run", "1", "--new-only") == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert "1 more alert of this event is not listed. Add --every-alert to list it." in lines
+    assert not any("more alerts of this event" in line for line in lines)
+
+
 def test_new_only_keeps_every_event_in_the_json(tmp_path, capsys):
     db = _event_db(tmp_path, zeros=0, earlier=12)
     assert _alerts(db, "--run", "1", "--format", "json", "--new-only") == 0

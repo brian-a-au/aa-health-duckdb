@@ -182,10 +182,14 @@ def _at(arr: list | None, i: int):
 
 
 def _number_at(arr: list | None, i: int) -> float | None:
-    """The number at this place, or None when there is none. A value that is not a number,
-    e.g., an object, raises, so that it does not reach the database and end the run there."""
+    """The number at this place, or None when there is none or it is not finite, e.g., NaN.
+    A value that is not a number, e.g., an object, raises, so that it does not reach the
+    database and end the run there."""
     value = _at(arr, i)
-    return None if value is None else float(value)
+    if value is None:
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
 
 
 def _text(value: object) -> str:

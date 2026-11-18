@@ -13,7 +13,7 @@ from fakes import (
     restricted_metrics,
 )
 
-from ahd.cli import main
+from ahd.cli import EXIT_CODES, main
 from ahd.store import Store
 
 CONFIG = {
@@ -229,6 +229,45 @@ def test_check_reports_restricted_profile(tmp_path, cfg, capsys):
     )
     assert code == 2
     assert "product profile" in capsys.readouterr().out
+
+
+def _uses_page(body):
+    return "variables/page" in json.dumps(body)
+
+
+def test_run_without_the_default_pair_in_the_suite_still_checks_the_components(
+    tmp_path, cfg, capsys
+):
+    # The suite does not list Page. Without --dimension, the run asks for Page by Occurrences
+    # anyway. The pair fails and the run records it, and the components are still checked.
+    fake = fake_for(
+        "rs1",
+        restricted_metrics(),
+        restricted_dimensions(),
+        posts=[(_uses_page, ApiError(400, "no such dimension", "invalid_dimension"))],
+    )
+    argv = args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", "2026-11-07")
+    code = main([*argv, "--out", str(tmp_path / "o")], client_factory=lambda c: fake)
+    assert code == EXIT_CODES["partial"], capsys.readouterr().err
+    store = Store.open(tmp_path / "t.duckdb")
+    pairs = store.list_pairs(1)
+    assert [(p["dimension"], p["dimension_name"]) for p in pairs] == [("variables/page", "Page")]
+    assert [(p["metric"], p["metric_name"]) for p in pairs] == [
+        ("metrics/occurrences", "occurrences")
+    ]
+    codes = store.con.execute(
+        "select distinct code from issues where run_id = 1 and component_id = 'individual/1'"
+    ).fetchall()
+    assert codes == [("invalid_dimension",)]
+    assert store.get_run(1)["status"] == "partial"
+
+
+def test_run_refuses_a_dimension_that_was_given_and_is_not_listed(tmp_path, cfg, capsys):
+    fake = fake_for("rs1", restricted_metrics(), restricted_dimensions())
+    argv = args(tmp_path, cfg, "run", "--rsid", "rs1", "--dimension", "page")
+    assert main(argv, client_factory=lambda c: fake) == 1
+    err = capsys.readouterr().err
+    assert "No dimension in report suite rs1 has the ID or name 'page'" in err
 
 
 def test_check_ok(tmp_path, cfg, capsys):
@@ -1268,6 +1307,46 @@ def test_suites_and_segments_commands(cfg, capsys):
     assert code == 0 and "s300_abc  Mobile visits" in out
 
 
+EVIL = "Evil\x1b[2J\u202eseg"
+SAFE = "Evil?[2J?seg"
+
+
+def test_suites_and_segments_print_names_that_cannot_change_the_terminal(cfg, capsys):
+    fake = fake_for("rs1", events(1), custom_dims())
+    fake.gets["/reportsuites/collections/suites"] = {
+        "content": [{"rsid": "rs\x1b1", "name": EVIL}],
+        "lastPage": True,
+    }
+    fake.gets["/segments"] = {"content": [{"id": "s300_\u202e", "name": EVIL}], "lastPage": True}
+    assert main(["suites", "--config", str(cfg)], client_factory=lambda c: fake) == 0
+    out = capsys.readouterr().out
+    assert f"rs?1  {SAFE}" in out and "\x1b" not in out
+    fake.gets["/reportsuites/collections/suites"] = {
+        "content": [{"rsid": "rs1", "name": "Test Suite"}],
+        "lastPage": True,
+    }
+    code = main(["segments", "--config", str(cfg), "--rsid", "rs1"], client_factory=lambda c: fake)
+    out = capsys.readouterr().out
+    assert code == 0 and f"s300_?  {SAFE}" in out
+    assert "\x1b" not in out and "\u202e" not in out
+
+
+def test_the_login_company_line_cannot_change_the_terminal(cfg, capsys):
+    fake = fake_for("rs1", events(1), custom_dims(), company_id="co\x1b1")
+    fake.companies, fake.company_name = 2, EVIL
+    assert main(["suites", "--config", str(cfg)], client_factory=lambda c: fake) == 0
+    out = capsys.readouterr().out
+    assert f"Using {SAFE} (co?1)." in out and "\x1b" not in out
+
+
+def test_check_prints_a_suite_name_that_cannot_change_the_terminal(cfg, capsys):
+    fake = fake_for("rs1", events(3), custom_dims())
+    fake.gets["/reportsuites/collections/suites/rs1"]["name"] = EVIL
+    code = main(["check", "--config", str(cfg), "--rsid", "rs1"], client_factory=lambda c: fake)
+    out = capsys.readouterr().out
+    assert code == 0 and f"Report suite: {SAFE}" in out and "\x1b" not in out
+
+
 def test_names_that_the_output_encoding_cannot_show_do_not_crash(cfg, monkeypatch):
     # On Windows, output sent to a file or a pipe uses an older code page, e.g., cp1252.
     import io
@@ -1465,6 +1544,40 @@ def test_individual_adds_a_pair_and_rewrites_the_report(tmp_path, cfg, capsys):
         ("variables/page", "metrics/occurrences"),
         ("variables/evar17", "metrics/cartadditions"),
     ]
+
+
+def test_individual_prints_names_that_cannot_change_the_terminal(tmp_path, cfg, capsys):
+    fake = fake_for("rs1", events(2), custom_dims())
+    fake.gets["/dimensions"] = custom_dims() + [{"id": "variables/evar17", "name": EVIL}]
+    fake.gets["/metrics"] = events(2) + [
+        {"id": "metrics/cartadditions", "name": "Cart\u2028Additions", "type": "int"}
+    ]
+    out = tmp_path / "o"
+    main(
+        args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", "2026-11-07", "--out", str(out)),
+        client_factory=lambda c, company_id=None: fake,
+    )
+    capsys.readouterr()
+    code = main(
+        [
+            "individual",
+            "--config",
+            str(cfg),
+            "--db",
+            str(tmp_path / "t.duckdb"),
+            "--run",
+            "1",
+            "--dimension",
+            "variables/evar17",
+            "--metric",
+            "metrics/cartadditions",
+            "--out",
+            str(out),
+        ],
+        client_factory=lambda c, company_id=None: fake,
+    )
+    stdout = capsys.readouterr().out
+    assert code == 0 and f"Added {SAFE} by Cart?Additions to run 1." in stdout
 
 
 def test_individual_with_problems_exits_3(tmp_path, cfg, capsys):
@@ -1671,6 +1784,8 @@ def test_the_credential_variables_win_over_a_config_json_in_the_folder(
         (["--run", "9", "--before", "2026-10-01"], "There is no stored run 9."),
         (["--run", "9", "--run", "3", "--run", "8"], "There are no stored runs 8 and 9."),
         (["--run", "9", "--run", "7", "--run", "8"], "There are no stored runs 7, 8 and 9."),
+        # A number past the 32-bit limit is a run that is not stored, not a read error.
+        (["--run", "99999999999"], "There is no stored run 99999999999."),
     ],
 )
 def test_prune_of_a_run_that_is_not_stored_deletes_nothing(three_runs, capsys, options, message):

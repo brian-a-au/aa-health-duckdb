@@ -27,7 +27,8 @@ def test_today_uses_suite_zone():
     assert today_in_zone("US/Pacific", datetime(2026, 11, 8, 2, 0, tzinfo=UTC)) == date(2026, 11, 7)
 
 
-@pytest.mark.parametrize("name", ["Not/AZone", "/etc/passwd"])
+# A name too long for a file name makes ZoneInfo raise OSError.
+@pytest.mark.parametrize("name", ["Not/AZone", "/etc/passwd", "a" * 300])
 def test_unknown_zone_is_a_plain_error(name):
     with pytest.raises(ConfigError, match="time zone"):
         today_in_zone(name, datetime(2026, 11, 7, tzinfo=UTC))

@@ -54,6 +54,9 @@ With ahd 0.1.16 or newer, a suite whose latest finished run is old gets a warnin
 of its section, e.g., when the runs after it failed. The section is sent also when the suite
 has no alerts, and the script then exits with 1.
 
+A report suite ID that has no finished run gets a warning, also when no suite has alerts and
+without --always. The script then exits with 1. With --segment, the email names the segment.
+
 --always sends a short all-clear message when there are no alerts, so that a day without an
 email means that the job did not run. --test sends a test message to check the mail settings.
 It needs SMTP_HOST, MAIL_FROM and MAIL_TO, reads no alerts and does not need ahd.
@@ -322,8 +325,24 @@ def _table(rows: list[tuple]) -> tuple[list[str], str]:
     return text, f"<table style='border-collapse:collapse'><tr>{th}</tr>{trs}</table>"
 
 
-def missing_line(rsid: str) -> str:
-    """The line for a suite that has no finished run in the database."""
+def _segment(segment: str | None) -> str:
+    """The words that name the segment after a suite, e.g., ", segment s300_x", or nothing."""
+    return f", segment {segment}" if segment else ""
+
+
+def _before_on(segment: str | None) -> str:
+    """The words that name the segment before "on" and a day, e.g., ", segment s300_x,"."""
+    return f"{_segment(segment)}," if segment else ""
+
+
+def missing_line(rsid: str, segment: str | None = None) -> str:
+    """The line for a suite that has no finished run in the database, with the segment of the
+    runs when there is one."""
+    if segment:
+        return (
+            f"There is no finished run of {rsid} with the segment {segment} in the database. "
+            "Check the report suite ID and the segment ID, or run ahd runs to list the runs."
+        )
     return (
         f"There is no finished run of {rsid} in the database. Check the report suite ID, or run "
         "ahd runs to list the runs."
@@ -355,6 +374,7 @@ def build(
     warnings: dict[str, tuple[str, str | None]] | None = None,
     new_only: bool = False,
     missing: list[str] | None = None,
+    segment: str | None = None,
 ) -> EmailMessage:
     """One email. Each section is (rsid, suite name, alert rows), for a suite with alerts, a
     warning or a suite-wide event. flagged_by is the sentence that names the anomaly method.
@@ -362,31 +382,34 @@ def build(
     section with events starts with each event and its first EVENT_SHOWN alerts, and then
     lists the other alerts. warnings gives the day of the alerts of each suite by its rsid, and
     the warning of ahd alerts for an old run, or None. new_only says that the rows hold only the
-    new alerts. missing names the suites that have no finished run."""
+    new alerts. missing names the suites that have no finished run. segment is the segment
+    ID of the runs, or None."""
     events = events or {}
     warnings = warnings or {}
     total = sum(len(rows) for _, _, rows in sections)
     new = "new " if new_only else ""
+    seg = _segment(segment)
     if total == 0 and not (missing or any(w for _day, w in warnings.values())):
         # With new_only: only suite-wide events that hold since an earlier day.
         subject = (
-            f"Analytics Health: a suite-wide event goes on in {sections[0][0]}"
+            f"Analytics Health: a suite-wide event goes on in {sections[0][0]}{seg}"
             if len(sections) == 1
-            else f"Analytics Health: suite-wide events go on in {len(sections)} report suites"
+            else f"Analytics Health: suite-wide events go on in {len(sections)} report suites{seg}"
         )
     elif total == 0:
         # Only warnings and events without new alerts. A missing suite counts too.
         suites = len(sections) + len(missing or [])
         subject = (
-            f"Analytics Health warning for {sections[0][0]}"
+            f"Analytics Health warning for {sections[0][0]}{seg}"
             if suites == 1
-            else f"Analytics Health warnings for {suites} report suites"
+            else f"Analytics Health warnings for {suites} report suites{seg}"
         )
     elif len(sections) == 1:
         rsid, _name, rows = sections[0]
-        subject = f"{total} {new}Analytics Health alerts for {rsid} on {rows[0][-1]}"
+        where = f"{rsid}{_before_on(segment)}"
+        subject = f"{total} {new}Analytics Health alerts for {where} on {rows[0][-1]}"
     else:
-        subject = f"{total} {new}Analytics Health alerts for {len(sections)} report suites"
+        subject = f"{total} {new}Analytics Health alerts for {len(sections)} report suites{seg}"
     rules = (
         f"A large drop is more than {_percent(threshold)} below the weekday average, and a "
         f"large spike is more than {_percent(spike)} above it. The weekday average is the "
@@ -395,16 +418,18 @@ def build(
     text = [subject, "", rules, ""]
     parts = [f"<p>{html.escape(subject)}. {html.escape(rules, quote=False)}</p>"]
     for rsid in missing or []:
-        text += [missing_line(rsid), ""]
-        parts.append(f"<p><b>Warning:</b> {html.escape(missing_line(rsid))}</p>")
+        line = missing_line(rsid, segment)
+        text += [line, ""]
+        parts.append(f"<p><b>Warning:</b> {html.escape(line)}</p>")
     for rsid, name, rows in sections:
         day, warning = warnings.get(rsid, (rows[0][-1] if rows else "", None))
+        suite = f"{name} ({rsid}){seg}, {day}"
         if not rows:
-            heading = f"{name} ({rsid}), {day}: no {new}alerts"
+            heading = f"{suite}: no {new}alerts"
         elif new_only:
-            heading = f"{name} ({rsid}), {day}: {len(rows)} new alerts"
+            heading = f"{suite}: {len(rows)} new alerts"
         else:
-            heading = f"{name} ({rsid}), {day}: {len(rows)} alerts"
+            heading = f"{suite}: {len(rows)} alerts"
             if any(r[6] for r in rows):
                 heading += f", {sum(1 for r in rows if r[7])} new"
         text.append(heading)
@@ -428,10 +453,12 @@ def build(
             # An event has at least 10 alerts, so at least 5 are left out.
             more = len(these) - EVENT_SHOWN
             if more > 0:
-                line = (
-                    f"{more} more alerts of this event are not listed. ahd alerts --every-alert "
-                    "lists them all."
+                left = (
+                    "1 more alert of this event is"
+                    if more == 1
+                    else f"{more} more alerts of this event are"
                 )
+                line = f"{left} not listed. ahd alerts --every-alert lists them all."
                 text.append(line)
                 parts.append(f"<p>{html.escape(line, quote=False)}</p>")
         others = [r for r in rows if not mine or r[8] is None]
@@ -446,20 +473,28 @@ def build(
     return _message(subject, text, parts)
 
 
-def all_clear(runs: list[dict], new_only: bool, missing: list[str] | None = None) -> EmailMessage:
+def all_clear(
+    runs: list[dict],
+    new_only: bool,
+    missing: list[str] | None = None,
+    segment: str | None = None,
+) -> EmailMessage:
     """The short email for a day without alerts, with one line for each suite. A suite in
-    missing has no finished run, so the email is then a warning and not an all-clear."""
+    missing has no finished run, so the email is then a warning and not an all-clear. runs may
+    then be empty. segment is the segment ID of the runs, or None."""
     new = "new " if new_only else ""
+    seg = _segment(segment)
     missing = missing or []
     if len(missing) == 1:
-        subject = f"Analytics Health warning for {missing[0]}"
+        subject = f"Analytics Health warning for {missing[0]}{seg}"
     elif missing:
-        subject = f"Analytics Health warnings for {len(missing)} report suites"
+        subject = f"Analytics Health warnings for {len(missing)} report suites{seg}"
     else:
         where = runs[0]["rsid"] if len(runs) == 1 else f"{len(runs)} report suites"
-        subject = f"No {new}Analytics Health alerts for {where}"
-    lines = [missing_line(rsid) for rsid in missing] + [
-        f"No {new}alerts for {run['rsid_name'] or run['rsid']} ({run['rsid']}) on {run['day']}."
+        subject = f"No {new}Analytics Health alerts for {where}{seg}"
+    lines = [missing_line(rsid, segment) for rsid in missing] + [
+        f"No {new}alerts for {run['rsid_name'] or run['rsid']} ({run['rsid']})"
+        f"{_before_on(segment)} on {run['day']}."
         for run in runs
     ]
     return _message(
@@ -491,9 +526,10 @@ def _port() -> int | None:
     return port if 0 < port < 65536 else None
 
 
-def _send_problem(error: Exception) -> str:
-    """One plain line about why sending failed. It names only the kind of error, because the
-    text of an error can hold a server reply or an address."""
+def _send_problem(error: Exception, step: str) -> str:
+    """One plain line about why sending failed. step is what the script was doing: "connect",
+    "tls", "login" or "send". The line names only the kind of error, because the text of an
+    error can hold a server reply, an address or a character of the password."""
     if isinstance(error, smtplib.SMTPAuthenticationError):
         return "The mail server refused the login. Check SMTP_USER and SMTP_PASSWORD."
     if isinstance(error, ssl.SSLCertVerificationError):
@@ -503,6 +539,21 @@ def _send_problem(error: Exception) -> str:
         )
     if isinstance(error, TimeoutError):
         return f"The mail server did not answer within {SMTP_TIMEOUT} seconds."
+    if isinstance(error, UnicodeError) and step == "login":
+        return (
+            "SMTP_USER and SMTP_PASSWORD must hold only ASCII characters, because the mail "
+            "login takes no other."
+        )
+    if isinstance(error, smtplib.SMTPNotSupportedError) and step == "login":
+        return (
+            "The mail server does not offer a login (AUTH). Leave out SMTP_USER and "
+            "SMTP_PASSWORD when the server needs no login."
+        )
+    if isinstance(error, smtplib.SMTPNotSupportedError) and step == "send":
+        return (
+            "The mail server does not take an address that is not ASCII (SMTPUTF8). Check "
+            "MAIL_FROM and MAIL_TO."
+        )
     if isinstance(error, smtplib.SMTPNotSupportedError):
         return "The mail server does not offer STARTTLS, so the script did not send."
     return (
@@ -517,15 +568,21 @@ def _deliver(msg: EmailMessage, host: str) -> str | None:
     port = _port()
     if port is None:
         return "SMTP_PORT must be a port number from 1 to 65535, e.g., 587."
+    step = "connect"
     try:
         with smtplib.SMTP(host, port, timeout=SMTP_TIMEOUT) as smtp:
+            step = "tls"
             # The default context checks the certificate of the server and its host name.
             smtp.starttls(context=ssl.create_default_context())
             if os.environ.get("SMTP_USER"):
+                step = "login"
                 smtp.login(os.environ["SMTP_USER"], os.environ.get("SMTP_PASSWORD", ""))
+            step = "send"
             smtp.send_message(msg)
-    except (OSError, smtplib.SMTPException) as error:
-        return f"{_send_problem(error)} Nothing was sent to {host}."
+    # A UnicodeError, e.g., for a password that is not ASCII, is a ValueError. Its text holds a
+    # character of the password, so the script names only the kind of error.
+    except (OSError, ValueError, smtplib.SMTPException) as error:
+        return f"{_send_problem(error, step)} Nothing was sent to {host}."
     return None
 
 
@@ -630,6 +687,8 @@ def main(argv: list[str]) -> int:
     stale = any(run.get("stale") for run in runs)
     sent = False
     missing = _missing(args, runs)
+    # Every run of ahd alerts has the segment of --segment, so the first run names it.
+    segment = runs[0].get("segment_id") if runs else args.segment
     if sections:
         first = runs[0]
         said = _flagged_by(first["method"], first["method_name"], first["sensitivity"])
@@ -642,6 +701,7 @@ def main(argv: list[str]) -> int:
             warnings,
             args.new_only,
             missing,
+            segment,
         )
         count = sum(len(rows) for _, _, rows in sections)
         if count:
@@ -653,14 +713,15 @@ def main(argv: list[str]) -> int:
         if not _send(msg, what):
             return 1
         sent = True
-    elif runs and args.always:
+    elif missing or (runs and args.always):
+        # A suite without a finished run gets its warning also without --always.
         what = _warnings(len(missing)) if missing else "the all-clear message"
-        if not _send(all_clear(runs, args.new_only, missing), what):
+        if not _send(all_clear(runs, args.new_only, missing, segment), what):
             return 1
         sent = True
     elif runs:
         print("Nothing to send.")
-    if done.returncode == AHD_ERROR or stale:
+    if done.returncode == AHD_ERROR or stale or missing:
         return 1
     return 0 if sent else 2
 

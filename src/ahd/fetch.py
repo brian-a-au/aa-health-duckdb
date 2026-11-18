@@ -371,11 +371,9 @@ def _run(
             value_count += _store_batch(store, run_id, batch, fut.result, issue)
 
         label = _pair_label(opts.dimension_name or opts.dimension, opts.metric_name or opts.metric)
-        pair_values, _stored = _store_pair(
-            store, run_id, pair, trend_col, ind_futures, label, issue, progress
-        )
-        value_count += pair_values
+        _store_pair(store, run_id, pair, trend_col, ind_futures, label, issue, progress)
 
+    # The pair checks no component, so a run whose only values are the pair's trend is failed.
     if value_count == 0:
         return "failed"
     return "partial" if issue_count else "ok"
@@ -541,8 +539,9 @@ def add_pair(
 
     Returns the pair number and how many problems it had. The status of the run then follows
     the issues it holds, as _status_after_pair says: e.g., a run that was "ok" becomes
-    "partial" when the new pair had problems, and a run that was "failed" becomes "partial"
-    when the new pair stored some data, unless the run stopped part way.
+    "partial" when the new pair had problems. A run that was "failed" becomes "partial" when
+    the new pair stored some data, unless the run holds no component value or stopped part
+    way.
     """
     run = store.get_run(run_id)
     if run["status"] == "running":
@@ -596,19 +595,32 @@ def add_pair(
         raise
     if empty is not None:
         store.delete_pair(run_id, empty, pair_series_id(empty))
-    status = _status_after_pair(run["status"], stored, store.issue_codes(run_id))
+    status = _status_after_pair(
+        run["status"], stored, store.issue_codes(run_id), _has_component_values(store, run_id)
+    )
     if status != run["status"]:
         store.set_status(run_id, status)
     return pair, problems
 
 
-def _status_after_pair(old: str, stored: int, codes: set[str]) -> str:
+def _has_component_values(store: Store, run_id: int) -> bool:
+    """Whether the run holds a daily value of a component, not only of a pair."""
+    row = store.con.execute(
+        "SELECT count(*) FROM daily_values WHERE run_id = ? AND NOT starts_with(component_id, ?)",
+        [run_id, INDIVIDUAL_PREFIX],
+    ).fetchone()
+    return bool(row and row[0])
+
+
+def _status_after_pair(old: str, stored: int, codes: set[str], checked: bool) -> str:
     """The status of a run after add_pair, from the issues the run holds now.
 
-    A failed run stays failed when the new pair stored nothing, or when the run stopped part
-    way and its issues still say so. Else the run is "partial" while it holds an issue, and "ok"
-    when it holds none, e.g., after the pair replaced an empty pair that held the only issues.
+    checked says whether the run holds a daily value of any component. A failed run stays
+    failed when it holds none, because a pair checks no component. It also stays failed when
+    the new pair stored nothing, or when the run stopped part way and its issues still say so.
+    Else the run is "partial" while it holds an issue, and "ok" when it holds none, e.g., after
+    the pair replaced an empty pair that held the only issues.
     """
-    if old == "failed" and (not stored or INTERRUPTED in codes):
+    if old == "failed" and (not checked or not stored or INTERRUPTED in codes):
         return "failed"
     return "partial" if codes else "ok"

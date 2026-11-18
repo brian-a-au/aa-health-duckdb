@@ -2,12 +2,51 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
-## Unreleased
+## 0.1.18 (2026-11-18)
 
-**Fixes**
+This release fixes the faults that a review of the whole tool found after 0.1.17. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is. The daily alert rules do not change.
 
-- When an email holds no alerts, its subject now counts a suite without a finished run together with the suites that have a warning or a suite-wide event, e.g., "Analytics Health warnings for 2 report suites". Before, a suite with an event next to a missing suite gave the subject "Analytics Health warning for my_suite", which named only the suite with the event.
-- In a long Slack list, the line that counts the suites left out now uses the singular for one suite. It says "1 more suite has no alerts." where it said "1 more suites have no alerts." before.
+**Runs**
+
+- A run that read no component value is now "failed", also when the Individual Component Summary pair stored data. `ahd individual` keeps such a run "failed". Before, the run was "partial", and `ahd alerts` could choose it and report no alerts for a suite that was not checked.
+- When you give no `--dimension` or `--metric` and the suite does not list Page or Occurrences, `ahd run` asks for the default pair anyway. The pair records an issue, and the components are still checked. Before, the run stopped for that suite. A value that you give is still refused when the suite does not have it.
+- `--segment` takes a segment ID, e.g., `s300_5f1a2b9c`, also when the list of segments of the suite does not hold it. A name that is not in the list is still refused.
+- An expected value or a bound that is not finite in an answer from Adobe, e.g., NaN, is now stored as NULL. Before, it was stored as NaN or infinity.
+- A time zone name that the file system refuses, e.g., one that is too long, now gives the plain time zone message. Before, it gave an error from Python.
+
+**Names from Adobe in the terminal**
+
+- `ahd suites`, `ahd segments`, `ahd check`, `ahd individual`, `ahd runs` and the lines of `ahd run` print each name and ID from Adobe with "?" in place of each character that could change the terminal. The same holds for the list of login companies in the sign-in error, and for the IDs in the "More than one ... is named" error.
+
+**Sign-in and settings**
+
+- The sign-in now tries a request again when the connection drops while Adobe sends its answer, as the other requests already do.
+- When Adobe's sign-in service asks for a longer wait with a Retry-After header, the tool now waits that long, up to 2 minutes, as it does for the other requests.
+- An answer with HTTP 200 and no token now says that it did not come from Adobe's sign-in service, e.g., from a proxy or the sign-in page of a network. It no longer asks you to check the credential.
+- When only some of the `AHD_*` variables are set, the message now names the missing variables, e.g., `AHD_SECRET, AHD_SCOPES`, instead of the keys of a config file.
+
+**The database and ahd alerts**
+
+- `ahd export` and `ahd import` keep the order of the rows inside a run. Before, a run with many issues could list them in another order after an import.
+- `ahd prune --run` with a run number past the 32-bit limit says that there is no such run, instead of saying that the database could not be read.
+- `ahd alerts` says "1 more alert of this event is not listed." when one alert is left.
+
+**The report**
+
+- The weekly view does not flag a week that lacks the value of a day. It still shows the sum, but gives no change from the average week, no large drop, large spike or zero flag, and says how many days have no value. The slider lines and "Show only flagged" leave it out. The chart readouts, also on the Individual tab, give the total without the average week.
+- The calendar shows a day whose stored values are all empty, e.g., NaN, as a day where no data was read, not as a day with 0 alerts.
+- The "Problems in this run" tile moves the keyboard focus to the status section.
+
+**The email and Slack scripts**
+
+- The scripts send the warning for a report suite ID without a finished run also when no other suite has anything to send, and also without `--always`. They then exit with 1. Before, a mistyped suite ID could give no message at all.
+- When an email holds no alerts, its subject counts a suite without a finished run together with the suites that have a warning or a suite-wide event, e.g., "Analytics Health warnings for 2 report suites". Before, a suite with an event next to a missing suite gave the subject "Analytics Health warning for my_suite", which named only the suite with the event.
+- With `--segment`, the email subject and headings, and the Slack header and notification text, name the segment. The line for a missing suite names it too.
+- `send_alerts.py` gives one plain line when `SMTP_USER` or `SMTP_PASSWORD` is not ASCII. The line holds no part of the password. Before, Python's error could show a character of it.
+- `send_alerts.py` names the real reason when the mail server lacks STARTTLS, a login (AUTH) or SMTPUTF8. Before, each of them was reported as a missing STARTTLS.
+- `send_slack.py` with an `ahd` older than 0.1.13 says to update also on a day without alerts, not with a `KeyError`.
+- `send_alerts.py` says "1 more alert of this event is not listed." for one. In a long Slack list, the line that counts the suites left out says "1 more suite has no alerts." for one.
+- The Windows examples use `set "NAME=value"`, so a password with `&` or `^` works, and say that a `%` in a `.cmd` file must be written `%%`.
 
 ## 0.1.17 (2026-11-18)
 

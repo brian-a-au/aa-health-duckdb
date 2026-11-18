@@ -423,3 +423,69 @@ def test_an_import_with_new_numbers_keeps_the_latest_run_and_the_run_before(tmp_
     assert new.previous_run(today) == yesterday
     assert component_drops(new, today) == []
     new.con.close()
+
+
+@pytest.mark.parametrize("through", ["folder", "file"])
+def test_import_keeps_the_order_of_the_rows_inside_a_run(tmp_path, through):
+    # The join of the import does not keep the order of its rows by itself. With this many
+    # rows, DuckDB reorders some of them unless the insert sorts them.
+    path = tmp_path / "a.duckdb"
+    s = Store.open(path)
+    rids = [s.create_run(f"rs{k}", "S", None, date(2026, 11, 7), "UTC", "0.1") for k in range(300)]
+    s.con.execute(
+        "INSERT INTO issues SELECT r.run_id, 'column', 'c' || lpad(i::VARCHAR, 4, '0'), 'code', 'm'"
+        " FROM range(1000) t(i), (SELECT unnest(?::INTEGER[]) AS run_id) r ORDER BY i",
+        [rids],
+    )
+    for rid in rids:
+        s.finish_run(rid, "ok")
+
+    def issues(store):
+        rows = store.con.execute(
+            "SELECT run_id, component_id FROM issues ORDER BY rowid"
+        ).fetchall()
+        out: dict[int, list[str]] = {}
+        for rid, comp in rows:
+            out.setdefault(rid, []).append(comp)
+        return out
+
+    before = issues(s)
+    s.con.close()
+    if through == "folder":
+        export_runs(path, tmp_path / "backup")
+        source = tmp_path / "backup"
+    else:
+        source = path
+    new = Store.open(tmp_path / "new.duckdb")
+    import_runs(new, source)
+    assert issues(new) == before
+    new.con.close()
+
+
+def test_export_keeps_the_order_of_the_rows_inside_a_run(tmp_path):
+    # The page lists the issues of a run in the order they were stored. A sort by run_id
+    # alone mixes them up once a table has more rows than one block of DuckDB holds.
+    path = tmp_path / "a.duckdb"
+    s = Store.open(path)
+    rids = [s.create_run(f"rs{k}", "S", None, date(2026, 11, 7), "UTC", "0.1") for k in range(10)]
+    for i in range(300):
+        for rid in rids:
+            s.add_issue(rid, "column", f"c{i}", "code", f"m{i}")
+    for rid in rids:
+        s.finish_run(rid, "ok")
+
+    def issues(store, rid):
+        return [
+            r[0]
+            for r in store.con.execute(
+                "SELECT component_id FROM issues WHERE run_id = ? ORDER BY rowid", [rid]
+            ).fetchall()
+        ]
+
+    before = {rid: issues(s, rid) for rid in rids}
+    s.con.close()
+    export_runs(path, tmp_path / "backup")
+    new = Store.open(tmp_path / "new.duckdb")
+    import_runs(new, tmp_path / "backup")
+    assert {rid: issues(new, rid) for rid in rids} == before
+    new.con.close()

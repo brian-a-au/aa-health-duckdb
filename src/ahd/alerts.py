@@ -10,7 +10,6 @@ from __future__ import annotations
 import csv
 import json
 import math
-import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -20,6 +19,7 @@ from ahd.config import ConfigError
 from ahd.dates import today_in_zone
 from ahd.store import Store
 from ahd.summary import ANOMALY_LABELS, DEFAULT_ANOMALY_METHOD, DEFAULT_SENSITIVITY
+from ahd.text import inert
 
 FORMATS = ("text", "json", "csv")
 # Raise only when a field of the JSON is removed or changes its meaning. New fields may be added
@@ -348,20 +348,6 @@ def write_csv(results: list[RunAlerts], out: TextIO) -> None:
             writer.writerow([*start, *(csv_value(a[k]) for k in ALERT_FIELDS)])
 
 
-# Characters that would move the cursor, start a new line or turn the text around in a terminal:
-# controls, line and paragraph separators, and the marks that change the direction of text.
-_UNSAFE_CATEGORIES = ("Cc", "Zl", "Zp")
-_DIRECTION_MARKS = set("\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
-
-
-def inert(text: Any) -> str:
-    """The text with each character that could change how a terminal shows it as "?"."""
-    return "".join(
-        "?" if unicodedata.category(c) in _UNSAFE_CATEGORIES or c in _DIRECTION_MARKS else c
-        for c in str(text)
-    )
-
-
 def _amount(value: float | None) -> str:
     if value is None or not math.isfinite(value):
         return "no data"
@@ -495,8 +481,10 @@ def write_text(
             if len(mine) > len(shown):
                 more = len(mine) - len(shown)
                 out.write(
-                    f"{more} more alerts of this event are not listed. Add --every-alert to "
-                    "list them.\n"
+                    "1 more alert of this event is not listed. Add --every-alert to list it.\n"
+                    if more == 1
+                    else f"{more} more alerts of this event are not listed. Add --every-alert "
+                    "to list them.\n"
                 )
         others = [a for a in r.alerts if a["event"] is None]
         if r.events and others:

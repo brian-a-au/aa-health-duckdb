@@ -8,18 +8,18 @@ The example script [`examples/send_slack.py`](examples/send_slack.py) posts the 
 
 These steps take you from nothing to a first message in Slack. The commands use the profile `prod` and the report suite ID `my_suite`. Put your own profile and suite ID in their place. The sections after this one explain each part in more detail.
 
-1. **Install the tool and download the script.** You do not need a clone of this repository. Install `ahd` from PyPI, and download the one script file into a folder of your choice, e.g., `~/ahd`. The link holds a version, `v0.1.17`, so you get the script of that release:
+1. **Install the tool and download the script.** You do not need a clone of this repository. Install `ahd` from PyPI, and download the one script file into a folder of your choice, e.g., `~/ahd`. The link holds a version, `v0.1.18`, so you get the script of that release:
 
    ```
    uv tool install aa-health-duckdb
-   curl -fLO https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.17/docs/examples/send_slack.py
+   curl -fLO https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.18/docs/examples/send_slack.py
    ```
 
-   In Windows PowerShell, download it with `Invoke-WebRequest https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.17/docs/examples/send_slack.py -OutFile send_slack.py`. You can also open the link in a browser and save the page as `send_slack.py`.
+   In Windows PowerShell, download it with `Invoke-WebRequest https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.18/docs/examples/send_slack.py -OutFile send_slack.py`. You can also open the link in a browser and save the page as `send_slack.py`.
 
    The script needs `ahd` 0.1.13 or newer. If you installed `ahd` before, update it with `uv tool upgrade aa-health-duckdb`. If the terminal then says it cannot find `ahd`, run `uv tool update-shell` and open a new terminal. With pipx, install the tool with `pipx install aa-health-duckdb`, and run the script with `python3 send_slack.py` in place of `uv run python send_slack.py`.
 
-   When you install a newer `ahd`, download the script again with the new version in the link, e.g., `v0.1.18`. `uv tool list` shows the version you have. The script and the tool then come from the same release.
+   When you install a newer `ahd`, download the script again with the new version in the link, e.g., `v0.1.19`. `uv tool list` shows the version you have. The script and the tool then come from the same release.
 
    Run every command below in the folder that holds the script. To work from a clone instead, see [Run it](#run-it).
 
@@ -61,7 +61,7 @@ These steps take you from nothing to a first message in Slack. The commands use 
    export SLACK_WEBHOOK_URL='https://hooks.slack.com/services/...'
    ```
 
-   On Windows, in the Command Prompt, write `set SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...` without quotes. In PowerShell, write `$env:SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/...'`. The setting lasts until you close the terminal.
+   On Windows, in the Command Prompt, write `set "SLACK_WEBHOOK_URL=https://hooks.slack.com/services/..."`, with the quotes around the name, the `=` and the URL. In a `.cmd` file, write each `%` of the URL as `%%`. In PowerShell, write `$env:SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/...'`. The setting lasts until you close the terminal.
 
 10. **Check the webhook.** Post a test message:
 
@@ -129,11 +129,11 @@ On Windows, set the variable as step 9 of [Step by step](#step-by-step) shows.
 The options are those of the email script. [Email alerts](email-alerts.md#options) explains each of them.
 
 - `RSID` or `--all`: the report suites. `--all` uses every suite that has a finished run in the file.
-- `--segment ID`: the latest runs with this segment. Without it, the latest runs without a segment.
+- `--segment ID`: the latest runs with this segment. Without it, the latest runs without a segment. The header and the notification text then name the segment, e.g., "Adobe Store, segment s300_x: 3 alerts, 1 new".
 - `--threshold` and `--spike-threshold`: the large drop and the large spike percent, as shares. The defaults are `0.30` and `0.50`.
 - `--anomaly-method` and `--anomaly-sensitivity`: the method that flags the unusual values, as on `ahd run`. Without them, `ahd alerts` reads `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`.
 - `--new-only`: lists only the alerts that are new on the day. The header then says "new", e.g., "Adobe Store: 2 new alerts". A suite-wide event keeps its line also when none of its alerts is new, so a suite whose data stopped days ago is still named every day. The notification text of such a message then says, e.g., "Analytics Health: a suite-wide event goes on in Adobe Store (my_suite)". It needs `ahd` 0.1.16 or newer. With an older `ahd`, the script stops with exit code 1 and says how to update it.
-- `--always`: posts a short message when there are no alerts, e.g., "No Analytics Health alerts" with one line for each suite. Then a quiet channel no longer means healthy suites. It means that the daily job did not run, so you notice a job that stopped. When a report suite ID that you gave has no finished run, the message names it, e.g., "There is no finished run of my_suite in the database.", and is a warning, not an all-clear. The script then exits with 1.
+- `--always`: posts a short message when there are no alerts, e.g., "No Analytics Health alerts" with one line for each suite. Then a quiet channel no longer means healthy suites. It means that the daily job did not run, so you notice a job that stopped. When a report suite ID that you gave has no finished run, the message names it, e.g., "There is no finished run of my_suite in the database.", and is a warning, not an all-clear. The script posts this warning also when no suite has alerts, and also without `--always`. It then exits with 1.
 - `--test`: posts a test message to check the webhook, see step 10 of [Step by step](#step-by-step). It does not read the database and does not need `ahd`.
 
 ### When the latest run is old

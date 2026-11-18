@@ -4,12 +4,15 @@ from ahd.api.auth import (
     DISCOVERY_URL,
     IMS_TOKEN_URL,
     NO_COMPANY,
+    NOT_FROM_ADOBE,
+    RETRY_AFTER_CAP,
     SCOPE_REJECTED,
     SIGN_IN_TRIES,
     WRONG_CLIENT_ID,
     WRONG_ORG,
     WRONG_SECRET,
     SignInError,
+    get_token,
     sign_in,
 )
 from ahd.config import Credentials
@@ -19,9 +22,10 @@ CREDS = Credentials("ORG1@AdobeOrg", "client-abc", "secret-xyz", FULL_SCOPES)
 
 
 class Resp:
-    def __init__(self, status, body):
+    def __init__(self, status, body, headers=None):
         self.status_code = status
         self._body = body
+        self.headers = headers or {}
 
     def json(self):
         if self._body is None:
@@ -92,6 +96,13 @@ def test_chosen_company():
     text = _fails(s, company_id="co3")
     assert "cannot see the login company 'co3'" in text
     assert "Name co1 (co1), Name co2 (co2)" in text
+
+
+def test_the_company_list_of_the_error_cannot_change_the_terminal():
+    evil = {"globalCompanyId": "co\x1b[2J1", "companyName": "Evil\x1b[2J\u202eco"}
+    s = Session(GOOD_TOKEN, orgs({"imsOrgId": "ORG1@AdobeOrg", "companies": [evil]}))
+    text = _fails(s, company_id="co3")
+    assert "It can see: Evil?[2J?co (co?[2J1)." in text
 
 
 @pytest.mark.parametrize(
@@ -196,8 +207,81 @@ def test_token_not_json():
     assert "HTTP 404" in text and "error" not in text.split("HTTP 404")[1].split(".")[0]
 
 
-def test_token_200_without_token():
-    assert "HTTP 200" in _fails(Session((200, {"nope": 1})))
+@pytest.mark.parametrize("body", [None, {"nope": 1}, ["TOKEN-1"], {"access_token": ""}])
+def test_token_200_without_token_says_it_is_not_from_adobe(body):
+    text = _fails(Session((200, body)))
+    assert text == NOT_FROM_ADOBE
+    assert "did not come from Adobe's sign-in service" in text and "proxy" in text
+    assert "Check the credential" not in text
+
+
+def test_a_sign_in_page_of_the_network_is_not_from_adobe():
+    """A proxy or a network sign-in page answers HTTP 200 with an HTML page."""
+
+    class Html(Resp):
+        def json(self):
+            raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    class HtmlSession(Session):
+        def post(self, url, data=None, timeout=None):
+            return Html(200, "<html><body>Please log in to the Wi-Fi</body></html>")
+
+    assert _fails(HtmlSession(GOOD_TOKEN)) == NOT_FROM_ADOBE
+
+
+def test_a_dropped_connection_in_sign_in_is_tried_again(waits):
+    import requests
+
+    s = ScriptedSession(requests.exceptions.ChunkedEncodingError("dropped"), GOOD_TOKEN)
+    assert sign_in(s, CREDS).header["Authorization"] == "Bearer TOKEN-1"
+    assert len(_posts(s)) == 2 and len(waits) == 1
+
+
+class HeaderSession(Session):
+    """Answers the token requests in turn, each as (status, body, headers)."""
+
+    def __init__(self, *answers):
+        super().__init__(GOOD_TOKEN, orgs(org()))
+        self.answers = list(answers)
+
+    def post(self, url, data=None, timeout=None):
+        self.calls.append(("POST", url, data))
+        return Resp(*self.answers.pop(0))
+
+
+def test_a_rate_limit_waits_for_its_retry_after(waits):
+    s = HeaderSession(
+        (429, None, {"Retry-After": "7"}), (429, None, {"Retry-After": "11"}), GOOD_TOKEN
+    )
+    assert sign_in(s, CREDS).company_id == "co1"
+    assert waits == [7.0, 11.0]
+
+
+def test_a_short_retry_after_keeps_the_own_wait(waits):
+    s = HeaderSession((429, None, {"Retry-After": "0"}), (429, None, {}), GOOD_TOKEN)
+    assert sign_in(s, CREDS).company_id == "co1"
+    assert waits == [1.0, 3.0]
+
+
+def test_a_long_retry_after_in_sign_in_is_capped(waits):
+    s = HeaderSession((429, None, {"Retry-After": "3600"}), GOOD_TOKEN)
+    assert sign_in(s, CREDS).company_id == "co1"
+    assert waits == [RETRY_AFTER_CAP]
+
+
+def test_a_retry_after_date_keeps_the_own_wait(waits):
+    date = "Wed, 18 Nov 2026 07:28:00 GMT"
+    s = HeaderSession((429, None, {"Retry-After": date}), GOOD_TOKEN)
+    assert sign_in(s, CREDS).company_id == "co1"
+    assert waits == [1.0]
+
+
+def test_the_wait_of_the_caller_gets_the_retry_after(waits):
+    s = HeaderSession((429, None, {"Retry-After": "5"}), GOOD_TOKEN)
+    seen = []
+    token = get_token(s, CREDS, wait=lambda seconds: seen.append(seconds))
+    assert token == "TOKEN-1"
+    assert seen == [5.0] and waits == []
 
 
 def test_wrong_org_id():

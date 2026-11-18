@@ -640,6 +640,7 @@ ROW_KEYS = (
     "pct",
     "zero",
     "anomaly",
+    "missing_days",
 )
 
 
