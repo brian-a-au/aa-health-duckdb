@@ -2,6 +2,27 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+This release makes the alert emails and Slack messages easier to trust. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is.
+
+**Old runs**
+
+- `ahd alerts` says when the latest finished run of a suite is old, which means that its alerts are for a day before yesterday in the time zone of the suite. This happens when the runs after it failed, when the sign-in failed, or when the daily job stopped. A run chosen with `--run` is named by its number. The text has a warning line, e.g., "Warning: The latest finished run of my_suite has the alerts of 2026-11-13, but yesterday was 2026-11-16 in the time zone of the suite. 2 later runs of it failed." The exit codes do not change. See [Old runs](docs/usage.md#old-runs).
+- The JSON of each run has the new fields `current_day`, `stale`, `failed_after` and `warning`. The CSV has the new columns `current_day`, `stale` and `failed_after` after the fields of the run. `format_version` stays 1.
+- The new option `ahd alerts --date YYYY-MM-DD` checks the runs as if today were that date.
+
+**Only the new alerts**
+
+- `ahd alerts --new-only` lists only the alerts that are new on the day, in every format. Each suite-wide event keeps its line, also when none of its alerts is new, so a suite whose data stopped days ago is still named. See [Only the new alerts](docs/usage.md#only-the-new-alerts).
+
+**The email and Slack scripts**
+
+- `--test` sends a test message to check the mail settings or the webhook. It reads no alerts and does not need `ahd`.
+- `--always` sends a short all-clear message on a day without alerts, so a day without a message means that the job did not run. A suite you named that has no finished run makes the message a warning, not an all-clear. See [Know when the job stops](docs/scheduling.md#know-when-the-job-stops).
+- `--new-only` lists only the new alerts. It needs `ahd` 0.1.16 or newer.
+- With `ahd` 0.1.16 or newer, a suite whose latest finished run is old gets a warning in the email or the Slack message, also without alerts. The scripts then exit with 1.
+
 ## 0.1.15 (2026-11-15)
 
 This release changes no code of the tool. It adds an example script for Slack and makes the alert scripts easy to use without a clone of this repository. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is.

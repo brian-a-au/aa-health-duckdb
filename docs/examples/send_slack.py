@@ -3,8 +3,9 @@
 Usage:
     uv run python docs/examples/send_slack.py DATABASE RSID [RSID ...] [--segment ID]
         [--threshold 0.30] [--spike-threshold 0.50]
-        [--anomaly-method adobe] [--anomaly-sensitivity normal]
+        [--anomaly-method adobe] [--anomaly-sensitivity normal] [--new-only] [--always]
     uv run python docs/examples/send_slack.py DATABASE --all [--segment ID]
+    uv run python docs/examples/send_slack.py --test
 
 It needs ahd 0.1.13 or newer, from the package aa-health-duckdb. Run it from a clone of the
 aa-health-duckdb repository, where uv run already has ahd. Without a clone, download this file
@@ -32,6 +33,13 @@ spike percent as a share, e.g., 0.50 for 50 percent, the default. --anomaly-meth
 --anomaly-sensitivity choose the method that flags the unusual values, as on ahd run. Without
 them, ahd alerts reads the variables AHD_ANOMALY_METHOD and AHD_ANOMALY_SENSITIVITY.
 
+--new-only lists only the alerts that are new on the day. A suite-wide event that started
+earlier keeps its line. It needs ahd 0.1.16 or newer. With ahd 0.1.16 or newer, a suite whose
+latest finished run is old gets a warning in its message, also without alerts, and the script
+then exits with 1. --always posts a short all-clear message when there are no alerts, so that a
+quiet channel means that the job did not run. --test posts a test message to check the webhook.
+It reads no alerts and does not need ahd.
+
 To post, make an incoming webhook in Slack for the channel, and set SLACK_WEBHOOK_URL to its
 URL. The URL is a secret: anyone who has it can post to the channel. The script never prints
 it. Without SLACK_WEBHOOK_URL, it writes the messages to slack.json in the current folder
@@ -41,10 +49,10 @@ with 1.
 
 Exit codes, so a scheduler can tell the cases apart:
     0  it posted or wrote the messages
-    1  something is wrong, e.g., a suite has no finished run. The other suites are still
-       posted. A wrong option also exits with 1 and prints the usage. So does a message that
+    1  something is wrong, e.g., a suite has no finished run, or the latest finished run of a
+       suite is old. The other suites and the warnings are still posted. A wrong option also exits with 1 and prints the usage. So does a message that
        Slack did not take.
-    2  there were no alerts
+    2  there were no alerts, and --always was not given
 """
 
 from __future__ import annotations
@@ -92,6 +100,9 @@ NEEDS_AHD = (
 OLD_AHD = (
     "The ahd that this script found has no alerts command, so it is older than 0.1.11. "
     "Update it, e.g., with uv tool upgrade aa-health-duckdb."
+)
+NEW_ONLY_NEEDS = (
+    "--new-only needs ahd 0.1.16 or newer. Update it, e.g., with uv tool upgrade aa-health-duckdb."
 )
 
 
@@ -155,7 +166,7 @@ class _Parser(argparse.ArgumentParser):
 
 def _parser() -> argparse.ArgumentParser:
     p = _Parser(description="Post the latest ahd alerts for report suites to Slack.")
-    p.add_argument("database", help="The ahd DuckDB file.")
+    p.add_argument("database", nargs="?", help="The ahd DuckDB file.")
     p.add_argument("rsids", nargs="*", metavar="RSID", help="A report suite ID.")
     p.add_argument("--all", action="store_true", help="Every suite with a finished run.")
     p.add_argument(
@@ -182,6 +193,21 @@ def _parser() -> argparse.ArgumentParser:
         metavar="LEVEL",
         help="How wide the range of a local method is. It does not apply to adobe "
         "(default AHD_ANOMALY_SENSITIVITY, else normal).",
+    )
+    p.add_argument(
+        "--new-only",
+        action="store_true",
+        help="List only the alerts that are new on the day. Needs ahd 0.1.16 or newer.",
+    )
+    p.add_argument(
+        "--always",
+        action="store_true",
+        help="Post a short all-clear message when there are no alerts.",
+    )
+    p.add_argument(
+        "--test",
+        action="store_true",
+        help="Post a test message to check the webhook. It reads no alerts.",
     )
     return p
 
@@ -214,6 +240,8 @@ def _ahd_options(args: argparse.Namespace) -> list[str]:
         options.append(f"--anomaly-method={args.anomaly_method}")
     if args.anomaly_sensitivity is not None:
         options.append(f"--anomaly-sensitivity={args.anomaly_sensitivity}")
+    if args.new_only:
+        options.append("--new-only")
     return options
 
 
@@ -290,23 +318,33 @@ def _table(alerts: list[dict]) -> dict:
     }
 
 
-def message(run: dict, rules: str) -> dict:
-    """The Slack message for one run with alerts. ahd alerts gives the new alerts first.
+def message(run: dict, rules: str, new_only: bool = False) -> dict:
+    """The Slack message for one run with alerts, a warning or a suite-wide event. ahd alerts
+    gives the new alerts first.
 
-    Each suite-wide event gets one line. A table lists the other alerts, at most SHOWN."""
+    A warning of an old run comes first. Each suite-wide event gets one line. A table lists the
+    other alerts, at most SHOWN. new_only says that the run holds only the new alerts."""
     alerts = run["alerts"]
     name = run["rsid_name"] or run["rsid"]
-    new = sum(1 for a in alerts if a["is_new"])
-    heading = f"{name}: {len(alerts)} alerts, {new} new"
+    if not alerts:
+        heading = f"{name}: no {'new ' if new_only else ''}alerts"
+    elif new_only:
+        heading = f"{name}: {len(alerts)} new alerts"
+    else:
+        heading = f"{name}: {len(alerts)} alerts, {sum(1 for a in alerts if a['is_new'])} new"
     blocks: list[dict] = [
         {"type": "header", "text": _plain(heading, HEADER_LIMIT)},
         _note(f"Report suite {run['rsid']}, alerts of {run['day']}. {rules}"),
     ]
+    if run.get("warning"):
+        blocks.append({"type": "section", "text": _plain(f"Warning: {run['warning']}")})
     events = run["events"]
     for event in events:
-        blocks.append(
-            {"type": "section", "text": _plain(f"Suite-wide event: {event['text']}")},
-        )
+        said = f"Suite-wide event: {event['text']}"
+        if not any(a["event"] == event["event"] for a in alerts):
+            # With new_only: the event holds since an earlier day.
+            said += f" None of its alerts are new on {run['day']}."
+        blocks.append({"type": "section", "text": _plain(said)})
     others = [a for a in alerts if not events or a["event"] is None]
     if others:
         if events:
@@ -317,8 +355,72 @@ def message(run: dict, rules: str) -> dict:
     if events or len(others) > SHOWN:
         blocks.append(_note("ahd alerts --every-alert lists every alert."))
     # Slack shows the text in the notification, and reads it as markup.
-    text = f"{len(alerts)} Analytics Health alerts for {name} ({run['rsid']}) on {run['day']}"
+    if alerts:
+        new = "new " if new_only else ""
+        text = (
+            f"{len(alerts)} {new}Analytics Health alerts for {name} ({run['rsid']}) on {run['day']}"
+        )
+    else:
+        text = f"Analytics Health warning for {name} ({run['rsid']})"
     return {"text": _mrkdwn(text), "blocks": blocks}
+
+
+def missing_line(rsid: str) -> str:
+    """The line for a suite that has no finished run in the database."""
+    return (
+        f"There is no finished run of {rsid} in the database. Check the report suite ID, or run "
+        "ahd runs to list the runs."
+    )
+
+
+def _missing(args: argparse.Namespace, runs: list[dict]) -> list[str]:
+    """The suites that were asked for and have no finished run."""
+    found = {run["rsid"] for run in runs}
+    return [rsid for rsid in dict.fromkeys(args.rsids) if rsid not in found]
+
+
+def missing_message(missing: list[str]) -> dict:
+    """The message for the suites that have no finished run."""
+    where = missing[0] if len(missing) == 1 else f"{len(missing)} report suites"
+    warning = "warning" if len(missing) == 1 else "warnings"
+    return {
+        "text": _mrkdwn(f"Analytics Health {warning} for {where}"),
+        "blocks": [
+            {"type": "header", "text": _plain(f"Analytics Health {warning}", HEADER_LIMIT)},
+            {"type": "section", "text": _plain("\n".join(missing_line(r) for r in missing))},
+        ],
+    }
+
+
+def all_clear(runs: list[dict], new_only: bool, missing: list[str] | None = None) -> dict:
+    """The short message for a day without alerts, with one line for each suite. A suite in
+    missing has no finished run, so the message is then a warning and not an all-clear."""
+    new = "new " if new_only else ""
+    missing = missing or []
+    lines = [missing_line(rsid) for rsid in missing] + [
+        f"No {new}alerts for {run['rsid_name'] or run['rsid']} ({run['rsid']}) on {run['day']}."
+        for run in runs
+    ]
+    if missing:
+        payload = missing_message(missing)
+        payload["blocks"][1] = {"type": "section", "text": _plain("\n".join(lines))}
+        return payload
+    where = runs[0]["rsid"] if len(runs) == 1 else f"{len(runs)} report suites"
+    return {
+        "text": _mrkdwn(f"No {new}Analytics Health alerts for {where}"),
+        "blocks": [
+            {"type": "header", "text": _plain(f"No {new}Analytics Health alerts", HEADER_LIMIT)},
+            {"type": "section", "text": _plain("\n".join(lines))},
+        ],
+    }
+
+
+def test_payload() -> dict:
+    """The message of --test."""
+    return {
+        "text": "ahd can post Analytics Health alerts to this channel. This is a test message "
+        "from send_slack.py."
+    }
 
 
 # The errors of a post. A ValueError, e.g., http.client.InvalidURL for a URL with a space,
@@ -356,16 +458,40 @@ def _post(url: str, payload: dict) -> None:
         response.read()
 
 
-def _send(payloads: list[dict], count: int) -> bool:
-    """Posts the messages, or writes slack.json without SLACK_WEBHOOK_URL. False when Slack did
-    not take a message."""
+def _warnings(n: int) -> str:
+    return "the warning" if n == 1 else "the warnings"
+
+
+def _send_test() -> int:
+    """--test: posts the test message. It needs SLACK_WEBHOOK_URL."""
+    url = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
+    if not url:
+        print(
+            "--test needs SLACK_WEBHOOK_URL. Set it to the webhook URL of the channel.",
+            file=sys.stderr,
+        )
+        return 1
+    if not url.startswith("https://"):
+        print("SLACK_WEBHOOK_URL must start with https://.", file=sys.stderr)
+        return 1
+    try:
+        _post(url, test_payload())
+    except POST_ERRORS as error:
+        print(_slack_problem(error), file=sys.stderr)
+        return 1
+    print("Posted a test message to Slack.")
+    return 0
+
+
+def _send(payloads: list[dict], count: int, what: str | None = None) -> bool:
+    """Posts the messages, or writes slack.json without SLACK_WEBHOOK_URL. what names what they
+    hold when they hold no alerts, e.g., "the all-clear message". False when Slack did not take
+    a message."""
     url = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
     if not url:
         Path("slack.json").write_text(json.dumps(payloads, indent=2) + "\n", encoding="utf-8")
-        print(
-            f"Wrote slack.json with {len(payloads)} messages and {count} alerts. "
-            "Set SLACK_WEBHOOK_URL to post them."
-        )
+        held = what or f"{len(payloads)} messages and {count} alerts"
+        print(f"Wrote slack.json with {held}. Set SLACK_WEBHOOK_URL to post them.")
         return True
     if not url.startswith("https://"):
         print("SLACK_WEBHOOK_URL must start with https://.", file=sys.stderr)
@@ -381,13 +507,20 @@ def _send(payloads: list[dict], count: int) -> bool:
                 file=sys.stderr,
             )
             return False
-    print(f"Posted {len(payloads)} messages with {count} alerts to Slack.")
+    if what:
+        print(f"Posted {what} to Slack.")
+    else:
+        print(f"Posted {len(payloads)} messages with {count} alerts to Slack.")
     return True
 
 
 def main(argv: list[str]) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.test:
+        return _send_test()
+    if args.database is None:
+        parser.error("give the ahd DuckDB file")
     if bool(args.rsids) == args.all:
         parser.error("give one or more report suite IDs, or --all, but not both")
     command = _ahd_command()
@@ -405,6 +538,9 @@ def main(argv: list[str]) -> int:
     if done.returncode == AHD_USAGE:
         if "invalid choice: 'alerts'" in done.stderr:
             print(OLD_AHD, file=sys.stderr)
+            return 1
+        if "unrecognized arguments: --new-only" in done.stderr:
+            print(NEW_ONLY_NEEDS, file=sys.stderr)
             return 1
         # A wrong --anomaly-method or --anomaly-sensitivity: ahd names the values it takes.
         last = done.stderr.strip().splitlines()[-1] if done.stderr.strip() else ""
@@ -428,9 +564,13 @@ def main(argv: list[str]) -> int:
         return 1
     payloads = []
     count = 0
+    new = "new " if args.new_only else ""
     for run in runs:
         if not run["alerts"]:
-            print(f"No alerts for {run['rsid']}.")
+            print(f"No {new}alerts for {run['rsid']}.")
+        # ahd 0.1.15 and older give no warning. An event without new alerts, with --new-only,
+        # still gets its message.
+        if not (run["alerts"] or run.get("warning") or run["events"]):
             continue
         rules = (
             f"A large drop is more than {_percent(float(args.threshold))} below the weekday "
@@ -438,16 +578,27 @@ def main(argv: list[str]) -> int:
             "above it. The weekday average is the average of the same weekday in the 12 weeks "
             "before. " + _flagged_by(run["method"], run["method_name"], run["sensitivity"])
         )
-        payloads.append(message(run, rules))
+        payloads.append(message(run, rules, args.new_only))
         count += len(run["alerts"])
+    stale = any(run.get("stale") for run in runs)
+    missing = _missing(args, runs)
+    sent = False
+    if payloads and missing:
+        payloads.append(missing_message(missing))
     if payloads:
-        if not _send(payloads, count):
+        if not _send(payloads, count, None if count else _warnings(len(payloads))):
             return 1
+        sent = True
+    elif runs and args.always:
+        what = _warnings(len(missing)) if missing else "the all-clear message"
+        if not _send([all_clear(runs, args.new_only, missing)], 0, what):
+            return 1
+        sent = True
     elif runs:
         print("Nothing to send.")
-    if done.returncode == AHD_ERROR:
+    if done.returncode == AHD_ERROR or stale:
         return 1
-    return 0 if payloads else 2
+    return 0 if sent else 2
 
 
 if __name__ == "__main__":

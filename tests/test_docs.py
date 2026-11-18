@@ -99,11 +99,8 @@ def test_usage_has_a_section_for_every_command():
 
 def _source_text() -> str:
     """The source with string parts that follow each other joined, and spaces made single."""
-    parts = [
-        p.read_text(encoding="utf-8")
-        for p in sorted((ROOT / "src").rglob("*"))
-        if p.suffix in (".py", ".js", ".j2")
-    ]
+    files = [*sorted((ROOT / "src").rglob("*")), *sorted((ROOT / "docs" / "examples").glob("*.py"))]
+    parts = [p.read_text(encoding="utf-8") for p in files if p.suffix in (".py", ".js", ".j2")]
     joined = re.sub(r'"\s*\n\s*\+?\s*f?"', "", "\n".join(parts))
     return re.sub(r"\s+", " ", joined)
 

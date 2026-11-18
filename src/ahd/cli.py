@@ -19,7 +19,17 @@ from typing import Any
 import duckdb
 import requests
 
-from ahd.alerts import FORMATS, Rules, alerts_day, choose_runs, counts_line, read_alerts, write
+from ahd.alerts import (
+    FORMATS,
+    Rules,
+    alerts_day,
+    choose_runs,
+    counts_line,
+    only_new,
+    read_alerts,
+    run_age,
+    write,
+)
 from ahd.api.auth import NO_REPORT_SUITES, SignInError, SignInUnavailable
 from ahd.api.client import AdobeClient, ApiError
 from ahd.catalog import CUSTOM_GROUPS
@@ -398,6 +408,17 @@ def _parser() -> argparse.ArgumentParser:
         metavar="PERCENT",
         help="A large spike is more than this percent above the weekday average. Above 0 and "
         "up to 200 (default 50).",
+    )
+    alerts.add_argument(
+        "--new-only",
+        action="store_true",
+        help="List only the alerts that are new on the day. Each suite-wide event keeps its line.",
+    )
+    alerts.add_argument(
+        "--date",
+        type=_day,
+        help="Check the runs as if today were this date (YYYY-MM-DD) in the time zone of each "
+        "suite. A run is old when its alerts are for a day before yesterday. Default: today.",
     )
     anomaly(alerts)
 
@@ -869,12 +890,20 @@ def _alerts(args: argparse.Namespace) -> int:
     try:
         store.use_current_views()
         runs, missing = choose_runs(store, path, args.run, args.rsid, args.all_suites, args.segment)
-        results = [read_alerts(store, run, rules) for run in runs]
+        now = datetime.now(UTC)
+        results = [
+            read_alerts(
+                store, run, rules, run_age(store, run, now, args.date, args.run is not None)
+            )
+            for run in runs
+        ]
     finally:
         store.con.close()
     for message in missing:
         print(f"Error: {message}", file=sys.stderr)
-    write(results, rules, args.format, sys.stdout, args.every_alert)
+    if args.new_only:
+        results = [only_new(r) for r in results]
+    write(results, rules, args.format, sys.stdout, args.every_alert, args.new_only)
     if missing:
         return 1
     return 0 if any(r.alerts for r in results) else EXIT_NO_ALERTS

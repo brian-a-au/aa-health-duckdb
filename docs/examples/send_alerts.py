@@ -3,8 +3,9 @@
 Usage:
     uv run python docs/examples/send_alerts.py DATABASE RSID [RSID ...] [--segment ID]
         [--threshold 0.30] [--spike-threshold 0.50]
-        [--anomaly-method adobe] [--anomaly-sensitivity normal]
+        [--anomaly-method adobe] [--anomaly-sensitivity normal] [--new-only] [--always]
     uv run python docs/examples/send_alerts.py DATABASE --all [--segment ID]
+    uv run python docs/examples/send_alerts.py --test
 
 It needs ahd 0.1.11 or newer, from the package aa-health-duckdb. Run it from a clone of the
 aa-health-duckdb repository, where uv run already has ahd. Without a clone, download this file
@@ -44,6 +45,18 @@ AHD_ANOMALY_SENSITIVITY, as ahd run does. Set them once in a scheduled job, so t
 and the email use the same method. An option wins over its variable, and an empty variable
 counts as not set. An unknown value in a variable stops the script with exit code 1.
 
+--new-only lists only the alerts that are new on the day. A suite-wide event that started
+earlier keeps its line, so a suite whose data stopped days ago is still named. It needs
+ahd 0.1.16 or newer.
+
+With ahd 0.1.16 or newer, a suite whose latest finished run is old gets a warning at the top
+of its section, e.g., when the runs after it failed. The section is sent also when the suite
+has no alerts, and the script then exits with 1.
+
+--always sends a short all-clear message when there are no alerts, so that a day without an
+email means that the job did not run. --test sends a test message to check the mail settings.
+It needs SMTP_HOST, MAIL_FROM and MAIL_TO, reads no alerts and does not need ahd.
+
 To send, set SMTP_HOST, SMTP_PORT (default 587), MAIL_FROM and MAIL_TO, and SMTP_USER and
 SMTP_PASSWORD when the server needs a login. Without SMTP_HOST, it writes the message to
 alerts.eml in the current folder instead, so you can open it and check it first. The script
@@ -53,10 +66,11 @@ login, it prints one line that says why and exits with 1.
 
 Exit codes, so a scheduler can tell the cases apart:
     0  it sent or wrote a message
-    1  something is wrong, e.g., a suite has no finished run. The other suites are still sent.
+    1  something is wrong, e.g., a suite has no finished run, or the latest finished run of a
+       suite is old. The other suites and the warnings are still sent.
        A wrong option also exits with 1 and prints the usage. So does an email that could not
        be sent.
-    2  there were no alerts
+    2  there were no alerts, and --always was not given
 """
 
 from __future__ import annotations
@@ -95,6 +109,10 @@ OLD_AHD = (
     "The ahd that this script found has no alerts command, so it is older than 0.1.11. "
     "Update it, e.g., with uv tool upgrade aa-health-duckdb."
 )
+NEW_ONLY_NEEDS = (
+    "--new-only needs ahd 0.1.16 or newer. Update it, e.g., with uv tool upgrade aa-health-duckdb."
+)
+TEST_SETTINGS = ("SMTP_HOST", "MAIL_FROM", "MAIL_TO")
 
 
 def _number(v: float | None) -> str:
@@ -158,7 +176,7 @@ class _Parser(argparse.ArgumentParser):
 
 def _parser() -> argparse.ArgumentParser:
     p = _Parser(description="Email the latest ahd alerts for report suites.")
-    p.add_argument("database", help="The ahd DuckDB file.")
+    p.add_argument("database", nargs="?", help="The ahd DuckDB file.")
     p.add_argument("rsids", nargs="*", metavar="RSID", help="A report suite ID.")
     p.add_argument("--all", action="store_true", help="Every suite with a finished run.")
     p.add_argument(
@@ -185,6 +203,21 @@ def _parser() -> argparse.ArgumentParser:
         metavar="LEVEL",
         help="How wide the range of a local method is. It does not apply to adobe "
         "(default AHD_ANOMALY_SENSITIVITY, else normal).",
+    )
+    p.add_argument(
+        "--new-only",
+        action="store_true",
+        help="List only the alerts that are new on the day. Needs ahd 0.1.16 or newer.",
+    )
+    p.add_argument(
+        "--always",
+        action="store_true",
+        help="Send a short all-clear message when there are no alerts.",
+    )
+    p.add_argument(
+        "--test",
+        action="store_true",
+        help="Send a test message to check the mail settings. It reads no alerts.",
     )
     return p
 
@@ -217,6 +250,8 @@ def _ahd_options(args: argparse.Namespace) -> list[str]:
         options.append(f"--anomaly-method={args.anomaly_method}")
     if args.anomaly_sensitivity is not None:
         options.append(f"--anomaly-sensitivity={args.anomaly_sensitivity}")
+    if args.new_only:
+        options.append("--new-only")
     return options
 
 
@@ -286,24 +321,63 @@ def _table(rows: list[tuple]) -> tuple[list[str], str]:
     return text, f"<table style='border-collapse:collapse'><tr>{th}</tr>{trs}</table>"
 
 
+def missing_line(rsid: str) -> str:
+    """The line for a suite that has no finished run in the database."""
+    return (
+        f"There is no finished run of {rsid} in the database. Check the report suite ID, or run "
+        "ahd runs to list the runs."
+    )
+
+
+def _missing(args: argparse.Namespace, runs: list[dict]) -> list[str]:
+    """The suites that were asked for and have no finished run."""
+    found = {run["rsid"] for run in runs}
+    return [rsid for rsid in dict.fromkeys(args.rsids) if rsid not in found]
+
+
+def _message(subject: str, text: list[str], parts: list[str]) -> EmailMessage:
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = os.environ.get("MAIL_FROM", "ahd@localhost")
+    msg["To"] = os.environ.get("MAIL_TO", "you@example.com")
+    msg.set_content("\n".join(text).rstrip() + "\n")
+    msg.add_alternative("".join(parts), subtype="html")
+    return msg
+
+
 def build(
     sections: list[tuple[str, str, list[tuple]]],
     threshold: float,
     spike: float,
     flagged_by: str,
     events: dict[str, list[dict]] | None = None,
+    warnings: dict[str, tuple[str, str | None]] | None = None,
+    new_only: bool = False,
+    missing: list[str] | None = None,
 ) -> EmailMessage:
-    """One email. Each section is (rsid, suite name, alert rows), for a suite with alerts.
-    flagged_by is the sentence that names the anomaly method. events gives the suite-wide
-    events of each suite by its rsid, as ahd alerts gives them. A section with events starts
-    with each event and its first EVENT_SHOWN alerts, and then lists the other alerts."""
+    """One email. Each section is (rsid, suite name, alert rows), for a suite with alerts, a
+    warning or a suite-wide event. flagged_by is the sentence that names the anomaly method.
+    events gives the suite-wide events of each suite by its rsid, as ahd alerts gives them. A
+    section with events starts with each event and its first EVENT_SHOWN alerts, and then
+    lists the other alerts. warnings gives the day of the alerts of each suite by its rsid, and
+    the warning of ahd alerts for an old run, or None. new_only says that the rows hold only the
+    new alerts. missing names the suites that have no finished run."""
     events = events or {}
+    warnings = warnings or {}
     total = sum(len(rows) for _, _, rows in sections)
-    if len(sections) == 1:
+    new = "new " if new_only else ""
+    if total == 0:
+        # Only warnings and events without new alerts.
+        subject = (
+            f"Analytics Health warning for {sections[0][0]}"
+            if len(sections) == 1
+            else f"Analytics Health warnings for {len(sections)} report suites"
+        )
+    elif len(sections) == 1:
         rsid, _name, rows = sections[0]
-        subject = f"{total} Analytics Health alerts for {rsid} on {rows[0][-1]}"
+        subject = f"{total} {new}Analytics Health alerts for {rsid} on {rows[0][-1]}"
     else:
-        subject = f"{total} Analytics Health alerts for {len(sections)} report suites"
+        subject = f"{total} {new}Analytics Health alerts for {len(sections)} report suites"
     rules = (
         f"A large drop is more than {_percent(threshold)} below the weekday average, and a "
         f"large spike is more than {_percent(spike)} above it. The weekday average is the "
@@ -311,16 +385,34 @@ def build(
     )
     text = [subject, "", rules, ""]
     parts = [f"<p>{html.escape(subject)}. {html.escape(rules, quote=False)}</p>"]
+    for rsid in missing or []:
+        text += [missing_line(rsid), ""]
+        parts.append(f"<p><b>Warning:</b> {html.escape(missing_line(rsid))}</p>")
     for rsid, name, rows in sections:
-        heading = f"{name} ({rsid}), {rows[0][-1]}: {len(rows)} alerts"
-        if any(r[6] for r in rows):
-            heading += f", {sum(1 for r in rows if r[7])} new"
+        day, warning = warnings.get(rsid, (rows[0][-1] if rows else "", None))
+        if not rows:
+            heading = f"{name} ({rsid}), {day}: no {new}alerts"
+        elif new_only:
+            heading = f"{name} ({rsid}), {day}: {len(rows)} new alerts"
+        else:
+            heading = f"{name} ({rsid}), {day}: {len(rows)} alerts"
+            if any(r[6] for r in rows):
+                heading += f", {sum(1 for r in rows if r[7])} new"
         text.append(heading)
         parts.append(f"<h3>{html.escape(heading)}</h3>")
+        if warning:
+            text.append(f"Warning: {warning}")
+            parts.append(f"<p><b>Warning:</b> {html.escape(warning, quote=False)}</p>")
         mine = events.get(rsid, [])
         for event in mine:
             said = f"Suite-wide event: {event['text']}"
             these = [r for r in rows if r[8] == event["event"]]
+            if not these:
+                # With new_only: the event holds since an earlier day.
+                none = f"None of its alerts are new on {day}."
+                text += [said, none]
+                parts.append(f"<p>{html.escape(said, quote=False)}</p><p>{html.escape(none)}</p>")
+                continue
             lines, table = _table(these[:EVENT_SHOWN])
             text += [said, *lines]
             parts.append(f"<p>{html.escape(said, quote=False)}</p>{table}")
@@ -342,12 +434,42 @@ def build(
             text += lines
             parts.append(table)
         text.append("")
+    return _message(subject, text, parts)
+
+
+def all_clear(runs: list[dict], new_only: bool, missing: list[str] | None = None) -> EmailMessage:
+    """The short email for a day without alerts, with one line for each suite. A suite in
+    missing has no finished run, so the email is then a warning and not an all-clear."""
+    new = "new " if new_only else ""
+    missing = missing or []
+    if len(missing) == 1:
+        subject = f"Analytics Health warning for {missing[0]}"
+    elif missing:
+        subject = f"Analytics Health warnings for {len(missing)} report suites"
+    else:
+        where = runs[0]["rsid"] if len(runs) == 1 else f"{len(runs)} report suites"
+        subject = f"No {new}Analytics Health alerts for {where}"
+    lines = [missing_line(rsid) for rsid in missing] + [
+        f"No {new}alerts for {run['rsid_name'] or run['rsid']} ({run['rsid']}) on {run['day']}."
+        for run in runs
+    ]
+    return _message(
+        subject,
+        [subject, "", *lines],
+        [f"<p>{html.escape(line)}</p>" for line in [subject + ".", *lines]],
+    )
+
+
+def test_message() -> EmailMessage:
+    """The email of --test."""
     msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = os.environ.get("MAIL_FROM", "ahd@localhost")
-    msg["To"] = os.environ.get("MAIL_TO", "you@example.com")
-    msg.set_content("\n".join(text).rstrip() + "\n")
-    msg.add_alternative("".join(parts), subtype="html")
+    msg["Subject"] = "Analytics Health test message"
+    msg["From"] = os.environ["MAIL_FROM"]
+    msg["To"] = os.environ["MAIL_TO"]
+    msg.set_content(
+        "ahd can send alerts to this address. This is a test message from send_alerts.py. It "
+        "holds no alerts.\n"
+    )
     return msg
 
 
@@ -380,17 +502,12 @@ def _send_problem(error: Exception) -> str:
     )
 
 
-def _send(msg: EmailMessage, count: int) -> bool:
-    """Sends the email, or writes alerts.eml without SMTP_HOST. False when it could not send."""
-    host = os.environ.get("SMTP_HOST")
-    if not host:
-        Path("alerts.eml").write_bytes(bytes(msg))
-        print(f"Wrote alerts.eml with {count} alerts. Set SMTP_HOST to send it.")
-        return True
+def _deliver(msg: EmailMessage, host: str) -> str | None:
+    """Sends the email to the server host. None when it was sent, else the line that says why
+    not."""
     port = _port()
     if port is None:
-        print("SMTP_PORT must be a port number from 1 to 65535, e.g., 587.", file=sys.stderr)
-        return False
+        return "SMTP_PORT must be a port number from 1 to 65535, e.g., 587."
     try:
         with smtplib.SMTP(host, port, timeout=SMTP_TIMEOUT) as smtp:
             # The default context checks the certificate of the server and its host name.
@@ -399,15 +516,53 @@ def _send(msg: EmailMessage, count: int) -> bool:
                 smtp.login(os.environ["SMTP_USER"], os.environ.get("SMTP_PASSWORD", ""))
             smtp.send_message(msg)
     except (OSError, smtplib.SMTPException) as error:
-        print(f"{_send_problem(error)} Nothing was sent to {host}.", file=sys.stderr)
+        return f"{_send_problem(error)} Nothing was sent to {host}."
+    return None
+
+
+def _send(msg: EmailMessage, what: str) -> bool:
+    """Sends the email, or writes alerts.eml without SMTP_HOST. what names what it holds, e.g.,
+    "13 alerts". False when it could not send."""
+    host = os.environ.get("SMTP_HOST")
+    if not host:
+        Path("alerts.eml").write_bytes(bytes(msg))
+        print(f"Wrote alerts.eml with {what}. Set SMTP_HOST to send it.")
+        return True
+    problem = _deliver(msg, host)
+    if problem:
+        print(problem, file=sys.stderr)
         return False
-    print(f"Sent {count} alerts to {msg['To']}.")
+    print(f"Sent {what} to {msg['To']}.")
     return True
+
+
+def _warnings(n: int) -> str:
+    return "the warning" if n == 1 else "the warnings"
+
+
+def _send_test() -> int:
+    """--test: sends the test message. It needs the settings of TEST_SETTINGS."""
+    missing = [name for name in TEST_SETTINGS if not os.environ.get(name)]
+    if missing:
+        names = missing[0] if len(missing) == 1 else ", ".join(missing[:-1]) + " and " + missing[-1]
+        print(f"--test needs SMTP_HOST, MAIL_FROM and MAIL_TO. Set {names}.", file=sys.stderr)
+        return 1
+    msg = test_message()
+    problem = _deliver(msg, os.environ["SMTP_HOST"])
+    if problem:
+        print(problem, file=sys.stderr)
+        return 1
+    print(f"Sent a test message to {msg['To']}.")
+    return 0
 
 
 def main(argv: list[str]) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.test:
+        return _send_test()
+    if args.database is None:
+        parser.error("give the ahd DuckDB file")
     if bool(args.rsids) == args.all:
         parser.error("give one or more report suite IDs, or --all, but not both")
     command = _ahd_command()
@@ -425,6 +580,9 @@ def main(argv: list[str]) -> int:
     if done.returncode == AHD_USAGE:
         if "invalid choice: 'alerts'" in done.stderr:
             print(OLD_AHD, file=sys.stderr)
+            return 1
+        if "unrecognized arguments: --new-only" in done.stderr:
+            print(NEW_ONLY_NEEDS, file=sys.stderr)
             return 1
         # A wrong --anomaly-method or --anomaly-sensitivity: ahd names the values it takes.
         last = done.stderr.strip().splitlines()[-1] if done.stderr.strip() else ""
@@ -445,24 +603,47 @@ def main(argv: list[str]) -> int:
         return 1
     sections = []
     events = {}
+    warnings = {}
+    new = "new " if args.new_only else ""
     for run in runs:
-        if run["alerts"]:
+        # ahd 0.1.12 and older give no events, and ahd 0.1.15 and older no warning. An event
+        # without new alerts, with --new-only, still gets its section.
+        if run["alerts"] or run.get("warning") or run.get("events"):
             sections.append((run["rsid"], run["rsid_name"] or run["rsid"], _rows(run)))
-            # ahd 0.1.12 and older give no events.
             events[run["rsid"]] = run.get("events", [])
-        else:
-            print(f"No alerts for {run['rsid']}.")
+            warnings[run["rsid"]] = (run["day"], run.get("warning"))
+        if not run["alerts"]:
+            print(f"No {new}alerts for {run['rsid']}.")
+    stale = any(run.get("stale") for run in runs)
+    sent = False
     if sections:
         first = runs[0]
         said = _flagged_by(first["method"], first["method_name"], first["sensitivity"])
-        msg = build(sections, float(args.threshold), float(args.spike_threshold), said, events)
-        if not _send(msg, sum(len(rows) for _, _, rows in sections)):
+        msg = build(
+            sections,
+            float(args.threshold),
+            float(args.spike_threshold),
+            said,
+            events,
+            warnings,
+            args.new_only,
+            _missing(args, runs),
+        )
+        count = sum(len(rows) for _, _, rows in sections)
+        if not _send(msg, f"{count} alerts" if count else _warnings(len(sections))):
             return 1
+        sent = True
+    elif runs and args.always:
+        missing = _missing(args, runs)
+        what = _warnings(len(missing)) if missing else "the all-clear message"
+        if not _send(all_clear(runs, args.new_only, missing), what):
+            return 1
+        sent = True
     elif runs:
         print("Nothing to send.")
-    if done.returncode == AHD_ERROR:
+    if done.returncode == AHD_ERROR or stale:
         return 1
-    return 0 if sections else 2
+    return 0 if sent else 2
 
 
 if __name__ == "__main__":

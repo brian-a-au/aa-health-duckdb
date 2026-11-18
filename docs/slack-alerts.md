@@ -63,7 +63,15 @@ These steps take you from nothing to a first message in Slack. The commands use 
 
    On Windows, in the Command Prompt, write `set SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...` without quotes. In PowerShell, write `$env:SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/...'`. The setting lasts until you close the terminal.
 
-10. **Post the messages.** Run the same command as in step 4:
+10. **Check the webhook.** Post a test message:
+
+    ```
+    uv run python send_slack.py --test
+    ```
+
+    It prints "Posted a test message to Slack." and the message appears in the channel. It reads no alerts and needs no database. Without `SLACK_WEBHOOK_URL`, it says "--test needs SLACK_WEBHOOK_URL. Set it to the webhook URL of the channel." When Slack does not take the message, it prints one line that says why. `--test` needs a script from 0.1.16 or newer.
+
+11. **Post the messages.** Run the same command as in step 4:
 
     ```
     uv run python send_slack.py ~/.aa/orgs/prod/ahd.duckdb my_suite
@@ -71,7 +79,7 @@ These steps take you from nothing to a first message in Slack. The commands use 
 
     It prints a line that counts the messages and the alerts, e.g., "Posted 2 messages with 20 alerts to Slack." with `--all` and two suites. The messages appear in the channel. When Slack does not take a message, the script prints one line that says why. See [When Slack does not take a message](#when-slack-does-not-take-a-message).
 
-11. **Run it every day.** To post the alerts each morning, put the script in the daily job of [Run it every day](scheduling.md). Set `SLACK_WEBHOOK_URL` in the scheduled script, and make sure only your user account can read that script.
+12. **Run it every day.** To post the alerts each morning, put the script in the daily job of [Run it every day](scheduling.md). Set `SLACK_WEBHOOK_URL` in the scheduled script, and make sure only your user account can read that script.
 
 ## What a message holds
 
@@ -124,6 +132,13 @@ The options are those of the email script. [Email alerts](email-alerts.md#option
 - `--segment ID`: the latest runs with this segment. Without it, the latest runs without a segment.
 - `--threshold` and `--spike-threshold`: the large drop and the large spike percent, as shares. The defaults are `0.30` and `0.50`.
 - `--anomaly-method` and `--anomaly-sensitivity`: the method that flags the unusual values, as on `ahd run`. Without them, `ahd alerts` reads `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`.
+- `--new-only`: lists only the alerts that are new on the day. The header then says "new", e.g., "Adobe Store: 2 new alerts". A suite-wide event keeps its line also when none of its alerts is new, so a suite whose data stopped days ago is still named every day. It needs `ahd` 0.1.16 or newer. With an older `ahd`, the script stops with exit code 1 and says how to update it.
+- `--always`: posts a short message when there are no alerts, e.g., "No Analytics Health alerts" with one line for each suite. Then a quiet channel no longer means healthy suites. It means that the daily job did not run, so you notice a job that stopped. When a report suite ID that you gave has no finished run, the message names it, e.g., "There is no finished run of my_suite in the database.", and is a warning, not an all-clear. The script then exits with 1.
+- `--test`: posts a test message to check the webhook, see step 10 of [Step by step](#step-by-step). It does not read the database and does not need `ahd`.
+
+### When the latest run is old
+
+A run is old when its alerts are for a day before yesterday in the time zone of the suite, e.g., because the runs after it failed or the daily job stopped. Its message then has a warning below the first line, e.g., "Warning: The latest finished run of my_suite has the alerts of 2026-11-13, but yesterday was 2026-11-16 in the time zone of the suite. 2 later runs of it failed." The message is posted also when the suite has no alerts, and the script then exits with 1. This needs `ahd` 0.1.16 or newer. With an older `ahd`, the message has no warning.
 
 ## When Slack does not take a message
 
@@ -139,7 +154,7 @@ The script waits at most 30 seconds for Slack, and about 1 second between two me
 ## Exit codes
 
 - 0 when it posted or wrote the messages
-- 1 when something is wrong, e.g., the file holds no finished run of a suite. The alerts of the other suites are still posted. A wrong option also exits with 1 and prints the usage. So does a message that Slack did not take.
-- 2 when there was nothing to send
+- 1 when something is wrong, e.g., the file holds no finished run of a suite, or the latest finished run of a suite is old. The alerts of the other suites and the warnings are still posted. A wrong option also exits with 1 and prints the usage. So does a message that Slack did not take.
+- 2 when there was nothing to send. With `--always`, the script posts the all-clear message and exits with 0 instead.
 
 To post the alerts every morning, put the script in the daily job of [Run it every day](scheduling.md) in place of the email script, or next to it.

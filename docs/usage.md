@@ -238,11 +238,27 @@ ahd alerts --rsid my_suite --change-alert 27.5 --anomaly-method weekday-median
 | `--segment` | With `--rsid` or `--all-suites`, uses the latest runs with this segment ID. Without it, the command uses the runs without a segment. It does not work with `--run`, because a run already has its segment. The command then exits with 2. |
 | `--format` | `text`, the default, for a person or the body of a plain email. `json` or `csv` for another program. See [The formats](#the-formats). |
 | `--every-alert` | In the text, lists every alert of a suite-wide event, not only its first 5. JSON and CSV always hold every alert. See [Suite-wide events in the output](#suite-wide-events-in-the-output). |
+| `--new-only` | Lists only the alerts that are new on the day, in every format. Each suite-wide event keeps its line, also when none of its alerts is new, so a problem that started earlier is still named. See [Only the new alerts](#only-the-new-alerts). |
 | `--change-alert` | A large drop is a value more than this percent below the weekday average. The default is 30. Any percent above 0 and up to 100 works, e.g., `27.5`, because there is no slider here. |
 | `--spike-alert` | A large spike is a value more than this percent above the weekday average. The default is 50. Any percent above 0 and up to 200 works. |
 | `--anomaly-method`, `--anomaly-sensitivity` | Work as in `run`, with the same defaults and the same variables `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`. With `adobe`, `low` or `high` stops the command with exit code 1. See [Set the anomaly method once](#set-the-anomaly-method-once). |
+| `--date` | Checks the runs as if today were this date (YYYY-MM-DD) in the time zone of each suite. Without it, today comes from the clock of the computer, in the time zone of each suite. It only decides whether a run is old, see [Old runs](#old-runs). |
 
 You need one of `--run`, `--rsid` or `--all-suites`. When a suite has no finished run, the command says so on stderr, e.g., "holds no finished run of my_suite without a segment". It still prints the alerts of the other suites, and exits with 1.
+
+### Only the new alerts
+
+An alert is new when it started on the day of the alerts. With `--new-only`, the counts line counts only the new alerts, and the next line says "Only the alerts that are new on 2026-11-16 are listed." A suite-wide event keeps its line, so a suite whose data stopped 6 days ago still gets one line each day. When none of the alerts of an event is new, the line after it says "None of its alerts are new on 2026-11-16." In the JSON, every event stays as it is, with its `new` count, and the list of alerts holds only the new ones. The exit code is 4 when no alert is new.
+
+### Old runs
+
+A run is old when its alerts are for a day before yesterday in the time zone of its suite. This happens when the runs after it failed, or when no run was made, e.g., because a daily job stopped. The text then has a warning line under the heading of the run, e.g.:
+
+```
+Warning: The latest finished run of my_suite has the alerts of 2026-11-13, but yesterday was 2026-11-16 in the time zone of the suite. 2 later runs of it failed.
+```
+
+For a run that `--run` chose, the line starts with the run, e.g., "Run 3 of my_suite has the alerts of", because it may not be the latest run. The last sentence counts the runs of the same suite and segment that ended "failed" after the old run. A run that is still "running" does not count. The time zone is the one stored with the run, so the computer's own time zone does not matter. When the computer does not know the time zone, the command does not say whether the run is old. An old run does not change the exit code.
 
 The command opens the database read-only, so it works while a `duckdb -readonly` session has the file open. While `ahd run` or another command writes to the file, it stops with "is in use by another program". It uses the rules of the version of `ahd` that you run, also on a file that an older version wrote. Such a file keeps the views and macros of that version, e.g., an `alerts()` macro without `sensitivity`. The command makes the current views and macros for its own use and leaves the file as it is.
 
@@ -302,6 +318,10 @@ Each run has these fields:
 - `day`: the day of the alerts, as YYYY-MM-DD.
 - `method` and `sensitivity`: the anomaly method and sensitivity in use, e.g., `weekday-median` and `high`. `method_name` is the name that the report gives the method, e.g., "Weekday median".
 - `threshold` and `spike_threshold`: the percents for a large drop and a large spike, as shares, e.g., `0.3` for 30 percent, as the `alerts()` macro takes them.
+- `current_day`: today in the time zone of the suite, or the date of `--date`, as YYYY-MM-DD. It is `null` when the computer does not know the time zone.
+- `stale`: `true` when the run is old, see [Old runs](#old-runs). It is `null` when `current_day` is `null`.
+- `failed_after`: the number of runs of the same suite and segment that ended "failed" after this run.
+- `warning`: the sentence of the warning line for an old run, without "Warning:", or `null`. `ahd` 0.1.16 added these four fields.
 - `events`: one object for each suite-wide event, biggest first. It has the columns of the [`suite_events()` macro](duckdb.md#suite_eventsrun-), without `run_id` and `day`, and the field `text`. A run without an event has an empty list. `ahd` 0.1.13 added this field.
   - `event`: the kind of alert that the event groups: `zero` for a value of 0, `low` or `high` for a value below or above the expected range, `drop` for a large drop and `spike` for a large spike.
   - `alerts`: the number of alerts in the event.
@@ -336,6 +356,10 @@ Later versions may add fields to the object, to a run and to an alert, as 0.1.13
       "sensitivity": "normal",
       "threshold": 0.3,
       "spike_threshold": 0.5,
+      "current_day": "2026-11-12",
+      "stale": false,
+      "failed_after": 0,
+      "warning": null,
       "events": [
         {
           "event": "spike",
@@ -389,12 +413,12 @@ Later versions may add fields to the object, to a run and to an alert, as 0.1.13
 }
 ```
 
-`csv` gives one header row and one row for each alert. Each row starts with the fields of its run, as in the JSON, and goes on with the fields of the alert. `at_least` and `is_new` are `true` or `false`, as in the JSON. The last column, `event`, is empty for an alert outside a suite-wide event. `ahd` 0.1.13 added it. The CSV has no row for an event. A run without alerts has no row. A value with a comma, a quote or a line break is put in quotes, as CSV does it. Names and IDs come from Adobe, and a spreadsheet such as Excel reads a cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return as a formula and runs it. So the CSV puts a single quote `'` in front of such a text value, e.g., `'=HYPERLINK("x")`, and the spreadsheet shows it as text. Numbers keep their form, also negative ones. For the same suite, shortened:
+`csv` gives one header row and one row for each alert. Each row starts with the fields of its run, as in the JSON, without `warning`, and goes on with the fields of the alert. `ahd` 0.1.16 added the columns `current_day`, `stale` and `failed_after`. `at_least` and `is_new` are `true` or `false`, as in the JSON. The last column, `event`, is empty for an alert outside a suite-wide event. `ahd` 0.1.13 added it. The CSV has no row for an event. A run without alerts has no row. A value with a comma, a quote or a line break is put in quotes, as CSV does it. Names and IDs come from Adobe, and a spreadsheet such as Excel reads a cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return as a formula and runs it. So the CSV puts a single quote `'` in front of such a text value, e.g., `'=HYPERLINK("x")`, and the spreadsheet shows it as text. Numbers keep their form, also negative ones. For the same suite, shortened:
 
 ```
-run_id,rsid,rsid_name,segment_id,status,day,method,method_name,sensitivity,threshold,spike_threshold,alert,anomaly,component_id,name,group,metric_type,value,usual,expected,pct_vs_usual,since,days,at_least,is_new,event
-2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,unusual,high,metrics/exitlinkinstances,Exit Link Instances,Reserved Props,int,8.0,2.4166666666666665,2.505854996828865,2.310344828,2026-11-11,1,false,true,
-2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,unusual,high,metrics/cartadditions,Cart Additions,Reserved Purchase Events,int,230.0,140.08333333333334,77.06421405092522,0.641879833,2026-11-09,3,false,false,
+run_id,rsid,rsid_name,segment_id,status,day,method,method_name,sensitivity,threshold,spike_threshold,current_day,stale,failed_after,alert,anomaly,component_id,name,group,metric_type,value,usual,expected,pct_vs_usual,since,days,at_least,is_new,event
+2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,2026-11-12,false,0,unusual,high,metrics/exitlinkinstances,Exit Link Instances,Reserved Props,int,8.0,2.4166666666666665,2.505854996828865,2.310344828,2026-11-11,1,false,true,
+2,dgeo1xxpnwcidadobestore,Adobe Store,,ok,2026-11-11,adobe,Adobe,normal,0.3,0.5,2026-11-12,false,0,unusual,high,metrics/cartadditions,Cart Additions,Reserved Purchase Events,int,230.0,140.08333333333334,77.06421405092522,0.641879833,2026-11-09,3,false,false,
 ```
 
 ### Exit codes of alerts
