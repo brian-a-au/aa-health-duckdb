@@ -99,8 +99,15 @@ def _text(value: object) -> str | None:
     return text or None
 
 
-def _build(values: dict[str, str | None], source: str) -> Credentials:
-    missing = [k for k in _KEYS if not values.get(k)]
+def _variable(key: str) -> str:
+    """The environment variable of a credential key, e.g., AHD_SECRET for secret."""
+    return f"AHD_{key.upper()}"
+
+
+def _build(values: dict[str, str | None], source: str, *, variables: bool = False) -> Credentials:
+    """The credential of values. variables is true when they all came from the AHD_* variables.
+    Then the message for a missing value names the variable, e.g., AHD_SECRET."""
+    missing = [_variable(k) if variables else k for k in _KEYS if not values.get(k)]
     if missing:
         raise ConfigError(f"Missing credential keys in {source}: " + ", ".join(missing))
     return Credentials(**{k: values[k] or "" for k in _KEYS}, source=source)
@@ -127,7 +134,7 @@ def load_credentials(
     """
     if profile:
         return load_profile(profile)
-    env = {k: _text(os.environ.get(f"AHD_{k.upper()}")) for k in _KEYS}
+    env = {k: _text(os.environ.get(_variable(k))) for k in _KEYS}
     if all(env.values()):
         if path is not None and from_option:
             raise ConfigError(CONFIG_AND_VARIABLES)
@@ -135,7 +142,7 @@ def load_credentials(
     if path is None:
         if not any(env.values()):
             raise ConfigError(NO_CREDENTIAL)
-        return _build(env, "environment variables")
+        return _build(env, "environment variables", variables=True)
     data = read_config_object(Path(path), "Config file")
     values = {k: env[k] or _text(data.get(k)) for k in _KEYS}
     name = Path(path).name

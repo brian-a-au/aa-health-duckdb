@@ -27,7 +27,16 @@ TIMEOUT = (10, 60)
 # again.
 SIGN_IN_TRIES = 3
 SIGN_IN_WAITS = (1.0, 3.0)
-TEMPORARY_ERRORS = (requests.ConnectionError, requests.Timeout)
+# Network errors that are worth another try. ChunkedEncodingError means the connection
+# dropped while the answer was being read. The client tries the same errors again.
+TEMPORARY_ERRORS = (
+    requests.ConnectionError,
+    requests.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+)
+# The longest wait that a Retry-After header can ask for. A longer one waits this long. The
+# client uses the same limit for its own requests.
+RETRY_AFTER_CAP = 120.0
 _sleep = time.sleep
 # Waits a number of seconds. A true result means that the wait ended early and that no other
 # try should follow, as threading.Event.wait gives after the event is set.
@@ -67,6 +76,11 @@ NO_COMPANY = (
     "Sign-in worked, but this credential sees no Adobe Analytics company. In the Adobe Admin "
     "Console, open Adobe Analytics, choose a product profile, and add the credential's technical "
     "account to it under API credentials. Changes can take a while to reach Analytics."
+)
+NOT_FROM_ADOBE = (
+    "Sign-in failed: the answer to the sign-in request did not come from Adobe's sign-in "
+    "service. It may come from a proxy or from the sign-in page of a network, e.g., the Wi-Fi of "
+    "a hotel. Sign in to the network or check the proxy settings, then try again."
 )
 NO_REPORT_SUITES = (
     "This credential signs in but sees no report suites. In the Adobe Admin Console, open the "
@@ -114,9 +128,30 @@ def _is_temporary(status: int) -> bool:
     return status == 429 or status >= 500
 
 
-def _cut_short(wait: Wait | None, attempt: int) -> bool:
-    """Wait before the next try. True when the wait ended early, e.g., after Ctrl-C."""
-    return bool((wait or _sleep)(SIGN_IN_WAITS[min(attempt, len(SIGN_IN_WAITS)) - 1]))
+def retry_after(delay: float, headers: Any) -> float:
+    """The wait before the next try: delay, or longer when the Retry-After header asks for it.
+
+    The wait is never longer than RETRY_AFTER_CAP, unless delay itself is. Retry-After may
+    also be a date. Then the delay stays as it is.
+    """
+    value = headers.get("Retry-After") if headers else None
+    try:
+        if value:
+            return min(RETRY_AFTER_CAP, max(delay, float(value)))
+    except ValueError:
+        pass
+    return delay
+
+
+def _cut_short(wait: Wait | None, attempt: int, resp: Any = None) -> bool:
+    """Wait before the next try. True when the wait ended early, e.g., after Ctrl-C.
+
+    resp is the temporary answer, if any. Its Retry-After header can make the wait longer.
+    """
+    delay = SIGN_IN_WAITS[min(attempt, len(SIGN_IN_WAITS)) - 1]
+    if resp is not None:
+        delay = retry_after(delay, getattr(resp, "headers", None))
+    return bool((wait or _sleep)(delay))
 
 
 def _tried(send: Callable[[], Any], wait: Wait | None = None) -> Any:
@@ -137,7 +172,7 @@ def _tried(send: Callable[[], Any], wait: Wait | None = None) -> Any:
             if (
                 attempt >= SIGN_IN_TRIES
                 or not _is_temporary(resp.status_code)
-                or _cut_short(wait, attempt)
+                or _cut_short(wait, attempt, resp)
             ):
                 return resp
         attempt += 1
@@ -163,6 +198,10 @@ def get_token(session: Any, creds: Credentials, wait: Wait | None = None) -> str
     token = body.get("access_token")
     if resp.status_code == 200 and isinstance(token, str) and token:
         return token
+    if resp.status_code == 200:
+        # Adobe's sign-in service answers 200 only with a token. Another answer with 200 comes
+        # from something between, e.g., a proxy or the sign-in page of a network.
+        raise SignInError(NOT_FROM_ADOBE)
     error = str(body.get("error") or "")
     desc = str(body.get("error_description") or "")
     if error == "invalid_client" and "secret" in desc:

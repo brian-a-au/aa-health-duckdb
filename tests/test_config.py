@@ -150,8 +150,28 @@ def test_no_file_and_no_env():
 
 def test_no_file_and_some_env(monkeypatch):
     monkeypatch.setenv("AHD_ORG_ID", "o@AdobeOrg")
-    with pytest.raises(ConfigError, match="environment variables: client_id, secret, scopes"):
+    with pytest.raises(
+        ConfigError, match="environment variables: AHD_CLIENT_ID, AHD_SECRET, AHD_SCOPES$"
+    ):
         load_credentials(None)
+
+
+def test_incomplete_variables_are_named_as_variables(monkeypatch):
+    monkeypatch.setenv("AHD_ORG_ID", "o@AdobeOrg")
+    monkeypatch.setenv("AHD_CLIENT_ID", "c")
+    with pytest.raises(ConfigError) as e:
+        load_credentials(None)
+    assert (
+        str(e.value) == "Missing credential keys in environment variables: AHD_SECRET, AHD_SCOPES"
+    )
+
+
+def test_a_config_file_names_the_missing_keys(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"org_id": "o@AdobeOrg", "client_id": "c"}))
+    with pytest.raises(ConfigError) as e:
+        load_credentials(path)
+    assert str(e.value) == "Missing credential keys in config.json: secret, scopes"
 
 
 def test_file_not_found(tmp_path):

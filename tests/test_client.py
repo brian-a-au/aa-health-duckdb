@@ -1,7 +1,8 @@
 import pytest
 import requests
 
-from ahd.api.client import BUSY, FAILED, RETRY_AFTER_CAP, AdobeClient, ApiError
+from ahd.api.auth import RETRY_AFTER_CAP
+from ahd.api.client import BUSY, FAILED, AdobeClient, ApiError
 
 # Every try, the first one included, for each kind of temporary error.
 BUSY_TRIES = BUSY.retries + 1

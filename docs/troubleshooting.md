@@ -29,11 +29,12 @@ When sign-in fails, the tool says what is wrong and what to fix. The fixes happe
 | "the scopes are wrong" | A required scope is missing. Adobe still gives a token, but the token sees no Analytics company. | Copy the full scopes list from the Developer Console. The message names what is missing. |
 | "this credential sees no Adobe Analytics company" | The credential is not in an Analytics product profile. | In the Adobe Admin Console, add the credential's technical account to an Adobe Analytics product profile. |
 | "This credential signs in but sees no report suites" | The product profile includes no report suites. `ahd check` and `ahd suites` exit with 2. `ahd run --all-suites` exits with 1. | Add the report suites to the product profile in the Admin Console. |
+| "did not come from Adobe's sign-in service" | Something between the computer and Adobe answered the sign-in request, e.g., a proxy or the sign-in page of a network. The credential may be fine. | Sign in to the network, e.g., the Wi-Fi of a hotel, or check the proxy settings. Then run `ahd check` again. |
 | "This credential cannot see the login company" | `--company` names a login company the credential cannot see. | Use one of the companies the message lists. |
 
 Changes in the Admin Console can take a while to reach Analytics. Wait a little and run `ahd check` again.
 
-A message that says "This is a problem at Adobe, not with the credential" means that Adobe answered a sign-in request with a temporary error, e.g., HTTP 503, 3 times in a row. Sign-in makes two requests. The first gets a token from Adobe's sign-in service. The second is the Analytics discovery call, which finds the login company. The message names the one that failed. Wait a little and try again.
+A message that says "This is a problem at Adobe, not with the credential" means that Adobe answered a sign-in request with a temporary error, e.g., HTTP 503, 3 times in a row. Sign-in makes two requests. The first gets a token from Adobe's sign-in service. The second is the Analytics discovery call, which finds the login company. The message names the one that failed. Wait a little and try again. Between the tries, the tool waits 1 second and then 3 seconds. When Adobe asks for a longer wait with a Retry-After header, the tool waits that long, up to 2 minutes.
 
 ## Limited access
 
@@ -102,7 +103,7 @@ When Adobe asks for a longer wait with a Retry-After header, the tool waits that
 - **"No credential was found"**: there is no profile, none of the variables `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_SECRET` and `AHD_SCOPES`, and no `config.json` in the current folder. See [Configuration](configuration.md).
 - **"Use a profile or --config, not both"**: the command got a profile and `--config`. Remove `--profile` or `--config`. When the message says that the profile comes from the `AA_PROFILE` variable, remove `--config`, or unset the variable with `unset AA_PROFILE`. With both options on the command line, the command exits with 2 and prints its usage. With the variable, it exits with 1.
 - **"Use --config or the four variables"**: all four of `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_SECRET` and `AHD_SCOPES` are set, and the command also got `--config`. The tool would have to ignore one of them, so it stops with exit code 1 before it signs in. Remove `--config` to use the variables, or unset them to use the file, e.g., `unset AHD_ORG_ID AHD_CLIENT_ID AHD_SECRET AHD_SCOPES`.
-- **"Missing credential keys"**: one of `org_id`, `client_id`, `secret` or `scopes` is missing or empty. The message names the key and where the tool looked.
+- **"Missing credential keys"**: one of `org_id`, `client_id`, `secret` or `scopes` is missing or empty. The message names the key and where the tool looked. When the tool read only the variables, the message names the variables instead, e.g., `AHD_SECRET, AHD_SCOPES`. Set the variables it names.
 
 ## The database
 
