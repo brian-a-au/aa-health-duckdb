@@ -66,6 +66,7 @@ from ahd.summary import (
     component_drops,
     duration_text,
 )
+from ahd.text import inert
 from ahd.transfer import export_runs, import_runs
 
 DEFAULT_DB = "./data/ahd.duckdb"
@@ -516,8 +517,8 @@ def _connect(args: argparse.Namespace, factory: Callable[..., Any]) -> Any:
     if count > 1 and not company:
         name = getattr(client, "company_name", "") or "(no name)"
         print(
-            f"This credential sees {count} login companies. Using {name} "
-            f"({client.company_id}). Choose another with --company."
+            f"This credential sees {count} login companies. Using {inert(name)} "
+            f"({inert(client.company_id)}). Choose another with --company."
         )
     return client
 
@@ -526,10 +527,12 @@ def _print_table(rows: list[dict], empty: str) -> None:
     if not rows:
         print(empty)
         return
-    width = max(len(r["id"]) for r in rows)
+    # Names and IDs come from Adobe, so each passes through inert() before it is printed.
+    table = [(inert(r["id"]), inert(r["name"])) for r in rows]
+    width = max(len(i) for i, _name in table)
     print(f"{'ID':<{width}}  Name")
-    for r in rows:
-        print(f"{r['id']:<{width}}  {r['name']}")
+    for i, name in table:
+        print(f"{i:<{width}}  {name}")
 
 
 def _suites(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
@@ -575,7 +578,7 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     if not args.rsid:
         # list_suites reads every page, so a company with over 1,000 suites is counted in full.
         count = len(list_suites(client))
-        print(f"Company ID: {client.company_id}")
+        print(f"Company ID: {inert(client.company_id)}")
         print(f"Report suites visible: {count}")
         if count == 0:
             print(NO_REPORT_SUITES)
@@ -583,7 +586,7 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
         return 0
     catalog, suite = fetch_catalog(client, args.rsid)
     counts = {g: sum(1 for c in catalog if c.group == g) for g in CUSTOM_GROUPS}
-    print(f"Report suite: {suite_name(suite, args.rsid)}")
+    print(f"Report suite: {inert(suite_name(suite, args.rsid))}")
     print(f"Custom events: {counts['custom_events']}")
     print(f"Custom eVars: {counts['custom_evars']}")
     print(f"Custom props: {counts['custom_props']}")
@@ -848,7 +851,7 @@ def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
             args,
         )
     )
-    print(f"Added {dim['name']} by {met['name']} to run {args.run}.")
+    print(f"Added {inert(dim['name'])} by {inert(met['name'])} to run {args.run}.")
     if problems:
         print(f"{problems} of its requests had problems. The report's status section lists them.")
         return EXIT_CODES["partial"]

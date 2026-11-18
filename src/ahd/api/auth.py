@@ -16,6 +16,7 @@ from typing import Any
 import requests
 
 from ahd.config import Credentials
+from ahd.text import inert
 
 IMS_TOKEN_URL = "https://ims-na1.adobelogin.com/ims/token/v3"
 DISCOVERY_URL = "https://analytics.adobe.io/discovery/me"
@@ -245,7 +246,7 @@ def find_company(
     for cid, name in companies:
         if wanted in (cid.lower(), name.lower()):
             return cid, name, len(companies)
-    names = ", ".join(f"{name or '(no name)'} ({cid})" for cid, name in companies)
+    names = ", ".join(f"{inert(name) or '(no name)'} ({inert(cid)})" for cid, name in companies)
     raise SignInError(
         f"This credential cannot see the login company {company_id!r}. It can see: {names}."
     )

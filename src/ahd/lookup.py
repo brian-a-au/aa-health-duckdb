@@ -6,6 +6,7 @@ from typing import Any
 
 from ahd.api.client import unreadable
 from ahd.config import ConfigError
+from ahd.text import inert
 
 PAGE_SIZE = 1000
 
@@ -62,7 +63,7 @@ def _pick(value: str, rows: list[dict], what: str, hint: str) -> str:
     if len(named) == 1:
         return named[0]["id"]
     if len(named) > 1:
-        ids = ", ".join(r["id"] for r in named)
+        ids = ", ".join(inert(r["id"]) for r in named)
         raise ConfigError(f"More than one {what} is named {value!r}: {ids}. Use the ID instead.")
     raise ConfigError(f"No {what} has the ID or name {value!r}. {hint}")
 
@@ -113,7 +114,7 @@ def resolve_component(client: Any, rsid: str, kind: str, value: str) -> dict:
     if len(named) == 1:
         return named[0]
     if named:
-        found = ", ".join(r["id"] for r in named)
+        found = ", ".join(inert(r["id"]) for r in named)
         raise ConfigError(f"More than one {kind} is named {value!r}: {found}. Use the ID instead.")
     raise ConfigError(
         f"No {kind} in report suite {rsid} has the ID or name {value!r}. Use an ID such as "

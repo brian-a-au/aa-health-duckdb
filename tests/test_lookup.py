@@ -68,6 +68,17 @@ def test_resolve_suite_ambiguous_and_missing():
         resolve_suite(client(), "zzz")
 
 
+def test_the_ids_of_a_name_that_is_not_unique_cannot_change_the_terminal():
+    twins = [{"id": "rs\x1b[2J", "name": "Twin"}, {"id": "rs\u202ex", "name": "Twin"}]
+    with pytest.raises(ConfigError) as e:
+        resolve_suite(client(), "twin", suites=twins)
+    assert "twin': rs?[2J, rs?x." in str(e.value)
+    c = FakeClient(gets={"/dimensions": [{"id": "variables/\x1bx", "name": "T"}] * 2})
+    with pytest.raises(ConfigError) as e:
+        resolve_component(c, "rs1", "dimension", "t")
+    assert "variables/?x, variables/?x." in str(e.value)
+
+
 def test_resolve_segment():
     assert resolve_segment(client(), "rs_a", "paid") == "s2"
     with pytest.raises(ConfigError, match="ahd segments --rsid rs_a"):
