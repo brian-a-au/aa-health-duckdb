@@ -15,8 +15,9 @@ def today_in_zone(zoneinfo_name: str, now_utc: datetime) -> date:
     """Today's date in the report suite's time zone."""
     try:
         zone = ZoneInfo(zoneinfo_name)
-    except (ZoneInfoNotFoundError, ValueError):
-        # ValueError: a name that is not a valid key, e.g. an absolute path.
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        # ValueError: a name that is not a valid key, e.g. an absolute path. OSError: a name
+        # that the file system refuses, e.g., one too long for a file name.
         raise ConfigError(
             f"The report suite uses the time zone {zoneinfo_name!r}, which this computer does "
             "not know. Run uv sync to install the time zone data, then try again. For ahd run, "
