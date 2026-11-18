@@ -150,7 +150,7 @@ def export_runs(db: Path, out_dir: Path) -> dict[str, int]:
                 continue
             target = out_dir / f"{table}.parquet"
             con.execute(
-                f"COPY (SELECT * FROM {_name(table)} ORDER BY run_id) TO {_text(str(target))}"
+                f"COPY (SELECT * FROM {_name(table)} ORDER BY run_id, rowid) TO {_text(str(target))}"
                 " (FORMAT parquet)"
             )
             found = con.execute(f"SELECT count(*) FROM {_name(table)}").fetchone()

@@ -423,3 +423,32 @@ def test_an_import_with_new_numbers_keeps_the_latest_run_and_the_run_before(tmp_
     assert new.previous_run(today) == yesterday
     assert component_drops(new, today) == []
     new.con.close()
+
+
+def test_export_keeps_the_order_of_the_rows_inside_a_run(tmp_path):
+    # The page lists the issues of a run in the order they were stored. A sort by run_id
+    # alone mixes them up once a table has more rows than one block of DuckDB holds.
+    path = tmp_path / "a.duckdb"
+    s = Store.open(path)
+    rids = [s.create_run(f"rs{k}", "S", None, date(2026, 11, 7), "UTC", "0.1") for k in range(10)]
+    for i in range(300):
+        for rid in rids:
+            s.add_issue(rid, "column", f"c{i}", "code", f"m{i}")
+    for rid in rids:
+        s.finish_run(rid, "ok")
+
+    def issues(store, rid):
+        return [
+            r[0]
+            for r in store.con.execute(
+                "SELECT component_id FROM issues WHERE run_id = ? ORDER BY rowid", [rid]
+            ).fetchall()
+        ]
+
+    before = {rid: issues(s, rid) for rid in rids}
+    s.con.close()
+    export_runs(path, tmp_path / "backup")
+    new = Store.open(tmp_path / "new.duckdb")
+    import_runs(new, tmp_path / "backup")
+    assert {rid: issues(new, rid) for rid in rids} == before
+    new.con.close()

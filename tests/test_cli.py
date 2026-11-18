@@ -1784,6 +1784,8 @@ def test_the_credential_variables_win_over_a_config_json_in_the_folder(
         (["--run", "9", "--before", "2026-10-01"], "There is no stored run 9."),
         (["--run", "9", "--run", "3", "--run", "8"], "There are no stored runs 8 and 9."),
         (["--run", "9", "--run", "7", "--run", "8"], "There are no stored runs 7, 8 and 9."),
+        # A number past the 32-bit limit is a run that is not stored, not a read error.
+        (["--run", "99999999999"], "There is no stored run 99999999999."),
     ],
 )
 def test_prune_of_a_run_that_is_not_stored_deletes_nothing(three_runs, capsys, options, message):

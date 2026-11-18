@@ -394,7 +394,7 @@ SELECT CAST(sel_day AS VARCHAR) AS sel_day, component_id, name, kind, "group", n
     -- A 0 before the first day with data is not an alert, so it does not count as zero. A
     -- component that never collected data keeps it, and the page marks it as never used.
     coalesce(value = 0, false) AND (unused OR sel_day >= first_data) AS zero, unused,
-    CAST(first_data AS VARCHAR) AS first_data, anomaly
+    CAST(first_data AS VARCHAR) AS first_data, anomaly, NULL AS missing_days
 FROM r
 ORDER BY sel_day DESC, {_ORDER}
 """
@@ -405,6 +405,10 @@ r AS (
     SELECT c.component_id, c.name, c.kind, c."group", c.number, c.metric_type, c.unused,
         c.first_data, c.gpos,
         sum(d.value) FILTER (WHERE d.day BETWEEN $week_start AND $week_end) AS value,
+        -- The days of the week without a value. The page does not compare a short week with
+        -- the average week, because its sum lacks those days.
+        7 - count(d.value) FILTER (WHERE d.day BETWEEN $week_start AND $week_end)
+            AS missing_days,
         coalesce(sum(d.value) FILTER (WHERE d.day BETWEEN $baseline_start AND $baseline_end), 0)
             / 12 AS baseline
     FROM comps c LEFT JOIN dv d ON d.component_id = c.component_id
@@ -413,7 +417,7 @@ r AS (
 p AS (SELECT *, {_pct("value", "baseline")} AS pct FROM r)
 SELECT component_id, name, kind, "group", number, metric_type, value, baseline, pct,
     coalesce(value = 0, false) AS zero, unused, CAST(first_data AS VARCHAR) AS first_data,
-    NULL AS anomaly
+    NULL AS anomaly, missing_days
 FROM p
 ORDER BY {_ORDER}
 """
@@ -559,11 +563,12 @@ ORDER BY s.sel_day
 # Every day of the trend, with the components that had an alert by the rules that hold for
 # any day: Adobe flagged the value, or it dropped to 0 on or after the first day the component
 # had data. Large drops need a weekday average, which only the last 7 days have, so they are not
-# here. A day with no stored value at all is left out, so the page can show it as missing.
+# here. A day with no stored value at all, or only empty ones, e.g., NaN, is left out, so the
+# page can show it as a day where no data was read.
 _CALENDAR_SQL = f"""
 WITH {_DV}, {_COMPS},
 v AS (
-    SELECT d.day, c.component_id, c.gpos, c.number,
+    SELECT d.day, d.value, c.component_id, c.gpos, c.number,
         {_ALERT_ANOMALY} AS anomaly,
         coalesce(d.value = 0 AND d.day >= c.first_data, false) AS zero
     FROM dv d JOIN comps c ON c.component_id = d.component_id
@@ -579,6 +584,7 @@ SELECT CAST(day AS VARCHAR) AS day,
     count(*) FILTER (WHERE anomaly IS NOT NULL OR zero) AS alerts
 FROM v
 GROUP BY day
+HAVING count(value) > 0
 ORDER BY day
 """
 

@@ -145,7 +145,8 @@ def _inline(text: str, tag: str) -> Markup:
 COMPONENT_FIELDS = ("name", "kind", "group", "number", "metric_type", "unused", "first_data")
 # An alert carries only these fields of its component.
 ALERT_COMPONENT_FIELDS = ("name", "metric_type", "unused")
-ROW_FIELDS = ("component_id", "value", "baseline", "pct", "zero", "anomaly")
+# missing_days is null in a daily row.
+ROW_FIELDS = ("component_id", "value", "baseline", "pct", "zero", "anomaly", "missing_days")
 ALERT_FIELDS = (
     "day",
     "component_id",
