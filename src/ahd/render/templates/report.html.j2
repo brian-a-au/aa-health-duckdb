@@ -65,7 +65,7 @@
 
 <section class="tiles" id="tiles" aria-label="{{ last_day ~ ' at a glance' if last_day else 'Yesterday at a glance' }}"></section>
 
-<section class="status-section{% if not component_drops and not issue_groups %} status-ok{% endif %}" id="status" aria-labelledby="status-title">
+<section class="status-section{% if not component_drops and not issue_groups %} status-ok{% endif %}" id="status" tabindex="-1" aria-labelledby="status-title">
   {% if component_drops or issue_groups %}
   <h2 id="status-title">Status</h2>
   {% endif %}

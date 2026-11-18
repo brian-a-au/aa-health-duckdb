@@ -2547,7 +2547,12 @@
       selectTab(t);
       t.focus();
     }
-    function toStatus() { byId("status").scrollIntoView(); }
+    // The focus moves too, so that a keyboard or screen reader user lands on the problems.
+    function toStatus() {
+      var s = byId("status");
+      s.scrollIntoView();
+      s.focus();
+    }
 
     tile("plain", "●", "Components checked", numFmt.format(rows.length), dayText);
     if (anomalyBlocked) {

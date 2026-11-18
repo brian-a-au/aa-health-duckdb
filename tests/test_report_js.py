@@ -3474,3 +3474,32 @@ def test_the_calendar_is_a_group_that_a_screen_reader_can_enter(chrome, showcase
     # role="img" would keep the arrow keys of a screen reader from reaching the days.
     assert got["role"] == "group" and got["kind"] == "calendar" and got["focusable"] == "0"
     assert got["live"] == "polite" and got["describedby"] == got["readoutId"] != ""
+
+
+PROBLEMS_TILE_PROBE = """
+var tile = [].filter.call(document.querySelectorAll("#tiles .tile"), function (t) {
+  return t.querySelector(".tile-label").lastChild.textContent === "Problems in this run";
+})[0];
+tile.focus();
+tile.click();
+var status = document.getElementById("status");
+return { value: tile.querySelector(".tile-value").textContent,
+  focused: document.activeElement === status, tabindex: status.getAttribute("tabindex") };
+"""
+
+
+def test_the_problems_tile_moves_the_focus_to_the_status_section(chrome, tmp_path):
+    # A keyboard user who chooses the tile must land on the list of problems, not only see it.
+    store = Store.open(tmp_path / "problems.duckdb")
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
+    cid = "metrics/event1"
+    store.add_components(
+        rid, [Component(cid, "Event 1", "metric", "custom_events", 1, Column(cid, cid), True)]
+    )
+    store.add_daily_values(rid, _series(cid, 100.0, 100.0, 100.0))
+    store.add_issue(rid, "column", "metrics/x", "unauthorized_metric", "no access")
+    store.finish_run(rid, "partial")
+    page = render_html(build_view(store, rid))
+    store.con.close()
+    got = run_probe(chrome, page, PROBLEMS_TILE_PROBE, tmp_path)
+    assert got == {"value": "1", "focused": True, "tabindex": "-1"}
