@@ -286,10 +286,11 @@ def test_send_alerts_lists_a_large_spike(tmp_path, monkeypatch):
     assert not (tmp_path / "alerts.eml").exists()
 
 
-def test_send_alerts_unknown_suite_is_an_error_not_a_quiet_day(tmp_path, capsys):
+def test_send_alerts_unknown_suite_is_an_error_not_a_quiet_day(tmp_path, draft, capsys):
     mod = _load("send_alerts")
     assert mod.main([str(_db(tmp_path, 5_000_000.0)), "rs_typo"]) == 1
     assert "holds no finished run of rs_typo" in capsys.readouterr().err
+    assert _eml(tmp_path)["Subject"] == "Analytics Health warning for rs_typo"
 
 
 @pytest.mark.parametrize(
