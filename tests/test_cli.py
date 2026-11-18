@@ -13,7 +13,7 @@ from fakes import (
     restricted_metrics,
 )
 
-from ahd.cli import main
+from ahd.cli import EXIT_CODES, main
 from ahd.store import Store
 
 CONFIG = {
@@ -229,6 +229,45 @@ def test_check_reports_restricted_profile(tmp_path, cfg, capsys):
     )
     assert code == 2
     assert "product profile" in capsys.readouterr().out
+
+
+def _uses_page(body):
+    return "variables/page" in json.dumps(body)
+
+
+def test_run_without_the_default_pair_in_the_suite_still_checks_the_components(
+    tmp_path, cfg, capsys
+):
+    # The suite does not list Page. Without --dimension, the run asks for Page by Occurrences
+    # anyway. The pair fails and the run records it, and the components are still checked.
+    fake = fake_for(
+        "rs1",
+        restricted_metrics(),
+        restricted_dimensions(),
+        posts=[(_uses_page, ApiError(400, "no such dimension", "invalid_dimension"))],
+    )
+    argv = args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", "2026-11-07")
+    code = main([*argv, "--out", str(tmp_path / "o")], client_factory=lambda c: fake)
+    assert code == EXIT_CODES["partial"], capsys.readouterr().err
+    store = Store.open(tmp_path / "t.duckdb")
+    pairs = store.list_pairs(1)
+    assert [(p["dimension"], p["dimension_name"]) for p in pairs] == [("variables/page", "Page")]
+    assert [(p["metric"], p["metric_name"]) for p in pairs] == [
+        ("metrics/occurrences", "occurrences")
+    ]
+    codes = store.con.execute(
+        "select distinct code from issues where run_id = 1 and component_id = 'individual/1'"
+    ).fetchall()
+    assert codes == [("invalid_dimension",)]
+    assert store.get_run(1)["status"] == "partial"
+
+
+def test_run_refuses_a_dimension_that_was_given_and_is_not_listed(tmp_path, cfg, capsys):
+    fake = fake_for("rs1", restricted_metrics(), restricted_dimensions())
+    argv = args(tmp_path, cfg, "run", "--rsid", "rs1", "--dimension", "page")
+    assert main(argv, client_factory=lambda c: fake) == 1
+    err = capsys.readouterr().err
+    assert "No dimension in report suite rs1 has the ID or name 'page'" in err
 
 
 def test_check_ok(tmp_path, cfg, capsys):

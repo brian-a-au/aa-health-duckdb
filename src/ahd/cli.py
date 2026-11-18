@@ -316,8 +316,9 @@ def _parser() -> argparse.ArgumentParser:
         type=_run_date,
         help="Use this date as today (YYYY-MM-DD). It cannot be after today in the suite's time zone.",
     )
-    run.add_argument("--dimension", default="page", help=DIMENSION_HELP + " Default: Page.")
-    run.add_argument("--metric", default="occurrences", help=METRIC_HELP + " Default: Occurrences.")
+    # None says the option was not given, so _pair_component may fall back to the default.
+    run.add_argument("--dimension", help=DIMENSION_HELP + " Default: Page.")
+    run.add_argument("--metric", help=METRIC_HELP + " Default: Occurrences.")
     run.add_argument(
         "--batch-size",
         type=_whole_number(1, 100),
@@ -704,11 +705,39 @@ def _write(view: dict[str, Any], args: argparse.Namespace) -> Path:
         ) from None
 
 
+# The first pair of ahd run when --dimension or --metric is not given: Page by Occurrences.
+DEFAULT_PAIR = {
+    "dimension": {"id": "variables/page", "name": "Page", "type": None, "value": "page"},
+    "metric": {
+        "id": "metrics/occurrences",
+        "name": "Occurrences",
+        "type": "int",
+        "value": "occurrences",
+    },
+}
+
+
+def _pair_component(client: Any, rsid: str, kind: str, value: str | None) -> dict:
+    """The dimension or metric of the first pair of ahd run.
+
+    A value the user gave must be in the suite. Without one, the default is used also when the
+    suite does not list it, e.g., for a credential that cannot see Page. The pair then records an
+    issue, and the components are still checked.
+    """
+    if value is not None:
+        return resolve_component(client, rsid, kind, value)
+    default = DEFAULT_PAIR[kind]
+    try:
+        return resolve_component(client, rsid, kind, default["value"])
+    except ConfigError:
+        return {k: default[k] for k in ("id", "name", "type")}
+
+
 def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -> str:
     """Check one suite, write its report and print its result. Returns the run's status."""
     segment = resolve_segment(client, rsid, args.segment) if args.segment else None
-    dim = resolve_component(client, rsid, "dimension", args.dimension)
-    met = resolve_component(client, rsid, "metric", args.metric)
+    dim = _pair_component(client, rsid, "dimension", args.dimension)
+    met = _pair_component(client, rsid, "metric", args.metric)
     opts = RunOptions(
         rsid=rsid,
         segment_id=segment,
