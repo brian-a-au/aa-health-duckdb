@@ -570,6 +570,54 @@ def test_always_with_a_missing_suite_is_not_an_all_clear(slack, tmp_path):
     assert MISSING in texts[1] and "No alerts for Suite (rs1) on 2026-11-06." in texts[1]
 
 
+def _named_run(n):
+    return _run([], rsid=f"rs{n}", rsid_name=f"Suite number {n} with a longer name")
+
+
+def _section_texts(payload):
+    return [b["text"]["text"] for b in payload["blocks"] if b["type"] == "section"]
+
+
+def test_an_all_clear_for_many_suites_names_every_suite(slack):
+    payload = slack.all_clear([_named_run(n) for n in range(80)], False)
+    sections = _section_texts(payload)
+    assert len(sections) > 1
+    assert all(len(s) <= slack.SECTION_LIMIT for s in sections)
+    joined = "\n".join(sections)
+    assert all(f"(rs{n})" in joined for n in range(80))
+
+
+def test_a_missing_message_for_many_suites_names_every_suite(slack):
+    missing = [f"suite_with_a_long_report_suite_id_{n}" for n in range(80)]
+    sections = _section_texts(slack.missing_message(missing))
+    assert len(sections) > 1
+    assert all(len(s) <= slack.SECTION_LIMIT for s in sections)
+    joined = "\n".join(sections)
+    assert all(f"of {rsid} in" in joined for rsid in missing)
+
+
+def test_past_the_cap_the_rest_of_the_suites_are_counted(slack):
+    payload = slack.all_clear([_named_run(n) for n in range(3000)], False)
+    sections = _section_texts(payload)
+    assert len(sections) == slack.MAX_SECTIONS
+    assert len(payload["blocks"]) < 50
+    assert all(len(s) <= slack.SECTION_LIMIT for s in sections)
+    named = sum(s.count("No alerts for ") for s in sections)
+    assert sections[-1].endswith(f"\n{3000 - named} more suites have no alerts.")
+
+
+def test_lines_that_fill_the_cap_exactly_get_no_count(slack):
+    line = "x" * (slack.SECTION_LIMIT - 1)
+    blocks = slack._sections([line] * slack.MAX_SECTIONS, "{} more.")
+    assert len(blocks) == slack.MAX_SECTIONS
+    assert not any("more." in b["text"]["text"] for b in blocks)
+
+
+def test_a_line_longer_than_a_section_is_cut(slack):
+    [block] = slack._sections(["y" * (slack.SECTION_LIMIT + 500)], "{} more.")
+    assert len(block["text"]["text"]) == slack.SECTION_LIMIT
+
+
 def test_messages_with_alerts_name_a_missing_suite(slack, tmp_path):
     assert slack.main([str(_db(tmp_path, 5_000_000.0)), "rs1", "nope"]) == 1
     payloads = _written(tmp_path)

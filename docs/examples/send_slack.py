@@ -84,6 +84,9 @@ SHOWN = 10
 # SHOWN rows of 7 cells, 120 characters a cell stays below it.
 SECTION_LIMIT = 3000
 HEADER_LIMIT = 150
+# Slack takes at most 50 blocks in a message. A list of suites gets at most MAX_SECTIONS
+# sections, so with its header it stays below that.
+MAX_SECTIONS = 45
 CELL_LIMIT = 120
 
 # How long the script waits for Slack, in seconds, and how long between two messages. Slack
@@ -298,6 +301,29 @@ def _plain(text: str, limit: int = SECTION_LIMIT) -> dict:
     return {"type": "plain_text", "text": _cut(text, limit), "emoji": False}
 
 
+def _sections(lines: list[str], rest: str) -> list[dict]:
+    """Section blocks that hold the lines, each with whole lines and at most SECTION_LIMIT
+    characters. A line longer than that is cut. Past MAX_SECTIONS sections, the last section
+    ends with rest, which counts the lines left out, e.g., "{} more suites have no alerts."."""
+    groups: list[list[str]] = []
+    size = 0
+    for n, line in enumerate(lines):
+        if groups and size + 1 + len(line) <= SECTION_LIMIT:
+            groups[-1].append(line)
+            size += 1 + len(line)
+            continue
+        if len(groups) == MAX_SECTIONS:
+            last, left = groups[-1], len(lines) - n
+            while last and len("\n".join([*last, rest.format(left)])) > SECTION_LIMIT:
+                last.pop()
+                left += 1
+            last.append(rest.format(left))
+            break
+        groups.append([line])
+        size = len(line)
+    return [{"type": "section", "text": _plain("\n".join(group))} for group in groups]
+
+
 def _note(text: str) -> dict:
     return {"type": "context", "elements": [_plain(text)]}
 
@@ -389,7 +415,7 @@ def missing_message(missing: list[str]) -> dict:
         "text": _mrkdwn(f"Analytics Health {warning} for {where}"),
         "blocks": [
             {"type": "header", "text": _plain(f"Analytics Health {warning}", HEADER_LIMIT)},
-            {"type": "section", "text": _plain("\n".join(missing_line(r) for r in missing))},
+            *_sections([missing_line(r) for r in missing], "{} more suites have no finished run."),
         ],
     }
 
@@ -405,14 +431,15 @@ def all_clear(runs: list[dict], new_only: bool, missing: list[str] | None = None
     ]
     if missing:
         payload = missing_message(missing)
-        payload["blocks"][1] = {"type": "section", "text": _plain("\n".join(lines))}
+        # The suites without a finished run come first, so the count can hold both kinds.
+        payload["blocks"][1:] = _sections(lines, "{} more suites are not listed.")
         return payload
     where = runs[0]["rsid"] if len(runs) == 1 else f"{len(runs)} report suites"
     return {
         "text": _mrkdwn(f"No {new}Analytics Health alerts for {where}"),
         "blocks": [
             {"type": "header", "text": _plain(f"No {new}Analytics Health alerts", HEADER_LIMIT)},
-            {"type": "section", "text": _plain("\n".join(lines))},
+            *_sections(lines, "{} more suites have no " + new + "alerts."),
         ],
     }
 

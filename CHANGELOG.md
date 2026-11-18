@@ -7,6 +7,7 @@ This file lists the changes in each release. The version numbers follow [Semanti
 **Fixes**
 
 - `ahd alerts` now counts the failed runs after a run in the same order as `latest_runs`, also when a run has no start time. A file filled by `ahd import` from an older layout can hold such runs. Before, the warning could leave out a failed run of the same day.
+- The Slack all-clear message and the message for missing suites name every suite. Before, past about 50 suites, the text passed Slack's limit of 3000 characters a section, and the last suites were cut off without notice. For a very large list, the message names the suites that fit and counts the rest.
 
 ## 0.1.16 (2026-11-17)
 
