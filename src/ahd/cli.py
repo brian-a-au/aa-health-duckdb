@@ -706,14 +706,10 @@ def _write(view: dict[str, Any], args: argparse.Namespace) -> Path:
 
 
 # The first pair of ahd run when --dimension or --metric is not given: Page by Occurrences.
-DEFAULT_PAIR = {
-    "dimension": {"id": "variables/page", "name": "Page", "type": None, "value": "page"},
-    "metric": {
-        "id": "metrics/occurrences",
-        "name": "Occurrences",
-        "type": "int",
-        "value": "occurrences",
-    },
+# The value is looked up first. The component is used when the suite does not list it.
+DEFAULT_PAIR: dict[str, tuple[str, dict[str, str | None]]] = {
+    "dimension": ("page", {"id": "variables/page", "name": "Page", "type": None}),
+    "metric": ("occurrences", {"id": "metrics/occurrences", "name": "Occurrences", "type": "int"}),
 }
 
 
@@ -726,11 +722,11 @@ def _pair_component(client: Any, rsid: str, kind: str, value: str | None) -> dic
     """
     if value is not None:
         return resolve_component(client, rsid, kind, value)
-    default = DEFAULT_PAIR[kind]
+    default, component = DEFAULT_PAIR[kind]
     try:
-        return resolve_component(client, rsid, kind, default["value"])
+        return resolve_component(client, rsid, kind, default)
     except ConfigError:
-        return {k: default[k] for k in ("id", "name", "type")}
+        return dict(component)
 
 
 def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -> str:
