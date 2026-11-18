@@ -481,8 +481,10 @@ def write_text(
             if len(mine) > len(shown):
                 more = len(mine) - len(shown)
                 out.write(
-                    f"{more} more alerts of this event are not listed. Add --every-alert to "
-                    "list them.\n"
+                    "1 more alert of this event is not listed. Add --every-alert to list it.\n"
+                    if more == 1
+                    else f"{more} more alerts of this event are not listed. Add --every-alert "
+                    "to list them.\n"
                 )
         others = [a for a in r.alerts if a["event"] is None]
         if r.events and others:
