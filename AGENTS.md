@@ -45,6 +45,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 | `src/ahd/transfer.py` | `ahd export` and `ahd import`: copies runs between files by column name, also from an older layout |
 | `src/ahd/summary.py` | Turns a stored run into the data the page shows. Every number is computed in SQL |
 | `src/ahd/alerts.py` | `ahd alerts`: picks the runs and prints the rows of the `alerts` macro as text, JSON or CSV |
+| `src/ahd/text.py` | `inert()`, which makes a name from Adobe safe to print in a terminal. Every command that prints a name or ID from Adobe uses it |
 | `src/ahd/render/` | The Jinja template, CSS and JavaScript of the HTML report |
 | `tests/fakes.py` | A fake Adobe client. Tests use it instead of the network |
 | `tests/chrome.py`, `tests/test_report_js.py` | Run `report.js` in headless Chrome and read the results back |

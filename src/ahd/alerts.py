@@ -10,7 +10,6 @@ from __future__ import annotations
 import csv
 import json
 import math
-import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -20,6 +19,7 @@ from ahd.config import ConfigError
 from ahd.dates import today_in_zone
 from ahd.store import Store
 from ahd.summary import ANOMALY_LABELS, DEFAULT_ANOMALY_METHOD, DEFAULT_SENSITIVITY
+from ahd.text import inert
 
 FORMATS = ("text", "json", "csv")
 # Raise only when a field of the JSON is removed or changes its meaning. New fields may be added
@@ -346,20 +346,6 @@ def write_csv(results: list[RunAlerts], out: TextIO) -> None:
         start = [csv_value(r.run[k]) for k in RUN_FIELDS]
         for a in r.alerts:
             writer.writerow([*start, *(csv_value(a[k]) for k in ALERT_FIELDS)])
-
-
-# Characters that would move the cursor, start a new line or turn the text around in a terminal:
-# controls, line and paragraph separators, and the marks that change the direction of text.
-_UNSAFE_CATEGORIES = ("Cc", "Zl", "Zp")
-_DIRECTION_MARKS = set("\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
-
-
-def inert(text: Any) -> str:
-    """The text with each character that could change how a terminal shows it as "?"."""
-    return "".join(
-        "?" if unicodedata.category(c) in _UNSAFE_CATEGORIES or c in _DIRECTION_MARKS else c
-        for c in str(text)
-    )
 
 
 def _amount(value: float | None) -> str:
