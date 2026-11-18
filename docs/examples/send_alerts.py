@@ -1,4 +1,4 @@
-"""Email the latest alerts for one or more report suites, but only when there are any.
+"""Email the latest alerts for one or more report suites.
 
 Usage:
     uv run python docs/examples/send_alerts.py DATABASE RSID [RSID ...] [--segment ID]
@@ -16,9 +16,10 @@ The script looks for ahd in the Python that runs it first, then for the ahd prog
 
 It reads the latest run of each suite that ended "ok" or "partial". It takes report suite IDs
 and a segment ID, not names. It builds one HTML email with a plain text part, with one section
-for each suite that has alerts. Each section lists the alerts that are new on the day first,
-and says since when each alert has held, e.g., "since 2026-11-04, 8 days". The Since column
-needs ahd 0.1.12 or newer. With ahd 0.1.11 it stays empty.
+for each suite that has alerts, a warning or a suite-wide event. It sends nothing on a day
+without alerts unless --always asks for it. Each section lists the alerts that are new on the
+day first, and says since when each alert has held, e.g., "since 2026-11-04, 8 days". The
+Since column needs ahd 0.1.12 or newer. With ahd 0.1.11 it stays empty.
 
 When many components of a suite have the same kind of alert, ahd alerts calls them a
 suite-wide event, e.g., when the data of the whole suite stopped. A section then starts with

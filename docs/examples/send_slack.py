@@ -1,4 +1,4 @@
-"""Post the latest alerts for one or more report suites to Slack, but only when there are any.
+"""Post the latest alerts for one or more report suites to Slack.
 
 Usage:
     uv run python docs/examples/send_slack.py DATABASE RSID [RSID ...] [--segment ID]
@@ -15,9 +15,11 @@ anomaly methods and the variables below. The script looks for ahd in the Python 
 first, then for the ahd program on PATH. It needs nothing else, only Python itself.
 
 It reads the latest run of each suite that ended "ok" or "partial". It takes report suite IDs
-and a segment ID, not names. It posts one message for each suite that has alerts. A message
-has a table with the columns of the email of send_alerts.py. It lists the alerts that are new
-on the day first, and says since when each alert has held, e.g., "since 2026-11-04, 8 days".
+and a segment ID, not names. It posts one message for each suite that has alerts, a warning
+or a suite-wide event, and nothing on a day without alerts unless --always asks for it. A
+message has a table with the columns of the email of send_alerts.py. It lists the alerts that
+are new on the day first, and says since when each alert has held, e.g., "since 2026-11-04,
+8 days".
 A chat message should stay short, so the table lists at most 10 alerts and the message counts
 the others. ahd alerts lists them all.
 
@@ -50,8 +52,8 @@ with 1.
 Exit codes, so a scheduler can tell the cases apart:
     0  it posted or wrote the messages
     1  something is wrong, e.g., a suite has no finished run, or the latest finished run of a
-       suite is old. The other suites and the warnings are still posted. A wrong option also exits with 1 and prints the usage. So does a message that
-       Slack did not take.
+       suite is old. The other suites and the warnings are still posted. A wrong option also
+       exits with 1 and prints the usage. So does a message that Slack did not take.
     2  there were no alerts, and --always was not given
 """
 

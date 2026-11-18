@@ -2,9 +2,9 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
-## Unreleased
+## 0.1.16 (2026-11-17)
 
-This release makes the alert emails and Slack messages easier to trust. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is.
+This release makes the alert emails and Slack messages easier to trust. A quiet inbox could mean healthy suites or a daily job that had stopped, and now the two look different. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is.
 
 **Old runs**
 
@@ -22,6 +22,12 @@ This release makes the alert emails and Slack messages easier to trust. The data
 - `--always` sends a short all-clear message on a day without alerts, so a day without a message means that the job did not run. A suite you named that has no finished run makes the message a warning, not an all-clear. See [Know when the job stops](docs/scheduling.md#know-when-the-job-stops).
 - `--new-only` lists only the new alerts. It needs `ahd` 0.1.16 or newer.
 - With `ahd` 0.1.16 or newer, a suite whose latest finished run is old gets a warning in the email or the Slack message, also without alerts. The scripts then exit with 1.
+
+**The docs**
+
+- [Troubleshooting](docs/troubleshooting.md#email-and-slack-alerts) has a new section on the messages of the alert scripts: the warning about an old run, a suite without a finished run, `--test` and `--new-only`.
+- [Run it every day](docs/scheduling.md#know-when-the-job-stops) explains how `--always` and the warning show that a daily job stopped.
+- The download links of the alert scripts hold `v0.1.16`, so the scripts and the tool come from the same release.
 
 ## 0.1.15 (2026-11-15)
 
