@@ -57,6 +57,8 @@ Where a command takes a report suite, segment, dimension or metric, it accepts a
 3. If two or more items have that name, the tool stops and lists their IDs. Give one of the IDs instead.
 4. If nothing matches, the tool stops. For a report suite, it tells you to run `ahd suites`. For a segment, it tells you to run `ahd segments --rsid` with the suite.
 
+A segment ID that is not in the list still works. The tool uses the text as it is when it has the shape of a segment ID: "s", digits, "_", then letters or digits, e.g., `s300_5f1a2b9c`. The list from Adobe may leave out a segment that the credential can still use. A name that is not in the list still stops the tool.
+
 `--dimension` and `--metric` follow the same steps, with two differences:
 
 - The ID matches in any case, and spaces before or after it are ignored.

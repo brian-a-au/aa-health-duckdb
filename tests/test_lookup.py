@@ -85,6 +85,26 @@ def test_resolve_segment():
         resolve_segment(client(), "rs_a", "nope")
 
 
+@pytest.mark.parametrize("value", ["s300_abc", "s4242_5f1a2B9c"])
+def test_resolve_segment_lets_an_id_through_that_the_list_does_not_hold(value):
+    # The list may leave out a segment that the credential can still use, so a value with the
+    # shape of a segment ID goes through unchanged.
+    assert resolve_segment(client(), "rs_a", value) == value
+
+
+@pytest.mark.parametrize(
+    "value", ["s300", "s300_", "x300_abc", "s300_ab-c", " s300_abc", "S300_abc"]
+)
+def test_resolve_segment_refuses_a_name_or_an_odd_id_that_is_not_listed(value):
+    with pytest.raises(ConfigError, match="No segment has the ID or name"):
+        resolve_segment(client(), "rs_a", value)
+
+
+def test_resolve_segment_prefers_a_name_to_the_shape_of_an_id():
+    c = FakeClient(gets={"/segments": paged([[{"id": "s9_real", "name": "s1_x"}]])})
+    assert resolve_segment(c, "rs_a", "s1_x") == "s9_real"
+
+
 def comp_client():
     return FakeClient(
         gets={
