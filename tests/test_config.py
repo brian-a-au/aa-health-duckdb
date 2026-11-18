@@ -161,7 +161,9 @@ def test_incomplete_variables_are_named_as_variables(monkeypatch):
     monkeypatch.setenv("AHD_CLIENT_ID", "c")
     with pytest.raises(ConfigError) as e:
         load_credentials(None)
-    assert str(e.value) == "Missing credential keys in environment variables: AHD_SECRET, AHD_SCOPES"
+    assert (
+        str(e.value) == "Missing credential keys in environment variables: AHD_SECRET, AHD_SCOPES"
+    )
 
 
 def test_a_config_file_names_the_missing_keys(tmp_path):

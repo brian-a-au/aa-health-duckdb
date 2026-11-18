@@ -16,7 +16,6 @@ import requests
 from requests.adapters import HTTPAdapter
 
 from ahd.api.auth import (
-    RETRY_AFTER_CAP as RETRY_AFTER_CAP,
     TEMPORARY_ERRORS,
     get_token,
     header_for,

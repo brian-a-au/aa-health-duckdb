@@ -104,9 +104,7 @@ def _variable(key: str) -> str:
     return f"AHD_{key.upper()}"
 
 
-def _build(
-    values: dict[str, str | None], source: str, *, variables: bool = False
-) -> Credentials:
+def _build(values: dict[str, str | None], source: str, *, variables: bool = False) -> Credentials:
     """The credential of values. variables is true when they all came from the AHD_* variables.
     Then the message for a missing value names the variable, e.g., AHD_SECRET."""
     missing = [_variable(k) if variables else k for k in _KEYS if not values.get(k)]
