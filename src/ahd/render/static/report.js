@@ -827,7 +827,8 @@
       cells.push(sparkCell(r));
       cells.push({ c: fmtNum(r.value, r.metric_type), k: r.value });
       cells.push({ c: fmtRound(r.baseline, r.metric_type), k: r.baseline });
-      cells.push(devCell(shortWeek(r) ? null : arrowFor(r.pct), r.pct));
+      // A short week is not compared with the average week, so it gets no change.
+      cells.push(shortWeek(r) ? devCell(null, null) : devCell(arrowFor(r.pct), r.pct));
       cells.push(flagCell(r, daily));
       return cells;
     });

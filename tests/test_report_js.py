@@ -2303,6 +2303,8 @@ def test_the_weekly_view_does_not_flag_a_week_that_lacks_a_day(chrome, tmp_path)
             for mark in ("Large drop", "Large spike", "Zero data", "▼", "▲"):
                 assert mark not in rows[name], (when, name, mark)
             assert "days without a value" in rows[name] or "day without a value" in rows[name]
+            # No change against the average week either, since the week is not compared.
+            assert "%" not in rows[name], (when, name)
         assert "Large drop" in rows["Event 5"]
         # The slider lines count and name only the full week.
         assert ": 1 component is more than" in got[when]["drop"]
