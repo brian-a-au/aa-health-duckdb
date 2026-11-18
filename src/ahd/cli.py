@@ -757,7 +757,7 @@ def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -
     anomaly = {"method": args.anomaly_method, "sensitivity": args.anomaly_sensitivity}
     path = _write(build_view(store, run_id, threshold, spike, **anomaly), args)
     print(path)
-    print(f"Run {run_id} for {rsid} finished with status: {status}")
+    print(f"Run {run_id} for {inert(rsid)} finished with status: {status}")
     if status != "failed":
         print(_alert_line(store, run_id, threshold, spike, **anomaly))
     drops = component_drops(store, run_id)
@@ -816,7 +816,7 @@ def _run_suites(args: argparse.Namespace, factory: Callable[..., Any], store: St
     # Several suites: a suite that fails does not stop the others.
     statuses: dict[str, str] = {}
     for i, rsid in enumerate(rsids, start=1):
-        print(f"Report suite {i} of {len(rsids)}: {rsid}")
+        print(f"Report suite {i} of {len(rsids)}: {inert(rsid)}")
         try:
             status = _run_suite(args, client, store, rsid)
             statuses[rsid] = status if status in WORST_LAST else "failed"
@@ -828,7 +828,7 @@ def _run_suites(args: argparse.Namespace, factory: Callable[..., Any], store: St
             duckdb.Error,
         ) as e:
             # A wrong credential (any other SignInError) stops every suite, as each would fail.
-            print(f"Error for {rsid}: {_error_text(e)}", file=sys.stderr)
+            print(f"Error for {inert(rsid)}: {_error_text(e)}", file=sys.stderr)
             statuses[rsid] = "failed"
     counts = {s: sum(1 for v in statuses.values() if v == s) for s in WORST_LAST}
     print(
@@ -1011,7 +1011,7 @@ def _print_runs(rows: list[dict]) -> None:
     print(f"{'run':>4}  {'report suite':<24} {'date':<10}  {'status':<8}  took")
     for r in rows:
         took = duration_text(r["started_at"], r["finished_at"]) or ""
-        print(f"{r['run_id']:>4}  {r['rsid']!s:<24} {r['today']!s:<10}  {r['status']:<8}  {took}")
+        print(f"{r['run_id']:>4}  {inert(r['rsid']):<24} {r['today']!s:<10}  {r['status']:<8}  {took}")
 
 
 def _confirm(question: str) -> bool:
