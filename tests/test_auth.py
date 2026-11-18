@@ -94,6 +94,13 @@ def test_chosen_company():
     assert "Name co1 (co1), Name co2 (co2)" in text
 
 
+def test_the_company_list_of_the_error_cannot_change_the_terminal():
+    evil = {"globalCompanyId": "co\x1b[2J1", "companyName": "Evil\x1b[2J\u202eco"}
+    s = Session(GOOD_TOKEN, orgs({"imsOrgId": "ORG1@AdobeOrg", "companies": [evil]}))
+    text = _fails(s, company_id="co3")
+    assert "It can see: Evil?[2J?co (co?[2J1)." in text
+
+
 @pytest.mark.parametrize(
     ("token", "expected"),
     [

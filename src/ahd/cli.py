@@ -66,6 +66,7 @@ from ahd.summary import (
     component_drops,
     duration_text,
 )
+from ahd.text import inert
 from ahd.transfer import export_runs, import_runs
 
 DEFAULT_DB = "./data/ahd.duckdb"
@@ -315,8 +316,9 @@ def _parser() -> argparse.ArgumentParser:
         type=_run_date,
         help="Use this date as today (YYYY-MM-DD). It cannot be after today in the suite's time zone.",
     )
-    run.add_argument("--dimension", default="page", help=DIMENSION_HELP + " Default: Page.")
-    run.add_argument("--metric", default="occurrences", help=METRIC_HELP + " Default: Occurrences.")
+    # None says the option was not given, so _pair_component may fall back to the default.
+    run.add_argument("--dimension", help=DIMENSION_HELP + " Default: Page.")
+    run.add_argument("--metric", help=METRIC_HELP + " Default: Occurrences.")
     run.add_argument(
         "--batch-size",
         type=_whole_number(1, 100),
@@ -516,8 +518,8 @@ def _connect(args: argparse.Namespace, factory: Callable[..., Any]) -> Any:
     if count > 1 and not company:
         name = getattr(client, "company_name", "") or "(no name)"
         print(
-            f"This credential sees {count} login companies. Using {name} "
-            f"({client.company_id}). Choose another with --company."
+            f"This credential sees {count} login companies. Using {inert(name)} "
+            f"({inert(client.company_id)}). Choose another with --company."
         )
     return client
 
@@ -526,10 +528,12 @@ def _print_table(rows: list[dict], empty: str) -> None:
     if not rows:
         print(empty)
         return
-    width = max(len(r["id"]) for r in rows)
+    # Names and IDs come from Adobe, so each passes through inert() before it is printed.
+    table = [(inert(r["id"]), inert(r["name"])) for r in rows]
+    width = max(len(i) for i, _name in table)
     print(f"{'ID':<{width}}  Name")
-    for r in rows:
-        print(f"{r['id']:<{width}}  {r['name']}")
+    for i, name in table:
+        print(f"{i:<{width}}  {name}")
 
 
 def _suites(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
@@ -575,7 +579,7 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     if not args.rsid:
         # list_suites reads every page, so a company with over 1,000 suites is counted in full.
         count = len(list_suites(client))
-        print(f"Company ID: {client.company_id}")
+        print(f"Company ID: {inert(client.company_id)}")
         print(f"Report suites visible: {count}")
         if count == 0:
             print(NO_REPORT_SUITES)
@@ -583,7 +587,7 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
         return 0
     catalog, suite = fetch_catalog(client, args.rsid)
     counts = {g: sum(1 for c in catalog if c.group == g) for g in CUSTOM_GROUPS}
-    print(f"Report suite: {suite_name(suite, args.rsid)}")
+    print(f"Report suite: {inert(suite_name(suite, args.rsid))}")
     print(f"Custom events: {counts['custom_events']}")
     print(f"Custom eVars: {counts['custom_evars']}")
     print(f"Custom props: {counts['custom_props']}")
@@ -701,11 +705,35 @@ def _write(view: dict[str, Any], args: argparse.Namespace) -> Path:
         ) from None
 
 
+# The first pair of ahd run when --dimension or --metric is not given: Page by Occurrences.
+# The value is looked up first. The component is used when the suite does not list it.
+DEFAULT_PAIR: dict[str, tuple[str, dict[str, str | None]]] = {
+    "dimension": ("page", {"id": "variables/page", "name": "Page", "type": None}),
+    "metric": ("occurrences", {"id": "metrics/occurrences", "name": "Occurrences", "type": "int"}),
+}
+
+
+def _pair_component(client: Any, rsid: str, kind: str, value: str | None) -> dict:
+    """The dimension or metric of the first pair of ahd run.
+
+    A value the user gave must be in the suite. Without one, the default is used also when the
+    suite does not list it, e.g., for a credential that cannot see Page. The pair then records an
+    issue, and the components are still checked.
+    """
+    if value is not None:
+        return resolve_component(client, rsid, kind, value)
+    default, component = DEFAULT_PAIR[kind]
+    try:
+        return resolve_component(client, rsid, kind, default)
+    except ConfigError:
+        return dict(component)
+
+
 def _run_suite(args: argparse.Namespace, client: Any, store: Store, rsid: str) -> str:
     """Check one suite, write its report and print its result. Returns the run's status."""
     segment = resolve_segment(client, rsid, args.segment) if args.segment else None
-    dim = resolve_component(client, rsid, "dimension", args.dimension)
-    met = resolve_component(client, rsid, "metric", args.metric)
+    dim = _pair_component(client, rsid, "dimension", args.dimension)
+    met = _pair_component(client, rsid, "metric", args.metric)
     opts = RunOptions(
         rsid=rsid,
         segment_id=segment,
@@ -848,7 +876,7 @@ def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
             args,
         )
     )
-    print(f"Added {dim['name']} by {met['name']} to run {args.run}.")
+    print(f"Added {inert(dim['name'])} by {inert(met['name'])} to run {args.run}.")
     if problems:
         print(f"{problems} of its requests had problems. The report's status section lists them.")
         return EXIT_CODES["partial"]

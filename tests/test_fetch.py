@@ -688,7 +688,34 @@ def test_add_pair_problems_make_an_ok_run_partial(store):
     assert len(ind) == 5 and all("(Five by Orders)" in r[3] for r in ind)
 
 
-def test_add_pair_with_data_makes_a_failed_run_partial(store):
+def _is_pair_trend(body):
+    """The daily trend of the default pair: Occurrences where Page exists, alone."""
+    return (
+        is_trend(body)
+        and metric_ids(body) == ["metrics/occurrences"]
+        and exists_dims(body) == ["variables/page"]
+    )
+
+
+def test_a_run_whose_only_values_are_the_pair_trend_is_failed(store):
+    # Every component batch and the probe fail. Only the pair's daily trend comes back, so no
+    # component was checked and the run must not read as one that the alerts can use.
+    fake = fake_for(
+        "rs1",
+        events(40),
+        custom_dims(),
+        posts=[(_is_pair_trend, lambda b: trend_response(b))],
+        default_post=ApiError(500, "down"),
+    )
+    rid = run_fetch(fake, store, opts())
+    assert values_for(store, rid, "individual/1") == 92
+    assert store.get_run(rid)["status"] == "failed"
+    assert store.con.execute("select count(*) from latest_runs").fetchone()[0] == 0
+
+
+def test_add_pair_with_data_keeps_a_failed_run_failed(store):
+    # The run has no component value. A pair with data does not check any component, so the
+    # run stays failed.
     from ahd.fetch import add_pair
 
     rid = run_fetch(
@@ -700,7 +727,8 @@ def test_add_pair_with_data_makes_a_failed_run_partial(store):
     assert add_pair(
         fake_for("rs1", events(1), custom_dims()), store, rid, "variables/evar1", "metrics/orders"
     ) == (2, 0)
-    assert store.get_run(rid)["status"] == "partial"
+    assert values_for(store, rid, "individual/2") == 92
+    assert store.get_run(rid)["status"] == "failed"
 
 
 def test_add_pair_with_only_column_errors_keeps_a_failed_run_failed(store):
@@ -742,7 +770,7 @@ def test_add_pair_can_try_again_a_pair_that_stored_nothing(store):
     assert pairs == [(2, "variables/page", "metrics/occurrences")]
     assert not any(r[1] == "individual/1" for r in issues(store, rid))
     assert values_for(store, rid, "individual/2") == 92
-    assert store.get_run(rid)["status"] == "partial"
+    assert store.get_run(rid)["status"] == "failed"
     # Now the pair holds data, so it is refused like any other pair that is there.
     with pytest.raises(ConfigError, match="already holds Page by Occurrences"):
         add_pair(fake, store, rid, "variables/page", "metrics/occurrences")

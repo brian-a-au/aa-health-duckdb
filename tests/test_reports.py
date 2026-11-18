@@ -334,21 +334,19 @@ def test_json_nan_and_1e400_in_a_trend_are_malformed():
         parse_trend(json.loads(text), cols)
 
 
-def test_bounds_that_are_not_finite_are_kept_for_the_anomaly_sql():
-    """The anomaly SQL ignores a bound that is not finite, so the value of that day is kept."""
-    import math
-
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf"), "NaN", "1e400"])
+def test_an_expected_value_or_bound_that_is_not_finite_is_stored_as_null(bad):
+    """Adobe gave no usable number, so the day has no expected value or bound, as for null."""
     row = {
         "value": "Aug 8, 2026",
         "data": [7],
-        "dataExpected": [float("nan")],
-        "dataUpperBound": [float("inf")],
-        "dataLowerBound": [float("-inf")],
+        "dataExpected": [bad],
+        "dataUpperBound": [bad],
+        "dataLowerBound": [bad],
     }
     [v], errs = parse_trend({"rows": [row]}, [Column("metrics/a", "metrics/a")])
     assert errs == [] and v.value == 7.0
-    assert v.expected is not None and math.isnan(v.expected)
-    assert (v.upper, v.lower) == (math.inf, -math.inf)
+    assert (v.expected, v.upper, v.lower) == (None, None, None)
 
 
 def test_a_bound_too_large_for_a_float_is_a_malformed_answer():
