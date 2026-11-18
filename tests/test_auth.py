@@ -279,7 +279,8 @@ def test_a_retry_after_date_keeps_the_own_wait(waits):
 def test_the_wait_of_the_caller_gets_the_retry_after(waits):
     s = HeaderSession((429, None, {"Retry-After": "5"}), GOOD_TOKEN)
     seen = []
-    assert get_token(s, CREDS, wait=lambda seconds: seen.append(seconds)) == "TOKEN-1"
+    token = get_token(s, CREDS, wait=lambda seconds: seen.append(seconds))
+    assert token == "TOKEN-1"
     assert seen == [5.0] and waits == []
 
 

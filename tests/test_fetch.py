@@ -704,7 +704,7 @@ def test_a_run_whose_only_values_are_the_pair_trend_is_failed(store):
         "rs1",
         events(40),
         custom_dims(),
-        posts=[(_is_pair_trend, lambda b: trend_response(b))],
+        posts=[(_is_pair_trend, trend_response)],
         default_post=ApiError(500, "down"),
     )
     rid = run_fetch(fake, store, opts())

@@ -139,7 +139,7 @@ def retry_after(delay: float, headers: Any) -> float:
         if value:
             return min(RETRY_AFTER_CAP, max(delay, float(value)))
     except ValueError:
-        pass
+        pass  # Retry-After holds a date, which the delay already covers.
     return delay
 
 
