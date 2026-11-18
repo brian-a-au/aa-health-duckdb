@@ -73,6 +73,12 @@ def _name(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
 
+# The column that each source relation adds for the place of a row in its table. The import
+# sorts by it, because the join that gives each run its new number does not keep the order of
+# the rows, and the page lists e.g. the issues of a run in the order they were stored.
+ROW = "ahd_source_row"
+
+
 def _columns(con: duckdb.DuckDBPyConnection, relation: str) -> list[str]:
     return [r[0] for r in con.execute(f"DESCRIBE SELECT * FROM {relation}").fetchall()]
 
@@ -175,7 +181,8 @@ def _folder_source(source: Path) -> tuple[int, dict[str, str]]:
         )
     version = _check_version(manifest.get("schema_version"), source)
     relations = {
-        table: f"read_parquet({_text(_literal_path(source / f'{table}.parquet'))})"
+        table: f"(SELECT * EXCLUDE (file_row_number), file_row_number AS {ROW} FROM read_parquet("
+        f"{_text(_literal_path(source / f'{table}.parquet'))}, file_row_number = true))"
         for table in RUN_TABLES
         if (source / f"{table}.parquet").is_file()
     }
@@ -201,7 +208,9 @@ def _file_source(con: duckdb.DuckDBPyConnection, source: Path) -> tuple[int, dic
         row = con.execute("SELECT max(version) FROM src.main.schema_version").fetchone()
         found = row[0] if row else None
     version = _check_version(found, source)
-    return version, {t: f"src.main.{_name(t)}" for t in RUN_TABLES if t in tables}
+    return version, {
+        t: f"(SELECT *, rowid AS {ROW} FROM src.main.{_name(t)})" for t in RUN_TABLES if t in tables
+    }
 
 
 def import_runs(store: Store, source: Path) -> ImportResult:
@@ -273,7 +282,7 @@ def _copy(store: Store, version: int, relations: dict[str, str]) -> ImportResult
             if table not in relations:
                 continue
             ours = _columns(con, _name(table))
-            theirs = _columns(con, relations[table])
+            theirs = [c for c in _columns(con, relations[table]) if c != ROW]
             result.left_out += [f"{table}.{c}" for c in theirs if c not in ours]
             shared = [c for c in ours if c in theirs and c != "run_id"]
             names = ", ".join(_name(c) for c in shared)
@@ -282,6 +291,7 @@ def _copy(store: Store, version: int, relations: dict[str, str]) -> ImportResult
                 f"INSERT INTO {_name(table)} (run_id{', ' if shared else ''}{names})"
                 f" SELECT n.new{', ' if shared else ''}{picks}"
                 f" FROM {relations[table]} s JOIN ahd_import_numbers n ON n.old = s.run_id"
+                f" ORDER BY n.new, s.{ROW}"
             )
         con.execute("DROP TABLE ahd_import_numbers")
     except BaseException:
