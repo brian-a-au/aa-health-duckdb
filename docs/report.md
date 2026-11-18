@@ -291,7 +291,7 @@ The charts follow the Day picker:
 - A short bar marks the weekday average for that day. The weekday average is the average of the same weekday in the 12 weeks before the day.
 - The line under the chart describes the chosen day until you move over the chart.
 
-In the weekly view, a light band covers the week's 7 days, and the line under the chart gives the week's total and the average week, e.g., "Nov 2 to Nov 8, 2026: 9,853 in total, average week 10,465." The key then shows "Chosen week".
+In the weekly view, a light band covers the week's 7 days, and the line under the chart gives the week's total and the average week, e.g., "Nov 2 to Nov 8, 2026: 9,853 in total, average week 10,465." The key then shows "Chosen week". When a day of the week has no value, the line gives the total of the other days and says how many days have no value. It does not give the average week, because a short total cannot be compared with a full week.
 
 The key under each chart has two rows. The top row holds the lines, the band and the chosen day with its weekday average, or the chosen week. The second row holds the anomaly flags.
 
@@ -316,7 +316,7 @@ The "Find a component" box above the tables keeps only the components whose name
 
 The table headings stay in view while you scroll. A table that is too wide for the window, e.g., on a phone, scrolls in its own box, and its headings stay at the top of that box. The links under "Jump to" above the tables go to each group, and show how many components each group has. After each table, the link "Back to the top of the tables" goes back to these links.
 
-The flag is "Above range" or "Below range" from the anomaly method, or "Large drop" or "Large spike" when a slider flags it. A red "Zero data" badge marks a value of 0 on a component that had data on an earlier day. A value of 0 before the component's first day with data has no badge and no flag, because it is not an alert. A gray "never collected data" note marks a component that was 0 on every day. In the weekly view, the anomaly flags are counted by day, e.g., "Below range on 2 days", and "Show only flagged" keeps those components.
+The flag is "Above range" or "Below range" from the anomaly method, or "Large drop" or "Large spike" when a slider flags it. A red "Zero data" badge marks a value of 0 on a component that had data on an earlier day. A value of 0 before the component's first day with data has no badge and no flag, because it is not an alert. A gray "never collected data" note marks a component that was 0 on every day. In the weekly view, the anomaly flags are counted by day, e.g., "Below range on 2 days", and "Show only flagged" keeps those components. A week that lacks the value of a day still shows its total, but it gets no "Large drop", "Large spike" or "Zero data" flag. Its Flag column says how many days have no value, e.g., "3 days without a value". The slider lines and "Show only flagged" leave it out, unless the anomaly method flagged one of its days.
 
 ## Individual Component Summary
 

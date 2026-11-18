@@ -2219,6 +2219,109 @@ def test_the_weekly_view_skips_a_component_with_a_small_average_week(chrome, tmp
     assert "under 70" in page
 
 
+def _short_week(during, missing=3):
+    """100 on every day before the week, during on its days, and no value on its last days."""
+    week = {YESTERDAY - timedelta(days=n) for n in range(7)}
+    gone = {YESTERDAY - timedelta(days=n) for n in range(missing)}
+    return lambda cid: [
+        _dv(cid, d, during if d in week else 100.0) for d in _days() if d != TODAY and d not in gone
+    ]
+
+
+SHORT_WEEK_PROBE = (
+    MARKS_JS
+    + """
+var g = document.getElementById("granularity");
+g.value = "week";
+g.dispatchEvent(new Event("change"));
+function read() {
+  var o = { rows: {}, drop: document.getElementById("change-alert-result").textContent,
+    spike: document.getElementById("spike-alert-result").textContent };
+  [].forEach.call(document.querySelectorAll("#tables tbody tr"), function (tr) {
+    o.rows[tr.querySelector("td.name").firstChild.textContent] = tr.textContent;
+  });
+  return o;
+}
+function slide(id, v) {
+  var s = document.getElementById(id);
+  s.value = String(v);
+  s.dispatchEvent(new Event("input"));
+}
+var out = { start: read() };
+// The slider ends: every drop past 10 percent and every spike past 10 percent.
+slide("change-alert", -10);
+slide("spike-alert", 10);
+out.ends = read();
+var only = document.getElementById("flagged-only");
+only.click();
+out.flagged = [].map.call(document.querySelectorAll("#tables tbody tr"), function (tr) {
+  return tr.querySelector("td.name").firstChild.textContent;
+});
+only.click();
+var pick = document.getElementById("metric-pick");
+pick.value = "metrics/event1";
+pick.dispatchEvent(new Event("change"));
+out.chart = marks("metric-chart").readout;
+pick.value = "metrics/event5";
+pick.dispatchEvent(new Event("change"));
+out.full = marks("metric-chart").readout;
+document.getElementById("tab-individual").click();
+out.individual = marks("individual-chart").readout;
+return out;
+"""
+)
+
+
+def test_the_weekly_view_does_not_flag_a_week_that_lacks_a_day(chrome, tmp_path):
+    # Event 1 has 100 on 4 days and no value on the last 3: 400 against an average week of 700.
+    # Event 2 is a spike and Event 3 a zero of a short week. Event 4 lacks one day of 0. Event 5
+    # is a full week at half: the one large drop.
+    store = Store.open(tmp_path / "short.duckdb")
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
+    store.add_pair(rid, "variables/page", "metrics/occurrences", "Page", "Occurrences", "int")
+    makes = [_short_week(100.0), _short_week(300.0), _short_week(0.0), _short_week(0.0, 1)]
+    makes.append(_halved_last_week(100.0))
+    comps, values = [], []
+    for i, make in enumerate(makes, start=1):
+        cid = f"metrics/event{i}"
+        comps.append(
+            Component(cid, f"Event {i}", "metric", "custom_events", i, Column(cid, cid), True)
+        )
+        values += make(cid)
+    values += _short_week(100.0)("individual/1")
+    store.add_components(rid, comps)
+    store.add_daily_values(rid, values)
+    store.finish_run(rid, "ok")
+    page = render_html(build_view(store, rid))
+    store.con.close()
+    got = run_probe(chrome, page, SHORT_WEEK_PROBE, tmp_path)
+    for when in ("start", "ends"):
+        rows = got[when]["rows"]
+        # The sum still shows, with no flag, no arrow and no zero badge.
+        assert "400" in rows["Event 1"] and "700" in rows["Event 1"]
+        for name in ("Event 1", "Event 2", "Event 3", "Event 4"):
+            for mark in ("Large drop", "Large spike", "Zero data", "▼", "▲"):
+                assert mark not in rows[name], (when, name, mark)
+            assert "days without a value" in rows[name] or "day without a value" in rows[name]
+        assert "Large drop" in rows["Event 5"]
+        # The slider lines count and name only the full week.
+        assert ": 1 component is more than" in got[when]["drop"]
+        assert "Event 1" not in got[when]["drop"] and "Event 3" not in got[when]["drop"]
+        assert ": no component is more than" in got[when]["spike"]
+        assert "No component is above the average week." in got[when]["spike"]
+    assert "3 days without a value" in got["start"]["rows"]["Event 1"]
+    assert "1 day without a value" in got["start"]["rows"]["Event 4"]
+    assert got["flagged"] == ["Event 5"]
+    # The chart readouts give the sum, but no average week to compare it with.
+    week = "Oct 31 to Nov 6, 2026"
+    short = (
+        f"{week}: 400 in total. 3 of the 7 days have no value, so the week is not compared "
+        "with the average week."
+    )
+    assert got["chart"] == short and got["individual"] == short
+    assert got["full"] == f"{week}: 350 in total, average week 700."
+
+
 SLOW_PROBE = """
 var slider = document.getElementById("change-alert");
 var result = document.getElementById("change-alert-result");

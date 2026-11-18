@@ -888,6 +888,22 @@ def test_calendar_leaves_out_a_day_whose_values_are_all_empty(tmp_path):
     assert len(days) == 90 and gap.isoformat() not in days
 
 
+def test_the_week_says_how_many_of_its_days_have_no_value(tmp_path):
+    # Adobe sent no value for the last 3 days of event1, and NaN on one day of event2. The sum
+    # of the other days is still shown, so the page needs to know the week is short.
+    a, b, c = "metrics/event1", "metrics/event2", "metrics/event3"
+    last3 = {YESTERDAY - timedelta(days=n) for n in range(3)}
+    vals = [_dv(a, d, 100.0) for d in _days(START, YESTERDAY) if d not in last3]
+    vals += [_dv(b, d, float("nan") if d == YESTERDAY else 100.0) for d in _days(START, YESTERDAY)]
+    vals += [_dv(c, d, 100.0) for d in _days(START, YESTERDAY)]
+    comps = [_comp(a, "A", number=1), _comp(b, "B", number=2), _comp(c, "C", number=3)]
+    store, rid = _build(tmp_path, comps, vals)
+    week = {r["component_id"]: r for r in build_view(store, rid)["views"]["week"]}
+    assert (week[a]["value"], week[a]["baseline"], week[a]["missing_days"]) == (400, 700, 3)
+    assert (week[b]["value"], week[b]["missing_days"]) == (600, 1)
+    assert (week[c]["value"], week[c]["missing_days"]) == (700, 0)
+
+
 def _falling(cid, per_week, base=1000.0, factor=None, skip=None):
     """A value that changes by per_week each week, the same on every day of a week."""
     out = []
