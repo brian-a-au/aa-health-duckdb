@@ -15,7 +15,9 @@ concurrency:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # The suite takes about 15 minutes on Windows, which is slower than Linux and macOS. The
+    # limit leaves room for that, and still stops a job whose Chrome test hangs.
+    timeout-minutes: 25
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     permissions:
