@@ -30,6 +30,8 @@ uv lock --check
 
 `uv run mypy` checks the types in `src/ahd`. `uv lock --check` tests that `uv.lock` matches `pyproject.toml`. Run `uv lock` after you change `pyproject.toml`. GitHub Actions also checks the workflow files with actionlint. Run `actionlint` too if you change a file in `.github/workflows/`.
 
+The tests run in one process per CPU core, with pytest-xdist. Add `-n 0` to run them in one process, e.g., `uv run pytest -n 0 tests/test_catalog.py`. A test that you debug with `breakpoint()` needs one process.
+
 - The tests use saved Adobe responses and never call Adobe.
 - Every test runs with the network blocked, so a test fails if it tries to open a connection.
 - The tests ignore your own `AA_PROFILE`, `AHD_*` variables and `~/.aa` profiles. Only `AHD_CHROME` stays, which chooses the Chrome for the page tests.
