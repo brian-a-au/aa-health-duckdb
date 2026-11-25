@@ -1,9 +1,10 @@
 """A live check of `ahd run` on one report suite. Run it by hand, and never in CI.
 
 It runs `ahd run` into a temporary folder outside the repository. It prints the order of the
-GET requests that the run made, and checks key columns of the stored run for NULL. It wraps the
-client after the sign-in, so it sees only the path and the parameters of each request. It never
-sees a credential, a token or a header.
+GET requests that the run made, and checks key columns of the stored run for NULL. It counts the
+issues of the run, which say why a run is partial. It wraps the client after the sign-in, so it
+sees only the path and the parameters of each request. It never sees a credential, a token or a
+header.
 
     uv run python scripts/live_check.py --profile NAME --rsid SUITE
 
@@ -118,6 +119,21 @@ def checked(path: Path) -> str:
     return f"Checked {_count(components, 'component')} in {_count(groups, 'group')}."
 
 
+def issue_lines(path: Path) -> list[str]:
+    """The issues of the last run of the file, counted by scope and code, e.g., "Issues: 3
+    individual no_rows." They say why a run is partial. No line means no issue."""
+    con = duckdb.connect(str(path), read_only=True)
+    try:
+        rows = con.execute(
+            "SELECT scope, code, count(*) FROM issues"
+            " WHERE run_id = (SELECT max(run_id) FROM runs) GROUP BY ALL ORDER BY 1, 2"
+        ).fetchall()
+    finally:
+        con.close()
+    # The tool writes the scopes and the codes, but they are printed as text from a file.
+    return [f"Issues: {n} {inert(scope)} {inert(code)}." for scope, code, n in rows]
+
+
 def run(argv: list[str], connect: Callable[..., Any] = AdobeClient.connect) -> int:
     """Run `ahd run` with argv into a temporary folder, print the requests and the problems."""
     recorders: list[Recorder] = []
@@ -137,6 +153,8 @@ def run(argv: list[str], connect: Callable[..., Any] = AdobeClient.connect) -> i
             print_requests(rec)
         if db.exists():
             print(checked(db))
+            for line in issue_lines(db):
+                print(line)
             problems = check_db(db)
         else:
             problems = ["The run stored nothing."]
