@@ -89,7 +89,7 @@ import smtplib
 import ssl
 import subprocess
 import sys
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Context, Decimal, InvalidOperation
 from email.message import EmailMessage
 from importlib import metadata
 from pathlib import Path
@@ -124,15 +124,16 @@ def _number(v: float | None) -> str:
 
 
 def _round(v: float | None, digits: int = 0) -> float | None:
-    """v rounded as DuckDB's round() does it: half away from zero, e.g., 2.5 to 3."""
+    """v rounded as DuckDB's round() does it: half away from zero, e.g., 2.5 to 3.
+
+    It rounds the exact value of the number. 12.35 is stored as a number a little below 12.35,
+    so it gives 12.3, as DuckDB 2.0.1 does.
+    """
     if v is None or not math.isfinite(v):
         return v
-    scale = 10.0**digits
-    scaled = v * scale
-    whole = math.floor(abs(scaled))
-    if abs(scaled) - whole >= 0.5:
-        whole += 1
-    return math.copysign(whole, scaled) / scale
+    # The precision holds every digit of the largest number before the point.
+    exact = Decimal(v).quantize(Decimal(1).scaleb(-digits), ROUND_HALF_UP, Context(prec=400))
+    return float(exact)
 
 
 def _share(text: str, top: float = 1.0) -> str:

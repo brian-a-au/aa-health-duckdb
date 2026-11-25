@@ -782,10 +782,12 @@ def test_the_percent_of_any_share_gives_the_same_share_in_ahd():
 
 def test_the_rounding_of_the_script_is_the_rounding_of_duckdb():
     """The email showed values that DuckDB rounded, e.g., round(usual). The script rounds them
-    itself now, in the same way: half away from zero."""
+    itself now, in the same way: the exact value of the number, half away from zero. 12.35 is
+    stored as a number a little below 12.35, so it gives 12.3, as in DuckDB 2.0.1."""
     mod = _load("send_alerts")
     rng = random.Random(11)
     values = [0.5, 1.5, 2.5, -0.5, -2.5, 0.49999999999999994, 12.25, 12.35, -12.25, 4849.25]
+    values += [1.15, -1.15, 0.15, 2.675, 1e300, -1e300, 5e-324, 2.0**52 + 0.5]
     values += [rng.uniform(-1e6, 1e6) for _ in range(500)]
     values += [round(rng.uniform(-1000, 1000), 2) + 0.05 for _ in range(500)]
     with duckdb.connect() as con:

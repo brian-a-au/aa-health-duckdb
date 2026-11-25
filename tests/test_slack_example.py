@@ -399,6 +399,9 @@ def test_it_shares_the_options_and_texts_of_the_email_script(slack):
         assert slack._since(a) == mail._since(a)
     assert slack._percent(0.275) == mail._percent(0.275) == "27.5%"
     assert slack._round(2.5) == mail._round(2.5) == 3
+    for v in (12.35, 1.15, -1.15, 2.675, 1e300):
+        assert slack._round(v, 1) == mail._round(v, 1), v
+    assert slack._round(12.35, 1) == 12.3
 
 
 def test_the_script_writes_nothing_into_the_examples_folder(slack, tmp_path):
