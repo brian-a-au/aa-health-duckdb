@@ -1616,6 +1616,36 @@ def test_individual_prints_names_that_cannot_change_the_terminal(tmp_path, cfg, 
     )
     stdout = capsys.readouterr().out
     assert code == 0 and f"Added {SAFE} by Cart?Additions to run 1." in stdout
+    # The same pair again is refused, and the error names it the same way.
+    code = main(
+        [
+            "individual",
+            "--config",
+            str(cfg),
+            "--db",
+            str(tmp_path / "t.duckdb"),
+            "--run",
+            "1",
+            "--dimension",
+            "variables/evar17",
+            "--metric",
+            "metrics/cartadditions",
+            "--out",
+            str(out),
+        ],
+        client_factory=lambda c, company_id=None: fake,
+    )
+    err = capsys.readouterr().err
+    assert code == 1
+    assert err == f"Error: Run 1 already holds {SAFE} by Cart?Additions.\n"
+
+
+def test_an_error_from_adobe_cannot_change_the_terminal(cfg, capsys):
+    fake = fake_for("rs1", events(1), custom_dims())
+    fake.gets["/reportsuites/collections/suites"] = ApiError(400, EVIL + "\nfake", "bad\x1b[2J")
+    assert main(["suites", "--config", str(cfg)], client_factory=lambda c: fake) == 1
+    err = capsys.readouterr().err
+    assert err == f"Error: Adobe API error 400 [bad?[2J]: {SAFE}?fake\n"
 
 
 def test_individual_with_problems_exits_3(tmp_path, cfg, capsys):

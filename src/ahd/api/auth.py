@@ -210,7 +210,8 @@ def get_token(session: Any, creds: Credentials, wait: Wait | None = None) -> str
         raise SignInError(WRONG_CLIENT_ID)
     if error == "invalid_scope":
         raise SignInError(SCOPE_REJECTED)
-    code = f", error {error}" if error else ""
+    # The error code comes from the answer, which may not be from Adobe, e.g., from a proxy.
+    code = f", error {inert(error)}" if error else ""
     if _is_temporary(resp.status_code):
         raise SignInUnavailable(
             f"Sign-in failed: Adobe's sign-in service answered HTTP {resp.status_code}{code} "

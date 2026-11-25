@@ -34,6 +34,7 @@ from ahd.catalog import CUSTOM_GROUPS, Component, build_catalog, load_solution
 from ahd.config import ConfigError
 from ahd.dates import RunWindow, today_in_zone
 from ahd.store import Store
+from ahd.text import inert
 
 log = logging.getLogger(__name__)
 
@@ -562,9 +563,11 @@ def add_pair(
             if not store.pair_has_data(run_id, p["pair"], pair_series_id(p["pair"])):
                 empty = p["pair"]
                 continue
-            raise ConfigError(
-                f"Run {run_id} already holds {_pair_label(p['dimension_name'] or dimension, p['metric_name'] or metric)}."
+            # The names come from Adobe, so each passes through inert().
+            held = _pair_label(
+                inert(p["dimension_name"] or dimension), inert(p["metric_name"] or metric)
             )
+            raise ConfigError(f"Run {run_id} already holds {held}.")
     codes = {
         r[0]
         for r in store.con.execute("SELECT code FROM issues WHERE run_id = ?", [run_id]).fetchall()

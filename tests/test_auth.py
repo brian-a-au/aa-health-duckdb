@@ -202,6 +202,12 @@ def test_a_wrong_credential_is_not_tried_again(waits):
     assert len(_posts(s)) == 1 and waits == []
 
 
+def test_the_error_of_the_sign_in_answer_cannot_change_the_terminal():
+    # The answer may come from a proxy, so its error field is not trusted.
+    text = _fails(Session((401, {"error": "bad\x1b[2J\u061cx"})))
+    assert "HTTP 401, error bad?[2J?x." in text and "\x1b" not in text
+
+
 def test_token_not_json():
     text = _fails(Session((404, None)))
     assert "HTTP 404" in text and "error" not in text.split("HTTP 404")[1].split(".")[0]

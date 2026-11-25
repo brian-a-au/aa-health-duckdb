@@ -90,7 +90,7 @@ def resolve_segment(client: Any, rsid: str, value: str) -> str:
     A value with the shape of a segment ID that the list does not hold goes through unchanged,
     because the list may leave out a segment that the credential can still use.
     """
-    hint = f"Run ahd segments --rsid {rsid} to list them."
+    hint = f"Run ahd segments --rsid {inert(rsid)} to list them."
     return _pick(value, list_segments(client, rsid), "segment", hint, SEGMENT_ID)
 
 
@@ -132,7 +132,7 @@ def resolve_component(client: Any, rsid: str, kind: str, value: str) -> dict:
         found = ", ".join(inert(r["id"]) for r in named)
         raise ConfigError(f"More than one {kind} is named {value!r}: {found}. Use the ID instead.")
     raise ConfigError(
-        f"No {kind} in report suite {rsid} has the ID or name {value!r}. Use an ID such as "
+        f"No {kind} in report suite {inert(rsid)} has the ID or name {value!r}. Use an ID such as "
         f"{'evar1 or page' if kind == 'dimension' else 'occurrences or event1'}, or the name "
         "shown in Analysis Workspace."
     )
