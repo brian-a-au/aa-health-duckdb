@@ -8,6 +8,10 @@ This file lists the changes in each release. The version numbers follow [Semanti
 
 - The note under the browser and device tables of the Individual tab says that the other columns show the same 10 values as the first column. So a value that ranks high only in another column, e.g., Apple, is not in the table. The hint above each table no longer says "Top 10 values for each major browser group", which said the opposite.
 
+**The email and Slack scripts**
+
+- `send_alerts.py` sends nothing when `SMTP_HOST` is set and `MAIL_FROM` or `MAIL_TO` is not. It prints one line that names the missing settings and exits with 1, also on a day without alerts. Before, it sent the email from `ahd@localhost` to `you@example.com` and exited with 0, so a typo in a scheduled job went unnoticed. `alerts.eml` still uses these two addresses when the settings are missing. `send_slack.py` already refused to post without its webhook URL.
+
 **The docs**
 
 - [How runs are stored](docs/runs.md) names all three table macros, with `suite_events()`. Before, it said the file holds two.
