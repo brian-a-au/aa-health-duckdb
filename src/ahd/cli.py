@@ -1174,7 +1174,8 @@ def _output_closed(e: OSError) -> bool:
     if not WINDOWS or e.errno != errno.EINVAL:
         return False
     # On Windows, such a write can fail with EINVAL instead. The text that it could not write
-    # is still waiting, so the output fails again. After another error with EINVAL, it works.
+    # is still waiting, so a second try fails too. Another error with EINVAL leaves the output
+    # working, and the second try then succeeds.
     try:
         sys.stdout.flush()
     except OSError:
