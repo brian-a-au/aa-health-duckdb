@@ -125,6 +125,7 @@ def test_send_alerts_uses_smtp_when_configured(tmp_path, monkeypatch):
         "SMTP_HOST": "smtp.example.com",
         "SMTP_USER": "me",
         "SMTP_PASSWORD": "pw",
+        "MAIL_FROM": "ahd@example.com",
         "MAIL_TO": "team@example.com",
     }.items():
         monkeypatch.setenv(k, v)
@@ -198,7 +199,9 @@ class _FailingSMTP:
         ),
     ],
 )
-def test_send_alerts_says_why_it_could_not_send(tmp_path, monkeypatch, capsys, step, error, said):
+def test_send_alerts_says_why_it_could_not_send(
+    tmp_path, monkeypatch, capsys, mail_settings, step, error, said
+):
     """An SMTP error gives one plain line and exit code 1, not a traceback. The line names
     only the kind of error, never the text of the error or a credential."""
     mod = _load("send_alerts")
@@ -216,7 +219,7 @@ def test_send_alerts_says_why_it_could_not_send(tmp_path, monkeypatch, capsys, s
 
 
 @pytest.mark.parametrize("port", ["abc", "0", "70000", "5.87"])
-def test_send_alerts_refuses_a_wrong_smtp_port(tmp_path, monkeypatch, capsys, port):
+def test_send_alerts_refuses_a_wrong_smtp_port(tmp_path, monkeypatch, capsys, mail_settings, port):
     mod = _load("send_alerts")
     monkeypatch.setattr(mod.smtplib, "SMTP", _FailingSMTP("connect", AssertionError()))
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
@@ -225,7 +228,7 @@ def test_send_alerts_refuses_a_wrong_smtp_port(tmp_path, monkeypatch, capsys, po
     assert "SMTP_PORT must be a port number from 1 to 65535" in capsys.readouterr().err
 
 
-def test_send_alerts_uses_port_587_for_an_empty_smtp_port(tmp_path, monkeypatch):
+def test_send_alerts_uses_port_587_for_an_empty_smtp_port(tmp_path, monkeypatch, mail_settings):
     mod = _load("send_alerts")
     ports = []
 
@@ -1485,6 +1488,61 @@ def test_test_needs_the_mail_settings(tmp_path, monkeypatch, capsys, mail_settin
     assert not (tmp_path / "alerts.eml").exists()
 
 
+@pytest.mark.parametrize(
+    ("unset", "said"),
+    [
+        (["MAIL_FROM", "MAIL_TO"], "Set MAIL_FROM and MAIL_TO."),
+        (["MAIL_FROM"], "Set MAIL_FROM."),
+        (["MAIL_TO"], "Set MAIL_TO."),
+    ],
+)
+@pytest.mark.parametrize("empty", [False, True])
+def test_sending_needs_the_mail_addresses(
+    tmp_path, monkeypatch, capsys, mail_settings, unset, said, empty
+):
+    """With SMTP_HOST, the script sends nothing to a made-up address. It stops before it reads
+    the alerts, so it also stops on a day without alerts. An empty setting counts as not set."""
+    monkeypatch.chdir(tmp_path)
+    for name in unset:
+        if empty:
+            monkeypatch.setenv(name, "")
+        else:
+            monkeypatch.delenv(name)
+    mod = _load("send_alerts")
+    monkeypatch.setattr(mod.smtplib, "SMTP", lambda *a, **k: pytest.fail("the script connected"))
+    monkeypatch.setattr(mod, "_ahd_command", lambda: pytest.fail("ahd was started"))
+    assert mod.main(["db.duckdb", "rs1"]) == 1
+    out = capsys.readouterr()
+    assert out.err == (
+        f"Sending needs MAIL_FROM and MAIL_TO when SMTP_HOST is set. {said} Nothing was sent.\n"
+    )
+    assert out.out == ""
+    assert not (tmp_path / "alerts.eml").exists()
+
+
+def test_the_draft_needs_no_mail_addresses(tmp_path, draft, monkeypatch):
+    """Without SMTP_HOST, alerts.eml gets placeholder addresses, so a first try needs no
+    setting."""
+    monkeypatch.delenv("MAIL_FROM", raising=False)
+    monkeypatch.delenv("MAIL_TO", raising=False)
+    mod = _load("send_alerts")
+    _fake_ahd(monkeypatch, mod, [_json_run(alerts=[DROP])])
+    assert mod.main(["db", "rs1"]) == 0
+    msg = _eml(tmp_path)
+    assert msg["From"] == "ahd@localhost" and msg["To"] == "you@example.com"
+
+
+def test_sending_uses_the_mail_addresses(tmp_path, monkeypatch, capsys, mail_settings):
+    mod = _load("send_alerts")
+    server = _Recorder()
+    monkeypatch.setattr(mod.smtplib, "SMTP", server)
+    _fake_ahd(monkeypatch, mod, [_json_run(alerts=[DROP])])
+    assert mod.main(["db", "rs1"]) == 0
+    [msg] = server.sent
+    assert msg["From"] == "ahd@example.com" and msg["To"] == "team@example.com"
+    assert capsys.readouterr().out == "Sent 1 alerts to team@example.com.\n"
+
+
 def test_test_says_why_it_could_not_send(monkeypatch, capsys, mail_settings):
     mod = _load("send_alerts")
     error = smtplib.SMTPAuthenticationError(535, b"no")
@@ -1545,7 +1603,7 @@ def test_a_missing_suite_exits_with_1_also_when_ahd_says_0(tmp_path, draft, monk
 
 @pytest.mark.parametrize("user", ["me", "mé"])
 def test_a_password_that_is_not_ascii_is_named_without_its_characters(
-    tmp_path, monkeypatch, capsys, user
+    tmp_path, monkeypatch, capsys, mail_settings, user
 ):
     """smtplib encodes the login as ASCII. Its error holds a character of the password and its
     position, so the script must not print it."""
@@ -1589,7 +1647,9 @@ def test_a_password_that_is_not_ascii_is_named_without_its_characters(
         ),
     ],
 )
-def test_a_missing_server_feature_is_named(tmp_path, monkeypatch, capsys, step, said):
+def test_a_missing_server_feature_is_named(
+    tmp_path, monkeypatch, capsys, mail_settings, step, said
+):
     mod = _load("send_alerts")
     error = smtplib.SMTPNotSupportedError("not supported")
     monkeypatch.setattr(mod.smtplib, "SMTP", _FailingSMTP(step, error))

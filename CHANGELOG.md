@@ -7,6 +7,17 @@ This file lists the changes in each release. The version numbers follow [Semanti
 **The report**
 
 - A report of a run that did not finish no longer says that everything was read. Such a run, e.g., one that stopped because you closed the window, stays "running" and holds no problem for the components it did not read. Before, the status section said "No problems were found in this run.", and the problems tile said "Everything was read", although only the header said "Not finished". Now the status section warns that some components may not have been read, and that those components are not shown. The problems tile and the copied alerts say that the run did not finish. A failed run without problems gets the same warning.
+- The note under the browser and device tables of the Individual tab says that the other columns show the same 10 values as the first column. So a value that ranks high only in another column, e.g., Apple, is not in the table. The hint above each table no longer says "Top 10 values for each major browser group", which said the opposite.
+
+**The email and Slack scripts**
+
+- `send_alerts.py` sends nothing when `SMTP_HOST` is set and `MAIL_FROM` or `MAIL_TO` is not. It prints one line that names the missing settings and exits with 1, also on a day without alerts. Before, it sent the email from `ahd@localhost` to `you@example.com` and exited with 0, so a typo in a scheduled job went unnoticed. `alerts.eml` still uses these two addresses when the settings are missing. `send_slack.py` already refused to post without its webhook URL.
+
+**The docs**
+
+- [How runs are stored](docs/runs.md) names all three table macros, with `suite_events()`. Before, it said the file holds two.
+- [The report](docs/report.md#individual-component-summary) says that the rows of the browser and device tables are the top 10 values in the first column only.
+- [Usage](docs/usage.md#the-formats) shows how `ahd alerts --format json` writes a character outside ASCII, e.g., `\u65e5` for 日. Before, the example showed the character on both sides.
 
 ## 0.1.20 (2026-11-25)
 

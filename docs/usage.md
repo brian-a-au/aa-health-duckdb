@@ -340,7 +340,7 @@ Each run has these fields:
 
   `ahd` 0.1.12 added `since`, `days`, `at_least` and `is_new`, and put the new alerts first. Before, the alerts came in the order of the macro. `ahd` 0.1.13 added `event`. Every alert stays in the list, also an alert of an event. The [DuckDB guide](duckdb.md#alertsrun-threshold--030-spike_threshold--050-min_usual--10-for_day--null-method--adobe-sensitivity--normal) explains each column. A run without alerts has an empty list.
 
-Later versions may add fields to the object, to a run and to an alert, as 0.1.13 added `events` and `event`. A program that reads the JSON should ignore the fields it does not know. A number that is not finite, e.g., a value that Adobe sent as infinity, is `null`. Every character outside ASCII is written as an escape, e.g., `日` for 日, so the output reads the same in any text encoding. For the same suite, shortened:
+Later versions may add fields to the object, to a run and to an alert, as 0.1.13 added `events` and `event`. A program that reads the JSON should ignore the fields it does not know. A number that is not finite, e.g., a value that Adobe sent as infinity, is `null`. Every character outside ASCII is written as an escape, e.g., `\u65e5` for 日, so the output reads the same in any text encoding. For the same suite, shortened:
 
 ```json
 {

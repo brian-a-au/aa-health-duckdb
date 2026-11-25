@@ -328,8 +328,8 @@ This tab looks at one dimension by one metric in more depth, e.g., Page by Occur
 
 - a trend chart, like the ones above. It marks the day chosen with the Day picker on the Components Summary tab.
 - the top 100 values yesterday, with how each one moved compared with the previous 90 days ("up 3", "down 2", a dash for no change, or "* new")
-- the top 10 values for each major browser group: Google, Microsoft, Apple, Mozilla and Other
-- the top 10 values for each device type: Other, Mobile Phone, Tablet, Media Player and Television. Desktop traffic falls under Other.
+- the browser table, with a column for each major browser group: Google, Microsoft, Apple, Mozilla and Other. The rows are the top 10 values in the first column, Google, as in the Excel version. The other columns show the same 10 values. So a value that is in the top 10 for Apple but not for Google is not in the table.
+- the device table, with a column for each device type: Other, Mobile Phone, Tablet, Media Player and Television. Desktop traffic falls under Other. The rows are the top 10 values in the first column, Other, and the other columns show the same 10 values.
 
 ### Several pairs
 
