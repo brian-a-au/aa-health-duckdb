@@ -2,6 +2,30 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+**Names from Adobe in the terminal**
+
+- The text of an error from Adobe, its code and the error field of an answer from the sign-in service are now printed with "?" in place of each character that could change the terminal. The same holds for the names in the "already holds" error of `ahd individual`, and for the report suite ID in the errors for a dimension, a metric or a segment that the suite does not have.
+- The Arabic letter mark, U+061C, is now replaced with "?" too. It sets the direction of the text around it, as the other marks that the tool already replaced do.
+
+**The commands**
+
+- When the program that reads the output closes it early, e.g., `ahd alerts --rsid my_suite | head -1`, the command now stops without a message and exits with 141. Before, it printed a Python traceback and exited with 120.
+
+**The database**
+
+- DuckDB no longer downloads or loads an extension by itself. Before, a SQLite file given as `--db` or to `ahd import` or `ahd export` made DuckDB download its SQLite extension from DuckDB's server. Such a file now gets the plain message, e.g., "is not a DuckDB database".
+- `ahd prune --run` with a run number past the 64-bit limit says that there is no such run, instead of saying that the database could not be read.
+
+**The report**
+
+- On the Alerts tab of a run without Adobe's anomaly detection, the suggested `ahd render` command now has the same `--db` or `--profile` option that chose the database of the run, e.g., `ahd render --run 3 --profile prod --anomaly-method weekday-median`. Before, the command could read another database.
+
+**The email and Slack scripts**
+
+- The scripts start `ahd` with `PYTHONIOENCODING=utf-8`. On Windows, a message of `ahd` with a letter such as é, e.g., in the path of the database, now reaches the log unchanged.
+
 ## 0.1.20 (2026-11-25)
 
 This release fixes the same column as 0.1.19, now for dimensions, and moves to DuckDB 2.0.1. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is. The daily alert rules do not change.
