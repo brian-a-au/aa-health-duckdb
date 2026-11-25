@@ -2626,14 +2626,23 @@ def test_a_blocked_run_with_a_local_method_shows_flags(chrome, edges, tmp_path, 
 
 
 @pytest.mark.parametrize("code", ["anomaly_not_allowed", "anomaly_probe_failed"])
-def test_a_blocked_run_with_adobe_suggests_a_local_method(chrome, with_problem, tmp_path, code):
+@pytest.mark.parametrize(
+    "option",
+    # The command names the database as ahd run named it, so that it reads the same file.
+    [None, "--db 'my data/<t>&\"x\".duckdb'", "--profile prod"],
+)
+def test_a_blocked_run_with_adobe_suggests_a_local_method(
+    chrome, with_problem, tmp_path, code, option
+):
     view = _blocked(build_view(*with_problem), code)
-    got = run_probe(chrome, render_html(view), METHOD_PROBE, tmp_path)
     run = view["run"]["id"]
+    command = f"ahd render --run {run}" + (f" {option}" if option else "")
+    page = render_html(view, command if option else None)
+    got = run_probe(chrome, page, METHOD_PROBE, tmp_path)
     assert got["unusualEmpty"] == (
         "Anomaly detection is not available for this run, so no values could be flagged. "
         "See the status section. To flag unusual values without it, write this report again "
-        f"with ahd render --run {run} --anomaly-method weekday-median."
+        f"with {command} --anomaly-method weekday-median."
     )
 
 

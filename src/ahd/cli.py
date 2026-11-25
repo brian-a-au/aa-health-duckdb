@@ -696,10 +696,11 @@ def _write(view: dict[str, Any], args: argparse.Namespace) -> Path:
     """Write the report to --out. A file system error becomes a plain ConfigError that names the
     fix."""
     out = args.out
+    run_id = view["run"]["id"]
     try:
-        return write_report(view, out)
+        # The page suggests the same command to write the report with a local method.
+        return write_report(view, out, _render_command(args, run_id))
     except OSError as e:
-        run_id = view["run"]["id"]
         raise ConfigError(
             f"The report could not be written to {out} ({e.strerror or type(e).__name__}). "
             "Choose another folder with --out, or fix this one. "

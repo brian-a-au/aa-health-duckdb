@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -1879,6 +1880,44 @@ def test_the_render_hint_names_the_profile_that_chose_the_database(
     assert _unwritable_report(tmp_path, *options) == 1
     words = "" if how == "none" else " --profile prod"
     assert f"Then run ahd render --run 1{words} to write the report." in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("how", ["db", "flag", "variable", "none"])
+def test_the_page_suggests_a_render_command_for_the_same_database(tmp_path, cfg, monkeypatch, how):
+    # A run without Adobe's anomaly detection: the Alerts tab suggests ahd render with a local
+    # method, and names the same database as the hint on the terminal.
+    import html
+
+    monkeypatch.chdir(tmp_path)
+    db = tmp_path / "my data" / "t.duckdb"
+    options = {
+        "db": ["--config", str(cfg), "--db", str(db)],
+        "flag": ["--profile", "prod"],
+        "variable": [],
+        "none": ["--config", str(cfg)],
+    }[how]
+    if how in ("flag", "variable"):
+        _profile()
+    if how == "variable":
+        monkeypatch.setenv("AA_PROFILE", "prod")
+    fake = fake_for(
+        "rs1",
+        events(3),
+        custom_dims(),
+        posts=[(is_anomaly_trend, ApiError(403, "no", "invalid_access"))],
+    )
+    out = tmp_path / "o"
+    main(_run_args(*options, "--out", str(out)), client_factory=lambda c, company_id=None: fake)
+    [page] = out.glob("*.html")
+    words = {
+        "db": f" --db {_quoted(db)}",
+        "flag": " --profile prod",
+        "variable": " --profile prod",
+        "none": "",
+    }[how]
+    command = f"ahd render --run 1{words} --anomaly-method weekday-median"
+    [found] = re.findall(r'data-render-command="([^"]*)"', page.read_text(encoding="utf-8"))
+    assert html.unescape(found) == command
 
 
 # ---- the credential variables and --config -------------------------------------------
