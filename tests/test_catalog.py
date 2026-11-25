@@ -42,6 +42,13 @@ def test_props_use_exists_occurrences():
     assert by_id()["variables/prop2"].allowed_for_reporting is False
 
 
+def test_metrics_keep_allowed_for_reporting():
+    # /metrics sends allowedForReporting on every metric, as /dimensions does.
+    assert by_id()["metrics/pageviews"].allowed_for_reporting is True
+    assert by_id()["metrics/event10"].allowed_for_reporting is False
+    assert by_id()["metrics/evar5instances"].allowed_for_reporting is True
+
+
 def test_dotted_prop_ids_skipped():
     assert "variables/prop1.1" not in by_id()
 
@@ -163,6 +170,7 @@ def test_a_name_or_flag_of_another_type_is_not_used():
         {"id": "metrics/event1", "name": 5},
         {"id": "metrics/evar1instances", "name": {"a": 1}},
         {"id": "metrics/evar2instances", "name": "Campaign Instances", "type": 7},
+        {"id": "metrics/event2", "allowedForReporting": "no"},
     ]
     dims = [
         {"id": "variables/prop1", "name": ["x"], "allowedForReporting": "yes"},
@@ -173,6 +181,7 @@ def test_a_name_or_flag_of_another_type_is_not_used():
     assert cat["metrics/evar1instances"].name == "metrics/evar1instances"
     assert cat["metrics/evar2instances"].name == "Campaign"
     assert cat["metrics/evar2instances"].metric_type is None
+    assert cat["metrics/event2"].allowed_for_reporting is None
     assert cat["variables/prop1"].name == "variables/prop1"
     assert cat["variables/prop1"].allowed_for_reporting is None
     assert cat["variables/page"].name == "Page"
