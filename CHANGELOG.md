@@ -2,6 +2,14 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## 0.1.19 (2026-11-25)
+
+This release fixes one column of the database. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is. The daily alert rules do not change.
+
+**The database**
+
+- The `allowed_for_reporting` column of the `components` table now holds Adobe's value for each component that the tool reads from the list of metrics, e.g., custom events and eVars. Before, it was NULL for each of them, although Adobe sends the value. The props and the other components from the list of dimensions already had it. Runs made before this release keep NULL.
+
 ## 0.1.18 (2026-11-18)
 
 This release fixes the faults that a review of the whole tool found after 0.1.17. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is. The daily alert rules do not change.
