@@ -62,18 +62,19 @@ email means that the job did not run. --test sends a test message to check the m
 It needs SMTP_HOST, MAIL_FROM and MAIL_TO, reads no alerts and does not need ahd.
 
 To send, set SMTP_HOST, SMTP_PORT (default 587), MAIL_FROM and MAIL_TO, and SMTP_USER and
-SMTP_PASSWORD when the server needs a login. Without SMTP_HOST, it writes the message to
-alerts.eml in the current folder instead, so you can open it and check it first. The script
-turns on encryption with STARTTLS and checks the certificate of the server and its host name.
-It waits at most 60 seconds for the server. When it cannot send, e.g., the server refuses the
-login, it prints one line that says why and exits with 1.
+SMTP_PASSWORD when the server needs a login. With SMTP_HOST but without MAIL_FROM or MAIL_TO,
+it names the missing settings, sends nothing and exits with 1. Without SMTP_HOST, it writes the
+message to alerts.eml in the current folder instead, so you can open it and check it first.
+The script turns on encryption with STARTTLS and checks the certificate of the server and its
+host name. It waits at most 60 seconds for the server. When it cannot send, e.g., the server
+refuses the login, it prints one line that says why and exits with 1.
 
 Exit codes, so a scheduler can tell the cases apart:
     0  it sent or wrote a message
     1  something is wrong, e.g., a suite has no finished run, or the latest finished run of a
        suite is old. The other suites and the warnings are still sent.
        A wrong option also exits with 1 and prints the usage. So does an email that could not
-       be sent.
+       be sent, or SMTP_HOST without MAIL_FROM or MAIL_TO.
     2  there were no alerts, and --always was not given
 """
 
@@ -117,6 +118,8 @@ NEW_ONLY_NEEDS = (
     "--new-only needs ahd 0.1.16 or newer. Update it, e.g., with uv tool upgrade aa-health-duckdb."
 )
 TEST_SETTINGS = ("SMTP_HOST", "MAIL_FROM", "MAIL_TO")
+# The settings that sending needs besides SMTP_HOST. Only alerts.eml has made-up addresses.
+SEND_SETTINGS = ("MAIL_FROM", "MAIL_TO")
 
 
 def _number(v: float | None) -> str:
@@ -611,11 +614,18 @@ def _events(n: int) -> str:
     return "the event message" if n == 1 else "the event messages"
 
 
+def _unset(settings: tuple[str, ...]) -> str:
+    """The settings that are not set, e.g., "MAIL_FROM and MAIL_TO", or "" when all are set."""
+    missing = [name for name in settings if not os.environ.get(name)]
+    if len(missing) < 2:
+        return "".join(missing)
+    return ", ".join(missing[:-1]) + " and " + missing[-1]
+
+
 def _send_test() -> int:
     """--test: sends the test message. It needs the settings of TEST_SETTINGS."""
-    missing = [name for name in TEST_SETTINGS if not os.environ.get(name)]
-    if missing:
-        names = missing[0] if len(missing) == 1 else ", ".join(missing[:-1]) + " and " + missing[-1]
+    names = _unset(TEST_SETTINGS)
+    if names:
         print(f"--test needs SMTP_HOST, MAIL_FROM and MAIL_TO. Set {names}.", file=sys.stderr)
         return 1
     msg = test_message()
@@ -645,6 +655,16 @@ def main(argv: list[str]) -> int:
         parser.error("give the ahd DuckDB file")
     if bool(args.rsids) == args.all:
         parser.error("give one or more report suite IDs, or --all, but not both")
+    # With SMTP_HOST the script sends, so it needs real addresses. It stops before it reads the
+    # alerts, so that a scheduled job fails also on a day without alerts.
+    names = _unset(SEND_SETTINGS) if os.environ.get("SMTP_HOST") else ""
+    if names:
+        print(
+            f"Sending needs MAIL_FROM and MAIL_TO when SMTP_HOST is set. Set {names}. "
+            "Nothing was sent.",
+            file=sys.stderr,
+        )
+        return 1
     command = _ahd_command()
     if command is None:
         print(NEEDS_AHD, file=sys.stderr)

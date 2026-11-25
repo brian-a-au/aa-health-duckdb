@@ -684,6 +684,101 @@ def with_problem(tmp_path_factory):
     store.con.close()
 
 
+def _unfinished_store(path, status, issue):
+    """A run of 3 components that read only the first.
+
+    With status "running", finish_run is never called, as after a closed window or a killed
+    process. With "failed", the run ends as failed, e.g., when Adobe's answers held no rows.
+    issue adds one problem.
+    """
+    store = Store.open(path)
+    rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
+    store.add_components(
+        rid,
+        [
+            Component(
+                f"metrics/event{i}",
+                f"Event {i}",
+                "metric",
+                "custom_events",
+                i,
+                Column(f"metrics/event{i}", f"metrics/event{i}"),
+                True,
+            )
+            for i in (1, 2, 3)
+        ],
+    )
+    store.add_daily_values(rid, _series("metrics/event1", 10.0, 10.0))
+    if issue:
+        store.add_issue(rid, "component", "metrics/event2", "unauthorized_metric", "Hidden")
+    if status != "running":
+        store.finish_run(rid, status)
+    return store, rid
+
+
+# The problems tile, the status section and the alert text. Then clicks the tile.
+UNFINISHED_PROBE = """
+var tile = [].filter.call(document.querySelectorAll("#tiles .tile"), function (t) {
+  return t.querySelector(".tile-label").lastChild.textContent === "Problems in this run";
+})[0];
+var out = { tag: tile.tagName, kind: tile.className,
+  icon: tile.querySelector(".icon").textContent,
+  value: tile.querySelector(".tile-value").textContent,
+  note: tile.querySelector(".tile-note").textContent,
+  status: document.getElementById("status").textContent.replace(/\\s+/g, " ").trim(),
+  text: document.getElementById("alert-text").value };
+tile.click();
+out.focus = document.activeElement.id;
+return out;
+"""
+
+
+@pytest.mark.parametrize(
+    ("status", "issue", "words"),
+    [
+        ("running", False, "This run did not finish"),
+        ("running", True, "This run did not finish"),
+        ("failed", False, "This run failed"),
+    ],
+)
+def test_an_unfinished_run_never_says_that_everything_was_read(
+    chrome, tmp_path, status, issue, words
+):
+    store, rid = _unfinished_store(tmp_path / "u.duckdb", status, issue)
+    try:
+        page = render_html(build_view(store, rid))
+        (tmp_path / "tile").mkdir()
+        (tmp_path / "copy").mkdir()
+        got = run_probe(chrome, page, UNFINISHED_PROBE, tmp_path / "tile")
+        copied = _copy_run(chrome, (store, rid), tmp_path / "copy", "copy-alerts", "copy-result")
+    finally:
+        store.con.close()
+    line = f"{words}, so some components may not have been read."
+    # The tile counts the problems that the run holds, and else shows no number.
+    assert got["tag"] == "BUTTON" and got["kind"] == "tile tile-flag" and got["icon"] == "!"
+    assert got["value"] == ("1" if issue else "–")
+    assert got["note"] == f"{words}. See the status section"
+    assert got["focus"] == "status"
+    assert line in got["status"]
+    assert "Components that were not read are not shown" in got["status"]
+    assert "No problems" not in got["status"]
+    assert f"{line} See the status section of the report." in got["text"]
+    assert copied["rich"]["copied"]["text"] == got["text"]
+    assert line in copied["rich"]["copied"]["html"]
+
+
+def test_a_finished_run_says_that_everything_was_read(chrome, tmp_path):
+    store, rid = _unfinished_store(tmp_path / "u.duckdb", "ok", False)
+    try:
+        page = render_html(build_view(store, rid))
+    finally:
+        store.con.close()
+    probe = UNFINISHED_PROBE.replace("tile.click();", "")
+    got = run_probe(chrome, page, probe, tmp_path)
+    assert (got["tag"], got["value"], got["note"]) == ("DIV", "0", "Everything was read")
+    assert "may not have been read" not in got["status"] + got["text"]
+
+
 def _number(text):
     """A number from a table cell, e.g., "2,716" or "▼ -63.1%". None for an empty cell."""
     found = re.search(r"-?[\d,]+(\.\d+)?", text.replace("−", "-"))

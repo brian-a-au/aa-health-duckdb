@@ -2,11 +2,12 @@
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 import duckdb
 import pytest
-from fakes import adobe_dimensions, fake_for
+from fakes import adobe_dimensions, fake_for, is_trend
 
 from ahd.cli import main
 
@@ -147,3 +148,47 @@ def test_a_failed_run_and_an_empty_file_are_problems(live_check, tmp_path, cfg):
     with duckdb.connect(str(db)) as con:
         con.execute("DELETE FROM runs")
     assert live_check.check_db(db) == ["The file holds no run."]
+
+
+def test_the_issues_of_a_partial_run_are_counted_and_are_no_problem(live_check, cfg, capsys):
+    # Every report but the trends comes back empty, so the pair stores no_rows issues.
+    client = fake()
+    client.posts.insert(0, (lambda body: not is_trend(body), {"rows": [], "totalElements": 0}))
+    argv = ["--rsid", "rs1", "--config", str(cfg), "--date", "2026-11-07"]
+    assert live_check.run(argv, connect=lambda creds, company_id=None: client) == 0
+    out = capsys.readouterr().out
+    lines = out[out.index("Checked 4 components in 4 groups.\n") :].splitlines()
+    issues = [line for line in lines if line.startswith("Issues: ")]
+    # The issue lines come right after the counts.
+    assert issues and lines[1 : 1 + len(issues)] == issues
+    assert all(re.fullmatch(r"Issues: \d+ \w+ \w+\.", line) for line in issues)
+    assert any(line.endswith(" individual no_rows.") for line in issues)
+    assert out.rstrip().endswith("No problem found.")
+
+
+def test_the_issues_are_counted_by_scope_and_code_in_order(live_check, tmp_path, cfg):
+    db = tmp_path / "t.duckdb"
+    argv = ["run", "--config", str(cfg), "--db", str(db), "--rsid", "rs1", "--date", "2026-11-07"]
+    assert main([*argv, "--out", str(tmp_path / "out")], client_factory=lambda *a, **k: fake()) == 0
+    assert live_check.issue_lines(db) == []
+    rows = [
+        ("individual", "no_rows"),
+        ("column", "http_500"),
+        ("individual", "no_rows"),
+        ("column", "http_500"),
+        ("individual", "no_rows"),
+        ("column", "bad\x1b[31mcode"),
+    ]
+    with duckdb.connect(str(db)) as con:
+        rid = con.execute("SELECT max(run_id) FROM runs").fetchone()[0]
+        for scope, code in rows:
+            con.execute(
+                "INSERT INTO issues VALUES (?, ?, 'metrics/event1', ?, 'x')", [rid, scope, code]
+            )
+        # An issue of an earlier run is not counted.
+        con.execute("INSERT INTO issues VALUES (?, 'column', 'x', 'old', 'x')", [rid - 1])
+    assert live_check.issue_lines(db) == [
+        "Issues: 1 column bad?[31mcode.",
+        "Issues: 2 column http_500.",
+        "Issues: 3 individual no_rows.",
+    ]

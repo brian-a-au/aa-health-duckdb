@@ -101,9 +101,16 @@ CSP = (
     "base-uri 'none'; form-action 'none'"
 )
 
+# breakdown_body sorts by the first column only, so the other columns show the same rows.
+_SAME_ROWS = (
+    " The other columns show the same 10 values, so a value that ranks high only in another"
+    " column is not in the table."
+)
 BREAKDOWN_NOTES = {
-    "browser": "Rows are the top 10 values in the first column (Google), as in the Excel version.",
-    "device": "Rows are the top 10 values in the first column (Other), as in the Excel version.",
+    "browser": "Rows are the top 10 values in the first column (Google), as in the Excel version."
+    + _SAME_ROWS,
+    "device": "Rows are the top 10 values in the first column (Other), as in the Excel version."
+    + _SAME_ROWS,
 }
 NO_INDIVIDUAL_NAME = "the chosen dimension and metric"
 
@@ -113,6 +120,18 @@ STATUS_LABELS = {
     "failed": "Failed. No data could be read.",
     "running": "Not finished",
 }
+
+# The warning of the status section for a run that may not have read every component. A run
+# that stopped without Ctrl-C stays "running" and holds no issue for what it did not read. A
+# failed run without an issue, e.g., one whose answers held no rows, says nothing either.
+UNFINISHED_NOTES = {
+    "running": "This run did not finish, so some components may not have been read.",
+    "failed": "This run failed, so some components may not have been read.",
+}
+UNFINISHED_CAUSE = (
+    "Components that were not read are not shown in the tables, the tiles or the alert lists. "
+    "Make a new run with ahd run to check every component."
+)
 
 STATUS_BADGES = {
     "ok": ("good", "✓"),
@@ -313,6 +332,17 @@ def _last_day(run: dict[str, Any]) -> str | None:
     return (date.fromisoformat(today) - timedelta(days=1)).isoformat() if today else None
 
 
+def unfinished_note(status: str, issues: list[dict[str, Any]]) -> str | None:
+    """The warning for a run that may not have read every component, or None.
+
+    A "running" run always gets it. A "failed" run gets it only without issues, because its
+    issues already say what it did not read.
+    """
+    if status == "running" or (status == "failed" and not issues):
+        return UNFINISHED_NOTES[status]
+    return None
+
+
 def render_html(view: dict[str, Any], render_command: str | None = None) -> str:
     """The page of the report.
 
@@ -346,6 +376,8 @@ def render_html(view: dict[str, Any], render_command: str | None = None) -> str:
         individual_label=individual_label(view.get("pairs", [])),
         breakdown_notes=BREAKDOWN_NOTES,
         issue_groups=_issue_groups(issues, method),
+        unfinished=unfinished_note(status, issues),
+        unfinished_cause=UNFINISHED_CAUSE,
         anomaly=method,
         anomaly_source=anomaly_source(method),
         method_note=method_note,
