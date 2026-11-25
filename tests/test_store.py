@@ -179,6 +179,36 @@ def test_a_file_that_ahd_did_not_make_is_named_and_kept(tmp_path, setup, read_on
     assert len(tables) == 1 and ("schema_version",) not in tables
 
 
+EXTENSION_SETTINGS = (
+    "SELECT current_setting('autoinstall_known_extensions'),"
+    " current_setting('autoload_known_extensions')"
+)
+
+
+@pytest.mark.parametrize("read_only", [False, True])
+def test_a_store_never_downloads_or_loads_an_extension(tmp_path, read_only):
+    p = tmp_path / "t.duckdb"
+    Store.open(p).con.close()
+    s = Store.open(p, read_only=read_only)
+    assert s.con.execute(EXTENSION_SETTINGS).fetchone() == (False, False)
+    s.con.close()
+
+
+def test_a_file_of_another_kind_is_not_a_duckdb_database(tmp_path):
+    import sqlite3
+
+    p = tmp_path / "app.db"
+    with sqlite3.connect(p) as lite:
+        lite.execute("CREATE TABLE t (a)")
+    lite.close()
+    for read_only in (False, True):
+        with pytest.raises(StoreError) as e:
+            Store.open(p, read_only=read_only)
+        assert str(e.value) == (
+            f"The file {p} is not a DuckDB database. Choose another file with --db."
+        )
+
+
 def test_an_empty_duckdb_file_becomes_a_new_database(tmp_path):
     p = tmp_path / "empty.duckdb"
     duckdb.connect(str(p)).close()

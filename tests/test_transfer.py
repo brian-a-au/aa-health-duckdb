@@ -271,6 +271,51 @@ def test_sources_that_cannot_be_imported_get_a_plain_error(tmp_path, source):
     new.con.close()
 
 
+def test_export_and_import_never_download_or_load_an_extension(tmp_path, source, monkeypatch):
+    path, _ = source
+    settings = (
+        "SELECT current_setting('autoinstall_known_extensions'),"
+        " current_setting('autoload_known_extensions')"
+    )
+    seen = []
+    real = duckdb.connect
+
+    def spy(*args, **kw):
+        con = real(*args, **kw)
+        seen.append(con.execute(settings).fetchone())
+        return con
+
+    monkeypatch.setattr(duckdb, "connect", spy)
+    export_runs(path, tmp_path / "out")
+    new = Store.open(tmp_path / "new.duckdb")
+    import_runs(new, path)
+    assert seen == [(False, False), (False, False)]
+    new.con.close()
+
+
+def test_a_sqlite_file_is_refused_without_its_extension(tmp_path):
+    # With the type of the ATTACH given, DuckDB does not look for its SQLite extension.
+    import sqlite3
+
+    lite_path = tmp_path / "app.db"
+    with sqlite3.connect(lite_path) as lite:
+        lite.execute("CREATE TABLE runs (run_id INTEGER)")
+    lite.close()
+    new = Store.open(tmp_path / "new.duckdb")
+    unread = f"The file {lite_path} could not be read as an ahd database."
+    with pytest.raises(StoreError) as e:
+        import_runs(new, lite_path)
+    assert str(e.value) == unread
+    with pytest.raises(StoreError) as e:
+        export_runs(lite_path, tmp_path / "out")
+    assert str(e.value) == unread
+    loaded = new.con.execute(
+        "SELECT count(*) FROM duckdb_extensions() WHERE extension_name = 'sqlite_scanner' AND loaded"
+    ).fetchone()
+    assert loaded == (0,)
+    new.con.close()
+
+
 def test_export_refuses_a_wrong_source_or_a_folder_with_files(tmp_path, source):
     path, _ = source
     with pytest.raises(StoreError, match="There is no database"):

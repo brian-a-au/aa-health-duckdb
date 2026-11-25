@@ -2,6 +2,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 
 import pytest
 from fakes import (
@@ -495,6 +496,30 @@ def test_file_that_is_not_a_database_is_one_line_error(tmp_path, capsys):
     assert "is not a DuckDB database" in capsys.readouterr().err
 
 
+def test_a_sqlite_file_gets_the_plain_refusal(tmp_path, capsys):
+    # DuckDB would load its SQLite extension for this file, and download it first. ahd turns
+    # that off, so the file is refused with the plain message.
+    import sqlite3
+
+    db = tmp_path / "app.db"
+    with sqlite3.connect(db) as lite:
+        lite.execute("CREATE TABLE t (a)")
+    lite.close()
+    refused = f"Error: The file {db} is not a DuckDB database. Choose another file with --db.\n"
+    for argv in (
+        ["runs", "--db", str(db)],
+        ["render", "--db", str(db), "--run", "1"],
+        ["prune", "--db", str(db), "--run", "1", "--yes"],
+    ):
+        assert main(argv) == 1
+        assert capsys.readouterr().err == refused
+    unread = f"Error: The file {db} could not be read as an ahd database.\n"
+    assert main(["import", str(db), "--db", str(tmp_path / "new.duckdb")]) == 1
+    assert capsys.readouterr().err == unread
+    assert main(["export", "--db", str(db), "--out", str(tmp_path / "out")]) == 1
+    assert capsys.readouterr().err == unread
+
+
 def test_runs_and_render_do_not_create_a_database(tmp_path, capsys):
     db = tmp_path / "new" / "t.duckdb"
     assert main(["runs", "--db", str(db)]) == 1
@@ -504,17 +529,27 @@ def test_runs_and_render_do_not_create_a_database(tmp_path, capsys):
 
 
 def test_runs_reads_a_database_that_a_reader_has_open(tmp_path, cfg, capsys):
-    import duckdb
-
-    from ahd.store import Store
 
     db = tmp_path / "t.duckdb"
     Store.open(db).con.close()
-    reader = duckdb.connect(str(db), read_only=True)
-    try:
-        assert main(["runs", "--db", str(db)]) == 0
-    finally:
-        reader.close()
+    # The reader is another program, e.g., a DuckDB session. It keeps the file open until its
+    # input closes.
+    script = (
+        "import duckdb, sys; c = duckdb.connect(sys.argv[1], read_only=True); "
+        "print('ready', flush=True); sys.stdin.readline()"
+    )
+    with subprocess.Popen(
+        [sys.executable, "-c", script, str(db)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    ) as reader:
+        try:
+            assert reader.stdout.readline().strip() == "ready"
+            assert main(["runs", "--db", str(db)]) == 0
+        finally:
+            reader.stdin.close()
+            reader.wait()
 
 
 def test_prune_and_individual_do_not_create_a_database(tmp_path, cfg, capsys):
@@ -543,7 +578,7 @@ def test_each_systems_lock_message_is_called_locked(tmp_path, monkeypatch, messa
 
     from ahd.store import Store, StoreError
 
-    def locked(path, read_only=False):
+    def locked(path, read_only=False, config=None):
         raise duckdb.IOException(message)
 
     monkeypatch.setattr(duckdb, "connect", locked)
@@ -556,7 +591,7 @@ def test_a_damaged_file_is_not_called_locked(tmp_path, monkeypatch):
 
     from ahd.store import Store, StoreError
 
-    def broken(path, read_only=False):
+    def broken(path, read_only=False, config=None):
         raise duckdb.IOException("Corrupt database file: block 7 is invalid")
 
     monkeypatch.setattr(duckdb, "connect", broken)

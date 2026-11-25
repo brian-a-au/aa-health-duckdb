@@ -29,6 +29,7 @@ from ahd.store import (
     SCHEMA_VERSION,
     Store,
     StoreError,
+    connect,
 )
 
 MANIFEST = "manifest.json"
@@ -129,7 +130,7 @@ def export_runs(db: Path, out_dir: Path) -> dict[str, int]:
             f"{out_dir} already holds files. Choose a new or an empty folder with --out."
         )
     try:
-        con = duckdb.connect(str(db), read_only=True)
+        con = connect(db, read_only=True)
     except duckdb.Error as e:
         raise _open_error(db, e) from None
     try:
@@ -192,7 +193,9 @@ def _folder_source(source: Path) -> tuple[int, dict[str, str]]:
 def _file_source(con: duckdb.DuckDBPyConnection, source: Path) -> tuple[int, dict[str, str]]:
     """Attach a database file as "src". The caller detaches it."""
     try:
-        con.execute(f"ATTACH {_text(str(source))} AS src (READ_ONLY)")
+        # TYPE DUCKDB refuses a file of another kind, e.g., SQLite, instead of loading an
+        # extension for it.
+        con.execute(f"ATTACH {_text(str(source))} AS src (TYPE DUCKDB, READ_ONLY)")
     except duckdb.Error as e:
         raise _open_error(source, e) from None
     tables = {
