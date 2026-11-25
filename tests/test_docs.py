@@ -1,5 +1,6 @@
 """The docs agree with the code: links, command options and quoted messages."""
 
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -151,3 +152,22 @@ def test_script_downloads_link_to_the_release_of_this_version():
         ref, _, path = link.removeprefix(RAW).partition("/")
         assert ref == tag, f"{name} links to {ref} in {link}, not to {tag}"
         assert (ROOT / path).is_file(), f"{name} links to {path}, which does not exist"
+
+
+def test_the_storage_pages_name_every_table_macro():
+    """docs/runs.md and the glossary of docs/duckdb.md list the views and macros of a file."""
+    sql = (ROOT / "src" / "ahd" / "sql" / "views.sql").read_text(encoding="utf-8")
+    macros = re.findall(r"CREATE OR REPLACE MACRO (\w+)", sql)
+    assert len(macros) == 3
+    runs = (ROOT / "docs" / "runs.md").read_text(encoding="utf-8")
+    glossary = (ROOT / "docs" / "duckdb.md").read_text(encoding="utf-8")
+    assert "two views and three table macros" in runs
+    for name in macros:
+        assert f"`{name}()`" in runs, f"runs.md does not name {name}()"
+        assert re.search(rf"^\| Views and table macros \|.*`{name}\(\)`", glossary, re.MULTILINE)
+
+
+def test_usage_shows_the_escape_that_ahd_alerts_writes():
+    page = (ROOT / "docs" / "usage.md").read_text(encoding="utf-8")
+    [(escape, char)] = re.findall(r"written as an escape, e\.g\., `([^`]+)` for (\S)\b", page)
+    assert json.dumps(char) == f'"{escape}"'

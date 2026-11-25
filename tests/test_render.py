@@ -477,15 +477,24 @@ def test_csp_meta_is_first_in_head():
 
 def test_breakdown_notes_under_tables():
     html = render_html(sample_view())
+    # The rows are the top 10 of the first column only, because breakdown_body sorts by it.
+    same = (
+        " The other columns show the same 10 values, so a value that ranks high only in another"
+        " column is not in the table."
+    )
     assert BREAKDOWN_NOTES["browser"] == (
-        "Rows are the top 10 values in the first column (Google), as in the Excel version."
+        "Rows are the top 10 values in the first column (Google), as in the Excel version." + same
     )
     assert BREAKDOWN_NOTES["device"] == (
-        "Rows are the top 10 values in the first column (Other), as in the Excel version."
+        "Rows are the top 10 values in the first column (Other), as in the Excel version." + same
     )
     for kind in ("browser", "device"):
         note = BREAKDOWN_NOTES[kind]
         assert html.index(f'<div id="{kind}"></div>') < html.index(note)
+    # The hint above each table does not say "top 10" a second time.
+    assert "Values yesterday for each major browser group." in html
+    assert "Values yesterday for each device type. Desktop traffic falls under Other." in html
+    assert "Top 10 values" not in html
 
 
 def test_status_badge_has_icon_and_label():
@@ -720,8 +729,8 @@ def test_a_run_made_with_date_names_its_days():
         f"this report counts back from the run date, so the last day is {last}.</p>"
     ) in html
     assert f"Top 100 values on {last}" in html
-    assert f"Top 10 values on {last} for each major browser group." in html
-    assert f"Top 10 values on {last} for each device type." in html
+    assert f"Values on {last} for each major browser group." in html
+    assert f"Values on {last} for each device type." in html
     assert f'aria-label="{last} at a glance"' in html
     assert f"This week is the 7 days ending on {last}." in html
     assert f'title="The report compares one week: the 7 days ending on {last}."' in html

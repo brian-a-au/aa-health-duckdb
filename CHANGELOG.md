@@ -2,6 +2,18 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+**The report**
+
+- The note under the browser and device tables of the Individual tab says that the other columns show the same 10 values as the first column. So a value that ranks high only in another column, e.g., Apple, is not in the table. The hint above each table no longer says "Top 10 values for each major browser group", which said the opposite.
+
+**The docs**
+
+- [How runs are stored](docs/runs.md) names all three table macros, with `suite_events()`. Before, it said the file holds two.
+- [The report](docs/report.md#individual-component-summary) says that the rows of the browser and device tables are the top 10 values in the first column only.
+- [Usage](docs/usage.md#the-formats) shows how `ahd alerts --format json` writes a character outside ASCII, e.g., `\u65e5` for 日. Before, the example showed the character on both sides.
+
 ## 0.1.20 (2026-11-25)
 
 This release fixes the same column as 0.1.19, now for dimensions, and moves to DuckDB 2.0.1. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is. The daily alert rules do not change.

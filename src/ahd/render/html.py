@@ -101,9 +101,16 @@ CSP = (
     "base-uri 'none'; form-action 'none'"
 )
 
+# breakdown_body sorts by the first column only, so the other columns show the same rows.
+_SAME_ROWS = (
+    " The other columns show the same 10 values, so a value that ranks high only in another"
+    " column is not in the table."
+)
 BREAKDOWN_NOTES = {
-    "browser": "Rows are the top 10 values in the first column (Google), as in the Excel version.",
-    "device": "Rows are the top 10 values in the first column (Other), as in the Excel version.",
+    "browser": "Rows are the top 10 values in the first column (Google), as in the Excel version."
+    + _SAME_ROWS,
+    "device": "Rows are the top 10 values in the first column (Other), as in the Excel version."
+    + _SAME_ROWS,
 }
 NO_INDIVIDUAL_NAME = "the chosen dimension and metric"
 

@@ -108,7 +108,7 @@ Every row carries its `run_id`, so you can always tell which run it came from.
 | `breakdowns`, `breakdown_totals` | The browser and device tables of each pair |
 | `issues` | Anything that could not be read, with the reason |
 | `schema_version` | The version of this layout |
-| `views_version` | The version of the views and the macro |
+| `views_version` | The version of the views and the macros |
 
 To see every column of a table, run `DESCRIBE daily_values`. To see a quick profile of every column, with minimum, maximum, averages and missing values, run `SUMMARIZE daily_values`.
 
@@ -782,7 +782,7 @@ with duckdb.connect("data/ahd.duckdb", read_only=True) as con:
 | `read_csv`, `read_xlsx`, `FROM 'file.parquet'` | reads files with no import step |
 | `COPY ... TO` | writes CSV, JSON, Parquet or Excel |
 | `SET VARIABLE` and `getvariable` | keeps a value between queries |
-| Views and table macros | saved queries inside the file: `latest_runs`, `component_days`, `alerts()`, `anomaly_days()` |
+| Views and table macros | saved queries inside the file: `latest_runs`, `component_days`, `alerts()`, `suite_events()`, `anomaly_days()` |
 | `SUMMARIZE`, `DESCRIBE` | profiles a table in one line |
 | `bar()` | draws a bar chart as text |
 | `regexp_matches` | matches components to owners by pattern |
