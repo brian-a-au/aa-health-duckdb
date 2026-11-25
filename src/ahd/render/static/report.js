@@ -1979,10 +1979,25 @@
       lines.push(parts.unused.length + (parts.unused.length === 1 ? " component" : " components") +
         " never collected data in this run. They are not listed.");
     }
+    if (unfinishedText()) lines.push(unfinishedLine());
     if ((data.issues || []).length) {
       lines.push("Some data could not be read in this run. See the status section of the report.");
     }
     return lines.join("\n");
+  }
+
+  // A run that may not have read every component, as the status section says: a run still
+  // marked "running", or a failed run without issues. Its words start a sentence, e.g., "This
+  // run did not finish". Empty for any other run.
+  function unfinishedText() {
+    var status = (data.run || {}).status;
+    if (status === "running") return "This run did not finish";
+    if (status === "failed" && !(data.issues || []).length) return "This run failed";
+    return "";
+  }
+  function unfinishedLine() {
+    return unfinishedText() + ", so some components may not have been read. " +
+      "See the status section of the report.";
   }
 
   function anyAlert(parts) {
@@ -2429,6 +2444,7 @@
       notes.push(parts.unused.length + (parts.unused.length === 1 ? " component" : " components") +
         " never collected data in this run, so they are not listed.");
     }
+    if (unfinishedText()) notes.push(unfinishedLine());
     if ((data.issues || []).length) {
       notes.push("Some data could not be read in this run. See the status section of the report.");
     }
@@ -2574,9 +2590,16 @@
     tile("zero", "●", "Dropped to zero", numFmt.format(zero),
       unused ? numFmt.format(unused) + " others never collected data" : "Had data on other days",
       toAlerts, parts.zero);
-    tile(problems ? "flag" : "good", problems ? "!" : "✓", "Problems in this run",
-      numFmt.format(problems), problems ? "See the status section" : "Everything was read",
-      problems ? toStatus : null);
+    // A run that may not have read every component never says that everything was read.
+    var unfinished = unfinishedText();
+    if (unfinished) {
+      tile("flag", "!", "Problems in this run", problems ? numFmt.format(problems) : "–",
+        unfinished + ". See the status section", toStatus);
+    } else {
+      tile(problems ? "flag" : "good", problems ? "!" : "✓", "Problems in this run",
+        numFmt.format(problems), problems ? "See the status section" : "Everything was read",
+        problems ? toStatus : null);
+    }
   }
 
   // ---- controls --------------------------------------------------------------

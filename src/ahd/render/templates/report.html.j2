@@ -65,9 +65,15 @@
 
 <section class="tiles" id="tiles" aria-label="{{ last_day ~ ' at a glance' if last_day else 'Yesterday at a glance' }}"></section>
 
-<section class="status-section{% if not component_drops and not issue_groups %} status-ok{% endif %}" id="status" tabindex="-1" aria-labelledby="status-title">
-  {% if component_drops or issue_groups %}
+<section class="status-section{% if not component_drops and not issue_groups and not unfinished %} status-ok{% endif %}" id="status" tabindex="-1" aria-labelledby="status-title">
+  {% if component_drops or issue_groups or unfinished %}
   <h2 id="status-title">Status</h2>
+  {% endif %}
+  {% if unfinished %}
+  <div class="warning" id="unfinished-run">
+    <p class="issue-heading"><span class="badge badge-flag"><span class="icon" aria-hidden="true">!</span>Warning</span> {{ unfinished }}</p>
+    <p class="warning-cause">{{ unfinished_cause }}</p>
+  </div>
   {% endif %}
   {% if component_drops %}
   <div class="warning" id="component-drops">
@@ -108,7 +114,7 @@
     </li>
     {% endfor %}
   </ul>
-  {% else %}
+  {% elif not unfinished %}
   {% if component_drops %}
   <p class="status-line"><span class="badge badge-good"><span class="icon" aria-hidden="true">✓</span>No problems</span>No problems were found in this run.</p>
   {% else %}

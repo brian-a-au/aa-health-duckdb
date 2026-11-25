@@ -6,6 +6,7 @@ This file lists the changes in each release. The version numbers follow [Semanti
 
 **The report**
 
+- A report of a run that did not finish no longer says that everything was read. Such a run, e.g., one that stopped because you closed the window, stays "running" and holds no problem for the components it did not read. Before, the status section said "No problems were found in this run.", and the problems tile said "Everything was read", although only the header said "Not finished". Now the status section warns that some components may not have been read, and that those components are not shown. The problems tile and the copied alerts say that the run did not finish. A failed run without problems gets the same warning.
 - The note under the browser and device tables of the Individual tab says that the other columns show the same 10 values as the first column. So a value that ranks high only in another column, e.g., Apple, is not in the table. The hint above each table no longer says "Top 10 values for each major browser group", which said the opposite.
 
 **The email and Slack scripts**

@@ -322,6 +322,40 @@ def test_status_is_one_line_without_problems():
     assert "No problems were found in this run." in html
 
 
+RUNNING_NOTE = "This run did not finish, so some components may not have been read."
+FAILED_NOTE = "This run failed, so some components may not have been read."
+UNREAD_CAUSE = "Components that were not read are not shown in the tables, the tiles or the alert"
+
+
+def test_an_unfinished_run_never_says_that_no_problems_were_found():
+    # A run that stopped without Ctrl-C stays "running" and holds no issue.
+    v = sample_view()
+    v["issues"] = []
+    v["run"]["status"] = "running"
+    html = render_html(v)
+    assert "No problems" not in html
+    assert "status-section status-ok" not in html
+    assert html.count('id="status-title"') == 1
+    assert '<div class="warning" id="unfinished-run">' in html
+    assert RUNNING_NOTE in html and UNREAD_CAUSE in html
+    # Its issues are listed under the warning.
+    v["issues"] = sample_view()["issues"]
+    html = render_html(v)
+    assert RUNNING_NOTE in html and 'id="copy-problems"' in html
+    assert html.index('id="unfinished-run"') < html.index('id="copy-problems"')
+    # A failed run without an issue gets the warning too. With issues, they say what is missing.
+    v["run"]["status"] = "failed"
+    assert FAILED_NOTE not in render_html(v)
+    v["issues"] = []
+    html = render_html(v)
+    assert FAILED_NOTE in html and "No problems" not in html
+    # A finished run never gets it.
+    for status in ("ok", "partial"):
+        v["run"]["status"] = status
+        html = render_html(v)
+        assert 'id="unfinished-run"' not in html and "No problems were found" in html
+
+
 def test_missing_bands_note():
     html = render_html(sample_view(bands=False))
     assert NO_BANDS_NOTE == "Anomaly bands are not available. See the status section."

@@ -121,6 +121,18 @@ STATUS_LABELS = {
     "running": "Not finished",
 }
 
+# The warning of the status section for a run that may not have read every component. A run
+# that stopped without Ctrl-C stays "running" and holds no issue for what it did not read. A
+# failed run without an issue, e.g., one whose answers held no rows, says nothing either.
+UNFINISHED_NOTES = {
+    "running": "This run did not finish, so some components may not have been read.",
+    "failed": "This run failed, so some components may not have been read.",
+}
+UNFINISHED_CAUSE = (
+    "Components that were not read are not shown in the tables, the tiles or the alert lists. "
+    "Make a new run with ahd run to check every component."
+)
+
 STATUS_BADGES = {
     "ok": ("good", "✓"),
     "partial": ("flag", "!"),
@@ -320,6 +332,17 @@ def _last_day(run: dict[str, Any]) -> str | None:
     return (date.fromisoformat(today) - timedelta(days=1)).isoformat() if today else None
 
 
+def unfinished_note(status: str, issues: list[dict[str, Any]]) -> str | None:
+    """The warning for a run that may not have read every component, or None.
+
+    A "running" run always gets it. A "failed" run gets it only without issues, because its
+    issues already say what it did not read.
+    """
+    if status == "running" or (status == "failed" and not issues):
+        return UNFINISHED_NOTES[status]
+    return None
+
+
 def render_html(view: dict[str, Any]) -> str:
     run = view.get("run", {})
     status = run.get("status") or "unknown"
@@ -346,6 +369,8 @@ def render_html(view: dict[str, Any]) -> str:
         individual_label=individual_label(view.get("pairs", [])),
         breakdown_notes=BREAKDOWN_NOTES,
         issue_groups=_issue_groups(issues, method),
+        unfinished=unfinished_note(status, issues),
+        unfinished_cause=UNFINISHED_CAUSE,
         anomaly=method,
         anomaly_source=anomaly_source(method),
         method_note=method_note,
