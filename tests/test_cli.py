@@ -1,3 +1,4 @@
+import errno
 import json
 import os
 import re
@@ -376,7 +377,21 @@ def test_a_closed_pipe_ends_quietly(tmp_path):
     assert code == 141
 
 
-def test_a_closed_pipe_while_writing_ends_quietly(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize(
+    ("error", "windows", "flush_fails", "closed"),
+    [
+        (BrokenPipeError(errno.EPIPE, "Broken pipe"), False, False, True),
+        (BrokenPipeError(errno.EPIPE, "Broken pipe"), True, False, True),
+        # On Windows, a write to a closed pipe can fail with EINVAL, and the output stays broken.
+        (OSError(errno.EINVAL, "Invalid argument"), True, True, True),
+        # Another error with EINVAL leaves the output working, so it is not a closed pipe.
+        (OSError(errno.EINVAL, "Invalid argument"), True, False, False),
+        (OSError(errno.EINVAL, "Invalid argument"), False, True, False),
+    ],
+)
+def test_a_closed_pipe_while_writing_ends_quietly(
+    tmp_path, monkeypatch, capsys, error, windows, flush_fails, closed
+):
     from ahd import cli
 
     db = tmp_path / "t.duckdb"
@@ -387,17 +402,23 @@ def test_a_closed_pipe_while_writing_ends_quietly(tmp_path, monkeypatch, capsys)
             self.fd = fd
 
         def write(self, text):
-            raise BrokenPipeError(32, "Broken pipe")
+            raise error
 
         def flush(self):
-            pass
+            if flush_fails:
+                raise error
 
         def fileno(self):
             return self.fd
 
+    monkeypatch.setattr(cli, "WINDOWS", windows)
     with (tmp_path / "out.txt").open("w") as f:
         monkeypatch.setattr(sys, "stdout", ClosedPipe(f.fileno()))
-        assert main(["runs", "--db", str(db)]) == cli.EXIT_PIPE_CLOSED
+        if closed:
+            assert main(["runs", "--db", str(db)]) == cli.EXIT_PIPE_CLOSED
+        else:
+            with pytest.raises(OSError):
+                main(["runs", "--db", str(db)])
     assert capsys.readouterr().err == ""
 
 

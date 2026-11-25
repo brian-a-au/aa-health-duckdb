@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import logging
 import os
 import re
@@ -78,6 +79,7 @@ EXIT_STOPPED = 130
 # The program that reads the output closed it early, e.g., head. 128 plus the signal number of
 # SIGPIPE, as a shell gives a program that this signal stops.
 EXIT_PIPE_CLOSED = 141
+WINDOWS = os.name == "nt"
 # ahd alerts found no alerts. It exits with 0 when it printed alerts, so that a scheduled job can
 # send them with "ahd alerts ... && send". 1 is an error and 2 a wrong option, as for every
 # command, and 3 is a partial run.
@@ -1165,6 +1167,21 @@ def _drop_output() -> None:
     os.close(devnull)
 
 
+def _output_closed(e: OSError) -> bool:
+    """Whether the error comes from a write to a pipe that the reader closed."""
+    if isinstance(e, BrokenPipeError):
+        return True
+    if not WINDOWS or e.errno != errno.EINVAL:
+        return False
+    # On Windows, such a write can fail with EINVAL instead. The text that it could not write
+    # is still waiting, so the output fails again. After another error with EINVAL, it works.
+    try:
+        sys.stdout.flush()
+    except OSError:
+        return True
+    return False
+
+
 def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> int:
     _replace_unknown_characters()
     args = _parser().parse_args(argv)
@@ -1180,13 +1197,16 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
         # Write the output now, so that a closed pipe is found here and not when Python exits.
         sys.stdout.flush()
         return code
-    except BrokenPipeError:
-        _drop_output()
-        return EXIT_PIPE_CLOSED
     except (ConfigError, ApiError, SignInError, SchemaVersionError, StoreError) as e:
         print(f"Error: {e}", file=sys.stderr)
     except (requests.RequestException, duckdb.Error) as e:
         print(f"Error: {_error_text(e)}", file=sys.stderr)
+    except OSError as e:
+        # After the clause above, because a network error of requests is an OSError too.
+        if not _output_closed(e):
+            raise
+        _drop_output()
+        return EXIT_PIPE_CLOSED
     except KeyboardInterrupt:
         print(STOPPED, file=sys.stderr)
         return EXIT_STOPPED
