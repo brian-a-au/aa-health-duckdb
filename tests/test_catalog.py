@@ -47,6 +47,8 @@ def test_metrics_keep_allowed_for_reporting():
     assert by_id()["metrics/pageviews"].allowed_for_reporting is True
     assert by_id()["metrics/event10"].allowed_for_reporting is False
     assert by_id()["metrics/evar5instances"].allowed_for_reporting is True
+    assert by_id()["variables/page"].allowed_for_reporting is True
+    assert by_id()["variables/listvariable1"].allowed_for_reporting is True
 
 
 def test_dotted_prop_ids_skipped():

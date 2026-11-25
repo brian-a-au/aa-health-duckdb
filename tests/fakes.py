@@ -315,3 +315,31 @@ def fake_for(
         posts=posts,
         **kw,
     )
+
+
+def adobe_dimensions(rows: list[dict]) -> Callable[[dict | None], list[dict]]:
+    """/dimensions as Adobe answered it in a live check on 2026-11-25.
+
+    A request without allowedForReporting in its expansion never gets the field. Adobe also
+    remembers the first request for a report suite. When that one did not ask for the field, a
+    later request that asks for it alone does not get it either. An expansion that also holds
+    attributionModel always gets it.
+    """
+    first: dict[str, list[str]] = {}
+
+    def answer(params: dict | None) -> list[dict]:
+        params = params or {}
+        asked = [x for x in str(params.get("expansion") or "").split(",") if x]
+        earlier = first.setdefault(str(params.get("rsid")), asked)
+        sent = "allowedForReporting" in asked and (
+            "attributionModel" in asked or "allowedForReporting" in earlier
+        )
+        out = []
+        for r in rows:
+            row = {k: v for k, v in r.items() if k != "allowedForReporting"}
+            if sent and "allowedForReporting" in r:
+                row["allowedForReporting"] = r["allowedForReporting"]
+            out.append(row)
+        return out
+
+    return answer

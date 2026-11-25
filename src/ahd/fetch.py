@@ -136,9 +136,17 @@ def fetch_catalog(client: Any, rsid: str) -> tuple[list[Component], dict]:
     suite = client.get(
         f"/reportsuites/collections/suites/{rsid}", {"expansion": "name,timezoneZoneinfo,currency"}
     )
-    params = {"rsid": rsid, "expansion": "allowedForReporting"}
-    metrics = client.get("/metrics", params) or []
-    dimensions = client.get("/dimensions", dict(params)) or []
+    metrics = client.get("/metrics", {"rsid": rsid, "expansion": "allowedForReporting"}) or []
+    # Adobe remembers the first /dimensions request of a suite. When that one had no expansion,
+    # e.g., the lookup of the Page dimension, a later request for allowedForReporting alone gets
+    # no allowedForReporting either. With attributionModel in the expansion, it always gets it.
+    # A live check on 2026-11-25 showed this. Adobe's API reference does not say it.
+    dimensions = (
+        client.get(
+            "/dimensions", {"rsid": rsid, "expansion": "allowedForReporting,attributionModel"}
+        )
+        or []
+    )
     suite = suite or {}
     # An answer of another form, e.g., an object where a list belongs, is not read at all. A
     # single entry of a list that cannot be read is left out by build_catalog.

@@ -6,6 +6,7 @@ import subprocess
 import pytest
 from fakes import (
     ApiError,
+    adobe_dimensions,
     fake_for,
     is_anomaly_trend,
     is_trend,
@@ -67,6 +68,43 @@ def test_run_writes_html_and_exit_code(tmp_path, cfg, capsys):
     files = list(out.glob("*.html"))
     assert len(files) == 1
     assert str(files[0]) in capsys.readouterr().out
+
+
+def test_run_stores_allowed_for_reporting_of_dimensions(tmp_path, cfg):
+    # ahd run asks /dimensions for Page without an expansion before it builds the catalog.
+    # Adobe then leaves allowedForReporting out of the next answer, unless the expansion also
+    # holds attributionModel.
+    dims = [
+        {"id": "variables/prop1", "name": "Prop 1", "allowedForReporting": True},
+        {"id": "variables/prop2", "name": "Prop 2", "allowedForReporting": False},
+        {"id": "variables/page", "name": "Page", "allowedForReporting": True},
+    ]
+    fake = fake_for("rs1", events(1), [])
+    fake.gets["/dimensions"] = adobe_dimensions(dims)
+    out = tmp_path / "out"
+    code = main(
+        args(tmp_path, cfg, "run", "--rsid", "rs1", "--date", "2026-11-07", "--out", str(out)),
+        client_factory=lambda creds, company_id=None: fake,
+    )
+    assert code == 0
+    store = Store.open(tmp_path / "t.duckdb")
+    stored = dict(
+        store.con.execute(
+            "SELECT component_id, allowed_for_reporting FROM components"
+            " WHERE component_id LIKE 'variables/%'"
+        ).fetchall()
+    )
+    assert stored == {"variables/prop1": True, "variables/prop2": False, "variables/page": True}
+
+
+def test_the_fake_dimensions_answer_hides_the_field_as_adobe_does():
+    answer = adobe_dimensions([{"id": "variables/prop1", "allowedForReporting": True}])
+    assert answer({"rsid": "a"}) == [{"id": "variables/prop1"}]
+    assert answer({"rsid": "a", "expansion": "allowedForReporting"}) == [{"id": "variables/prop1"}]
+    both = {"rsid": "a", "expansion": "allowedForReporting,attributionModel"}
+    assert answer(both)[0]["allowedForReporting"] is True
+    assert answer({"rsid": "b", "expansion": "allowedForReporting"})[0]["allowedForReporting"]
+    assert answer(None) == [{"id": "variables/prop1"}]
 
 
 def test_run_failed_exit_code(tmp_path, cfg):

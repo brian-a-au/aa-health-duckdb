@@ -427,7 +427,11 @@ def test_fetch_catalog_calls():
             {"expansion": "name,timezoneZoneinfo,currency"},
         ),
         ("GET", "/metrics", {"rsid": "rs1", "expansion": "allowedForReporting"}),
-        ("GET", "/dimensions", {"rsid": "rs1", "expansion": "allowedForReporting"}),
+        (
+            "GET",
+            "/dimensions",
+            {"rsid": "rs1", "expansion": "allowedForReporting,attributionModel"},
+        ),
     ]
 
 
