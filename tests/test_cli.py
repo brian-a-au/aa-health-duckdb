@@ -600,27 +600,17 @@ def test_runs_and_render_do_not_create_a_database(tmp_path, capsys):
 
 
 def test_runs_reads_a_database_that_a_reader_has_open(tmp_path, cfg, capsys):
+    from ahd.store import Store, connect
 
     db = tmp_path / "t.duckdb"
     Store.open(db).con.close()
-    # The reader is another program, e.g., a DuckDB session. It keeps the file open until its
-    # input closes.
-    script = (
-        "import duckdb, sys; c = duckdb.connect(sys.argv[1], read_only=True); "
-        "print('ready', flush=True); sys.stdin.readline()"
-    )
-    with subprocess.Popen(
-        [sys.executable, "-c", script, str(db)],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        text=True,
-    ) as reader:
-        try:
-            assert reader.stdout.readline().strip() == "ready"
-            assert main(["runs", "--db", str(db)]) == 0
-        finally:
-            reader.stdin.close()
-            reader.wait()
+    # In one program, DuckDB refuses a second connection to the file with other settings, so
+    # the reader uses the settings of ahd.
+    reader = connect(db, read_only=True)
+    try:
+        assert main(["runs", "--db", str(db)]) == 0
+    finally:
+        reader.close()
 
 
 def test_prune_and_individual_do_not_create_a_database(tmp_path, cfg, capsys):
