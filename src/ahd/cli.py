@@ -75,6 +75,9 @@ DEFAULT_OUT = "./reports/"
 EXIT_CODES = {"ok": 0, "failed": 1, "partial": 3}
 # The usual exit code after Ctrl-C: 128 plus the signal number of SIGINT.
 EXIT_STOPPED = 130
+# The program that reads the output closed it early, e.g., head. 128 plus the signal number of
+# SIGPIPE, as a shell gives a program that this signal stops.
+EXIT_PIPE_CLOSED = 141
 # ahd alerts found no alerts. It exits with 0 when it printed alerts, so that a scheduled job can
 # send them with "ahd alerts ... && send". 1 is an error and 2 a wrong option, as for every
 # command, and 3 is a partial run.
@@ -1124,6 +1127,43 @@ def _replace_unknown_characters() -> None:
             reconfigure(errors="replace")
 
 
+def _command(args: argparse.Namespace, client_factory: Callable[..., Any]) -> int:
+    _choose_anomaly(args)
+    if args.command == "check":
+        return _check(args, client_factory)
+    if args.command == "run":
+        return _run(args, client_factory)
+    if args.command == "render":
+        return _render(args)
+    if args.command == "alerts":
+        return _alerts(args)
+    if args.command == "prune":
+        return _prune(args)
+    if args.command == "export":
+        return _export(args)
+    if args.command == "import":
+        return _import(args)
+    if args.command == "individual":
+        return _individual(args, client_factory)
+    if args.command == "suites":
+        return _suites(args, client_factory)
+    if args.command == "segments":
+        return _segments(args, client_factory)
+    return _runs(args)
+
+
+def _drop_output() -> None:
+    """Send what is left of the output to os.devnull, after the reader closed the pipe.
+
+    Python writes the rest of stdout when it exits, and would fail again with a second error.
+    This is the recipe of the Python documentation for SIGPIPE.
+    """
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    with suppress(OSError, ValueError):
+        os.dup2(devnull, sys.stdout.fileno())
+    os.close(devnull)
+
+
 def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> int:
     _replace_unknown_characters()
     args = _parser().parse_args(argv)
@@ -1135,28 +1175,13 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
         force=True,
     )
     try:
-        _choose_anomaly(args)
-        if args.command == "check":
-            return _check(args, client_factory)
-        if args.command == "run":
-            return _run(args, client_factory)
-        if args.command == "render":
-            return _render(args)
-        if args.command == "alerts":
-            return _alerts(args)
-        if args.command == "prune":
-            return _prune(args)
-        if args.command == "export":
-            return _export(args)
-        if args.command == "import":
-            return _import(args)
-        if args.command == "individual":
-            return _individual(args, client_factory)
-        if args.command == "suites":
-            return _suites(args, client_factory)
-        if args.command == "segments":
-            return _segments(args, client_factory)
-        return _runs(args)
+        code = _command(args, client_factory)
+        # Write the output now, so that a closed pipe is found here and not when Python exits.
+        sys.stdout.flush()
+        return code
+    except BrokenPipeError:
+        _drop_output()
+        return EXIT_PIPE_CLOSED
     except (ConfigError, ApiError, SignInError, SchemaVersionError, StoreError) as e:
         print(f"Error: {e}", file=sys.stderr)
     except (requests.RequestException, duckdb.Error) as e:

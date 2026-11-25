@@ -351,6 +351,55 @@ def test_ctrl_c_is_one_line(tmp_path, cfg, capsys):
     assert err.startswith("Stopped by Ctrl-C. A run that ahd run had started is marked failed.")
 
 
+def test_a_closed_pipe_ends_quietly(tmp_path):
+    """e.g. ahd runs | head -1: the reader closes the pipe before ahd writes."""
+    db = tmp_path / "t.duckdb"
+    Store.open(db).con.close()
+    # The child waits for a line on its input, so the parent closes the pipe first.
+    script = (
+        "import sys; sys.stdin.readline(); from ahd.cli import main; "
+        "sys.exit(main(['runs', '--db', sys.argv[1]]))"
+    )
+    with subprocess.Popen(
+        [sys.executable, "-c", script, str(db)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ) as child:
+        child.stdout.close()
+        child.stdin.write(b"go\n")
+        child.stdin.close()
+        err = child.stderr.read().decode()
+        code = child.wait()
+    assert err == ""
+    assert code == 141
+
+
+def test_a_closed_pipe_while_writing_ends_quietly(tmp_path, monkeypatch, capsys):
+    from ahd import cli
+
+    db = tmp_path / "t.duckdb"
+    Store.open(db).con.close()
+
+    class ClosedPipe:
+        def __init__(self, fd):
+            self.fd = fd
+
+        def write(self, text):
+            raise BrokenPipeError(32, "Broken pipe")
+
+        def flush(self):
+            pass
+
+        def fileno(self):
+            return self.fd
+
+    with (tmp_path / "out.txt").open("w") as f:
+        monkeypatch.setattr(sys, "stdout", ClosedPipe(f.fileno()))
+        assert main(["runs", "--db", str(db)]) == cli.EXIT_PIPE_CLOSED
+    assert capsys.readouterr().err == ""
+
+
 @pytest.mark.parametrize("company", [None, "co2"])
 def test_says_which_login_company_it_used(tmp_path, cfg, capsys, company):
     fake = fake_for("rs1", events(1), custom_dims(), company_id=company or "co1")
