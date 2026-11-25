@@ -2,6 +2,13 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+**DuckDB 2.0.1**
+
+- The tool now needs DuckDB 2.0.1 or newer. DuckDB 2.0.1 changed its `round()`. It now rounds the exact value of a number, e.g., `round(12.35, 1)` gives 12.3, because 12.35 is stored as a number a little below 12.35. DuckDB 2.0.0 gave 12.4.
+- The alert email script and the Slack script round the values they show in the same way. So a percentage in an alert message is the same as in your own SQL with DuckDB 2.0.1.
+
 ## 0.1.19 (2026-11-25)
 
 This release fixes one column of the database. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is. The daily alert rules do not change.
