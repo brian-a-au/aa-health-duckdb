@@ -2,6 +2,12 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+**The report**
+
+- A report of a run that did not finish no longer says that everything was read. Such a run, e.g., one that stopped because you closed the window, stays "running" and holds no problem for the components it did not read. Before, the status section said "No problems were found in this run.", and the problems tile said "Everything was read", although only the header said "Not finished". Now the status section warns that some components may not have been read, and that those components are not shown. The problems tile and the copied alerts say that the run did not finish. A failed run without problems gets the same warning.
+
 ## 0.1.20 (2026-11-25)
 
 This release fixes the same column as 0.1.19, now for dimensions, and moves to DuckDB 2.0.1. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is. The daily alert rules do not change.

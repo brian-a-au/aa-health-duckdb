@@ -40,7 +40,7 @@ The header names the report suite, the Individual Component Summary pairs, the s
 - **Complete:** everything was read.
 - **Complete, with some gaps:** the run finished, but some data could not be read. The status section lists it.
 - **Failed:** no data could be read.
-- **Not finished:** the run stopped in the middle, e.g., because the window was closed.
+- **Not finished:** the run stopped in the middle, e.g., because the window was closed. Such a run may not have read every component. See [Status](#status).
 
 Every day in the report counts back from the run date. "Yesterday" is the day before the run date. For a normal run, that is the day before the run was made.
 
@@ -249,9 +249,13 @@ An alert tile that counts at least one alert also says how many of them are new,
 
 Click any alert tile to open the Alerts Summary. Click the problems tile to jump to the status section.
 
+The problems tile says "Everything was read" only for a run that finished. For a run that did not finish, it says "This run did not finish. See the status section". It then shows the number of problems the run holds, or a dash when it holds none. A failed run without problems gets the same tile with "This run failed".
+
 ## Status
 
 When everything was read, the status section is one line that says "No problems". Otherwise it lists anything that could not be read, grouped by cause, with a plain explanation of each. **Copy problems** copies the list for an email or a ticket. See [Copying](#copying).
+
+A run that did not finish never says "No problems". The run stopped without saying which components it did not read, e.g., because the window was closed. So the status section shows a warning that says "This run did not finish, so some components may not have been read." Components that were not read are not shown in the tables, the tiles or the alert lists. Make a new run with `ahd run` to check every component. A failed run without problems gets the same warning, which starts with "This run failed". The copied alerts say it too.
 
 It also shows a warning when the run sees far fewer custom events, eVars or props than the run before it. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 
