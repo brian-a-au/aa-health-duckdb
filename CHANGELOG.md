@@ -2,7 +2,13 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
-## Unreleased
+## 0.1.20 (2026-11-25)
+
+This release fixes the same column as 0.1.19, now for dimensions, and moves to DuckDB 2.0.1. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is. The daily alert rules do not change.
+
+**The database**
+
+- The `allowed_for_reporting` column of the `components` table now holds Adobe's value for props, list variables and Page in a run of `ahd run`. Before, it was NULL for them in most runs. `ahd run` first asks Adobe for the list of dimensions without this field, to find Page. Adobe then left the field out of the next list too, although the tool asked for it. The tool now also asks for `attributionModel`, and Adobe then sends the field every time. Runs made before this release keep NULL.
 
 **DuckDB 2.0.1**
 
