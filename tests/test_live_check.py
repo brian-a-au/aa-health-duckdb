@@ -75,8 +75,21 @@ def test_a_run_prints_its_requests_in_order_and_finds_no_problem(live_check, cfg
     assert plain < catalog
     assert "allowedForReporting in the answer: False" in out[plain:catalog]
     assert "allowedForReporting in the answer: True" in out[catalog:]
-    assert out.rstrip().endswith("No problem found.")
+    assert out.rstrip().endswith(
+        "Checked 4 components in 4 groups.\n"
+        "The script has deleted its temporary folder, with the database and the report.\n"
+        "No problem found."
+    )
     assert SECRET not in out
+
+
+def test_the_counts_are_singular_for_one(live_check, tmp_path, cfg):
+    db = tmp_path / "t.duckdb"
+    argv = ["run", "--config", str(cfg), "--db", str(db), "--rsid", "rs1", "--date", "2026-11-07"]
+    main([*argv, "--out", str(tmp_path / "out")], client_factory=lambda *a, **k: fake())
+    with duckdb.connect(str(db)) as con:
+        con.execute("DELETE FROM components WHERE component_id <> 'variables/prop1'")
+    assert live_check.checked(db) == "Checked 1 component in 1 group."
 
 
 def test_the_request_of_0_1_19_is_found(live_check, cfg, capsys):

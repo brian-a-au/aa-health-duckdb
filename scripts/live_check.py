@@ -100,6 +100,24 @@ def check_db(path: Path) -> list[str]:
         con.close()
 
 
+def _count(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def checked(path: Path) -> str:
+    """What the check looked at in the last run of the file, as counts for a pull request."""
+    con = duckdb.connect(str(path), read_only=True)
+    try:
+        row = con.execute(
+            'SELECT count(*), count(DISTINCT "group") FROM components'
+            " WHERE run_id = (SELECT max(run_id) FROM runs)"
+        ).fetchone()
+    finally:
+        con.close()
+    components, groups = row if row else (0, 0)
+    return f"Checked {_count(components, 'component')} in {_count(groups, 'group')}."
+
+
 def run(argv: list[str], connect: Callable[..., Any] = AdobeClient.connect) -> int:
     """Run `ahd run` with argv into a temporary folder, print the requests and the problems."""
     recorders: list[Recorder] = []
@@ -117,7 +135,12 @@ def run(argv: list[str], connect: Callable[..., Any] = AdobeClient.connect) -> i
         print(f"ahd run exited with {code}.")
         for rec in recorders:
             print_requests(rec)
-        problems = check_db(db) if db.exists() else ["The run stored nothing."]
+        if db.exists():
+            print(checked(db))
+            problems = check_db(db)
+        else:
+            problems = ["The run stored nothing."]
+    print("The script has deleted its temporary folder, with the database and the report.")
     for line in problems:
         print(line)
     if not problems:

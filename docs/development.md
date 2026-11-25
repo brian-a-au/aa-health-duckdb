@@ -74,7 +74,7 @@ uv run python scripts/live_check.py --profile NAME --rsid SUITE
 
 - It runs `ahd run` on the suite into a temporary folder, and deletes the folder at the end.
 - It prints the GET requests of the run in their order, and says whether each list of dimensions or metrics held `allowedForReporting`.
-- It checks the stored run for NULL in the name, kind and `allowed_for_reporting` of each component, for a failed run, and for a run without daily values. It names each problem it finds.
+- It checks the stored run for NULL in the name, kind and `allowed_for_reporting` of each component, for a failed run, and for a run without daily values. It names each problem it finds, and says how many components it checked, so you can give the count in a pull request.
 - It exits with 0 when it finds no problem, and with 1 when it finds one.
 - It sees only the path and the parameters of each request, never a credential, a token or a header.
 - It refuses to run when the `CI` variable is set, so it never runs on GitHub Actions.
