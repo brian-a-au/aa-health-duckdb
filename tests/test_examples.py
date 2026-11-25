@@ -5,6 +5,7 @@ import email.policy
 import importlib.util
 import json
 import math
+import os
 import random
 import smtplib
 import ssl
@@ -581,6 +582,34 @@ def test_send_alerts_sends_the_others_when_one_suite_is_missing(tmp_path, monkey
     assert "holds no finished run of rs_typo" in captured.err
     eml = (tmp_path / "alerts.eml").read_text(encoding="utf-8")
     assert "Subject: 1 Analytics Health alerts for rs1 on 2026-11-06" in eml
+
+
+def check_ahd_writes_utf_8(mod, tmp_path, monkeypatch, capsys):
+    """The script starts ahd with PYTHONIOENCODING=utf-8, so a message with a letter such as é
+    reaches its stderr unchanged. On Windows, ahd would write to the pipe in the code page of the
+    system. PYTHONIOENCODING=cp1252 in the environment of the test does the same here."""
+    monkeypatch.setenv("PYTHONIOENCODING", "cp1252")
+    envs = []
+    real = mod.subprocess.run
+
+    def run(argv, **kw):
+        envs.append(kw.get("env"))
+        return real(argv, **kw)
+
+    monkeypatch.setattr(mod.subprocess, "run", run)
+    missing = tmp_path / "José" / "none.duckdb"
+    assert mod.main([str(missing), "rs1"]) == 1
+    [env] = envs
+    assert env["PYTHONIOENCODING"] == "utf-8"
+    # The rest of the environment goes to ahd as it is, e.g., AA_PROFILE or PATH.
+    assert {k: v for k, v in env.items() if k != "PYTHONIOENCODING"} == {
+        k: v for k, v in os.environ.items() if k != "PYTHONIOENCODING"
+    }
+    assert f"There is no database at {missing}." in capsys.readouterr().err
+
+
+def test_send_alerts_runs_ahd_with_utf_8_output(tmp_path, monkeypatch, capsys):
+    check_ahd_writes_utf_8(_load("send_alerts"), tmp_path, monkeypatch, capsys)
 
 
 def test_send_alerts_missing_or_locked_database(tmp_path, capsys):
