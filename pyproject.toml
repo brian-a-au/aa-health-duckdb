@@ -48,6 +48,7 @@ dev = [
     "mypy>=2.4.1",
     "pytest",
     "pytest-cov>=7.1.0",
+    "pytest-xdist>=3.8.0",
     "ruff",
     "types-requests>=2.33.0.20261030",
 ]
@@ -75,6 +76,9 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# pytest-xdist runs the tests in one process per CPU core. Add -n 0 to run them in one process,
+# e.g., to debug a single test.
+addopts = "-n auto"
 
 [tool.coverage.run]
 branch = true
