@@ -158,6 +158,11 @@ def _version_message(path: Path, found: object) -> str:
     return start + "Delete the file to start again, or choose another file with --db."
 
 
+# The range of DuckDB's BIGINT, the 64-bit whole numbers.
+BIGINT_MIN = -(2**63)
+BIGINT_MAX = 2**63 - 1
+
+
 class StoreError(Exception):
     """The database file could not be opened. The message says why in plain words."""
 
@@ -497,10 +502,12 @@ class Store:
         """The stored runs that match any given run number, or whose run date is before `before`."""
         if not run_ids and before is None:
             return []
+        # A number past the 64-bit limit cannot be cast to BIGINT, and no run has it.
+        ids = [i for i in run_ids if BIGINT_MIN <= i <= BIGINT_MAX]
         cur = self.con.execute(
             "SELECT * FROM runs WHERE list_contains(?::BIGINT[], run_id)"
             " OR (?::DATE IS NOT NULL AND today < ?::DATE) ORDER BY run_id",
-            [list(run_ids), before, before],
+            [ids, before, before],
         )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, r)) for r in cur.fetchall()]

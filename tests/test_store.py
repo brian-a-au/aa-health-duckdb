@@ -279,6 +279,8 @@ def test_prune_finds_by_number_and_date(tmp_path):
     assert [r["run_id"] for r in s.runs_to_prune([c, 99], date(2026, 10, 1))] == [a, c]
     assert s.runs_to_prune([], None) == []
     assert s.runs_to_prune([99999999999], None) == []
+    assert s.runs_to_prune([2**63, -(2**63) - 1], None) == []
+    assert [r["run_id"] for r in s.runs_to_prune([2**63, c], None)] == [c]
     assert b not in [r["run_id"] for r in s.runs_to_prune([c], date(2026, 10, 1))]
 
 
