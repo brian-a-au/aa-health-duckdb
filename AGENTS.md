@@ -51,6 +51,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 | `tests/chrome.py`, `tests/test_report_js.py` | Run `report.js` in headless Chrome and read the results back |
 | `scripts/make_showcase.py` | Builds the README slideshow from synthetic data |
 | `scripts/check_wheel.py` | The release workflow runs it with the built wheel. It checks that the wheel has its SQL, template and page files |
+| `scripts/live_check.py` | Runs `ahd run` on one suite into a temporary folder, prints the order of its GET requests, and checks key columns for NULL. Run it by hand with the maintainer's consent. It never runs in CI. Its tests are in `tests/test_live_check.py` and use the fake client |
 | `docs/` | The user documentation. The README is a short landing page that links to it. Update the matching page when behavior changes |
 | `tests/test_docs.py` | Checks the docs: every link and heading link, every option in `docs/usage.md`, and the messages that `docs/troubleshooting.md` quotes |
 | `docs/duckdb.md` | SQL recipes for the database, including alert emails. `docs/email-alerts.md` and `docs/slack-alerts.md` document the two example alert scripts |
@@ -66,6 +67,15 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 - Never print, log or store a credential value or a token. Messages may name where a credential came from, e.g., "profile prod", but never a value. Exceptions carry only the exception type when the message could hold a URL.
 - Never send usage data or telemetry anywhere.
 - Live checks use a credential that lives outside this repository. Ask the maintainer before you make live API calls. Keep any database or report you make for a check outside the repository.
+
+### Live behavior
+
+- A fix of how the tool reads Adobe needs a live check of the reported symptom, before and after the fix. Ask the maintainer first, as for any live call. Run the command that the report names, e.g., `ahd run`, on one suite, and look at the stored data as the report did. `scripts/live_check.py` does this. Before the fix, the check must show the symptom. After the fix, it must not.
+- A report from outside, e.g., from another repository, is taken as correct about its symptom until a check with the same command shows otherwise. The cause that a report gives can be wrong while its symptom is right. Check the symptom first, then the cause. If the check before the fix does not show the symptom, say so in the pull request, and do not call the report wrong for that reason alone.
+- Make the end-to-end check before any hand-made request to the same suite. Adobe can keep an answer for a suite for a while and give it to later requests. E.g., after a request to `/dimensions` without an expansion, a request for `allowedForReporting` alone got no `allowedForReporting`.
+- To probe one request, make it through the tool's own code, e.g., `fetch_catalog` with a client from `AdobeClient.connect`. First make the requests that come before it in a real run. `scripts/live_check.py` prints that order.
+- When a live check shows that an answer depends on an earlier request, add a fake answer to `tests/fakes.py` that does the same, with the date of the check, as `adobe_dimensions()` does. Add a test that runs the whole command against it.
+- The repository is public. Put the result of a live check in a pull request as words and counts, e.g., "no NULL in allowed_for_reporting for 412 components". Never paste a suite ID, a component name or a company ID.
 
 ### Tests
 

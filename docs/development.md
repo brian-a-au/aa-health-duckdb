@@ -64,6 +64,23 @@ Dependabot keeps the dependencies up to date. `.github/dependabot.yml` sets it u
 
 These pull requests run the same checks as any other. `.github/workflows/dependabot-auto-merge.yml` turns on auto-merge for a pull request that holds only minor or patch updates. GitHub then merges it with a merge commit once every required check passes. Review each major update yourself and merge it with a merge commit when its checks pass.
 
+## Check a change against Adobe
+
+The tests use a fake Adobe client, so they cannot show how Adobe answers. Adobe can keep the answer to an earlier request and give it to a later one. So check a change of how the tool reads Adobe with a real run. `scripts/live_check.py` does this:
+
+```
+uv run python scripts/live_check.py --profile NAME --rsid SUITE
+```
+
+- It runs `ahd run` on the suite into a temporary folder, and deletes the folder at the end.
+- It prints the GET requests of the run in their order, and says whether each list of dimensions or metrics held `allowedForReporting`.
+- It checks the stored run for NULL in the name, kind and `allowed_for_reporting` of each component, for a failed run, and for a run without daily values. It names each problem it finds.
+- It exits with 0 when it finds no problem, and with 1 when it finds one.
+- It sees only the path and the parameters of each request, never a credential, a token or a header.
+- It refuses to run when the `CI` variable is set, so it never runs on GitHub Actions.
+
+Run it before the change to see the problem, and again after the change to see it gone. Run it before you send any request of your own to that suite, because your request can change what the run gets. `--config` takes a config file in place of a profile, and `--date` checks another day.
+
 ## Release a new version
 
 The tool is on PyPI as [aa-health-duckdb](https://pypi.org/project/aa-health-duckdb/). Pushing a tag `vX.Y.Z` starts `.github/workflows/release.yml`. It works like the release workflow of sdr-visualizer, and has three jobs:
@@ -82,9 +99,10 @@ The tool is on PyPI as [aa-health-duckdb](https://pypi.org/project/aa-health-duc
 To release:
 
 1. In a pull request, set the new `version` in `pyproject.toml`, run `uv lock`, and add a section to `CHANGELOG.md`, e.g., `## 0.2.0 (2026-12-01)`. Also put the new tag in the download links of the alert scripts in `docs/email-alerts.md` and `docs/slack-alerts.md`, e.g., `v0.2.0`. `test_script_downloads_link_to_the_release_of_this_version` fails until you do. The links work once the tag is pushed. Follow [Semantic Versioning](https://semver.org/). Until 1.0.0, raise the minor version, e.g., 0.2.0, for a change that can break a user's file or script: a new database layout, or a changed or removed command or option. Raise the patch version, e.g., 0.1.1, for fixes and for additions that break nothing, e.g., a new command.
-2. Merge the pull request with `gh pr merge --merge`, and wait for the checks on `main` to pass.
-3. Optionally, open the release workflow on GitHub and choose "Run workflow". It runs the build job only, as a dry run, and uploads nothing. Nothing waits for an approval after the tag, so this is the last check before the upload.
-4. Tag the merge commit on `main` and push the tag:
+2. If the release changes how the tool reads Adobe, e.g., a changed expansion, run the [live check](#check-a-change-against-adobe) on the branch before you merge. Use one suite that the change touches, and send no other request to that suite before the check. Write the result in the pull request as counts, without the suite ID or component names, because the repository is public. Do not release while the script reports a NULL that the change should fill.
+3. Merge the pull request with `gh pr merge --merge`, and wait for the checks on `main` to pass.
+4. Optionally, open the release workflow on GitHub and choose "Run workflow". It runs the build job only, as a dry run, and uploads nothing. Nothing waits for an approval after the tag, so this is the last check before the upload.
+5. Tag the merge commit on `main` and push the tag:
 
    ```
    git switch main && git pull
@@ -92,8 +110,8 @@ To release:
    git push origin v0.2.0
    ```
 
-5. Watch the run in the Actions tab. The upload starts as soon as the build job passes.
-6. Check the page on PyPI and the GitHub release. Try the release from a clean shell: `uvx --from aa-health-duckdb ahd --help`.
+6. Watch the run in the Actions tab. The upload starts as soon as the build job passes.
+7. Check the page on PyPI and the GitHub release. Try the release from a clean shell: `uvx --from aa-health-duckdb ahd --help`.
 
 Release tags cannot be deleted or moved. PyPI never accepts the same version twice, so a mistake needs a new version.
 
