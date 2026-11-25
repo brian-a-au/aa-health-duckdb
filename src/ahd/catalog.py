@@ -93,15 +93,16 @@ def build_catalog(
         cid = m["id"]
         name = _name(m, cid)
         mtype = m.get("type") if isinstance(m.get("type"), str) else None
+        allowed = _allowed(m)
         if mt := _EVENT.match(cid):
             out[cid] = Component(
-                cid, name, "metric", "custom_events", int(mt[1]), Column(cid, cid), None, mtype
+                cid, name, "metric", "custom_events", int(mt[1]), Column(cid, cid), allowed, mtype
             )
         elif mt := _EVAR.match(cid):
             name = name.removesuffix(" Instances")
             # An eVar is a dimension. It is counted with its instances metric.
             out[cid] = Component(
-                cid, name, "dimension", "custom_evars", int(mt[1]), Column(cid, cid), None, mtype
+                cid, name, "dimension", "custom_evars", int(mt[1]), Column(cid, cid), allowed, mtype
             )
         elif cid in wanted:
             if (
@@ -113,7 +114,9 @@ def build_catalog(
             kind: Literal["metric", "dimension"] = (
                 "dimension" if wanted[cid] == "Reserved eVars" else "metric"
             )
-            out[cid] = Component(cid, name, kind, wanted[cid], None, Column(cid, cid), None, mtype)
+            out[cid] = Component(
+                cid, name, kind, wanted[cid], None, Column(cid, cid), allowed, mtype
+            )
 
     for d in dimensions:
         cid = d["id"]

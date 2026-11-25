@@ -155,6 +155,26 @@ def test_values_stored_and_status_ok(store):
     assert {"metrics/event1", "variables/prop1", "variables/page"} <= comp_ids
 
 
+def test_allowed_for_reporting_is_stored_for_metrics_and_dimensions(store):
+    # Adobe sends allowedForReporting on every metric and every dimension of the lists.
+    metrics = [
+        {"id": "metrics/event1", "name": "Event 1", "allowedForReporting": True},
+        {"id": "metrics/event2", "name": "Event 2", "allowedForReporting": False},
+    ]
+    rid = run_fetch(fake_for("rs1", metrics, custom_dims()), store, opts())
+    stored = dict(
+        store.con.execute(
+            "select component_id, allowed_for_reporting from components where run_id = ?", [rid]
+        ).fetchall()
+    )
+    assert stored == {
+        "metrics/event1": True,
+        "metrics/event2": False,
+        "variables/prop1": True,
+        "variables/page": True,
+    }
+
+
 # ---- anomaly probe (Review Focus 3) ------------------------------------------
 
 

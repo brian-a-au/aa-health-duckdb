@@ -1,42 +1,52 @@
 [
   {
     "id": "metrics/pageviews",
-    "name": "Page Views"
+    "name": "Page Views",
+    "allowedForReporting": true
   },
   {
     "id": "metrics/visits",
-    "name": "Visits"
+    "name": "Visits",
+    "allowedForReporting": true
   },
   {
     "id": "metrics/event2",
-    "name": "Newsletter Signup"
+    "name": "Newsletter Signup",
+    "allowedForReporting": true
   },
   {
     "id": "metrics/event10",
-    "name": "Event 10"
+    "name": "Event 10",
+    "allowedForReporting": false
   },
   {
     "id": "metrics/evar5instances",
-    "name": "Internal Search Term Instances"
+    "name": "Internal Search Term Instances",
+    "allowedForReporting": true
   },
   {
     "id": "metrics/evar12instances",
-    "name": "Campaign Instances"
+    "name": "Campaign Instances",
+    "allowedForReporting": true
   },
   {
     "id": "metrics/bouncerate",
-    "name": "Bounce Rate"
+    "name": "Bounce Rate",
+    "allowedForReporting": true
   },
   {
     "id": "metrics/campaigninstances",
-    "name": "Tracking Code Instances"
+    "name": "Tracking Code Instances",
+    "allowedForReporting": true
   },
   {
     "id": "metrics/amo_clicks",
-    "name": "AMO Clicks"
+    "name": "AMO Clicks",
+    "allowedForReporting": true
   },
   {
     "id": "metrics/clickmaplinkinstances",
-    "name": "Activity Map Link Instances"
+    "name": "Activity Map Link Instances",
+    "allowedForReporting": true
   }
 ]
