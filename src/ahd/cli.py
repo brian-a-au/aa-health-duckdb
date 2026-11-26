@@ -1085,15 +1085,16 @@ def _import(args: argparse.Namespace) -> int:
     if not args.source.exists():
         # Checked before the database is opened, so a wrong name leaves no new empty file.
         raise StoreError(f"There is nothing at {args.source} to import.")
-    is_new = not path.exists()
+    made = _new_parts(path)
     store = Store.open(path)
     try:
         result = import_runs(store, args.source)
     except BaseException:
         store.con.close()
-        if is_new:
-            # The import made this file and put nothing into it. Do not leave it behind.
-            path.unlink(missing_ok=True)
+        if made:
+            # The import made this file, and maybe its folders, and put nothing into it.
+            # Do not leave them behind.
+            _remove_new(made)
         raise
     store.con.close()
     print(f"Imported {_count(len(result.numbers), 'run')} from {args.source}.")
