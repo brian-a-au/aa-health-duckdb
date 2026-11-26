@@ -13,7 +13,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from ahd.alerts import csv_value, run_age
+from ahd.alerts import FORMATS, csv_value, run_age
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
 from ahd.cli import main
@@ -287,6 +287,14 @@ def test_a_large_write_to_a_closed_pipe_on_windows_ends_quietly(tmp_path, monkey
             stdout.close()
     # The JSON is one write of more than 30 KB.
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_alerts_work_when_the_output_is_closed_at_start(tmp_path, monkeypatch, fmt):
+    """e.g. ahd alerts ... >&- in a job that only needs the exit code, or under pythonw."""
+    monkeypatch.setattr(sys, "stdout", None)
+    assert _alerts(_db(tmp_path), "--run", "1", "--format", fmt) == 0
+    assert sys.stdout is None
 
 
 def test_json_without_alerts_has_the_run_with_an_empty_list(tmp_path, capsys):

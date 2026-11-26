@@ -18,7 +18,9 @@ This file lists the changes in each release. The version numbers follow [Semanti
 
 **The commands**
 
-- When the program that reads the output closes it early, e.g., `ahd alerts --rsid my_suite | head -1`, the command now stops without a message and exits with 141. Before, it printed a Python traceback and exited with 120. This also holds on Windows for a large output, e.g., more than 8 KB of `ahd alerts --format json` with Python 3.12 or 3.13.
+- When the program that reads the output closes it early, e.g., `ahd alerts --rsid my_suite | head -1`, the command now stops without a message and exits with 141. Before, it printed a Python traceback and exited with 120. This also holds on Windows for a large output, e.g., more than 8 KB of `ahd alerts --format json` with Python 3.12 or 3.13. Only the output counts. When the program that reads stderr, where the messages go, closes it early, e.g., `head` in `ahd alerts --rsid my_suite 2>&1 >alerts.txt | head -1`, the command does not exit with 141, and every line that it wrote to `alerts.txt` stays there.
+- When a command fails or you press Ctrl-C, and the program that reads the output has closed it, the command now keeps its own exit code, e.g., 1 or 130, and prints only its own message. The same holds for a command that ends with 3 or 4, e.g., a partial run. Before, the command also printed "Exception ignored while flushing sys.stdout" and exited with 120.
+- `ahd alerts` works when its output is closed before it starts, e.g., `ahd alerts --rsid my_suite >&-` in a job that only needs the exit code, or with `pythonw` on Windows. It writes nothing and exits with its usual code. Before, it stopped with a Python traceback and exited with 1.
 
 **The database**
 
