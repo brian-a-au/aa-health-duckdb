@@ -928,7 +928,6 @@ def build_view(
         "run_id": run_id,
         "groups": GROUP_ORDER,
         "days": w.selectable_days,
-        "first_day": min(w.selectable_days),
         "yesterday": w.yesterday,
         "start": w.start,
         "week_start": w.week_start,

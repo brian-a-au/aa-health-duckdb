@@ -10,7 +10,7 @@ from datetime import date, datetime
 from typing import Any
 
 MALFORMED = "Adobe sent an answer in a form that the tool could not read."
-# The issue code of an answer that the tool could not read. fetch.py records the same code.
+# The issue code of an answer that the tool could not read. fetch.py and client.py use it too.
 INVALID_RESPONSE = "invalid_response"
 
 

@@ -22,6 +22,7 @@ from ahd.api.auth import (
     retry_after,
     sign_in,
 )
+from ahd.api.reports import INVALID_RESPONSE
 from ahd.config import Credentials
 from ahd.text import inert
 
@@ -100,7 +101,7 @@ def unreadable(what: str) -> ApiError:
         200,
         f"Adobe sent an answer for {what} in a form that the tool could not read. Running "
         "again may fix this.",
-        "invalid_response",
+        INVALID_RESPONSE,
     )
 
 
@@ -340,11 +341,11 @@ class AdobeClient:
         status = resp.status_code
         body = _json_or_none(resp)
         err = _error_fields(body)
-        if err and (status in (200, 400) or status >= 400):
+        if err and (status == 200 or status >= 400):
             raise ApiError(status, err[1] or "Adobe returned an error", err[0])
         if status >= 400:
             raise ApiError(status, f"Adobe returned HTTP {status}")
         if not isinstance(body, (dict, list)):
             # e.g. an HTML page from a proxy, or a body cut off in the middle.
-            raise ApiError(status, NOT_JSON, "invalid_response")
+            raise ApiError(status, NOT_JSON, INVALID_RESPONSE)
         return body

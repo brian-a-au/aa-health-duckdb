@@ -625,13 +625,13 @@
   // The Flag column: the anomaly flag (daily only), else a large drop from the slider.
   function weekFlagBadges(row) {
     var f = weekFlags(row), span = el("span", { "class": "week-flags" });
-    function one(kind, n, icon, words) {
+    function one(n, icon, words) {
       if (!n) return;
       span.appendChild(badge("flag", icon, words + " on " + n + (n === 1 ? " day" : " days"),
         flaggedBy(true) + " flagged this value " + words.toLowerCase() + " on " + n + " of the 7 days."));
     }
-    one("high", f.high, "▲", "Above range");
-    one("low", f.low, "▼", "Below range");
+    one(f.high, "▲", "Above range");
+    one(f.low, "▼", "Below range");
     return span.firstChild ? span : null;
   }
   function flagCell(row, daily) {
@@ -2408,8 +2408,7 @@
       box.appendChild(el("p", { style: MAIL.p }, "No alerts for this day."));
     }
     var unusualHeaders = [{ label: "Component" }, { label: "Flag" }, { label: "Expected", num: true },
-      { label: "Actual", num: true }, { label: "Change", num: true },
-      { label: "Since", numSort: true, cls: "since" }];
+      { label: "Actual", num: true }, { label: "Change", num: true }, { label: "Since" }];
     function unusualCells(a) {
       return [name(a), a.anomaly === "high" ? "Above range" : "Below range",
         a.expected === null ? "Not available" : fmtRound(a.expected, a.metric_type),
@@ -2420,10 +2419,9 @@
         fmtPct(a.pct_vs_usual), sinceText(a)];
     }
     var changeHeaders = [{ label: "Component" }, { label: "Weekday average", num: true },
-      { label: "Actual", num: true }, { label: "Change", num: true },
-      { label: "Since", numSort: true, cls: "since" }];
+      { label: "Actual", num: true }, { label: "Change", num: true }, { label: "Since" }];
     var zeroHeaders = [{ label: "Component" }, { label: "Weekday average", num: true },
-      { label: "Actual", num: true }, { label: "Since", numSort: true, cls: "since" }];
+      { label: "Actual", num: true }, { label: "Since" }];
     function zeroCells(a) {
       return [name(a), fmtRound(a.usual, a.metric_type), fmtNum(a.actual, a.metric_type),
         sinceText(a)];
