@@ -2,6 +2,29 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+This release fixes what a review of the whole tool found after 0.1.21. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is. The alert rules and the counts do not change.
+
+**Names from Adobe in the terminal**
+
+- `ahd alerts --format csv` now shows "?" in place of each character of a name that could change the terminal, when the CSV goes to a terminal. Before, a name with an escape character could change the colors or move the cursor there. A CSV that goes to a file or a pipe keeps every value as it is.
+
+**Commands**
+
+- When `ahd import` fails into a new path, it now removes the folders that it made for the new file, and its `.wal` file. Before, it removed only the file.
+- `ahd individual`, `ahd render`, `ahd prune` and `ahd runs` now close the database when they end, also after an error.
+
+**The report**
+
+- In the weekly view, the band of the chosen week now stays inside the chart. Before, for a component with only 7 days of data, it covered the labels on the left.
+- With a local anomaly method, the page is written faster when the file holds many runs. With 20 runs of 1,500 components, it took about half the time.
+- The calendar builds the lists of the chosen week faster when the week holds many alerts.
+
+**Documentation**
+
+- The troubleshooting page now says that "Profile 'x' was not found" can mean a missing profile folder or a missing `config.json` file.
+
 ## 0.1.21 (2026-11-25)
 
 This release fixes what two reviews of the whole tool found after 0.1.20. The report now warns when a run may not have read every component. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is. The daily alert rules do not change.
