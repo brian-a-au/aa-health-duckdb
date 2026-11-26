@@ -290,7 +290,7 @@ class AdobeClient:
             return self._finish(resp)
 
     def _wait(self, what: str, method: str, path: str, retry: int, delay: float) -> None:
-        log.debug("%s from %s %s, retry %d in %.1fs", what, method, path, retry, delay)
+        log.debug("%s from %s %s, retry %d in %.1fs", what, method, inert(path), retry, delay)
         self._sleep(delay)
 
     def _renew(self, seen_gen: int, seen_sign_ins: int) -> None:

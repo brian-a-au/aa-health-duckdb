@@ -189,4 +189,4 @@ Add `--verbose` before the command to write debug detail to stderr, e.g., each r
 ahd --verbose run --rsid my_suite
 ```
 
-The debug output never includes a credential value or a token.
+The debug output never includes a credential value or a token. A line about a retry names the request, e.g., with the report suite ID. It prints "?" in place of each character that could change the terminal, as the other commands do.

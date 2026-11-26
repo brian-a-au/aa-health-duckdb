@@ -13,6 +13,7 @@ This file lists the changes in each release. The version numbers follow [Semanti
 **Names from Adobe in the terminal**
 
 - The text of an error from Adobe, its code and the error field of an answer from the sign-in service are now printed with "?" in place of each character that could change the terminal. The same holds for the names in the "already holds" error of `ahd individual`, and for the report suite ID in the errors for a dimension, a metric or a segment that the suite does not have.
+- With `--verbose`, the line about a request that is tried again prints the path of the request, which can hold the report suite ID, with "?" in place of each character that could change the terminal. Before, it printed the path as it was.
 - The Arabic letter mark, U+061C, is now replaced with "?" too. It sets the direction of the text around it, as the other marks that the tool already replaced do.
 
 **The commands**

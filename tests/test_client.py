@@ -548,6 +548,19 @@ def test_a_server_error_honors_retry_after():
     assert sleeps == [9.0]
 
 
+def test_the_retry_log_prints_the_path_inert(caplog):
+    # The path of a request can hold a report suite ID from the command line or from Adobe.
+    rsid = "rs\x1b[2J\u202eone"
+    c, _session, sleeps = make([(503, None, {}), (200, {"ok": 1}, {})])
+    with caplog.at_level("DEBUG", logger="ahd.api.client"):
+        assert c.get(f"/reportsuites/collections/suites/{rsid}") == {"ok": 1}
+    assert len(sleeps) == 1
+    lines = [r.getMessage() for r in caplog.records if "retry" in r.getMessage()]
+    assert len(lines) == 1
+    assert "GET /reportsuites/collections/suites/rs?[2J?one, retry 1 in" in lines[0]
+    assert "\x1b" not in caplog.text and "\u202e" not in caplog.text
+
+
 def test_wait_totals_match_the_troubleshooting_page():
     from pathlib import Path
 
