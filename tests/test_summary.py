@@ -1888,6 +1888,67 @@ def test_page_and_macro_agree_on_every_day(tmp_path, method, sensitivity):
     assert min(day for _, day in page) == START.isoformat()
 
 
+def _random_runs(tmp_path, runs=6):
+    """A file of several runs of one suite, on the days up to TODAY, each with random values.
+
+    Some values are not finite, some are 0, and some days have no row. Event 9 is close to 100
+    on every day, with some days far from it, so that weekday-trend gives many ranges.
+    """
+    import random
+
+    rnd = random.Random(11)
+    store = Store.open(tmp_path / "runs.duckdb")
+    ids = []
+    for back in reversed(range(runs)):
+        today = TODAY - timedelta(days=back)
+        rid = store.create_run("rs1", "Suite One", None, today, "UTC", "0.1")
+        comps = [_comp(f"metrics/event{i}", f"E{i}", number=i) for i in range(1, 10)]
+        store.add_components(rid, comps)
+        vals = []
+        for i in range(1, 10):
+            for d in _days(today - timedelta(days=96), today):
+                pick = rnd.random()
+                if i == 9:
+                    v = rnd.gauss(100, 3) * (rnd.choice([0.4, 1.8]) if pick < 0.08 else 1)
+                elif pick < 0.04:
+                    continue
+                elif pick < 0.08:
+                    v = rnd.choice([math.nan, math.inf, None])
+                elif pick < 0.12:
+                    v = 0.0
+                else:
+                    v = abs(rnd.gauss(60, 25))
+                vals.append(_dv(f"metrics/event{i}", d, v))
+        store.add_daily_values(rid, vals)
+        store.finish_run(rid, "ok")
+        ids.append(rid)
+    return store, ids
+
+
+@pytest.mark.parametrize(("method", "sensitivity"), [("adobe", "normal"), *LOCAL_LEVELS])
+def test_history_matches_the_alerts_macro_for_every_run(tmp_path, method, sensitivity):
+    store, ids = _random_runs(tmp_path)
+    view = build_view(store, ids[-1], method=method, sensitivity=sensitivity)
+    assert [h["run_id"] for h in view["history"]] == list(reversed(ids))
+    flags = 0
+    for h in view["history"]:
+        rows = store.con.execute(
+            "SELECT alert, anomaly, pct_vs_usual FROM alerts(?, threshold := 0.10,"
+            " spike_threshold := 0.10, method := ?, sensitivity := ?)",
+            [h["run_id"], method, sensitivity],
+        ).fetchall()
+        assert h["high"] == sum(r[1] == "high" for r in rows), h["run_id"]
+        assert h["low"] == sum(r[1] == "low" for r in rows), h["run_id"]
+        assert h["zero"] == sum(r[0] == "dropped to zero" for r in rows), h["run_id"]
+        drops = sorted(r[2] for r in rows if r[0] == "large drop")
+        spikes = sorted(r[2] for r in rows if r[0] == "large spike")
+        assert h["drops"] == pytest.approx(drops), h["run_id"]
+        assert h["spikes"] == pytest.approx(spikes), h["run_id"]
+        flags += h["high"] + h["low"]
+    if method != "adobe":
+        assert flags, "the data should give some flags"
+
+
 @pytest.mark.parametrize("method", LOCAL_METHODS)
 def test_a_higher_sensitivity_narrows_every_range(tmp_path, method):
     store, rid = _random_run(tmp_path)
