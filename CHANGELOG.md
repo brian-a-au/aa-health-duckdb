@@ -28,6 +28,7 @@ This file lists the changes in each release. The version numbers follow [Semanti
 **The email and Slack scripts**
 
 - `send_alerts.py` sends nothing when `SMTP_HOST` is set and `MAIL_FROM` or `MAIL_TO` is not. It prints one line that names the missing settings and exits with 1, also on a day without alerts. Before, it sent the email from `ahd@localhost` to `you@example.com` and exited with 0, so a typo in a scheduled job went unnoticed. `alerts.eml` still uses these two addresses when the settings are missing. `send_slack.py` already refused to post without its webhook URL.
+- The line "No alerts for my_suite." of both scripts prints "?" in place of each character of the report suite ID that could change the terminal, as `ahd` does. Each script has its own copy of the rule, so that it still needs nothing else from `ahd`. The email and the Slack messages do not change.
 - The scripts start `ahd` with `PYTHONIOENCODING=utf-8`. On Windows, a message of `ahd` with a letter such as é, e.g., in the path of the database, now reaches the log unchanged.
 
 **The docs**
