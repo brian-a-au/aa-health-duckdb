@@ -8,18 +8,18 @@ The example script [`examples/send_alerts.py`](examples/send_alerts.py) emails t
 
 These steps take you from nothing to a first email. The commands use the profile `prod` and the report suite ID `my_suite`. Put your own profile and suite ID in their place. The sections after this one explain each part in more detail.
 
-1. **Install the tool and download the script.** You do not need a clone of this repository. Install `ahd` from PyPI, and download the one script file into a folder of your choice, e.g., `~/ahd`. The link holds a version, `v0.1.21`, so you get the script of that release:
+1. **Install the tool and download the script.** You do not need a clone of this repository. Install `ahd` from PyPI, and download the one script file into a folder of your choice, e.g., `~/ahd`. The link holds a version, `v0.1.22`, so you get the script of that release:
 
    ```
    uv tool install aa-health-duckdb
-   curl -fLO https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.21/docs/examples/send_alerts.py
+   curl -fLO https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.22/docs/examples/send_alerts.py
    ```
 
-   In Windows PowerShell, download it with `Invoke-WebRequest https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.21/docs/examples/send_alerts.py -OutFile send_alerts.py`. You can also open the link in a browser and save the page as `send_alerts.py`.
+   In Windows PowerShell, download it with `Invoke-WebRequest https://raw.githubusercontent.com/brian-a-au/aa-health-duckdb/v0.1.22/docs/examples/send_alerts.py -OutFile send_alerts.py`. You can also open the link in a browser and save the page as `send_alerts.py`.
 
    The script needs `ahd` 0.1.11 or newer. If you installed `ahd` before, update it with `uv tool upgrade aa-health-duckdb`. If the terminal then says it cannot find `ahd`, run `uv tool update-shell` and open a new terminal. With pipx, install the tool with `pipx install aa-health-duckdb`, and run the script with `python3 send_alerts.py` in place of `uv run python send_alerts.py`.
 
-   When you install a newer `ahd`, download the script again with the new version in the link, e.g., `v0.1.22`. `uv tool list` shows the version you have. The script and the tool then come from the same release.
+   When you install a newer `ahd`, download the script again with the new version in the link, e.g., `v0.1.23`. `uv tool list` shows the version you have. The script and the tool then come from the same release.
 
    Run every command below in the folder that holds the script. To work from a clone instead, see [Run it](#run-it).
 
