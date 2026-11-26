@@ -270,12 +270,10 @@
     if (anomalyMethod.adobe) return "Adobe";
     return (start ? "The " : "the ") + anomalyMethod.label + " method";
   }
-  // The two codes that fetch.py records when a run was made without Adobe's anomaly detection:
-  // the credential may not use it, or the request that tests it failed. A local method does not
-  // need it.
-  var anomalyBlocked = !!anomalyMethod.adobe && (data.issues || []).some(function (i) {
-    return i.code === "anomaly_not_allowed" || i.code === "anomaly_probe_failed";
-  });
+  // The page uses Adobe's anomaly detection, and the run was made without it: the credential
+  // may not use it, or the request that tests it failed. html.py decides it, and only then
+  // writes the render command that the Alerts tab suggests.
+  var anomalyBlocked = !!data.anomaly_blocked;
 
   // ---- tabs ----------------------------------------------------------------
   var redrawers = [];
@@ -1987,12 +1985,12 @@
   }
 
   // A run that may not have read every component, as the status section says: a run still
-  // marked "running", or a failed run without issues. Its words start a sentence, e.g., "This
-  // run did not finish". Empty for any other run.
+  // marked "running", or a failed run, which read no component value. Its words start a
+  // sentence, e.g., "This run did not finish". Empty for any other run.
   function unfinishedText() {
     var status = (data.run || {}).status;
     if (status === "running") return "This run did not finish";
-    if (status === "failed" && !(data.issues || []).length) return "This run failed";
+    if (status === "failed") return "This run failed";
     return "";
   }
   function unfinishedLine() {
@@ -2492,8 +2490,11 @@
     return "Problems in run " + run.id + " for " + (run.rsid_name || run.rsid) + " (" + run.rsid +
       "), " + run.today;
   }
+  // The problems of a run that may not have read every component, e.g., a run that did not
+  // finish, also hold the warning of the status section, as the copied alerts do.
   function problemsText() {
     var lines = [problemsTitle()];
+    if (unfinishedText()) lines.push(unfinishedLine());
     problemGroups().forEach(function (g) {
       lines.push(g.heading);
       g.items.forEach(function (i) { lines.push("- " + i); });
@@ -2503,6 +2504,7 @@
   function problemsHtml() {
     var box = el("div", { style: MAIL.wrap });
     box.appendChild(el("p", { style: MAIL.h + "margin-top:0;" }, problemsTitle()));
+    if (unfinishedText()) box.appendChild(el("p", { style: MAIL.p }, unfinishedLine()));
     problemGroups().forEach(function (g) {
       box.appendChild(el("p", { style: MAIL.p + "font-weight:bold;" }, g.heading));
       if (g.items.length) {

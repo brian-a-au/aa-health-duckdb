@@ -21,7 +21,7 @@ Each run writes one HTML file, e.g., `reports/ahd_my_suite_2026-11-07_run3.html`
 
 The report is one file with its styles, script and data inside it. Open it in any browser by double clicking it. It loads nothing from the internet, so it also works offline, e.g., as an email attachment.
 
-Working offline does not mean the report is cleared for sharing. It holds your component names and values, so share it only where your organization allows.
+Working offline does not mean the report is cleared for sharing. It holds your component names and values, so share it only where your organization allows. A report of a run that could not use Adobe's anomaly detection also holds the suggested `ahd render` command, which names the database file or the profile, e.g., `--db data/ahd.duckdb` or `--profile prod`. Any other report names neither.
 
 A switch at the top right chooses light mode, dark mode or your computer's setting. Your browser remembers the choice. Every table can be sorted by clicking a column heading. Every table also has a name that a screen reader reads out, e.g., "Custom events" or "Top 100 values yesterday".
 
@@ -232,7 +232,7 @@ When no day of a chart has a range, e.g., because the component has too few valu
 
 ### A run without Adobe's anomaly detection
 
-When the credential may not use Adobe's anomaly detection, or the test of it failed, the run stores no expected values and no flags from Adobe. With `adobe`, the tiles then say "Anomaly detection not available", and the Alerts tab suggests a command that writes the report again with a local method, e.g., `ahd render --run 3 --anomaly-method weekday-median`. The command has the same `--db` or `--profile` option that chose the database of the run, e.g., `ahd render --run 3 --profile prod --anomaly-method weekday-median`, so that it reads the same file. With a local method, the report has expected ranges and flags as usual, and the status section says that the report does not need Adobe's anomaly detection. See [Troubleshooting](troubleshooting.md#limited-access).
+When the credential may not use Adobe's anomaly detection, or the test of it failed, the run stores no expected values and no flags from Adobe. With `adobe`, the tiles then say "Anomaly detection not available", and the Alerts tab suggests a command that writes the report again with a local method, e.g., `ahd render --run 3 --anomaly-method weekday-median`. The command has the same `--db` or `--profile` option that chose the database of the run, e.g., `ahd render --run 3 --profile prod --anomaly-method weekday-median`, so that it reads the same file. So the hint names the database file or the profile. Only such a report holds the command. With a local method, the report has expected ranges and flags as usual, and the status section says that the report does not need Adobe's anomaly detection. See [Troubleshooting](troubleshooting.md#limited-access).
 
 ## Summary tiles
 
@@ -249,13 +249,13 @@ An alert tile that counts at least one alert also says how many of them are new,
 
 Click any alert tile to open the Alerts Summary. Click the problems tile to jump to the status section.
 
-The problems tile says "Everything was read" only for a run that finished. For a run that did not finish, it says "This run did not finish. See the status section". It then shows the number of problems the run holds, or a dash when it holds none. A failed run without problems gets the same tile with "This run failed".
+The problems tile says "Everything was read" only for a run that finished. For a run that did not finish, it says "This run did not finish. See the status section". It then shows the number of problems the run holds, or a dash when it holds none. A failed run gets the same tile with "This run failed", also when it holds problems.
 
 ## Status
 
 When everything was read, the status section is one line that says "No problems". Otherwise it lists anything that could not be read, grouped by cause, with a plain explanation of each. **Copy problems** copies the list for an email or a ticket. See [Copying](#copying).
 
-A run that did not finish never says "No problems". The run stopped without saying which components it did not read, e.g., because the window was closed. So the status section shows a warning that says "This run did not finish, so some components may not have been read." Components that were not read are not shown in the tables, the tiles or the alert lists. Make a new run with `ahd run` to check every component. A failed run without problems gets the same warning, which starts with "This run failed". The copied alerts say it too.
+A run that did not finish never says "No problems". The run stopped without saying which components it did not read, e.g., because the window was closed. So the status section shows a warning that says "This run did not finish, so some components may not have been read." Components that were not read are not shown in the tables, the tiles or the alert lists. Make a new run with `ahd run` to check every component. A failed run gets the same warning, which starts with "This run failed". A run fails only when it read no component value, so the warning shows also when the run lists problems, e.g., those of the Individual Component Summary pair. The copied alerts and the copied problems say it too, right after their title.
 
 It also shows a warning when the run sees far fewer custom events, eVars or props than the run before it. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 

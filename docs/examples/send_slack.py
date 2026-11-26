@@ -71,6 +71,7 @@ import shutil
 import subprocess
 import sys
 import time
+import unicodedata
 import urllib.error
 import urllib.request
 from decimal import ROUND_HALF_UP, Context, Decimal, InvalidOperation
@@ -98,6 +99,25 @@ PAUSE = 1.0
 
 # The exit codes of ahd alerts.
 AHD_ALERTS, AHD_ERROR, AHD_USAGE, AHD_NO_ALERTS = 0, 1, 2, 4
+
+
+# Characters that would move the cursor, start a new line or turn the text around in a terminal:
+# controls, line and paragraph separators, and the marks that change the direction of text. This
+# is the rule of inert() in ahd.text, copied so that the script needs nothing else from ahd.
+_UNSAFE_CATEGORIES = ("Cc", "Zl", "Zp")
+_DIRECTION_MARKS = set("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
+
+
+def inert(text: object) -> str:
+    """The text with each character that could change how a terminal shows it as "?".
+
+    The script prints a report suite ID from ahd's JSON with it.
+    """
+    return "".join(
+        "?" if unicodedata.category(c) in _UNSAFE_CATEGORIES or c in _DIRECTION_MARKS else c
+        for c in str(text)
+    )
+
 
 NEEDS_AHD = (
     "This script needs ahd 0.1.13 or newer, from the package aa-health-duckdb. Install it, "
@@ -660,7 +680,7 @@ def main(argv: list[str]) -> int:
     new = "new " if args.new_only else ""
     for run in runs:
         if not run["alerts"]:
-            print(f"No {new}alerts for {run['rsid']}.")
+            print(f"No {new}alerts for {inert(run['rsid'])}.")
         # ahd 0.1.15 and older give no warning. An event without new alerts, with --new-only,
         # still gets its message.
         if not (run["alerts"] or run.get("warning") or run["events"]):

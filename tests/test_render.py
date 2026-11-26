@@ -13,6 +13,7 @@ from ahd.catalog import Component
 from ahd.config import Credentials
 from ahd.fetch import RunOptions, run_fetch
 from ahd.render.html import (
+    ANOMALY_BLOCKED,
     BREAKDOWN_NOTES,
     CSP,
     ISSUE_HEADINGS,
@@ -343,9 +344,9 @@ def test_an_unfinished_run_never_says_that_no_problems_were_found():
     html = render_html(v)
     assert RUNNING_NOTE in html and 'id="copy-problems"' in html
     assert html.index('id="unfinished-run"') < html.index('id="copy-problems"')
-    # A failed run without an issue gets the warning too. With issues, they say what is missing.
+    # A failed run read no component value, so it gets the warning too, with or without issues.
     v["run"]["status"] = "failed"
-    assert FAILED_NOTE not in render_html(v)
+    assert FAILED_NOTE in render_html(v)
     v["issues"] = []
     html = render_html(v)
     assert FAILED_NOTE in html and "No problems" not in html
@@ -354,6 +355,25 @@ def test_an_unfinished_run_never_says_that_no_problems_were_found():
         v["run"]["status"] = status
         html = render_html(v)
         assert 'id="unfinished-run"' not in html and "No problems were found" in html
+
+
+def test_a_failed_run_whose_only_issues_are_of_the_pair_gets_the_warning():
+    # The pair stored only no_rows issues. They do not say that no component value was read.
+    v = sample_view()
+    v["run"]["status"] = "failed"
+    v["issues"] = [
+        {
+            "scope": "individual",
+            "component_id": f"individual/{n}",
+            "code": "no_rows",
+            "message": "Adobe returned no rows.",
+        }
+        for n in (1, 2, 3)
+    ]
+    html = render_html(v)
+    assert '<div class="warning" id="unfinished-run">' in html
+    assert FAILED_NOTE in html and UNREAD_CAUSE in html
+    assert html.index('id="unfinished-run"') < html.index('id="copy-problems"')
 
 
 def test_missing_bands_note():
@@ -931,6 +951,42 @@ def test_a_local_method_has_its_own_note_for_a_chart_without_a_range():
         assert (
             f"This chart has no expected range, because no day has at least 8 {words} in this run."
         ) in html
+
+
+@pytest.mark.parametrize(
+    ("bands", "method", "blocked"),
+    [
+        (True, "adobe", False),
+        (False, "adobe", True),
+        (False, "weekday-median", False),
+        (True, "weekday-iqr", False),
+    ],
+)
+def test_only_a_page_that_suggests_ahd_render_names_the_database(bands, method, blocked):
+    # bands=False stores the issue anomaly_not_allowed. Only that run with adobe shows the hint,
+    # so every other page holds no --db path and no profile name.
+    view = sample_view(bands=bands, method=method)
+    for option in ("--db 'secret folder/runs.duckdb'", "--profile secret-profile"):
+        page = render_html(view, f"ahd render --run 1 {option}")
+        assert (' data-render-command="' in page) == blocked
+        assert ("secret" in page) == blocked
+        assert json.loads(DATA_RE.search(page).group(1))["anomaly_blocked"] is blocked
+    if blocked:
+        [found] = re.findall(r'data-render-command="([^"]*)"', page)
+        assert (
+            found == "ahd render --run 1 --profile secret-profile --anomaly-method weekday-median"
+        )
+
+
+def test_report_js_holds_no_copy_of_the_rule_for_a_blocked_run():
+    # html.py decides whether the run could not use Adobe's anomaly detection, and the page
+    # reads the answer from its data.
+    js = (Path(__file__).parents[1] / "src" / "ahd" / "render" / "static" / "report.js").read_text(
+        encoding="utf-8"
+    )
+    for code in ANOMALY_BLOCKED:
+        assert code not in js
+    assert "data.anomaly_blocked" in js
 
 
 def test_a_local_method_says_it_does_not_need_adobes_anomaly_detection():

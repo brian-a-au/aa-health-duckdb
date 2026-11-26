@@ -1743,3 +1743,27 @@ def test_one_more_alert_of_an_event_is_said_in_the_singular():
     msg = mod.build([("rs1", "Suite", mod._rows(run))], 0.3, 0.5, "Adobe.", {"rs1": [event]})
     text = msg.get_body(("plain",)).get_content()
     assert "1 more alert of this event is not listed. ahd alerts --every-alert lists them" in text
+
+
+# A report suite ID with ESC, which starts a terminal command, and U+202E, which turns the text
+# around.
+UNSAFE_RSID = "rs" + chr(0x1B) + "[2J" + chr(0x202E) + "one"
+
+
+def test_the_script_prints_a_suite_id_from_ahd_inert(draft, monkeypatch, capsys):
+    mod = _load("send_alerts")
+    _fake_ahd(monkeypatch, mod, [_json_run(rsid=UNSAFE_RSID)], code=4)
+    assert mod.main(["db", "--all"]) == 2
+    out = capsys.readouterr().out
+    assert "No alerts for rs?[2J?one." in out
+    assert chr(0x1B) not in out and chr(0x202E) not in out
+
+
+@pytest.mark.parametrize("name", ["send_alerts", "send_slack"])
+def test_the_inert_of_each_script_is_the_rule_of_ahd(name):
+    from ahd.text import inert
+
+    mod = _load(name)
+    text = "".join(chr(c) for c in range(0x3000)) + UNSAFE_RSID + chr(0x2069) + chr(0x10FFFF)
+    assert mod.inert(text) == inert(text)
+    assert mod.inert(UNSAFE_RSID) == "rs?[2J?one"

@@ -209,6 +209,76 @@ def test_a_file_of_another_kind_is_not_a_duckdb_database(tmp_path):
         )
 
 
+def test_an_installed_sqlite_extension_is_never_loaded(tmp_path, monkeypatch):
+    # The two settings do not stop DuckDB from loading an installed SQLite extension for a
+    # SQLite file, because the kind of the file asks for it. A fake extension in DuckDB's
+    # extension folder shows whether DuckDB tries to load it.
+    import sqlite3
+
+    from ahd import store as store_module
+    from ahd import transfer
+
+    folder = tmp_path / "extensions"
+    probe = duckdb.connect()
+    platform = probe.execute("PRAGMA platform").fetchone()[0]
+    probe.close()
+    fake = folder / f"v{duckdb.__version__}" / platform / "sqlite_scanner.duckdb_extension"
+    fake.parent.mkdir(parents=True)
+    fake.write_bytes(b"not an extension")
+    config = {**store_module.NO_AUTO_EXTENSIONS, "extension_directory": str(folder)}
+    monkeypatch.setattr(store_module, "NO_AUTO_EXTENSIONS", config)
+
+    p = tmp_path / "app.db"
+    with sqlite3.connect(p) as lite:
+        lite.execute("CREATE TABLE t (a)")
+    lite.close()
+    # Without the check, DuckDB loads the fake file and says that it is not an extension.
+    with pytest.raises(duckdb.Error, match="not a DuckDB extension"):
+        duckdb.connect(str(p), config=dict(config))
+
+    opened = []
+    real_connect = duckdb.connect
+
+    def spy(database=":memory:", *args, **kwargs):
+        opened.append(str(database))
+        return real_connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(duckdb, "connect", spy)
+    for read_only in (False, True):
+        with pytest.raises(store_module.NotDuckDBError) as e:
+            store_module.connect(p, read_only=read_only)
+        assert str(e.value) == f"The file {p} is not a DuckDB database."
+        with pytest.raises(StoreError) as e:
+            Store.open(p, read_only=read_only)
+        assert "not a DuckDB database" in str(e.value)
+    with pytest.raises(StoreError, match="not a DuckDB database"):
+        transfer.export_runs(p, tmp_path / "out")
+    new = Store.open(tmp_path / "new.duckdb")
+    with pytest.raises(StoreError, match="not a DuckDB database"):
+        transfer.import_runs(new, p)
+    new.con.close()
+    # DuckDB opened only the new database, never the SQLite file.
+    assert opened == [str(tmp_path / "new.duckdb")]
+
+
+def test_connect_leaves_a_missing_or_an_empty_file_to_duckdb(tmp_path):
+    from ahd.store import connect
+
+    missing = tmp_path / "missing.duckdb"
+    connect(missing).close()
+    assert missing.stat().st_size > 0
+    # DuckDB itself refuses a file of 0 bytes, and the store keeps its plain message for it.
+    empty = tmp_path / "empty.duckdb"
+    empty.write_bytes(b"")
+    with pytest.raises(duckdb.Error, match="not a valid DuckDB database"):
+        connect(empty)
+    with pytest.raises(StoreError) as e:
+        Store.open(empty)
+    assert str(e.value) == (
+        f"The file {empty} is not a DuckDB database. Choose another file with --db."
+    )
+
+
 def test_an_empty_duckdb_file_becomes_a_new_database(tmp_path):
     p = tmp_path / "empty.duckdb"
     duckdb.connect(str(p)).close()

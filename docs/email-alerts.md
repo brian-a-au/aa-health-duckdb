@@ -45,7 +45,7 @@ These steps take you from nothing to a first email. The commands use the profile
    uv run python send_alerts.py ~/.aa/orgs/prod/ahd.duckdb my_suite
    ```
 
-   It prints "Wrote alerts.eml with 13 alerts. Set SMTP_HOST to send it." and writes `alerts.eml` in the current folder. When it prints "No alerts for my_suite." and "Nothing to send.", the latest run of the suite has no alerts. The script then writes no file and exits with 2. Use `--all` in place of `my_suite` to include every suite in the file.
+   It prints "Wrote alerts.eml with 13 alerts. Set SMTP_HOST to send it." and writes `alerts.eml` in the current folder. When it prints "No alerts for my_suite." and "Nothing to send.", the latest run of the suite has no alerts. The script then writes no file and exits with 2. This line prints "?" in place of each character of the report suite ID that could change the terminal, as `ahd` does. Use `--all` in place of `my_suite` to include every suite in the file.
 
 5. **Open `alerts.eml`.** Double click it, or open it with your mail program, e.g., Apple Mail, Outlook or Thunderbird. Check that the table and the counts look right.
 

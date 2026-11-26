@@ -45,7 +45,7 @@ These steps take you from nothing to a first message in Slack. The commands use 
    uv run python send_slack.py ~/.aa/orgs/prod/ahd.duckdb my_suite
    ```
 
-   It prints a line that counts the messages and the alerts. It writes `slack.json` in the current folder and posts nothing. When it prints "No alerts for my_suite." and "Nothing to send.", the latest run of the suite has no alerts. The script then writes no file and exits with 2. Use `--all` in place of `my_suite` to include every suite in the file.
+   It prints a line that counts the messages and the alerts. It writes `slack.json` in the current folder and posts nothing. When it prints "No alerts for my_suite." and "Nothing to send.", the latest run of the suite has no alerts. The script then writes no file and exits with 2. This line prints "?" in place of each character of the report suite ID that could change the terminal, as `ahd` does. Use `--all` in place of `my_suite` to include every suite in the file.
 
 5. **Look at a message.** Open `slack.json` in a text editor. It holds a list with one message for each suite. Copy one message, from its `{` to its matching `}`, and paste it into Slack's [Block Kit Builder](https://app.slack.com/block-kit-builder). The builder shows the message as Slack will show it.
 

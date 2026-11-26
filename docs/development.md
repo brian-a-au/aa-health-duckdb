@@ -80,7 +80,7 @@ uv run python scripts/live_check.py --profile NAME --rsid SUITE
 - It sees only the path and the parameters of each request, never a credential, a token or a header.
 - It refuses to run when the `CI` variable is set, so it never runs on GitHub Actions.
 
-Run it before the change to see the problem, and again after the change to see it gone. Run it before you send any request of your own to that suite, because your request can change what the run gets. `--config` takes a config file in place of a profile, and `--date` checks another day.
+Run it before the change to see the problem, and again after the change to see it gone. Run it before you send any request of your own to that suite, because your request can change what the run gets. `--config` takes a config file in place of a profile, and `--date` uses another date as today, as `ahd run --date` does. The run then checks the days before that date.
 
 ## Release a new version
 

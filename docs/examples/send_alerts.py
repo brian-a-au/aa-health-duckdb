@@ -90,6 +90,7 @@ import smtplib
 import ssl
 import subprocess
 import sys
+import unicodedata
 from decimal import ROUND_HALF_UP, Context, Decimal, InvalidOperation
 from email.message import EmailMessage
 from importlib import metadata
@@ -120,6 +121,24 @@ NEW_ONLY_NEEDS = (
 TEST_SETTINGS = ("SMTP_HOST", "MAIL_FROM", "MAIL_TO")
 # The settings that sending needs besides SMTP_HOST. Only alerts.eml has made-up addresses.
 SEND_SETTINGS = ("MAIL_FROM", "MAIL_TO")
+
+
+# Characters that would move the cursor, start a new line or turn the text around in a terminal:
+# controls, line and paragraph separators, and the marks that change the direction of text. This
+# is the rule of inert() in ahd.text, copied so that the script needs nothing else from ahd.
+_UNSAFE_CATEGORIES = ("Cc", "Zl", "Zp")
+_DIRECTION_MARKS = set("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
+
+
+def inert(text: object) -> str:
+    """The text with each character that could change how a terminal shows it as "?".
+
+    The script prints a report suite ID from ahd's JSON with it.
+    """
+    return "".join(
+        "?" if unicodedata.category(c) in _UNSAFE_CATEGORIES or c in _DIRECTION_MARKS else c
+        for c in str(text)
+    )
 
 
 def _number(v: float | None) -> str:
@@ -714,7 +733,7 @@ def main(argv: list[str]) -> int:
             events[run["rsid"]] = run.get("events", [])
             warnings[run["rsid"]] = (run["day"], run.get("warning"))
         if not run["alerts"]:
-            print(f"No {new}alerts for {run['rsid']}.")
+            print(f"No {new}alerts for {inert(run['rsid'])}.")
     stale = any(run.get("stale") for run in runs)
     sent = False
     missing = _missing(args, runs)

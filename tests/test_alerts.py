@@ -250,6 +250,45 @@ def test_json_holds_the_run_and_every_column_of_the_macro(tmp_path, capsys):
     assert (alerts[3]["days"], alerts[3]["at_least"], alerts[3]["is_new"]) == (1, True, False)
 
 
+def test_a_large_write_to_a_closed_pipe_on_windows_ends_quietly(tmp_path, monkeypatch, capsys):
+    # On Windows, a write to a pipe that the reader closed fails with EINVAL. Python 3.12 and
+    # 3.13 then drop the text of a write larger than the buffer, so a second flush works.
+    import errno
+
+    from ahd import cli
+
+    class ClosedPipe(io.RawIOBase):
+        def __init__(self, fd):
+            self.fd = fd
+            self.closed_pipe = True
+
+        def writable(self):
+            return True
+
+        def write(self, b):
+            if self.closed_pipe:
+                raise OSError(errno.EINVAL, "Invalid argument")
+            return len(b)
+
+        def fileno(self):
+            return self.fd
+
+    db = _db(tmp_path, names={cid: "Name " * 1500 for cid in KINDS})
+    with (tmp_path / "out.txt").open("w") as f:
+        raw = ClosedPipe(f.fileno())
+        stdout = io.TextIOWrapper(io.BufferedWriter(raw), encoding="utf-8")
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setattr(sys, "stdout", stdout)
+        try:
+            assert _alerts(db, "--run", "1", "--format", "json") == cli.EXIT_PIPE_CLOSED
+            assert sys.stdout is stdout
+        finally:
+            raw.closed_pipe = False
+            stdout.close()
+    # The JSON is one write of more than 30 KB.
+    assert capsys.readouterr().err == ""
+
+
 def test_json_without_alerts_has_the_run_with_an_empty_list(tmp_path, capsys):
     db = _db(tmp_path, quiet=True)
     assert _alerts(db, "--run", "1", "--format", "json") == 4

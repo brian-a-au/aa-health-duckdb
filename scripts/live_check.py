@@ -167,6 +167,12 @@ def run(argv: list[str], connect: Callable[..., Any] = AdobeClient.connect) -> i
     return 1 if problems else 0
 
 
+DATE_HELP = (
+    "Use this date as today, as ahd run --date does, e.g., 2026-11-24. The run checks the days "
+    "before it. The default is today."
+)
+
+
 def cli(argv: list[str] | None = None) -> int:
     if os.environ.get("CI"):
         print("This script makes live requests to Adobe. It does not run in CI.", file=sys.stderr)
@@ -175,7 +181,7 @@ def cli(argv: list[str] | None = None) -> int:
     p.add_argument("--profile", metavar="NAME", help="The profile with the credential.")
     p.add_argument("--config", metavar="PATH", help="A config file with the credential.")
     p.add_argument("--rsid", required=True, help="One report suite ID.")
-    p.add_argument("--date", help="The day to check, e.g., 2026-11-24. The default is today.")
+    p.add_argument("--date", help=DATE_HELP)
     args = p.parse_args(argv)
     passed = ["--rsid", args.rsid]
     for option in ("profile", "config", "date"):

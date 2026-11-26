@@ -752,3 +752,12 @@ def test_the_missing_line_is_the_line_of_the_email_script(slack):
     mail = _load("send_alerts")
     for segment in (None, "s300_x"):
         assert slack.missing_line("nope", segment) == mail.missing_line("nope", segment)
+
+
+def test_the_script_prints_a_suite_id_from_ahd_inert(slack, monkeypatch, capsys):
+    rsid = "rs" + chr(0x1B) + "[2J" + chr(0x202E) + "one"
+    _answer(monkeypatch, slack, 4, json.dumps({"runs": [_run([], rsid=rsid)]}))
+    assert slack.main(["db", "--all"]) == 2
+    out = capsys.readouterr().out
+    assert "No alerts for rs?[2J?one." in out
+    assert chr(0x1B) not in out and chr(0x202E) not in out

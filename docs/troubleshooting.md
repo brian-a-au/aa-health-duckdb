@@ -127,7 +127,7 @@ There is no database at data/ahd.duckdb.
 
 Only `ahd run` and `ahd import` make a new file. Every other command needs a file that holds runs. Make a run first, or name the file with `--db` or a profile. [How runs are stored](runs.md#where-the-file-is) says where the file is.
 
-Three more messages name a file that is not usable. "holds no ahd runs" means the file is an empty DuckDB database. "is not an ahd database" means the file is a DuckDB database that another program made. The tool does not change it. "is not a DuckDB database" means the file is something else, e.g., a SQLite file. Choose the right file with `--db`.
+Three more messages name a file that is not usable. "holds no ahd runs" means the file is an empty DuckDB database. "is not an ahd database" means the file is a DuckDB database that another program made. The tool does not change it. "is not a DuckDB database" means the file is something else, e.g., a SQLite file. The tool refuses such a file before DuckDB opens it, so DuckDB loads no extension for it. `ahd import` and `ahd export` give the same message. Choose the right file with `--db`, or the right file to import.
 
 ### The database is in use by another program
 
@@ -189,4 +189,4 @@ Add `--verbose` before the command to write debug detail to stderr, e.g., each r
 ahd --verbose run --rsid my_suite
 ```
 
-The debug output never includes a credential value or a token.
+The debug output never includes a credential value or a token. A line about a retry names the request, e.g., with the report suite ID. It prints "?" in place of each character that could change the terminal, as the other commands do.
