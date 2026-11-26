@@ -17,7 +17,7 @@ from typing import Any, TextIO
 
 from ahd.config import ConfigError
 from ahd.dates import today_in_zone
-from ahd.store import Store
+from ahd.store import BIGINT_MAX, BIGINT_MIN, Store
 from ahd.summary import ANOMALY_LABELS, DEFAULT_ANOMALY_METHOD, DEFAULT_SENSITIVITY
 from ahd.text import inert
 
@@ -148,7 +148,9 @@ def choose_runs(
     raises ConfigError.
     """
     if run is not None:
-        found = _rows(store, "FROM runs WHERE run_id = ?", [run])
+        # A number that does not fit in a BIGINT names no run, and DuckDB would refuse it.
+        fits = BIGINT_MIN <= run <= BIGINT_MAX
+        found = _rows(store, "FROM runs WHERE run_id = ?", [run]) if fits else []
         if not found:
             raise ConfigError(f"There is no stored run {run}.")
         status = found[0]["status"]

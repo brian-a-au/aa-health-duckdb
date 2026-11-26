@@ -2039,6 +2039,28 @@ def test_prune_of_a_run_that_is_not_stored_deletes_nothing(three_runs, capsys, o
     assert _stored(three_runs) == [3, 2, 1]
 
 
+@pytest.mark.parametrize("number", ["1" + "0" * 50, "-" + "9" * 20, str(2**63), "9"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["render"],
+        ["alerts"],
+        ["individual", "--dimension", "page", "--metric", "event1"],
+    ],
+)
+def test_a_run_number_that_is_not_stored_is_a_plain_error(three_runs, capsys, command, number):
+    # A number past the 64-bit limit is a run that is not stored, not a read error.
+    called = []
+
+    def factory(*a, **kw):
+        called.append(True)
+
+    code = main([*command, "--db", str(three_runs), "--run", number], client_factory=factory)
+    assert code == 1
+    assert capsys.readouterr().err == f"Error: There is no stored run {number}.\n"
+    assert not called
+
+
 # ---- a run that stores nothing leaves no new file -------------------------------------
 
 

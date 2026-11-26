@@ -505,6 +505,10 @@ class Store:
         return [dict(zip(cols, r)) for r in cur.fetchall()]
 
     def get_run(self, run_id: int) -> dict:
+        """The run with this number. KeyError when there is none, e.g., for a number that does
+        not fit in a BIGINT, which DuckDB would refuse to compare."""
+        if not BIGINT_MIN <= run_id <= BIGINT_MAX:
+            raise KeyError(f"no run {run_id}")
         cur = self.con.execute("SELECT * FROM runs WHERE run_id = ?", [run_id])
         cols = [d[0] for d in cur.description]
         row = cur.fetchone()

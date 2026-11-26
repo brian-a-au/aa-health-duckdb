@@ -22,7 +22,7 @@ This file lists the changes in each release. The version numbers follow [Semanti
 **The database**
 
 - DuckDB no longer downloads or loads an extension by itself. Before, a SQLite file given as `--db` or to `ahd import` or `ahd export` made DuckDB download its SQLite extension from DuckDB's server. The tool now refuses a file that is not empty and is not a DuckDB file before DuckDB opens it. So DuckDB does not load its SQLite extension, also when it is installed on your computer. Such a file gets the plain message "is not a DuckDB database" from every command, also from `ahd import` and `ahd export`. Before, these two said "could not be read as an ahd database".
-- `ahd prune --run` with a run number past the 64-bit limit says that there is no such run, instead of saying that the database could not be read.
+- `ahd prune --run`, `ahd render --run`, `ahd alerts --run` and `ahd individual --run` with a run number past the 64-bit limit say that there is no such run, e.g., "There is no stored run 100000000000000000000.", instead of saying that the database could not be read.
 
 **The email and Slack scripts**
 
