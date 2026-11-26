@@ -196,8 +196,8 @@ def connect(path: Path | str, read_only: bool = False) -> duckdb.DuckDBPyConnect
 
     The two settings above do not cover a file of another kind. For a SQLite file, DuckDB loads
     its SQLite extension when it is installed, because the kind of the file asks for it. So a
-    file that is not empty and is not a DuckDB file is refused before DuckDB opens it. A missing
-    file becomes a new database, as before. DuckDB itself refuses an empty file.
+    file that is not a DuckDB file is refused before DuckDB opens it, also an empty file. A
+    missing file becomes a new database, as before.
     """
     if _is_duckdb_file(Path(path)) is False:
         raise NotDuckDBError(f"The file {path} is not a DuckDB database.")
@@ -205,14 +205,18 @@ def connect(path: Path | str, read_only: bool = False) -> duckdb.DuckDBPyConnect
 
 
 def _is_duckdb_file(path: Path) -> bool | None:
-    """Whether the file starts with the header of a DuckDB file, or None when it cannot be read."""
+    """Whether the file starts with the header of a DuckDB file, or None when it cannot be read.
+
+    A missing file gives None. A file that is shorter than the header, e.g., an empty file, is
+    not a DuckDB file.
+    """
     try:
         with path.open("rb") as f:
             head = f.read(12)
     except OSError:
         return None
-    # A DuckDB file has "DUCK" at byte 8. An empty file is a new database.
-    return not head or head[8:12] == b"DUCK"
+    # A DuckDB file has "DUCK" at bytes 8 to 12.
+    return head[8:12] == b"DUCK"
 
 
 def _connect(path: Path, read_only: bool) -> duckdb.DuckDBPyConnection:
@@ -231,12 +235,6 @@ def _connect(path: Path, read_only: bool) -> duckdb.DuckDBPyConnection:
                 f"The database {path} is in use by another program, e.g., a DuckDB session or "
                 "another ahd command that writes to it. Close that program or wait for it to "
                 "finish, then try again."
-            ) from None
-        # connect() refused a file of another kind, e.g., SQLite. DuckDB refuses a file of 0
-        # bytes with these words.
-        if "not a valid DuckDB database" in text:
-            raise StoreError(
-                f"The file {path} is not a DuckDB database. Choose another file with --db."
             ) from None
         raise StoreError(f"Could not open the database {path} ({type(e).__name__}).") from None
 

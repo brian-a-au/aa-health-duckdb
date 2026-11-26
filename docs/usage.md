@@ -493,7 +493,7 @@ ahd import backup/2026-11 --db data/other.duckdb
 | 3 | `run` or `individual` finished, but some columns or requests had problems. The report's status section lists them. After a run of several suites, at least one suite ended "partial" and none failed. |
 | 4 | `alerts` found no alerts in the chosen runs. See [Exit codes of alerts](#exit-codes-of-alerts). |
 | 130 | You stopped the command with Ctrl-C. A run that `ahd run` had started is marked "failed". A pair that `ahd individual` was adding is removed. |
-| 141 | The program that reads the output closed it before the command finished, e.g., `head` in `ahd alerts --rsid my_suite \| head -1`. The command stops without a message. This holds on Windows too, also for a large output, e.g., `ahd alerts --format json`. |
+| 141 | The program that reads the output closed it before the command finished, e.g., `head` in `ahd alerts --rsid my_suite \| head -1`. The command stops without a message. This holds on Windows too, also for a large output, e.g., `ahd alerts --format json`. A command that had already failed, was stopped or chose another code keeps its own code, e.g., 1, 3 or 130, and its message stays on stderr. Only the output counts. When the program that reads stderr closes it, e.g., in `ahd alerts --rsid my_suite 2>&1 >alerts.txt \| head -1`, the command does not exit with 141, and the lines that it wrote to `alerts.txt` stay there. |
 
 ## Defaults
 

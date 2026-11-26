@@ -822,17 +822,18 @@ def test_add_pair_keeps_the_empty_pair_when_the_new_try_stops(store):
     assert any(r[1] == "individual/1" for r in issues(store, rid))
 
 
-def _interrupted_run(store):
-    """A run of 11 components that stops with Ctrl-C while a later trend batch is read."""
+def _interrupted_run(store, error=KeyboardInterrupt):
+    """A run of 11 components that stops with Ctrl-C, or the error, while a later trend batch is
+    read."""
     from fakes import auto_response
 
     def post(body):
         if is_trend(body) and "metrics/event7" in metric_ids(body):
-            raise KeyboardInterrupt
+            raise error
         return auto_response(body)
 
     fake = fake_for("rs1", events(10), custom_dims()[1:], default_post=post)
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(error):
         run_fetch(fake, store, opts(batch_size=5, workers=1))
     return store.list_runs()[0]["run_id"]
 
@@ -861,6 +862,23 @@ def test_an_interrupted_run_names_each_component_it_did_not_read(store):
     assert {r[3] for r in stopped if r[0] == "column"} == {INTERRUPTED_MESSAGE}
     # The pair is read last, so it did not finish either.
     assert [(r[0], r[1]) for r in stopped if r[0] != "column"] == [("individual", "individual/1")]
+
+
+@pytest.mark.parametrize("error", [KeyboardInterrupt, RuntimeError])
+def test_a_run_that_stopped_part_way_holds_values_and_gets_the_failed_warning(store, error):
+    # A run is "failed" also when it read values and then stopped, e.g., on Ctrl-C or after a
+    # sign-in error. The report warns that some components may not have been read.
+    from ahd.render.html import UNFINISHED_NOTES, render_html
+    from ahd.summary import build_view
+
+    rid = _interrupted_run(store, error)
+    assert store.get_run(rid)["status"] == "failed"
+    [(values,)] = store.con.execute(
+        "select count(*) from daily_values where run_id = ?", [rid]
+    ).fetchall()
+    assert values > 0
+    html = render_html(build_view(store, rid))
+    assert UNFINISHED_NOTES["failed"] in html and 'id="unfinished-run"' in html
 
 
 def test_add_pair_keeps_an_interrupted_run_failed(store):
