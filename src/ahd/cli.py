@@ -847,67 +847,75 @@ def _run_suites(args: argparse.Namespace, factory: Callable[..., Any], store: St
 def _individual(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     store = Store.open(_db_path(args), create=False)
     try:
-        run = store.get_run(args.run)
-    except KeyError:
-        raise ConfigError(f"There is no stored run {args.run}.") from None
-    client = _connect(args, factory)
-    dim = resolve_component(client, run["rsid"], "dimension", args.dimension)
-    met = resolve_component(client, run["rsid"], "metric", args.metric)
-    progress = _Progress()
-    try:
-        _pair, problems = add_pair(
-            client,
-            store,
-            args.run,
-            dim["id"],
-            met["id"],
-            dim["name"],
-            met["name"],
-            met["type"],
-            progress=progress,
-        )
-    finally:
-        progress.done()
-    print(
-        _write(
-            build_view(
+        try:
+            run = store.get_run(args.run)
+        except KeyError:
+            raise ConfigError(f"There is no stored run {args.run}.") from None
+        client = _connect(args, factory)
+        dim = resolve_component(client, run["rsid"], "dimension", args.dimension)
+        met = resolve_component(client, run["rsid"], "metric", args.metric)
+        progress = _Progress()
+        try:
+            _pair, problems = add_pair(
+                client,
                 store,
                 args.run,
-                args.change_alert / 100,
-                args.spike_alert / 100,
-                method=args.anomaly_method,
-                sensitivity=args.anomaly_sensitivity,
-            ),
-            args,
+                dim["id"],
+                met["id"],
+                dim["name"],
+                met["name"],
+                met["type"],
+                progress=progress,
+            )
+        finally:
+            progress.done()
+        print(
+            _write(
+                build_view(
+                    store,
+                    args.run,
+                    args.change_alert / 100,
+                    args.spike_alert / 100,
+                    method=args.anomaly_method,
+                    sensitivity=args.anomaly_sensitivity,
+                ),
+                args,
+            )
         )
-    )
-    print(f"Added {inert(dim['name'])} by {inert(met['name'])} to run {args.run}.")
-    if problems:
-        print(f"{problems} of its requests had problems. The report's status section lists them.")
-        return EXIT_CODES["partial"]
-    return 0
+        print(f"Added {inert(dim['name'])} by {inert(met['name'])} to run {args.run}.")
+        if problems:
+            print(
+                f"{problems} of its requests had problems. The report's status section lists them."
+            )
+            return EXIT_CODES["partial"]
+        return 0
+    finally:
+        store.con.close()
 
 
 def _render(args: argparse.Namespace) -> int:
     store = Store.open(_db_path(args), read_only=True)
     try:
-        store.get_run(args.run)
-    except KeyError:
-        raise ConfigError(f"There is no stored run {args.run}.") from None
-    print(
-        _write(
-            build_view(
-                store,
-                args.run,
-                args.change_alert / 100,
-                args.spike_alert / 100,
-                method=args.anomaly_method,
-                sensitivity=args.anomaly_sensitivity,
-            ),
-            args,
+        try:
+            store.get_run(args.run)
+        except KeyError:
+            raise ConfigError(f"There is no stored run {args.run}.") from None
+        print(
+            _write(
+                build_view(
+                    store,
+                    args.run,
+                    args.change_alert / 100,
+                    args.spike_alert / 100,
+                    method=args.anomaly_method,
+                    sensitivity=args.anomaly_sensitivity,
+                ),
+                args,
+            )
         )
-    )
-    return 0
+        return 0
+    finally:
+        store.con.close()
 
 
 def _alerts(args: argparse.Namespace) -> int:
@@ -1038,36 +1046,39 @@ def _no_stored_runs(numbers: list[int]) -> str:
 
 def _prune(args: argparse.Namespace) -> int:
     store = Store.open(_db_path(args), create=False)
-    found = store.runs_to_prune(args.run, args.before)
-    missing = sorted(set(args.run) - {r["run_id"] for r in found})
-    if missing:
-        # A wrong number may be a typo for another run, so nothing is deleted.
-        raise ConfigError(f"{_no_stored_runs(missing)} No runs were deleted.")
-    running = [r for r in found if r["status"] == "running"]
-    if running and not args.force:
-        for r in running:
-            print(
-                f'Run {r["run_id"]} is still marked "running", so it is kept. '
-                "Add --force to delete it."
-            )
-        found = [r for r in found if r["status"] != "running"]
-    if not found:
-        print("No runs were deleted.")
+    try:
+        found = store.runs_to_prune(args.run, args.before)
+        missing = sorted(set(args.run) - {r["run_id"] for r in found})
+        if missing:
+            # A wrong number may be a typo for another run, so nothing is deleted.
+            raise ConfigError(f"{_no_stored_runs(missing)} No runs were deleted.")
+        running = [r for r in found if r["status"] == "running"]
+        if running and not args.force:
+            for r in running:
+                print(
+                    f'Run {r["run_id"]} is still marked "running", so it is kept. '
+                    "Add --force to delete it."
+                )
+            found = [r for r in found if r["status"] != "running"]
+        if not found:
+            print("No runs were deleted.")
+            return 0
+        print(
+            f"These {len(found)} runs will be deleted:"
+            if len(found) > 1
+            else "This run will be deleted:"
+        )
+        _print_runs(found)
+        if not args.yes and not _confirm(
+            f"Delete {'them' if len(found) > 1 else 'it'}? Type y to confirm: "
+        ):
+            print("No runs were deleted.")
+            return 1
+        store.delete_runs([r["run_id"] for r in found])
+        print(f"Deleted {len(found)} run{'s' if len(found) > 1 else ''}.")
         return 0
-    print(
-        f"These {len(found)} runs will be deleted:"
-        if len(found) > 1
-        else "This run will be deleted:"
-    )
-    _print_runs(found)
-    if not args.yes and not _confirm(
-        f"Delete {'them' if len(found) > 1 else 'it'}? Type y to confirm: "
-    ):
-        print("No runs were deleted.")
-        return 1
-    store.delete_runs([r["run_id"] for r in found])
-    print(f"Deleted {len(found)} run{'s' if len(found) > 1 else ''}.")
-    return 0
+    finally:
+        store.con.close()
 
 
 def _count(n: int, one: str) -> str:
@@ -1085,15 +1096,16 @@ def _import(args: argparse.Namespace) -> int:
     if not args.source.exists():
         # Checked before the database is opened, so a wrong name leaves no new empty file.
         raise StoreError(f"There is nothing at {args.source} to import.")
-    is_new = not path.exists()
+    made = _new_parts(path)
     store = Store.open(path)
     try:
         result = import_runs(store, args.source)
     except BaseException:
         store.con.close()
-        if is_new:
-            # The import made this file and put nothing into it. Do not leave it behind.
-            path.unlink(missing_ok=True)
+        if made:
+            # The import made this file, and maybe its folders, and put nothing into it.
+            # Do not leave them behind.
+            _remove_new(made)
         raise
     store.con.close()
     print(f"Imported {_count(len(result.numbers), 'run')} from {args.source}.")
@@ -1113,7 +1125,11 @@ def _import(args: argparse.Namespace) -> int:
 
 
 def _runs(args: argparse.Namespace) -> int:
-    _print_runs(Store.open(_db_path(args), read_only=True).list_runs())
+    store = Store.open(_db_path(args), read_only=True)
+    try:
+        _print_runs(store.list_runs())
+    finally:
+        store.con.close()
     return 0
 
 

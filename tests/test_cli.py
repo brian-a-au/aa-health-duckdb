@@ -7,6 +7,7 @@ import shlex
 import subprocess
 import sys
 
+import duckdb
 import pytest
 from fakes import (
     ApiError,
@@ -669,10 +670,11 @@ def test_locked_database_is_one_line_error(tmp_path, cfg, capsys):
             sys.executable,
             "-c",
             (
-                f"import duckdb, time; c = duckdb.connect({str(db)!r}); "
-                "print('ready', flush=True); time.sleep(30)"
+                f"import duckdb, sys; c = duckdb.connect({str(db)!r}); "
+                "print('ready', flush=True); sys.stdin.readline()"
             ),
         ],
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,
     ) as holder:
@@ -988,6 +990,37 @@ def _answer(monkeypatch, reply):
         return reply
 
     monkeypatch.setattr("builtins.input", fake_input)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["render", "--run", "3", "--out", "OUT"],
+        ["render", "--run", "99", "--out", "OUT"],
+        ["runs"],
+        ["prune", "--run", "3", "--yes"],
+        ["prune", "--run", "99", "--yes"],
+        ["individual", "--run", "99", "--dimension", "page", "--metric", "x", "--out", "OUT"],
+    ],
+)
+def test_each_command_closes_the_database(three_runs, tmp_path, monkeypatch, capsys, command):
+    # Also when it stops with an error, e.g., for a run that is not stored. An open file stays
+    # locked on Windows.
+    opened = []
+    real_open = Store.open
+
+    def record(*a, **kw):
+        store = real_open(*a, **kw)
+        opened.append(store)
+        return store
+
+    monkeypatch.setattr(Store, "open", record)
+    main([*(str(tmp_path / "out") if c == "OUT" else c for c in command), "--db", str(three_runs)])
+    capsys.readouterr()
+    assert opened
+    for store in opened:
+        with pytest.raises(duckdb.ConnectionException):
+            store.con.execute("SELECT 1")
 
 
 def test_prune_needs_a_selection(three_runs, capsys):

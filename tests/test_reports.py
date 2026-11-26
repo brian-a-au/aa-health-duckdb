@@ -294,13 +294,6 @@ def test_a_refused_column_is_not_also_named_for_its_missing_values():
     assert [(e.component_id, e.error_code) for e in errs] == [("metrics/b", "unauthorized_metric")]
 
 
-def test_the_issue_code_for_missing_values_is_the_one_fetch_uses():
-    from ahd import fetch
-    from ahd.api import reports
-
-    assert reports.INVALID_RESPONSE == fetch.INVALID_RESPONSE
-
-
 # A number too large for a float, e.g., 400 digits, and the values that JSON can give for
 # NaN and 1e400. None of them is a count.
 NOT_FINITE = [10**400, float("nan"), float("inf"), float("-inf"), "1e400", "NaN"]

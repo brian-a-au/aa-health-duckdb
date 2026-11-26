@@ -30,6 +30,7 @@ from ahd.store import (
     NotDuckDBError,
     Store,
     StoreError,
+    _in_transaction,
     _is_duckdb_file,
     connect,
 )
@@ -276,8 +277,7 @@ def _copy(store: Store, version: int, relations: dict[str, str]) -> ImportResult
     if not wanted:
         return result
 
-    con.execute("BEGIN TRANSACTION")
-    try:
+    def copy(con: duckdb.DuckDBPyConnection) -> None:
         if taken.intersection(wanted):
             for old in wanted:
                 new = con.execute("SELECT nextval('run_seq')").fetchone()
@@ -306,10 +306,8 @@ def _copy(store: Store, version: int, relations: dict[str, str]) -> ImportResult
                 f" ORDER BY n.new, s.{ROW}"
             )
         con.execute("DROP TABLE ahd_import_numbers")
-    except BaseException:
-        con.execute("ROLLBACK")
-        raise
-    con.execute("COMMIT")
+
+    _in_transaction(con, copy)
     con.execute("CHECKPOINT")
     return result
 

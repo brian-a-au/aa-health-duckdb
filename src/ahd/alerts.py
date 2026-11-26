@@ -341,13 +341,23 @@ def csv_value(value: Any) -> Any:
 
 
 def write_csv(results: list[RunAlerts], out: TextIO) -> None:
-    """One header row, then one row for each alert, with the fields of its run first."""
+    """One header row, then one row for each alert, with the fields of its run first.
+
+    A file or a pipe gets every value as it is. A terminal gets each text value through
+    inert(), so that a name from Adobe cannot move the cursor or change the colors there.
+    """
+    on_terminal = bool(getattr(out, "isatty", lambda: False)())
+
+    def cell(value: Any) -> Any:
+        value = csv_value(value)
+        return inert(value) if on_terminal and isinstance(value, str) else value
+
     writer = csv.writer(out, lineterminator="\n")
     writer.writerow([*RUN_FIELDS, *ALERT_FIELDS])
     for r in results:
-        start = [csv_value(r.run[k]) for k in RUN_FIELDS]
+        start = [cell(r.run[k]) for k in RUN_FIELDS]
         for a in r.alerts:
-            writer.writerow([*start, *(csv_value(a[k]) for k in ALERT_FIELDS)])
+            writer.writerow([*start, *(cell(a[k]) for k in ALERT_FIELDS)])
 
 
 def _amount(value: float | None) -> str:

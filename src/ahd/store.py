@@ -23,7 +23,7 @@ SCHEMA_VERSION = 7
 IMPORT_FROM_VERSION = 7
 
 # Bump when sql/views.sql changes. When ahd opens a file for writing, it replaces the views and
-# the macro of a file with another views version, or with none. The views in a file then follow
+# the macros of a file with another views version, or with none. The views in a file then follow
 # the same rules as the ahd that last wrote to it, so the alert line of ahd run agrees with its
 # report, also after going back to an older ahd.
 VIEWS_VERSION = 9
@@ -73,7 +73,7 @@ RUN_TABLES = (
 
 
 def _views() -> str:
-    """The views and the alerts macro from ahd/sql/views.sql."""
+    """The views and the table macros from ahd/sql/views.sql."""
     return resources.files("ahd").joinpath("sql/views.sql").read_text(encoding="utf-8")
 
 
@@ -97,7 +97,7 @@ def _first(cur: duckdb.DuckDBPyConnection) -> Any:
 
 
 def _update_views(con: duckdb.DuckDBPyConnection) -> None:
-    """Write the views and the macro when the file holds another version of them, or none.
+    """Write the views and the macros when the file holds another version of them, or none.
 
     Files made by ahd 0.1.2 and earlier have no views_version table. It all happens in one
     transaction, so a failure keeps the old views.
@@ -533,16 +533,12 @@ class Store:
         if not run_ids:
             return
         ids = list(run_ids)
-        self.con.execute("BEGIN TRANSACTION")
-        try:
+
+        def delete(con: duckdb.DuckDBPyConnection) -> None:
             for table in RUN_TABLES:
-                self.con.execute(
-                    f"DELETE FROM {table} WHERE list_contains(?::BIGINT[], run_id)", [ids]
-                )
-        except BaseException:
-            self.con.execute("ROLLBACK")
-            raise
-        self.con.execute("COMMIT")
+                con.execute(f"DELETE FROM {table} WHERE list_contains(?::BIGINT[], run_id)", [ids])
+
+        _in_transaction(self.con, delete)
         # Write the change to the file now, so the space can be reused.
         self.con.execute("CHECKPOINT")
 
@@ -570,21 +566,17 @@ class Store:
         when it replaces a pair that stored nothing. series_id is the component_id of the pair's
         daily trend, e.g. "individual/2".
         """
-        self.con.execute("BEGIN TRANSACTION")
-        try:
+
+        def delete(con: duckdb.DuckDBPyConnection) -> None:
             for table in ("pairs", "top_items", "breakdowns", "breakdown_totals"):
-                self.con.execute(
-                    f"DELETE FROM {table} WHERE run_id = ? AND pair = ?", [run_id, pair]
-                )
+                con.execute(f"DELETE FROM {table} WHERE run_id = ? AND pair = ?", [run_id, pair])
             for table in ("daily_values", "issues"):
-                self.con.execute(
+                con.execute(
                     f"DELETE FROM {table} WHERE run_id = ? AND component_id = ?",
                     [run_id, series_id],
                 )
-        except BaseException:
-            self.con.execute("ROLLBACK")
-            raise
-        self.con.execute("COMMIT")
+
+        _in_transaction(self.con, delete)
 
     def component_counts(self, run_id: int, groups: list[str]) -> dict[str, int]:
         """How many components of each group the run stored."""

@@ -20,6 +20,7 @@ import requests
 from ahd.api.auth import SignInUnavailable
 from ahd.api.client import ApiError, unreadable
 from ahd.api.reports import (
+    INVALID_RESPONSE,
     MALFORMED,
     Column,
     MalformedResponse,
@@ -59,7 +60,6 @@ INDIVIDUAL_PREFIX = "individual/"
 NO_ANOMALY_CODES = ("anomaly_not_allowed", "anomaly_probe_failed")
 NETWORK_ERROR = "network_error"
 SIGN_IN_UNAVAILABLE = "sign_in_unavailable"
-INVALID_RESPONSE = "invalid_response"
 INTERRUPTED = "interrupted"
 INTERRUPTED_MESSAGE = "The run stopped before this component was read."
 INTERRUPTED_PAIR_MESSAGE = "The run stopped before the Individual Component Summary was read."

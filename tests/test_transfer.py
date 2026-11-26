@@ -390,6 +390,12 @@ def test_a_failed_import_leaves_no_new_database_behind(tmp_path, source, capsys)
     assert main(["import", str(tmp_path / "empty"), "--db", str(target)]) == 1
     assert "not a folder that ahd export wrote" in capsys.readouterr().err
     assert not target.exists()
+    # The folder that the import made for the new file is removed too, and so is the deeper one.
+    assert not (tmp_path / "sub").exists()
+    deep = tmp_path / "a" / "b" / "new.duckdb"
+    assert main(["import", str(tmp_path / "empty"), "--db", str(deep)]) == 1
+    capsys.readouterr()
+    assert not (tmp_path / "a").exists()
     # A database that was there before a failed import is kept.
     assert main(["import", str(path), "--db", str(target)]) == 0
     assert main(["import", str(tmp_path / "empty"), "--db", str(target)]) == 1
