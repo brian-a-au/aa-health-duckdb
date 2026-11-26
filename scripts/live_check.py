@@ -121,7 +121,7 @@ def checked(path: Path) -> str:
 def issue_lines(path: Path) -> list[str]:
     """The issues of the last run of the file, counted by scope and code, e.g., "Issues: 3
     individual no_rows." They say why a run is partial. No line means no issue."""
-    con = duckdb.connect(str(path), read_only=True)
+    con = connect(path, read_only=True)
     try:
         rows = con.execute(
             "SELECT scope, code, count(*) FROM issues"
