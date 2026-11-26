@@ -670,10 +670,11 @@ def test_locked_database_is_one_line_error(tmp_path, cfg, capsys):
             sys.executable,
             "-c",
             (
-                f"import duckdb, time; c = duckdb.connect({str(db)!r}); "
-                "print('ready', flush=True); time.sleep(30)"
+                f"import duckdb, sys; c = duckdb.connect({str(db)!r}); "
+                "print('ready', flush=True); sys.stdin.readline()"
             ),
         ],
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,
     ) as holder:

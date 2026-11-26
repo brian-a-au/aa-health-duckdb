@@ -625,10 +625,11 @@ def test_send_alerts_missing_or_locked_database(tmp_path, capsys):
             sys.executable,
             "-c",
             (
-                f"import duckdb, time; c = duckdb.connect({str(db)!r}); "
-                "print('ready', flush=True); time.sleep(30)"
+                f"import duckdb, sys; c = duckdb.connect({str(db)!r}); "
+                "print('ready', flush=True); sys.stdin.readline()"
             ),
         ],
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,
     ) as holder:

@@ -1007,17 +1007,18 @@ def test_a_drop_in_the_views_is_left_out_of_the_session(tmp_path, monkeypatch, c
 
 
 def _hold(db, read_only):
-    """Another process that holds the file open until it is killed. It prints a line when the
-    file is open, and the caller waits for that line."""
+    """Another process that holds the file open until it is killed or its input closes. It
+    prints a line when the file is open, and the caller waits for that line."""
     return subprocess.Popen(
         [
             sys.executable,
             "-c",
             (
-                f"import duckdb, time; c = duckdb.connect({str(db)!r}, read_only={read_only}); "
-                "print('ready', flush=True); time.sleep(60)"
+                f"import duckdb, sys; c = duckdb.connect({str(db)!r}, read_only={read_only}); "
+                "print('ready', flush=True); sys.stdin.readline()"
             ),
         ],
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,
     )
