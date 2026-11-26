@@ -1,6 +1,6 @@
 """Turn the `build_view` dict into one HTML file that loads nothing from the network.
 
-Safety rules (Review Focus 2):
+Safety rules:
 - Jinja runs with autoescape, so every value placed in the markup is escaped.
 - The view goes into a `<script type="application/json">` block as JSON, with `<`, `>`
   and `&` written as JSON unicode escapes, so website data can never close the tag.

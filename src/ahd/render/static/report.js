@@ -251,8 +251,9 @@
   // A run made with ahd run --date is about the days before that date, not before the run time.
   var yesterdayNote = (data.run || {}).date_given ? " (day before the run date)" : " (yesterday)";
   function dayNote(d) { return d === yesterday ? yesterdayNote : ""; }
-  // t: the slider's share. A drop below the weekday average by more than t is flagged, and a
-  // change by more than t either way gets an arrow.
+  // t: the share of the drop slider, and s: the share of the spike slider. A fall below the
+  // weekday average by more than t is a large drop, and a rise above it by more than s is a
+  // large spike. Each gets an arrow.
   // The weekday average is the average of the same weekday over 12 weeks. The data and the SQL
   // call it "usual"; the page always calls it the weekday average.
   var state = { gran: "day", day: yesterday, alertDay: yesterday, range: "", flagged: false,
@@ -542,10 +543,10 @@
     if (pct > state.s) return "up";
     return null;
   }
-  // A value that rose further above its weekday average than the spike slider allows.
   // The smallest average that a row needs for a large drop or spike. A row of the weekly view
   // holds the average week, the sum of the 7 weekday averages, so it needs 7 times as much.
   function minUsual(week) { return week ? MIN_USUAL * 7 : MIN_USUAL; }
+  // A value that rose further above its weekday average than the spike slider allows.
   // week is true for a row of the weekly view.
   function isLargeSpike(value, usual, pct, week) {
     return value !== 0 && pct !== null && pct !== undefined && pct > state.s &&
@@ -622,7 +623,8 @@
     return { c: anomalyBlocked ? el("span", { "class": "muted" }, "Not available") : "", k: null };
   }
 
-  // The Flag column: the anomaly flag (daily only), else a large drop from the slider.
+  // The flags of a row of the weekly view: on how many of the 7 days its value was above or
+  // below the expected range.
   function weekFlagBadges(row) {
     var f = weekFlags(row), span = el("span", { "class": "week-flags" });
     function one(n, icon, words) {
@@ -634,6 +636,8 @@
     one(f.low, "▼", "Below range");
     return span.firstChild ? span : null;
   }
+  // The Flag column: the anomaly flag, else a large drop or a large spike from the sliders.
+  // The weekly view counts the flags of the 7 days.
   function flagCell(row, daily) {
     if (!daily) {
       var wf = weekFlags(row), flags = weekFlagBadges(row);
@@ -997,7 +1001,6 @@
     return li;
   }
 
-  // average: the weekday average, given only for the chosen day.
   // The readout of the weekly view: the week's total and the average week. A week that lacks
   // the value of a day is not compared with the average week, as in the tables.
   function describeWeek(week, type, missing) {
@@ -1011,6 +1014,7 @@
     }
     return text + ".";
   }
+  // average: the weekday average, given only for the chosen day.
   function describe(p, type, average) {
     var parts = [fmtDay(p[0], true) + ": " + fmtNum(p[1], type)];
     if (average !== null && average !== undefined) {
@@ -2241,11 +2245,6 @@
     fitTables();
   }
 
-  // ---- earlier runs ---------------------------------------------------------------
-  // The SQL counts the alerts on the last day of each run of this suite and segment, by the
-  // same rules as the tiles. Large drops follow the slider: the SQL lists each candidate's
-  // change, and the page counts the ones past the slider.
-  var RUN_NOTES = { partial: " (some gaps)", failed: " (failed)", running: " (not finished)" };
   // ---- slow declines ------------------------------------------------------------------
   // The SQL finds the components and fits the line. The page shows one bar per week, oldest
   // first, from 0 to the largest week.
@@ -2288,6 +2287,11 @@
     fitTables();
   }
 
+  // ---- earlier runs ---------------------------------------------------------------
+  // The SQL counts the alerts on the last day of each run of this suite and segment, by the
+  // same rules as the tiles. Large drops and spikes follow the sliders: the SQL lists each
+  // candidate's change, and the page counts the ones past each slider.
+  var RUN_NOTES = { partial: " (some gaps)", failed: " (failed)", running: " (not finished)" };
   function renderHistory() {
     var host = byId("history");
     if (!host) return;

@@ -23,7 +23,7 @@ SCHEMA_VERSION = 7
 IMPORT_FROM_VERSION = 7
 
 # Bump when sql/views.sql changes. When ahd opens a file for writing, it replaces the views and
-# the macro of a file with another views version, or with none. The views in a file then follow
+# the macros of a file with another views version, or with none. The views in a file then follow
 # the same rules as the ahd that last wrote to it, so the alert line of ahd run agrees with its
 # report, also after going back to an older ahd.
 VIEWS_VERSION = 9
@@ -73,7 +73,7 @@ RUN_TABLES = (
 
 
 def _views() -> str:
-    """The views and the alerts macro from ahd/sql/views.sql."""
+    """The views and the table macros from ahd/sql/views.sql."""
     return resources.files("ahd").joinpath("sql/views.sql").read_text(encoding="utf-8")
 
 
@@ -97,7 +97,7 @@ def _first(cur: duckdb.DuckDBPyConnection) -> Any:
 
 
 def _update_views(con: duckdb.DuckDBPyConnection) -> None:
-    """Write the views and the macro when the file holds another version of them, or none.
+    """Write the views and the macros when the file holds another version of them, or none.
 
     Files made by ahd 0.1.2 and earlier have no views_version table. It all happens in one
     transaction, so a failure keeps the old views.
