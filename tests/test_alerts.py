@@ -538,6 +538,27 @@ def test_odd_names_stay_inert_in_every_format(tmp_path, capsys):
     assert not any(c in text for c in "\x1b\x07\r\u202e\u2028")
 
 
+class _Terminal(io.StringIO):
+    """Output that says it is a terminal."""
+
+    def isatty(self):
+        return True
+
+
+def test_csv_on_a_terminal_keeps_names_inert(tmp_path, capsys, monkeypatch):
+    db = _db(tmp_path, names=ODD, name="Suite\n\x07 One")
+    screen = _Terminal()
+    monkeypatch.setattr(sys, "stdout", screen)
+    assert _alerts(db, "--run", "1", "--format", "csv") == 0
+    out = screen.getvalue()
+    assert not any(c in out for c in "\x1b\x07\r\u202e\u2028")
+    rows = list(csv.reader(io.StringIO(out, newline="")))
+    assert len(rows) == 5  # one header and one row for each alert, with no broken line
+    found = {r[CSV_HEADER.index("component_id")]: r[CSV_HEADER.index("name")] for r in rows[1:]}
+    assert found["metrics/event3"] == '\'=HYPERLINK("x")?second line??[31mred?'
+    assert all(r[CSV_HEADER.index("rsid_name")] == "Suite?? One" for r in rows[1:])
+
+
 # ---- old runs ---------------------------------------------------------------------------
 
 
