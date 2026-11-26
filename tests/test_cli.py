@@ -18,7 +18,8 @@ from fakes import (
     restricted_metrics,
 )
 
-from ahd.cli import EXIT_CODES, main
+from ahd import cli
+from ahd.cli import EXIT_CODES, STOPPED, main
 from ahd.store import Store
 
 CONFIG = {
@@ -378,6 +379,105 @@ def test_a_closed_pipe_ends_quietly(tmp_path):
     assert code == 141
 
 
+# A child that runs main with a command whose end the test chooses. The command waits for a line
+# on its input, so that the parent can close a pipe first. Then it prints 3 lines to stdout,
+# which stay in the buffer, and ends as its argument says.
+CHILD = """
+import sys
+from ahd import cli
+from ahd.config import ConfigError
+
+def command(args, client_factory):
+    sys.stdin.readline()
+    for i in range(3):
+        print(f"line {i}")
+    end = sys.argv[1]
+    if end == "error":
+        raise ConfigError("The settings are wrong.")
+    if end == "ctrl-c":
+        raise KeyboardInterrupt
+    if end == "stderr":
+        print("A line of progress.", file=sys.stderr)
+        print("line 3")
+        return 0
+    return int(end)
+
+cli._command = command
+sys.exit(cli.main(["runs", "--db", "unused.duckdb"]))
+"""
+
+
+@pytest.mark.parametrize(
+    ("end", "code", "err"),
+    [
+        ("error", 1, "Error: The settings are wrong.\n"),
+        ("ctrl-c", 130, STOPPED + "\n"),
+        ("0", 141, ""),
+        ("3", 3, ""),
+        ("4", 4, ""),
+    ],
+)
+def test_a_closed_pipe_keeps_the_code_that_the_command_chose(tmp_path, end, code, err):
+    """e.g. ahd run ... | head -1 after an error: the output is still in the buffer."""
+    with subprocess.Popen(
+        [sys.executable, "-c", CHILD, end],
+        cwd=tmp_path,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ) as child:
+        child.stdout.close()
+        child.stdin.write(b"go\n")
+        child.stdin.close()
+        found = child.stderr.read().decode()
+        assert child.wait() == code
+    # No "Exception ignored while flushing sys.stdout", and the message of the error is there.
+    assert found.replace("\r\n", "\n") == err
+
+
+def test_a_closed_stderr_is_not_a_closed_pipe_of_the_output(tmp_path):
+    """e.g. ahd alerts ... 2>&1 >out.txt | head -1: stdout is a file that still works."""
+    out = tmp_path / "out.txt"
+    with (
+        out.open("wb") as f,
+        subprocess.Popen(
+            [sys.executable, "-c", CHILD, "stderr"],
+            cwd=tmp_path,
+            stdin=subprocess.PIPE,
+            stdout=f,
+            stderr=subprocess.PIPE,
+        ) as child,
+    ):
+        child.stderr.close()
+        child.stdin.write(b"go\n")
+        child.stdin.close()
+        code = child.wait()
+    # The error of stderr stops the command as before, but fd 1 is not sent to os.devnull. So
+    # every line that the command printed before it is in the file.
+    assert out.read_text().splitlines() == ["line 0", "line 1", "line 2"]
+    assert code not in (0, cli.EXIT_PIPE_CLOSED)
+
+
+def test_a_closed_output_at_start_keeps_the_code_of_the_command(tmp_path, monkeypatch):
+    """e.g. ahd runs >&-, or pythonw: sys.stdout is None, and the command still works."""
+    db = tmp_path / "t.duckdb"
+    Store.open(db).con.close()
+    monkeypatch.setattr(sys, "stdout", None)
+    assert main(["runs", "--db", str(db)]) == 0
+    assert sys.stdout is None
+    written = []
+
+    def command(args, client_factory):
+        written.append(sys.stdout.write("text that goes nowhere\n"))
+        sys.stdout.flush()
+        return 3
+
+    monkeypatch.setattr(cli, "_command", command)
+    assert main(["runs", "--db", str(db)]) == 3
+    assert written == [23]
+    assert sys.stdout is None
+
+
 @pytest.mark.parametrize(
     ("error", "platform", "closed"),
     [
@@ -445,10 +545,10 @@ def test_an_einval_that_does_not_come_from_the_output_is_not_a_closed_pipe(
 
 
 def test_the_windows_output_passes_everything_else_to_the_stream(monkeypatch):
-    from ahd.cli import _WindowsStdout
+    from ahd.cli import _Stdout
 
     stream = io.StringIO()
-    out = _WindowsStdout(stream)
+    out = _Stdout(stream)
     out.writelines(["a\n", "b\n"])
     out.flush()
     assert stream.getvalue() == "a\nb\n"
@@ -600,20 +700,26 @@ def test_file_that_is_not_a_database_is_one_line_error(tmp_path, capsys):
     assert "is not a DuckDB database" in capsys.readouterr().err
 
 
-def test_a_sqlite_file_gets_the_plain_refusal(tmp_path, capsys):
+@pytest.mark.parametrize("kind", ["sqlite", "empty"])
+def test_a_sqlite_or_an_empty_file_gets_the_plain_refusal(tmp_path, capsys, kind):
     # DuckDB would load its SQLite extension for this file, and download it first. ahd turns
-    # that off, so the file is refused with the plain message.
+    # that off, so the file is refused with the plain message. A file of 0 bytes gets the same
+    # message from every command.
     import sqlite3
 
     db = tmp_path / "app.db"
-    with sqlite3.connect(db) as lite:
-        lite.execute("CREATE TABLE t (a)")
-    lite.close()
+    if kind == "sqlite":
+        with sqlite3.connect(db) as lite:
+            lite.execute("CREATE TABLE t (a)")
+        lite.close()
+    else:
+        db.write_bytes(b"")
     refused = f"Error: The file {db} is not a DuckDB database. Choose another file with --db.\n"
     for argv in (
         ["runs", "--db", str(db)],
         ["render", "--db", str(db), "--run", "1"],
         ["prune", "--db", str(db), "--run", "1", "--yes"],
+        ["alerts", "--db", str(db), "--run", "1"],
     ):
         assert main(argv) == 1
         assert capsys.readouterr().err == refused

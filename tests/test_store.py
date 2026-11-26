@@ -261,22 +261,34 @@ def test_an_installed_sqlite_extension_is_never_loaded(tmp_path, monkeypatch):
     assert opened == [str(tmp_path / "new.duckdb")]
 
 
-def test_connect_leaves_a_missing_or_an_empty_file_to_duckdb(tmp_path):
-    from ahd.store import connect
+def test_connect_makes_a_missing_file_and_refuses_an_empty_or_a_short_one(tmp_path, monkeypatch):
+    from ahd import store as store_module
+    from ahd.store import NotDuckDBError, connect
 
     missing = tmp_path / "missing.duckdb"
+    assert store_module._is_duckdb_file(missing) is None
     connect(missing).close()
     assert missing.stat().st_size > 0
-    # DuckDB itself refuses a file of 0 bytes, and the store keeps its plain message for it.
-    empty = tmp_path / "empty.duckdb"
-    empty.write_bytes(b"")
-    with pytest.raises(duckdb.Error, match="not a valid DuckDB database"):
-        connect(empty)
-    with pytest.raises(StoreError) as e:
-        Store.open(empty)
-    assert str(e.value) == (
-        f"The file {empty} is not a DuckDB database. Choose another file with --db."
+    opened = []
+    real = duckdb.connect
+    monkeypatch.setattr(
+        store_module.duckdb, "connect", lambda p, **k: opened.append(p) or real(p, **k)
     )
+    # A file of 0 bytes, and files shorter than the 12 bytes of the header, even with "DUCK".
+    for content in (b"", b"1234", b"12345678DUC"):
+        short = tmp_path / "short.duckdb"
+        short.write_bytes(content)
+        assert store_module._is_duckdb_file(short) is False
+        with pytest.raises(NotDuckDBError) as e:
+            connect(short)
+        assert str(e.value) == f"The file {short} is not a DuckDB database."
+        with pytest.raises(StoreError) as e:
+            Store.open(short)
+        assert str(e.value) == (
+            f"The file {short} is not a DuckDB database. Choose another file with --db."
+        )
+        # The tool refused the file before DuckDB opened it, and left it as it was.
+        assert opened == [] and short.read_bytes() == content
 
 
 def test_an_empty_duckdb_file_becomes_a_new_database(tmp_path):

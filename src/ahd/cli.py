@@ -1166,13 +1166,19 @@ def _drop_output() -> None:
     os.close(devnull)
 
 
-class _WindowsStdout:
-    """sys.stdout on Windows, where a write to a pipe that the reader closed fails with EINVAL.
+class _OutputClosed(BrokenPipeError):
+    """The program that reads stdout closed the pipe. Only _Stdout raises it."""
 
-    Python 3.12 and 3.13 drop the text of a large write that failed, so a second try works and
-    cannot tell a closed pipe from another error. This wrapper knows that the error comes from
-    the output, and turns each EINVAL of a write or a flush into a BrokenPipeError. Everything
-    else, e.g., fileno, isatty and reconfigure, goes to the stream itself.
+
+class _Stdout:
+    """sys.stdout while a command runs, so that a closed pipe is known to come from stdout.
+
+    A write to stderr can fail with a BrokenPipeError too, e.g., in ahd alerts 2>&1 >out.txt |
+    head -1. So each BrokenPipeError of a write or a flush to stdout becomes an _OutputClosed,
+    and only that counts as a closed pipe. On Windows, a write to a pipe that the reader closed
+    can fail with EINVAL instead, and Python 3.12 and 3.13 then drop the text of a large write,
+    so that a second try works. There, each EINVAL of stdout becomes an _OutputClosed too.
+    Everything else, e.g., fileno, isatty and reconfigure, goes to the stream itself.
     """
 
     def __init__(self, stream: TextIO) -> None:
@@ -1199,22 +1205,50 @@ class _WindowsStdout:
 
 
 def _closed_pipe(e: OSError) -> OSError:
-    """The error of a write to the output on Windows. EINVAL there means a closed pipe."""
-    if e.errno == errno.EINVAL and not isinstance(e, BrokenPipeError):
-        return BrokenPipeError(errno.EPIPE, e.strerror)
+    """The error of a write to stdout. A broken pipe, and EINVAL on Windows, mean a closed pipe."""
+    if isinstance(e, BrokenPipeError) or (sys.platform == "win32" and e.errno == errno.EINVAL):
+        return _OutputClosed(errno.EPIPE, e.strerror)
     return e
 
 
 def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> int:
     stdout = sys.stdout
-    wrap = sys.platform == "win32" and stdout is not None
-    if wrap:
-        sys.stdout = cast(TextIO, _WindowsStdout(stdout))
+    if stdout is None:
+        # The output was closed before the command started, e.g., ahd runs >&-, or under
+        # pythonw. The command then writes to os.devnull.
+        with open(os.devnull, "w", encoding="utf-8") as devnull:
+            return _wrapped(devnull, None, argv, client_factory)
+    return _wrapped(stdout, stdout, argv, client_factory)
+
+
+def _wrapped(
+    stream: TextIO,
+    stdout: TextIO | None,
+    argv: list[str] | None,
+    client_factory: Callable[..., Any],
+) -> int:
+    """Run the command with sys.stdout wrapped around stream, and put back stdout after it."""
+    out = _Stdout(stream)
+    sys.stdout = cast(TextIO, out)
     try:
-        return _main(argv, client_factory)
+        return _flushed(out, _main(argv, client_factory))
     finally:
-        if wrap:
-            sys.stdout = stdout
+        sys.stdout = stdout
+
+
+def _flushed(out: _Stdout, code: int) -> int:
+    """The exit code after the rest of the output is written.
+
+    The output is written now, so that a closed pipe is found here and not when Python exits.
+    The command keeps the code it chose, e.g., 1 after an error or 130 after Ctrl-C. Only a
+    command that worked gets the code of a closed pipe.
+    """
+    try:
+        out.flush()
+    except _OutputClosed:
+        _drop_output()
+        return EXIT_PIPE_CLOSED if code == 0 else code
+    return code
 
 
 def _main(argv: list[str] | None, client_factory: Callable[..., Any]) -> int:
@@ -1228,16 +1262,13 @@ def _main(argv: list[str] | None, client_factory: Callable[..., Any]) -> int:
         force=True,
     )
     try:
-        code = _command(args, client_factory)
-        # Write the output now, so that a closed pipe is found here and not when Python exits.
-        sys.stdout.flush()
-        return code
+        return _command(args, client_factory)
     except (ConfigError, ApiError, SignInError, SchemaVersionError, StoreError) as e:
         print(f"Error: {e}", file=sys.stderr)
     except (requests.RequestException, duckdb.Error) as e:
         print(f"Error: {_error_text(e)}", file=sys.stderr)
-    except BrokenPipeError:
-        # After the clause above, because a network error of requests is an OSError too.
+    except _OutputClosed:
+        # Any other BrokenPipeError, e.g., of stderr, goes up, and stdout stays as it is.
         _drop_output()
         return EXIT_PIPE_CLOSED
     except KeyboardInterrupt:

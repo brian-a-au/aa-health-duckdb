@@ -344,7 +344,8 @@ def test_an_unfinished_run_never_says_that_no_problems_were_found():
     html = render_html(v)
     assert RUNNING_NOTE in html and 'id="copy-problems"' in html
     assert html.index('id="unfinished-run"') < html.index('id="copy-problems"')
-    # A failed run read no component value, so it gets the warning too, with or without issues.
+    # A failed run read no component value or stopped part way, so it gets the warning too,
+    # with or without issues.
     v["run"]["status"] = "failed"
     assert FAILED_NOTE in render_html(v)
     v["issues"] = []
