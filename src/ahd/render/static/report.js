@@ -1555,15 +1555,17 @@
       if (drawGrid.place) drawGrid.place();
       clear(lists);
       var any = false, seen = {}, count = 0;
-      var byKind = {};
-      CAL_KINDS.forEach(function (k) { byKind[k.key] = []; });
+      // inKind records which components each list holds, so a long list is not searched again
+      // for each component.
+      var byKind = {}, inKind = {};
+      CAL_KINDS.forEach(function (k) { byKind[k.key] = []; inKind[k.key] = {}; });
       weekDays.forEach(function (d) {
         var c = byDay[d];
         if (!c) return;
         any = true;
         CAL_KINDS.forEach(function (k) {
           (c[k.key] || []).forEach(function (cid) {
-            if (byKind[k.key].indexOf(cid) < 0) byKind[k.key].push(cid);
+            if (!inKind[k.key][cid]) { inKind[k.key][cid] = true; byKind[k.key].push(cid); }
             if (!seen[cid]) { seen[cid] = true; count++; }
           });
         });
