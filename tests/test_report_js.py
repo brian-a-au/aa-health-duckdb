@@ -496,7 +496,8 @@ def test_unpack_view_gives_back_the_view(chrome, request, tmp_path, which):
     got = run_probe(chrome, page, UNPACK_PROBE, tmp_path)
     want = json.loads(json.dumps(view))
     # render_html adds whether the run could not use Adobe's anomaly detection.
-    assert got.pop("anomaly_blocked") is False
+    blocked = got.pop("anomaly_blocked")
+    assert blocked is False
     assert got.keys() == want.keys()
     for key in want:
         assert got[key] == want[key], key
