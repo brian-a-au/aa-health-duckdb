@@ -27,12 +27,15 @@ from ahd.store import (
     LOCKED_WORDS,
     RUN_TABLES,
     SCHEMA_VERSION,
+    NotDuckDBError,
     Store,
     StoreError,
+    _is_duckdb_file,
     connect,
 )
 
 MANIFEST = "manifest.json"
+_CHOOSE_DB = "Choose another file with --db."
 # The version of the export folder's own form: the file names and the manifest's keys.
 EXPORT_FORMAT = 1
 # The columns that tell whether two files hold the same run.
@@ -84,7 +87,8 @@ def _columns(con: duckdb.DuckDBPyConnection, relation: str) -> list[str]:
     return [r[0] for r in con.execute(f"DESCRIBE SELECT * FROM {relation}").fetchall()]
 
 
-def _open_error(path: Path, e: duckdb.Error) -> StoreError:
+def _open_error(path: Path, e: duckdb.Error, choose: str) -> StoreError:
+    """A plain message for a file that DuckDB could not open. choose says where to pick another."""
     text = str(e).lower()
     if "file handle conflict" in text:
         # DuckDB's words for a file that this same program already has open.
@@ -98,6 +102,9 @@ def _open_error(path: Path, e: duckdb.Error) -> StoreError:
             "another ahd command that writes to it. Close that program or wait for it to "
             "finish, then try again."
         )
+    if _is_duckdb_file(path) is False:
+        # e.g. a SQLite file, which ATTACH with TYPE DUCKDB refuses.
+        return StoreError(f"The file {path} is not a DuckDB database. {choose}")
     return StoreError(f"The file {path} could not be read as an ahd database.")
 
 
@@ -131,8 +138,10 @@ def export_runs(db: Path, out_dir: Path) -> dict[str, int]:
         )
     try:
         con = connect(db, read_only=True)
+    except NotDuckDBError as e:
+        raise StoreError(f"{e} {_CHOOSE_DB}") from None
     except duckdb.Error as e:
-        raise _open_error(db, e) from None
+        raise _open_error(db, e, _CHOOSE_DB) from None
     try:
         tables = {
             r[0]
@@ -197,7 +206,7 @@ def _file_source(con: duckdb.DuckDBPyConnection, source: Path) -> tuple[int, dic
         # extension for it.
         con.execute(f"ATTACH {_text(str(source))} AS src (TYPE DUCKDB, READ_ONLY)")
     except duckdb.Error as e:
-        raise _open_error(source, e) from None
+        raise _open_error(source, e, "Choose another file to import.") from None
     tables = {
         r[0]
         for r in con.execute(

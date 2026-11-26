@@ -584,11 +584,12 @@ def test_a_sqlite_file_gets_the_plain_refusal(tmp_path, capsys):
     ):
         assert main(argv) == 1
         assert capsys.readouterr().err == refused
-    unread = f"Error: The file {db} could not be read as an ahd database.\n"
     assert main(["import", str(db), "--db", str(tmp_path / "new.duckdb")]) == 1
-    assert capsys.readouterr().err == unread
+    assert capsys.readouterr().err == (
+        f"Error: The file {db} is not a DuckDB database. Choose another file to import.\n"
+    )
     assert main(["export", "--db", str(db), "--out", str(tmp_path / "out")]) == 1
-    assert capsys.readouterr().err == unread
+    assert capsys.readouterr().err == refused
 
 
 def test_runs_and_render_do_not_create_a_database(tmp_path, capsys):

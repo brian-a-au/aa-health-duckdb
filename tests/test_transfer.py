@@ -254,8 +254,14 @@ def test_sources_that_cannot_be_imported_get_a_plain_error(tmp_path, source):
     with pytest.raises(StoreError, match="not a folder that ahd export wrote"):
         import_runs(new, tmp_path / "empty")
     (tmp_path / "text.duckdb").write_text("hello")
-    with pytest.raises(StoreError, match="could not be read as an ahd database"):
+    with pytest.raises(StoreError, match="is not a DuckDB database"):
         import_runs(new, tmp_path / "text.duckdb")
+    # The header of a DuckDB file with nothing valid after it.
+    (tmp_path / "broken.duckdb").write_bytes(b"12345678DUCK" + bytes(5000))
+    with pytest.raises(StoreError, match="could not be read as an ahd database"):
+        import_runs(new, tmp_path / "broken.duckdb")
+    with pytest.raises(StoreError, match="could not be read as an ahd database"):
+        export_runs(tmp_path / "broken.duckdb", tmp_path / "broken-out")
     duckdb.connect(str(tmp_path / "other.duckdb")).close()
     with pytest.raises(StoreError, match="holds no ahd runs"):
         import_runs(new, tmp_path / "other.duckdb")
@@ -302,13 +308,13 @@ def test_a_sqlite_file_is_refused_without_its_extension(tmp_path):
         lite.execute("CREATE TABLE runs (run_id INTEGER)")
     lite.close()
     new = Store.open(tmp_path / "new.duckdb")
-    unread = f"The file {lite_path} could not be read as an ahd database."
+    refused = f"The file {lite_path} is not a DuckDB database."
     with pytest.raises(StoreError) as e:
         import_runs(new, lite_path)
-    assert str(e.value) == unread
+    assert str(e.value) == f"{refused} Choose another file to import."
     with pytest.raises(StoreError) as e:
         export_runs(lite_path, tmp_path / "out")
-    assert str(e.value) == unread
+    assert str(e.value) == f"{refused} Choose another file with --db."
     loaded = new.con.execute(
         "SELECT count(*) FROM duckdb_extensions() WHERE extension_name = 'sqlite_scanner' AND loaded"
     ).fetchone()
@@ -324,7 +330,7 @@ def test_export_refuses_a_wrong_source_or_a_folder_with_files(tmp_path, source):
     with pytest.raises(StoreError, match="holds no ahd runs"):
         export_runs(tmp_path / "other.duckdb", tmp_path / "b")
     (tmp_path / "text.duckdb").write_text("hello")
-    with pytest.raises(StoreError, match="could not be read as an ahd database"):
+    with pytest.raises(StoreError, match="is not a DuckDB database"):
         export_runs(tmp_path / "text.duckdb", tmp_path / "c")
     full = tmp_path / "full"
     full.mkdir()

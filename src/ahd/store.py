@@ -178,18 +178,29 @@ LOCKED_WORDS = (
 )
 
 
-# DuckDB downloads and loads an extension by itself when a file or a statement needs one, e.g.,
-# the SQLite extension for a SQLite file. ahd needs none of them, so every connection turns this
-# off, and the tool never contacts DuckDB's servers. Each connection to the same file in one
-# program must use the same settings, or DuckDB refuses it.
+# DuckDB downloads and loads an extension by itself when a statement needs one. ahd needs none of
+# them, so every connection turns this off, and the tool never contacts DuckDB's servers. Each
+# connection to the same file in one program must use the same settings, or DuckDB refuses it.
 NO_AUTO_EXTENSIONS: dict[str, str | bool | int | float | list[str]] = {
     "autoinstall_known_extensions": False,
     "autoload_known_extensions": False,
 }
 
 
+class NotDuckDBError(StoreError):
+    """The file is not a DuckDB file. A caller may add where to choose another file."""
+
+
 def connect(path: Path | str, read_only: bool = False) -> duckdb.DuckDBPyConnection:
-    """A DuckDB connection to the file that never downloads or loads an extension."""
+    """A DuckDB connection to the file that never downloads or loads an extension.
+
+    The two settings above do not cover a file of another kind. For a SQLite file, DuckDB loads
+    its SQLite extension when it is installed, because the kind of the file asks for it. So a
+    file that is not empty and is not a DuckDB file is refused before DuckDB opens it. A missing
+    file and an empty file become a new database, as before.
+    """
+    if _is_duckdb_file(Path(path)) is False:
+        raise NotDuckDBError(f"The file {path} is not a DuckDB database.")
     return duckdb.connect(str(path), read_only=read_only, config=dict(NO_AUTO_EXTENSIONS))
 
 
@@ -211,6 +222,8 @@ def _connect(path: Path, read_only: bool) -> duckdb.DuckDBPyConnection:
         )
     try:
         return connect(path, read_only=read_only)
+    except NotDuckDBError as e:
+        raise StoreError(f"{e} Choose another file with --db.") from None
     except duckdb.Error as e:
         text = str(e)
         if any(words in text.lower() for words in LOCKED_WORDS):
@@ -219,8 +232,9 @@ def _connect(path: Path, read_only: bool) -> duckdb.DuckDBPyConnection:
                 "another ahd command that writes to it. Close that program or wait for it to "
                 "finish, then try again."
             ) from None
-        # A file of another kind, e.g., SQLite, asks for an extension, which DuckDB may not load.
-        if "not a valid DuckDB database" in text or _is_duckdb_file(path) is False:
+        # connect() refused a file of another kind, e.g., SQLite. DuckDB refuses a file of 0
+        # bytes with these words.
+        if "not a valid DuckDB database" in text:
             raise StoreError(
                 f"The file {path} is not a DuckDB database. Choose another file with --db."
             ) from None
