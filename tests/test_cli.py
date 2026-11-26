@@ -1,4 +1,5 @@
 import errno
+import io
 import json
 import os
 import re
@@ -378,19 +379,19 @@ def test_a_closed_pipe_ends_quietly(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("error", "windows", "flush_fails", "closed"),
+    ("error", "platform", "closed"),
     [
-        (BrokenPipeError(errno.EPIPE, "Broken pipe"), False, False, True),
-        (BrokenPipeError(errno.EPIPE, "Broken pipe"), True, False, True),
-        # On Windows, a write to a closed pipe can fail with EINVAL, and the output stays broken.
-        (OSError(errno.EINVAL, "Invalid argument"), True, True, True),
-        # Another error with EINVAL leaves the output working, so it is not a closed pipe.
-        (OSError(errno.EINVAL, "Invalid argument"), True, False, False),
-        (OSError(errno.EINVAL, "Invalid argument"), False, True, False),
+        (BrokenPipeError(errno.EPIPE, "Broken pipe"), "linux", True),
+        (BrokenPipeError(errno.EPIPE, "Broken pipe"), "win32", True),
+        # On Windows, a write to a closed pipe can fail with EINVAL instead.
+        (OSError(errno.EINVAL, "Invalid argument"), "win32", True),
+        # Elsewhere, EINVAL is another error.
+        (OSError(errno.EINVAL, "Invalid argument"), "linux", False),
+        (OSError(errno.EIO, "Input/output error"), "win32", False),
     ],
 )
 def test_a_closed_pipe_while_writing_ends_quietly(
-    tmp_path, monkeypatch, capsys, error, windows, flush_fails, closed
+    tmp_path, monkeypatch, capsys, error, platform, closed
 ):
     from ahd import cli
 
@@ -405,21 +406,53 @@ def test_a_closed_pipe_while_writing_ends_quietly(
             raise error
 
         def flush(self):
-            if flush_fails:
-                raise error
+            raise error
 
         def fileno(self):
             return self.fd
 
-    monkeypatch.setattr(cli, "WINDOWS", windows)
+    monkeypatch.setattr(sys, "platform", platform)
     with (tmp_path / "out.txt").open("w") as f:
-        monkeypatch.setattr(sys, "stdout", ClosedPipe(f.fileno()))
+        pipe = ClosedPipe(f.fileno())
+        monkeypatch.setattr(sys, "stdout", pipe)
         if closed:
             assert main(["runs", "--db", str(db)]) == cli.EXIT_PIPE_CLOSED
         else:
-            with pytest.raises(OSError):
+            with pytest.raises(OSError) as raised:
                 main(["runs", "--db", str(db)])
+            assert raised.value is error
+        # main puts the output back as it found it.
+        assert sys.stdout is pipe
     assert capsys.readouterr().err == ""
+
+
+def test_an_einval_that_does_not_come_from_the_output_is_not_a_closed_pipe(
+    tmp_path, monkeypatch, capsys
+):
+    from ahd import cli
+
+    error = OSError(errno.EINVAL, "Invalid argument")
+
+    def fail(args):
+        raise error
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(cli, "_runs", fail)
+    with pytest.raises(OSError) as raised:
+        main(["runs", "--db", str(tmp_path / "t.duckdb")])
+    assert raised.value is error
+    assert capsys.readouterr().err == ""
+
+
+def test_the_windows_output_passes_everything_else_to_the_stream(monkeypatch):
+    from ahd.cli import _WindowsStdout
+
+    stream = io.StringIO()
+    out = _WindowsStdout(stream)
+    out.writelines(["a\n", "b\n"])
+    out.flush()
+    assert stream.getvalue() == "a\nb\n"
+    assert out.isatty() is False and out.getvalue() == "a\nb\n"
 
 
 @pytest.mark.parametrize("company", [None, "co2"])

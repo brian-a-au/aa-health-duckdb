@@ -17,7 +17,7 @@ This file lists the changes in each release. The version numbers follow [Semanti
 
 **The commands**
 
-- When the program that reads the output closes it early, e.g., `ahd alerts --rsid my_suite | head -1`, the command now stops without a message and exits with 141. Before, it printed a Python traceback and exited with 120.
+- When the program that reads the output closes it early, e.g., `ahd alerts --rsid my_suite | head -1`, the command now stops without a message and exits with 141. Before, it printed a Python traceback and exited with 120. This also holds on Windows for a large output, e.g., more than 8 KB of `ahd alerts --format json` with Python 3.12 or 3.13.
 
 **The database**
 

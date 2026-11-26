@@ -15,7 +15,7 @@ from contextlib import suppress
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO, cast
 
 import duckdb
 import requests
@@ -79,7 +79,6 @@ EXIT_STOPPED = 130
 # The program that reads the output closed it early, e.g., head. 128 plus the signal number of
 # SIGPIPE, as a shell gives a program that this signal stops.
 EXIT_PIPE_CLOSED = 141
-WINDOWS = os.name == "nt"
 # ahd alerts found no alerts. It exits with 0 when it printed alerts, so that a scheduled job can
 # send them with "ahd alerts ... && send". 1 is an error and 2 a wrong option, as for every
 # command, and 3 is a partial run.
@@ -1167,23 +1166,58 @@ def _drop_output() -> None:
     os.close(devnull)
 
 
-def _output_closed(e: OSError) -> bool:
-    """Whether the error comes from a write to a pipe that the reader closed."""
-    if isinstance(e, BrokenPipeError):
-        return True
-    if not WINDOWS or e.errno != errno.EINVAL:
-        return False
-    # On Windows, such a write can fail with EINVAL instead. The text that it could not write
-    # is still waiting, so a second try fails too. Another error with EINVAL leaves the output
-    # working, and the second try then succeeds.
-    try:
-        sys.stdout.flush()
-    except OSError:
-        return True
-    return False
+class _WindowsStdout:
+    """sys.stdout on Windows, where a write to a pipe that the reader closed fails with EINVAL.
+
+    Python 3.12 and 3.13 drop the text of a large write that failed, so a second try works and
+    cannot tell a closed pipe from another error. This wrapper knows that the error comes from
+    the output, and turns each EINVAL of a write or a flush into a BrokenPipeError. Everything
+    else, e.g., fileno, isatty and reconfigure, goes to the stream itself.
+    """
+
+    def __init__(self, stream: TextIO) -> None:
+        self._stream = stream
+
+    def write(self, text: str) -> int:
+        try:
+            return self._stream.write(text)
+        except OSError as e:
+            raise _closed_pipe(e) from None
+
+    def writelines(self, lines: Any) -> None:
+        for line in lines:
+            self.write(line)
+
+    def flush(self) -> None:
+        try:
+            self._stream.flush()
+        except OSError as e:
+            raise _closed_pipe(e) from None
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._stream, name)
+
+
+def _closed_pipe(e: OSError) -> OSError:
+    """The error of a write to the output on Windows. EINVAL there means a closed pipe."""
+    if e.errno == errno.EINVAL and not isinstance(e, BrokenPipeError):
+        return BrokenPipeError(errno.EPIPE, e.strerror)
+    return e
 
 
 def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> int:
+    stdout = sys.stdout
+    wrap = sys.platform == "win32" and stdout is not None
+    if wrap:
+        sys.stdout = cast(TextIO, _WindowsStdout(stdout))
+    try:
+        return _main(argv, client_factory)
+    finally:
+        if wrap:
+            sys.stdout = stdout
+
+
+def _main(argv: list[str] | None, client_factory: Callable[..., Any]) -> int:
     _replace_unknown_characters()
     args = _parser().parse_args(argv)
     _check_options(args)
@@ -1202,10 +1236,8 @@ def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> i
         print(f"Error: {e}", file=sys.stderr)
     except (requests.RequestException, duckdb.Error) as e:
         print(f"Error: {_error_text(e)}", file=sys.stderr)
-    except OSError as e:
+    except BrokenPipeError:
         # After the clause above, because a network error of requests is an OSError too.
-        if not _output_closed(e):
-            raise
         _drop_output()
         return EXIT_PIPE_CLOSED
     except KeyboardInterrupt:
