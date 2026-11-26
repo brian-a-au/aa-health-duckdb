@@ -65,6 +65,17 @@ def test_the_script_passes_its_options_to_ahd_run(live_check, monkeypatch):
     assert passed == [["--rsid", "rs1", "--profile", "prod", "--date", "2026-11-24"]]
 
 
+def test_the_date_help_says_that_the_date_is_today(live_check, monkeypatch, capsys):
+    # ahd run --date treats the date as today and checks the days before it.
+    monkeypatch.delenv("CI", raising=False)
+    with pytest.raises(SystemExit):
+        live_check.cli(["--help"])
+    words = " ".join(capsys.readouterr().out.split())
+    assert " ".join(live_check.DATE_HELP.split()) in words
+    assert "Use this date as today, as ahd run --date does" in live_check.DATE_HELP
+    assert "The day to check" not in words
+
+
 def test_a_run_prints_its_requests_in_order_and_finds_no_problem(live_check, cfg, capsys):
     client = fake()
     argv = ["--rsid", "rs1", "--config", str(cfg), "--date", "2026-11-07"]
