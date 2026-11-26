@@ -96,7 +96,7 @@ When Adobe asks for a longer wait with a Retry-After header, the tool waits that
 
 ## Profiles and config files
 
-- **"Profile 'x' was not found"**: the file `~/.aa/orgs/x/config.json` does not exist. Check the name, or create the profile with `aa_auto_sdr --profile-add`.
+- **"Profile 'x' was not found"**: the folder `~/.aa/orgs/x` or the file `~/.aa/orgs/x/config.json` in it does not exist. The message names the one that is missing. A command that only reads the database, e.g., `ahd runs --profile x`, needs only the folder. A command that signs in to Adobe needs the file too. Check the name, or create the profile with `aa_auto_sdr --profile-add`.
 - **"Profile name 'x' is not valid"**: a profile name holds only letters, digits, dots, dashes and underscores, and starts with a letter or a digit.
 - **"is not valid UTF-8 JSON"**: the file has a syntax error, e.g., a missing comma or quote.
 - **"must hold one JSON object"**: the file holds a list or a single value, not `{ ... }`.
