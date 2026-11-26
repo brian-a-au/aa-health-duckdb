@@ -1111,10 +1111,12 @@
       svg.appendChild(tx);
     }
 
-    // The chosen week's band sits behind the data, half a day wider on each side.
+    // The chosen week's band sits behind the data, half a day wider on each side, and stays
+    // inside the plot when the week starts or ends at its edge.
     if (week) {
       var half = pw / span / 2;
-      var wx0 = x(points[weekAt[0]]) - half, wx1 = Math.min(W - R, x(points[weekAt[weekAt.length - 1]]) + half);
+      var wx0 = Math.max(L, x(points[weekAt[0]]) - half);
+      var wx1 = Math.min(W - R, x(points[weekAt[weekAt.length - 1]]) + half);
       svg.appendChild(sv("rect", { x: wx0, y: T, width: wx1 - wx0, height: ph, "class": "week-band" }));
     }
     // The chosen day's line sits behind the data.

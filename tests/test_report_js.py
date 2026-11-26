@@ -2291,6 +2291,27 @@ def test_the_chart_breaks_its_lines_at_missing_days(chrome, tmp_path):
     assert sum(got["actual"]) == 2 and sum(got["expected"]) == 2 and sum(got["band"]) == 2
 
 
+WEEK_BAND_PROBE = """
+var g = document.getElementById("granularity");
+g.value = "week"; g.dispatchEvent(new Event("change"));
+var svg = document.querySelector("#metric-chart svg");
+var r = svg.querySelector("rect.week-band");
+return { x: +r.getAttribute("x"), w: +r.getAttribute("width"),
+         svg: +svg.getAttribute("viewBox").split(" ")[2] };
+"""
+
+
+def test_the_week_band_stays_inside_the_plot(chrome, tmp_path):
+    # A metric with values only on the last 7 days. The week starts at the first point of the
+    # chart, so half a day to its left would cover the labels of the y-axis.
+    cid = "metrics/event1"
+    values = [_dv(cid, YESTERDAY - timedelta(days=n), 100.0) for n in range(7)]
+    got = run_probe(chrome, _one_metric_page(tmp_path, values), WEEK_BAND_PROBE, tmp_path)
+    left, right = 40, 10  # the margins L and R of drawChart
+    assert got["x"] == left
+    assert got["x"] + got["w"] <= got["svg"] - right
+
+
 @pytest.mark.parametrize(
     ("days", "labels"),
     [((1,), ["Nov 6"]), ((2, 1), ["Nov 5", "Nov 6"]), ((3, 2, 1), ["Nov 4", "Nov 5", "Nov 6"])],
