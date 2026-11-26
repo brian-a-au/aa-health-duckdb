@@ -179,7 +179,7 @@ def _factor_sql(key: str) -> str:
     return f"(CASE $sensitivity {whens} END)"
 
 
-def _local_dv(source: str) -> str:
+def _local_dv(source: str, last_weekday_only: bool = False) -> str:
     """The dv CTE for a local method, with the CTEs it needs before it.
 
     source gives the daily values as d and their run as ru. Only the days from today - 91 to
@@ -205,7 +205,12 @@ def _local_dv(source: str) -> str:
 
     Days outside the 91 days keep their value but get no range and no flag. The anomaly_days
     macro in views.sql has the same rules, and tests check that both agree.
+
+    With last_weekday_only, only the days of the weekday of today - 1 get a range and a flag.
+    A query that reads only the flag of today - 1, e.g., the history, then skips the samples
+    of the other weekdays. The level of weekday-trend still uses every day.
     """
+    only = "WHERE dayofweek(day) = dayofweek(today - 1)" if last_weekday_only else ""
     by_median, by_iqr, by_trend = (
         _factor_sql(k) for k in ("weekday-median", "weekday-iqr", "weekday-trend")
     )
@@ -216,7 +221,7 @@ m_src AS (
     FROM {source}
 ),
 m_leveled AS (
-    SELECT run_id, component_id, day, value,
+    SELECT run_id, component_id, day, today, value,
         CASE WHEN count(value) OVER w7 = 7 AND avg(value) OVER w7 > 0
             THEN avg(value) OVER w7 END AS level
     FROM m_src
@@ -248,6 +253,7 @@ m_sampled AS (
                     - {by_trend} * 1.4826 * mad(value / level) OVER w)}}
         END AS rng
     FROM m_leveled
+    {only}
     WINDOW w AS (PARTITION BY run_id, component_id, dayofweek(day) ORDER BY day
         RANGE BETWEEN UNBOUNDED PRECEDING AND INTERVAL 1 DAY PRECEDING)
 ),
@@ -598,8 +604,11 @@ dv AS (
         d.anomaly
     FROM daily_values d JOIN r ON r.run_id = d.run_id
 )"""
-# The values of every listed run for a local method, in place of _HISTORY_DV.
-_LOCAL_HISTORY_DV = _local_dv("daily_values d JOIN r ru ON ru.run_id = d.run_id")
+# The values of every listed run for a local method, in place of _HISTORY_DV. The history reads
+# only the flags of each run's last day, so only that weekday gets a range.
+_LOCAL_HISTORY_DV = _local_dv(
+    "daily_values d JOIN r ru ON ru.run_id = d.run_id", last_weekday_only=True
+)
 
 # The alerts on the last day of each run of the same report suite and segment, by the same
 # rules as the tiles: one query over every run's stored values. Each run uses its own dates.
