@@ -256,6 +256,17 @@ def test_sources_that_cannot_be_imported_get_a_plain_error(tmp_path, source):
     (tmp_path / "text.duckdb").write_text("hello")
     with pytest.raises(StoreError, match="is not a DuckDB database"):
         import_runs(new, tmp_path / "text.duckdb")
+    # A file of 0 bytes gets the same message from both commands.
+    (tmp_path / "zero.duckdb").write_bytes(b"")
+    with pytest.raises(StoreError) as e:
+        import_runs(new, tmp_path / "zero.duckdb")
+    assert str(e.value) == (
+        f"The file {tmp_path / 'zero.duckdb'} is not a DuckDB database. Choose another file to "
+        "import."
+    )
+    with pytest.raises(StoreError, match="is not a DuckDB database"):
+        export_runs(tmp_path / "zero.duckdb", tmp_path / "zero-out")
+    assert (tmp_path / "zero.duckdb").read_bytes() == b""
     # The header of a DuckDB file with nothing valid after it.
     (tmp_path / "broken.duckdb").write_bytes(b"12345678DUCK" + bytes(5000))
     with pytest.raises(StoreError, match="could not be read as an ahd database"):

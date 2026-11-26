@@ -600,20 +600,26 @@ def test_file_that_is_not_a_database_is_one_line_error(tmp_path, capsys):
     assert "is not a DuckDB database" in capsys.readouterr().err
 
 
-def test_a_sqlite_file_gets_the_plain_refusal(tmp_path, capsys):
+@pytest.mark.parametrize("kind", ["sqlite", "empty"])
+def test_a_sqlite_or_an_empty_file_gets_the_plain_refusal(tmp_path, capsys, kind):
     # DuckDB would load its SQLite extension for this file, and download it first. ahd turns
-    # that off, so the file is refused with the plain message.
+    # that off, so the file is refused with the plain message. A file of 0 bytes gets the same
+    # message from every command.
     import sqlite3
 
     db = tmp_path / "app.db"
-    with sqlite3.connect(db) as lite:
-        lite.execute("CREATE TABLE t (a)")
-    lite.close()
+    if kind == "sqlite":
+        with sqlite3.connect(db) as lite:
+            lite.execute("CREATE TABLE t (a)")
+        lite.close()
+    else:
+        db.write_bytes(b"")
     refused = f"Error: The file {db} is not a DuckDB database. Choose another file with --db.\n"
     for argv in (
         ["runs", "--db", str(db)],
         ["render", "--db", str(db), "--run", "1"],
         ["prune", "--db", str(db), "--run", "1", "--yes"],
+        ["alerts", "--db", str(db), "--run", "1"],
     ):
         assert main(argv) == 1
         assert capsys.readouterr().err == refused
