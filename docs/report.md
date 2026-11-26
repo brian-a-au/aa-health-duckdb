@@ -255,7 +255,7 @@ The problems tile says "Everything was read" only for a run that finished. For a
 
 When everything was read, the status section is one line that says "No problems". Otherwise it lists anything that could not be read, grouped by cause, with a plain explanation of each. **Copy problems** copies the list for an email or a ticket. See [Copying](#copying).
 
-A run that did not finish never says "No problems". The run stopped without saying which components it did not read, e.g., because the window was closed. So the status section shows a warning that says "This run did not finish, so some components may not have been read." Components that were not read are not shown in the tables, the tiles or the alert lists. Make a new run with `ahd run` to check every component. A failed run without problems gets the same warning, which starts with "This run failed". The copied alerts say it too.
+A run that did not finish never says "No problems". The run stopped without saying which components it did not read, e.g., because the window was closed. So the status section shows a warning that says "This run did not finish, so some components may not have been read." Components that were not read are not shown in the tables, the tiles or the alert lists. Make a new run with `ahd run` to check every component. A failed run without problems gets the same warning, which starts with "This run failed". The copied alerts and the copied problems say it too, right after their title.
 
 It also shows a warning when the run sees far fewer custom events, eVars or props than the run before it. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 

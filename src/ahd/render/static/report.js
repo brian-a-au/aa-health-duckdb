@@ -2492,8 +2492,11 @@
     return "Problems in run " + run.id + " for " + (run.rsid_name || run.rsid) + " (" + run.rsid +
       "), " + run.today;
   }
+  // The problems of a run that may not have read every component, e.g., a run that did not
+  // finish, also hold the warning of the status section, as the copied alerts do.
   function problemsText() {
     var lines = [problemsTitle()];
+    if (unfinishedText()) lines.push(unfinishedLine());
     problemGroups().forEach(function (g) {
       lines.push(g.heading);
       g.items.forEach(function (i) { lines.push("- " + i); });
@@ -2503,6 +2506,7 @@
   function problemsHtml() {
     var box = el("div", { style: MAIL.wrap });
     box.appendChild(el("p", { style: MAIL.h + "margin-top:0;" }, problemsTitle()));
+    if (unfinishedText()) box.appendChild(el("p", { style: MAIL.p }, unfinishedLine()));
     problemGroups().forEach(function (g) {
       box.appendChild(el("p", { style: MAIL.p + "font-weight:bold;" }, g.heading));
       if (g.items.length) {

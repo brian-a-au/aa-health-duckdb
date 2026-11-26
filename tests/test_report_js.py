@@ -767,6 +767,30 @@ def test_an_unfinished_run_never_says_that_everything_was_read(
     assert line in copied["rich"]["copied"]["html"]
 
 
+def test_copied_problems_of_an_unfinished_run_hold_its_warning(chrome, tmp_path):
+    store, rid = _unfinished_store(tmp_path / "u.duckdb", "running", True)
+    try:
+        got = _copy_run(chrome, (store, rid), tmp_path, "copy-problems", "copy-problems-result")
+    finally:
+        store.con.close()
+    line = (
+        "This run did not finish, so some components may not have been read. "
+        "See the status section of the report."
+    )
+    text = got["rich"]["copied"]["text"].split("\n")
+    # The warning comes right after the title, before the problems.
+    assert text[0].startswith("Problems in run ") and text[1] == line
+    assert "metrics/event2" in got["rich"]["copied"]["text"]
+    assert line in got["rich"]["copied"]["html"]
+    assert got["plain"]["copied"]["plain"] == got["rich"]["copied"]["text"]
+
+
+def test_copied_problems_of_a_finished_run_hold_no_warning(chrome, with_problem, tmp_path):
+    got = _copy_run(chrome, with_problem, tmp_path, "copy-problems", "copy-problems-result")
+    assert "may not have been read" not in got["rich"]["copied"]["text"]
+    assert "may not have been read" not in got["rich"]["copied"]["html"]
+
+
 def test_a_finished_run_says_that_everything_was_read(chrome, tmp_path):
     store, rid = _unfinished_store(tmp_path / "u.duckdb", "ok", False)
     try:
