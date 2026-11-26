@@ -154,6 +154,24 @@ def test_script_downloads_link_to_the_release_of_this_version():
         assert (ROOT / path).is_file(), f"{name} links to {path}, which does not exist"
 
 
+def test_script_download_pages_name_this_version_in_their_text():
+    """A page with a script download also writes the version in its text: the version that the
+    link holds, and the next version as an example of a newer one. A version bump without the
+    text fails here."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    version = pyproject["project"]["version"]
+    major, minor, patch = (int(n) for n in version.split("."))
+    script = re.compile(re.escape(RAW) + r"[^\s)`]+/docs/examples/")
+    pages = [p for p in PAGES if script.search(p.read_text(encoding="utf-8"))]
+    assert pages, "no page links to a script download"
+    for page in pages:
+        text = page.read_text(encoding="utf-8")
+        held = re.findall(r"The link holds a version, `(v[\d.]+)`", text)
+        newer = re.findall(r"the new version in the link, e\.g\., `(v[\d.]+)`", text)
+        assert held == [f"v{version}"], f"{page.name} says the link holds {held}"
+        assert newer == [f"v{major}.{minor}.{patch + 1}"], f"{page.name} gives {newer}"
+
+
 def test_the_storage_pages_name_every_table_macro():
     """docs/runs.md and the glossary of docs/duckdb.md list the views and macros of a file."""
     sql = (ROOT / "src" / "ahd" / "sql" / "views.sql").read_text(encoding="utf-8")
