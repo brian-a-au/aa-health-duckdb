@@ -11,7 +11,7 @@ import shlex
 import subprocess
 import sys
 from collections.abc import Callable
-from contextlib import ExitStack, suppress
+from contextlib import suppress
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -1213,18 +1213,27 @@ def _closed_pipe(e: OSError) -> OSError:
 
 def main(argv: list[str] | None = None, client_factory=AdobeClient.connect) -> int:
     stdout = sys.stdout
-    with ExitStack() as stack:
-        # sys.stdout is None when the output was closed before the command started, e.g., ahd
-        # runs >&-, or under pythonw. The command then writes to os.devnull.
-        stream = stdout
-        if stream is None:
-            stream = stack.enter_context(open(os.devnull, "w", encoding="utf-8"))
-        out = _Stdout(stream)
-        sys.stdout = cast(TextIO, out)
-        try:
-            return _flushed(out, _main(argv, client_factory))
-        finally:
-            sys.stdout = stdout
+    if stdout is None:
+        # The output was closed before the command started, e.g., ahd runs >&-, or under
+        # pythonw. The command then writes to os.devnull.
+        with open(os.devnull, "w", encoding="utf-8") as devnull:
+            return _wrapped(devnull, None, argv, client_factory)
+    return _wrapped(stdout, stdout, argv, client_factory)
+
+
+def _wrapped(
+    stream: TextIO,
+    stdout: TextIO | None,
+    argv: list[str] | None,
+    client_factory: Callable[..., Any],
+) -> int:
+    """Run the command with sys.stdout wrapped around stream, and put back stdout after it."""
+    out = _Stdout(stream)
+    sys.stdout = cast(TextIO, out)
+    try:
+        return _flushed(out, _main(argv, client_factory))
+    finally:
+        sys.stdout = stdout
 
 
 def _flushed(out: _Stdout, code: int) -> int:
