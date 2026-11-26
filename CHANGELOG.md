@@ -8,10 +8,26 @@ This file lists the changes in each release. The version numbers follow [Semanti
 
 - A report of a run that did not finish no longer says that everything was read. Such a run, e.g., one that stopped because you closed the window, stays "running" and holds no problem for the components it did not read. Before, the status section said "No problems were found in this run.", and the problems tile said "Everything was read", although only the header said "Not finished". Now the status section warns that some components may not have been read, and that those components are not shown. The problems tile and the copied alerts say that the run did not finish. A failed run without problems gets the same warning.
 - The note under the browser and device tables of the Individual tab says that the other columns show the same 10 values as the first column. So a value that ranks high only in another column, e.g., Apple, is not in the table. The hint above each table no longer says "Top 10 values for each major browser group", which said the opposite.
+- On the Alerts tab of a run without Adobe's anomaly detection, the suggested `ahd render` command now has the same `--db` or `--profile` option that chose the database of the run, e.g., `ahd render --run 3 --profile prod --anomaly-method weekday-median`. Before, the command could read another database.
+
+**Names from Adobe in the terminal**
+
+- The text of an error from Adobe, its code and the error field of an answer from the sign-in service are now printed with "?" in place of each character that could change the terminal. The same holds for the names in the "already holds" error of `ahd individual`, and for the report suite ID in the errors for a dimension, a metric or a segment that the suite does not have.
+- The Arabic letter mark, U+061C, is now replaced with "?" too. It sets the direction of the text around it, as the other marks that the tool already replaced do.
+
+**The commands**
+
+- When the program that reads the output closes it early, e.g., `ahd alerts --rsid my_suite | head -1`, the command now stops without a message and exits with 141. Before, it printed a Python traceback and exited with 120.
+
+**The database**
+
+- DuckDB no longer downloads or loads an extension by itself. Before, a SQLite file given as `--db` or to `ahd import` or `ahd export` made DuckDB download its SQLite extension from DuckDB's server. Such a file now gets the plain message, e.g., "is not a DuckDB database".
+- `ahd prune --run` with a run number past the 64-bit limit says that there is no such run, instead of saying that the database could not be read.
 
 **The email and Slack scripts**
 
 - `send_alerts.py` sends nothing when `SMTP_HOST` is set and `MAIL_FROM` or `MAIL_TO` is not. It prints one line that names the missing settings and exits with 1, also on a day without alerts. Before, it sent the email from `ahd@localhost` to `you@example.com` and exited with 0, so a typo in a scheduled job went unnoticed. `alerts.eml` still uses these two addresses when the settings are missing. `send_slack.py` already refused to post without its webhook URL.
+- The scripts start `ahd` with `PYTHONIOENCODING=utf-8`. On Windows, a message of `ahd` with a letter such as é, e.g., in the path of the database, now reaches the log unchanged.
 
 **The docs**
 

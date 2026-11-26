@@ -21,6 +21,7 @@ from test_examples import (
     _load,
     _old_drop_db,
     _suites_db,
+    check_ahd_writes_utf_8,
 )
 
 URL = "https://hooks.slack.com/services/T000/B000/secretpart"
@@ -352,6 +353,10 @@ def test_an_ahd_without_events_is_too_old(slack, monkeypatch, capsys):
     _answer(monkeypatch, slack, 0, json.dumps(old))
     assert slack.main(["db", "rs1"]) == 1
     assert "needs ahd 0.1.13 or newer" in capsys.readouterr().err
+
+
+def test_the_script_runs_ahd_with_utf_8_output(slack, tmp_path, monkeypatch, capsys):
+    check_ahd_writes_utf_8(slack, tmp_path, monkeypatch, capsys)
 
 
 def test_an_ahd_without_the_alerts_command_is_named(slack, monkeypatch, capsys):

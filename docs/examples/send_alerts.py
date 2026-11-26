@@ -637,6 +637,15 @@ def _send_test() -> int:
     return 0
 
 
+def _ahd_environment() -> dict[str, str]:
+    """The environment for ahd: a copy of this one, with PYTHONIOENCODING=utf-8.
+
+    On Windows, ahd would write to the pipe in the code page of the system, e.g., cp1252. The
+    script reads what ahd writes as UTF-8, so ahd must write UTF-8 too.
+    """
+    return {**os.environ, "PYTHONIOENCODING": "utf-8"}
+
+
 def main(argv: list[str]) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
@@ -667,6 +676,7 @@ def main(argv: list[str]) -> int:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=_ahd_environment(),
     )
     if done.returncode == AHD_USAGE:
         if "invalid choice: 'alerts'" in done.stderr:

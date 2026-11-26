@@ -158,6 +158,11 @@ def _version_message(path: Path, found: object) -> str:
     return start + "Delete the file to start again, or choose another file with --db."
 
 
+# The range of DuckDB's BIGINT, the 64-bit whole numbers.
+BIGINT_MIN = -(2**63)
+BIGINT_MAX = 2**63 - 1
+
+
 class StoreError(Exception):
     """The database file could not be opened. The message says why in plain words."""
 
@@ -173,13 +178,39 @@ LOCKED_WORDS = (
 )
 
 
+# DuckDB downloads and loads an extension by itself when a file or a statement needs one, e.g.,
+# the SQLite extension for a SQLite file. ahd needs none of them, so every connection turns this
+# off, and the tool never contacts DuckDB's servers. Each connection to the same file in one
+# program must use the same settings, or DuckDB refuses it.
+NO_AUTO_EXTENSIONS: dict[str, str | bool | int | float | list[str]] = {
+    "autoinstall_known_extensions": False,
+    "autoload_known_extensions": False,
+}
+
+
+def connect(path: Path | str, read_only: bool = False) -> duckdb.DuckDBPyConnection:
+    """A DuckDB connection to the file that never downloads or loads an extension."""
+    return duckdb.connect(str(path), read_only=read_only, config=dict(NO_AUTO_EXTENSIONS))
+
+
+def _is_duckdb_file(path: Path) -> bool | None:
+    """Whether the file starts with the header of a DuckDB file, or None when it cannot be read."""
+    try:
+        with path.open("rb") as f:
+            head = f.read(12)
+    except OSError:
+        return None
+    # A DuckDB file has "DUCK" at byte 8. An empty file is a new database.
+    return not head or head[8:12] == b"DUCK"
+
+
 def _connect(path: Path, read_only: bool) -> duckdb.DuckDBPyConnection:
     if read_only and not path.exists():
         raise StoreError(
             f"There is no database at {path}. Make a run first, or choose the file with --db."
         )
     try:
-        return duckdb.connect(str(path), read_only=read_only)
+        return connect(path, read_only=read_only)
     except duckdb.Error as e:
         text = str(e)
         if any(words in text.lower() for words in LOCKED_WORDS):
@@ -188,7 +219,8 @@ def _connect(path: Path, read_only: bool) -> duckdb.DuckDBPyConnection:
                 "another ahd command that writes to it. Close that program or wait for it to "
                 "finish, then try again."
             ) from None
-        if "not a valid DuckDB database" in text:
+        # A file of another kind, e.g., SQLite, asks for an extension, which DuckDB may not load.
+        if "not a valid DuckDB database" in text or _is_duckdb_file(path) is False:
             raise StoreError(
                 f"The file {path} is not a DuckDB database. Choose another file with --db."
             ) from None
@@ -470,10 +502,12 @@ class Store:
         """The stored runs that match any given run number, or whose run date is before `before`."""
         if not run_ids and before is None:
             return []
+        # A number past the 64-bit limit cannot be cast to BIGINT, and no run has it.
+        ids = [i for i in run_ids if BIGINT_MIN <= i <= BIGINT_MAX]
         cur = self.con.execute(
             "SELECT * FROM runs WHERE list_contains(?::BIGINT[], run_id)"
             " OR (?::DATE IS NOT NULL AND today < ?::DATE) ORDER BY run_id",
-            [list(run_ids), before, before],
+            [ids, before, before],
         )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, r)) for r in cur.fetchall()]

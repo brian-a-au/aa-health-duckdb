@@ -23,6 +23,7 @@ from ahd.api.auth import (
     sign_in,
 )
 from ahd.config import Credentials
+from ahd.text import inert
 
 log = logging.getLogger(__name__)
 
@@ -85,8 +86,9 @@ class ApiError(Exception):
         self.message = message
 
     def __str__(self) -> str:
-        code = f" [{self.error_code}]" if self.error_code else ""
-        return f"Adobe API error {self.status}{code}: {self.message}"
+        # The code and the message come from Adobe, so each passes through inert().
+        code = f" [{inert(self.error_code)}]" if self.error_code else ""
+        return f"Adobe API error {self.status}{code}: {inert(self.message)}"
 
 
 def unreadable(what: str) -> ApiError:

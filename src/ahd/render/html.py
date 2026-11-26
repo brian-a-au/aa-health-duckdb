@@ -343,7 +343,13 @@ def unfinished_note(status: str, issues: list[dict[str, Any]]) -> str | None:
     return None
 
 
-def render_html(view: dict[str, Any]) -> str:
+def render_html(view: dict[str, Any], render_command: str | None = None) -> str:
+    """The page of the report.
+
+    render_command is the ahd render command for the run, with the --db or --profile option that
+    chose the database, e.g., "ahd render --run 3 --profile prod". The Alerts tab suggests it
+    with a local anomaly method. Without it, the page names only the run.
+    """
     run = view.get("run", {})
     status = run.get("status") or "unknown"
     # A run made with --date is about the days before that date, not before the run time.
@@ -360,6 +366,7 @@ def render_html(view: dict[str, Any]) -> str:
     template = _env.get_template("report.html.j2")
     return template.render(
         run=run,
+        render_command=render_command or f"ahd render --run {run.get('id')}",
         run_mark=run_mark(run),
         status_label=STATUS_LABELS.get(status, status),
         status=status,
@@ -430,8 +437,8 @@ def _mark_in(path: Path) -> str | None:
     return html.unescape(m.group(1)) if m else None
 
 
-def write_report(view: dict[str, Any], out_dir: Path) -> Path:
-    """Write the report and return its path.
+def write_report(view: dict[str, Any], out_dir: Path, render_command: str | None = None) -> Path:
+    """Write the report and return its path. render_command goes to render_html.
 
     A file of the same name that holds a report of another run, e.g., run 1 of another database
     file, is kept. The report then gets the next free name ending in _2, _3 and so on.
@@ -448,5 +455,5 @@ def write_report(view: dict[str, Any], out_dir: Path) -> Path:
         if not path.exists() or _mark_in(path) in (None, mark):
             break
         n += 1
-    path.write_text(render_html(view), encoding="utf-8")
+    path.write_text(render_html(view, render_command), encoding="utf-8")
     return path

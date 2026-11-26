@@ -79,6 +79,16 @@ def test_the_ids_of_a_name_that_is_not_unique_cannot_change_the_terminal():
     assert "variables/?x, variables/?x." in str(e.value)
 
 
+def test_the_suite_id_in_a_lookup_error_cannot_change_the_terminal():
+    # With --all-suites, the suite ID comes from Adobe's list of suites.
+    with pytest.raises(ConfigError) as e:
+        resolve_component(comp_client(), "rs\x1b[2J1", "dimension", "nosuch")
+    assert str(e.value).startswith("No dimension in report suite rs?[2J1 has the ID or name")
+    with pytest.raises(ConfigError) as e:
+        resolve_segment(client(), "rs\u202ea", "nope")
+    assert "Run ahd segments --rsid rs?a to list them." in str(e.value)
+
+
 def test_resolve_segment():
     assert resolve_segment(client(), "rs_a", "paid") == "s2"
     with pytest.raises(ConfigError, match="ahd segments --rsid rs_a"):

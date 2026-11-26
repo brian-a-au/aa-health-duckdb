@@ -22,10 +22,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import duckdb
-
 from ahd.api.client import AdobeClient
 from ahd.cli import main
+from ahd.store import connect
 from ahd.text import inert
 
 # The columns of the components table that must hold a value for every component of a run.
@@ -74,7 +73,7 @@ def print_requests(rec: Recorder) -> None:
 
 def check_db(path: Path) -> list[str]:
     """One line for each problem in the last run of the file. No line means no problem."""
-    con = duckdb.connect(str(path), read_only=True)
+    con = connect(path, read_only=True)
     try:
         row = con.execute("SELECT run_id, status FROM runs ORDER BY run_id DESC LIMIT 1").fetchone()
         if row is None:
@@ -107,7 +106,7 @@ def _count(n: int, word: str) -> str:
 
 def checked(path: Path) -> str:
     """What the check looked at in the last run of the file, as counts for a pull request."""
-    con = duckdb.connect(str(path), read_only=True)
+    con = connect(path, read_only=True)
     try:
         row = con.execute(
             'SELECT count(*), count(DISTINCT "group") FROM components'
@@ -122,7 +121,7 @@ def checked(path: Path) -> str:
 def issue_lines(path: Path) -> list[str]:
     """The issues of the last run of the file, counted by scope and code, e.g., "Issues: 3
     individual no_rows." They say why a run is partial. No line means no issue."""
-    con = duckdb.connect(str(path), read_only=True)
+    con = connect(path, read_only=True)
     try:
         rows = con.execute(
             "SELECT scope, code, count(*) FROM issues"

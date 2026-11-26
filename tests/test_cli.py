@@ -1,7 +1,10 @@
+import errno
 import json
 import os
+import re
 import shlex
 import subprocess
+import sys
 
 import pytest
 from fakes import (
@@ -350,6 +353,75 @@ def test_ctrl_c_is_one_line(tmp_path, cfg, capsys):
     assert err.startswith("Stopped by Ctrl-C. A run that ahd run had started is marked failed.")
 
 
+def test_a_closed_pipe_ends_quietly(tmp_path):
+    """e.g. ahd runs | head -1: the reader closes the pipe before ahd writes."""
+    db = tmp_path / "t.duckdb"
+    Store.open(db).con.close()
+    # The child waits for a line on its input, so the parent closes the pipe first.
+    script = (
+        "import sys; sys.stdin.readline(); from ahd.cli import main; "
+        "sys.exit(main(['runs', '--db', sys.argv[1]]))"
+    )
+    with subprocess.Popen(
+        [sys.executable, "-c", script, str(db)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ) as child:
+        child.stdout.close()
+        child.stdin.write(b"go\n")
+        child.stdin.close()
+        err = child.stderr.read().decode()
+        code = child.wait()
+    assert err == ""
+    assert code == 141
+
+
+@pytest.mark.parametrize(
+    ("error", "windows", "flush_fails", "closed"),
+    [
+        (BrokenPipeError(errno.EPIPE, "Broken pipe"), False, False, True),
+        (BrokenPipeError(errno.EPIPE, "Broken pipe"), True, False, True),
+        # On Windows, a write to a closed pipe can fail with EINVAL, and the output stays broken.
+        (OSError(errno.EINVAL, "Invalid argument"), True, True, True),
+        # Another error with EINVAL leaves the output working, so it is not a closed pipe.
+        (OSError(errno.EINVAL, "Invalid argument"), True, False, False),
+        (OSError(errno.EINVAL, "Invalid argument"), False, True, False),
+    ],
+)
+def test_a_closed_pipe_while_writing_ends_quietly(
+    tmp_path, monkeypatch, capsys, error, windows, flush_fails, closed
+):
+    from ahd import cli
+
+    db = tmp_path / "t.duckdb"
+    Store.open(db).con.close()
+
+    class ClosedPipe:
+        def __init__(self, fd):
+            self.fd = fd
+
+        def write(self, text):
+            raise error
+
+        def flush(self):
+            if flush_fails:
+                raise error
+
+        def fileno(self):
+            return self.fd
+
+    monkeypatch.setattr(cli, "WINDOWS", windows)
+    with (tmp_path / "out.txt").open("w") as f:
+        monkeypatch.setattr(sys, "stdout", ClosedPipe(f.fileno()))
+        if closed:
+            assert main(["runs", "--db", str(db)]) == cli.EXIT_PIPE_CLOSED
+        else:
+            with pytest.raises(OSError):
+                main(["runs", "--db", str(db)])
+    assert capsys.readouterr().err == ""
+
+
 @pytest.mark.parametrize("company", [None, "co2"])
 def test_says_which_login_company_it_used(tmp_path, cfg, capsys, company):
     fake = fake_for("rs1", events(1), custom_dims(), company_id=company or "co1")
@@ -495,6 +567,30 @@ def test_file_that_is_not_a_database_is_one_line_error(tmp_path, capsys):
     assert "is not a DuckDB database" in capsys.readouterr().err
 
 
+def test_a_sqlite_file_gets_the_plain_refusal(tmp_path, capsys):
+    # DuckDB would load its SQLite extension for this file, and download it first. ahd turns
+    # that off, so the file is refused with the plain message.
+    import sqlite3
+
+    db = tmp_path / "app.db"
+    with sqlite3.connect(db) as lite:
+        lite.execute("CREATE TABLE t (a)")
+    lite.close()
+    refused = f"Error: The file {db} is not a DuckDB database. Choose another file with --db.\n"
+    for argv in (
+        ["runs", "--db", str(db)],
+        ["render", "--db", str(db), "--run", "1"],
+        ["prune", "--db", str(db), "--run", "1", "--yes"],
+    ):
+        assert main(argv) == 1
+        assert capsys.readouterr().err == refused
+    unread = f"Error: The file {db} could not be read as an ahd database.\n"
+    assert main(["import", str(db), "--db", str(tmp_path / "new.duckdb")]) == 1
+    assert capsys.readouterr().err == unread
+    assert main(["export", "--db", str(db), "--out", str(tmp_path / "out")]) == 1
+    assert capsys.readouterr().err == unread
+
+
 def test_runs_and_render_do_not_create_a_database(tmp_path, capsys):
     db = tmp_path / "new" / "t.duckdb"
     assert main(["runs", "--db", str(db)]) == 1
@@ -504,13 +600,13 @@ def test_runs_and_render_do_not_create_a_database(tmp_path, capsys):
 
 
 def test_runs_reads_a_database_that_a_reader_has_open(tmp_path, cfg, capsys):
-    import duckdb
-
-    from ahd.store import Store
+    from ahd.store import Store, connect
 
     db = tmp_path / "t.duckdb"
     Store.open(db).con.close()
-    reader = duckdb.connect(str(db), read_only=True)
+    # In one program, DuckDB refuses a second connection to the file with other settings, so
+    # the reader uses the settings of ahd.
+    reader = connect(db, read_only=True)
     try:
         assert main(["runs", "--db", str(db)]) == 0
     finally:
@@ -543,7 +639,7 @@ def test_each_systems_lock_message_is_called_locked(tmp_path, monkeypatch, messa
 
     from ahd.store import Store, StoreError
 
-    def locked(path, read_only=False):
+    def locked(path, read_only=False, config=None):
         raise duckdb.IOException(message)
 
     monkeypatch.setattr(duckdb, "connect", locked)
@@ -556,7 +652,7 @@ def test_a_damaged_file_is_not_called_locked(tmp_path, monkeypatch):
 
     from ahd.store import Store, StoreError
 
-    def broken(path, read_only=False):
+    def broken(path, read_only=False, config=None):
         raise duckdb.IOException("Corrupt database file: block 7 is invalid")
 
     monkeypatch.setattr(duckdb, "connect", broken)
@@ -1616,6 +1712,36 @@ def test_individual_prints_names_that_cannot_change_the_terminal(tmp_path, cfg, 
     )
     stdout = capsys.readouterr().out
     assert code == 0 and f"Added {SAFE} by Cart?Additions to run 1." in stdout
+    # The same pair again is refused, and the error names it the same way.
+    code = main(
+        [
+            "individual",
+            "--config",
+            str(cfg),
+            "--db",
+            str(tmp_path / "t.duckdb"),
+            "--run",
+            "1",
+            "--dimension",
+            "variables/evar17",
+            "--metric",
+            "metrics/cartadditions",
+            "--out",
+            str(out),
+        ],
+        client_factory=lambda c, company_id=None: fake,
+    )
+    err = capsys.readouterr().err
+    assert code == 1
+    assert err == f"Error: Run 1 already holds {SAFE} by Cart?Additions.\n"
+
+
+def test_an_error_from_adobe_cannot_change_the_terminal(cfg, capsys):
+    fake = fake_for("rs1", events(1), custom_dims())
+    fake.gets["/reportsuites/collections/suites"] = ApiError(400, EVIL + "\nfake", "bad\x1b[2J")
+    assert main(["suites", "--config", str(cfg)], client_factory=lambda c: fake) == 1
+    err = capsys.readouterr().err
+    assert err == f"Error: Adobe API error 400 [bad?[2J]: {SAFE}?fake\n"
 
 
 def test_individual_with_problems_exits_3(tmp_path, cfg, capsys):
@@ -1767,6 +1893,44 @@ def test_the_render_hint_names_the_profile_that_chose_the_database(
     assert f"Then run ahd render --run 1{words} to write the report." in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("how", ["db", "flag", "variable", "none"])
+def test_the_page_suggests_a_render_command_for_the_same_database(tmp_path, cfg, monkeypatch, how):
+    # A run without Adobe's anomaly detection: the Alerts tab suggests ahd render with a local
+    # method, and names the same database as the hint on the terminal.
+    import html
+
+    monkeypatch.chdir(tmp_path)
+    db = tmp_path / "my data" / "t.duckdb"
+    options = {
+        "db": ["--config", str(cfg), "--db", str(db)],
+        "flag": ["--profile", "prod"],
+        "variable": [],
+        "none": ["--config", str(cfg)],
+    }[how]
+    if how in ("flag", "variable"):
+        _profile()
+    if how == "variable":
+        monkeypatch.setenv("AA_PROFILE", "prod")
+    fake = fake_for(
+        "rs1",
+        events(3),
+        custom_dims(),
+        posts=[(is_anomaly_trend, ApiError(403, "no", "invalid_access"))],
+    )
+    out = tmp_path / "o"
+    main(_run_args(*options, "--out", str(out)), client_factory=lambda c, company_id=None: fake)
+    [page] = out.glob("*.html")
+    words = {
+        "db": f" --db {_quoted(db)}",
+        "flag": " --profile prod",
+        "variable": " --profile prod",
+        "none": "",
+    }[how]
+    command = f"ahd render --run 1{words} --anomaly-method weekday-median"
+    [found] = re.findall(r'data-render-command="([^"]*)"', page.read_text(encoding="utf-8"))
+    assert html.unescape(found) == command
+
+
 # ---- the credential variables and --config -------------------------------------------
 
 
@@ -1824,6 +1988,12 @@ def test_the_credential_variables_win_over_a_config_json_in_the_folder(
         (["--run", "9", "--run", "7", "--run", "8"], "There are no stored runs 7, 8 and 9."),
         # A number past the 32-bit limit is a run that is not stored, not a read error.
         (["--run", "99999999999"], "There is no stored run 99999999999."),
+        # So is a number past the 64-bit limit, on its own or next to a stored run.
+        (["--run", "99999999999999999999"], "There is no stored run 99999999999999999999."),
+        (
+            ["--run", "1", "--run", "-99999999999999999999"],
+            "There is no stored run -99999999999999999999.",
+        ),
     ],
 )
 def test_prune_of_a_run_that_is_not_stored_deletes_nothing(three_runs, capsys, options, message):

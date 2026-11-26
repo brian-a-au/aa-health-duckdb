@@ -232,7 +232,7 @@ When no day of a chart has a range, e.g., because the component has too few valu
 
 ### A run without Adobe's anomaly detection
 
-When the credential may not use Adobe's anomaly detection, or the test of it failed, the run stores no expected values and no flags from Adobe. With `adobe`, the tiles then say "Anomaly detection not available", and the Alerts tab suggests a command that writes the report again with a local method, e.g., `ahd render --run 3 --anomaly-method weekday-median`. With a local method, the report has expected ranges and flags as usual, and the status section says that the report does not need Adobe's anomaly detection. See [Troubleshooting](troubleshooting.md#limited-access).
+When the credential may not use Adobe's anomaly detection, or the test of it failed, the run stores no expected values and no flags from Adobe. With `adobe`, the tiles then say "Anomaly detection not available", and the Alerts tab suggests a command that writes the report again with a local method, e.g., `ahd render --run 3 --anomaly-method weekday-median`. The command has the same `--db` or `--profile` option that chose the database of the run, e.g., `ahd render --run 3 --profile prod --anomaly-method weekday-median`, so that it reads the same file. With a local method, the report has expected ranges and flags as usual, and the status section says that the report does not need Adobe's anomaly detection. See [Troubleshooting](troubleshooting.md#limited-access).
 
 ## Summary tiles
 
