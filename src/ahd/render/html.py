@@ -332,15 +332,15 @@ def _last_day(run: dict[str, Any]) -> str | None:
     return (date.fromisoformat(today) - timedelta(days=1)).isoformat() if today else None
 
 
-def unfinished_note(status: str, issues: list[dict[str, Any]]) -> str | None:
+def unfinished_note(status: str) -> str | None:
     """The warning for a run that may not have read every component, or None.
 
-    A "running" run always gets it. A "failed" run gets it only without issues, because its
-    issues already say what it did not read.
+    Every "running" run gets it, because it stopped without saying what it did not read. Every
+    "failed" run gets it too, because a run is "failed" only when it read no component value.
+    Its issues, e.g., the no_rows issues of the Individual Component Summary pair, do not say
+    that.
     """
-    if status == "running" or (status == "failed" and not issues):
-        return UNFINISHED_NOTES[status]
-    return None
+    return UNFINISHED_NOTES.get(status)
 
 
 def anomaly_blocked(method: dict[str, Any], issues: list[dict[str, Any]]) -> bool:
@@ -388,7 +388,7 @@ def render_html(view: dict[str, Any], render_command: str | None = None) -> str:
         individual_label=individual_label(view.get("pairs", [])),
         breakdown_notes=BREAKDOWN_NOTES,
         issue_groups=_issue_groups(issues, method),
-        unfinished=unfinished_note(status, issues),
+        unfinished=unfinished_note(status),
         unfinished_cause=UNFINISHED_CAUSE,
         anomaly=method,
         anomaly_source=anomaly_source(method),

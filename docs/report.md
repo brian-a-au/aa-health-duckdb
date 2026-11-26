@@ -249,13 +249,13 @@ An alert tile that counts at least one alert also says how many of them are new,
 
 Click any alert tile to open the Alerts Summary. Click the problems tile to jump to the status section.
 
-The problems tile says "Everything was read" only for a run that finished. For a run that did not finish, it says "This run did not finish. See the status section". It then shows the number of problems the run holds, or a dash when it holds none. A failed run without problems gets the same tile with "This run failed".
+The problems tile says "Everything was read" only for a run that finished. For a run that did not finish, it says "This run did not finish. See the status section". It then shows the number of problems the run holds, or a dash when it holds none. A failed run gets the same tile with "This run failed", also when it holds problems.
 
 ## Status
 
 When everything was read, the status section is one line that says "No problems". Otherwise it lists anything that could not be read, grouped by cause, with a plain explanation of each. **Copy problems** copies the list for an email or a ticket. See [Copying](#copying).
 
-A run that did not finish never says "No problems". The run stopped without saying which components it did not read, e.g., because the window was closed. So the status section shows a warning that says "This run did not finish, so some components may not have been read." Components that were not read are not shown in the tables, the tiles or the alert lists. Make a new run with `ahd run` to check every component. A failed run without problems gets the same warning, which starts with "This run failed". The copied alerts and the copied problems say it too, right after their title.
+A run that did not finish never says "No problems". The run stopped without saying which components it did not read, e.g., because the window was closed. So the status section shows a warning that says "This run did not finish, so some components may not have been read." Components that were not read are not shown in the tables, the tiles or the alert lists. Make a new run with `ahd run` to check every component. A failed run gets the same warning, which starts with "This run failed". A run fails only when it read no component value, so the warning shows also when the run lists problems, e.g., those of the Individual Component Summary pair. The copied alerts and the copied problems say it too, right after their title.
 
 It also shows a warning when the run sees far fewer custom events, eVars or props than the run before it. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 

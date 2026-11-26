@@ -1985,12 +1985,12 @@
   }
 
   // A run that may not have read every component, as the status section says: a run still
-  // marked "running", or a failed run without issues. Its words start a sentence, e.g., "This
-  // run did not finish". Empty for any other run.
+  // marked "running", or a failed run, which read no component value. Its words start a
+  // sentence, e.g., "This run did not finish". Empty for any other run.
   function unfinishedText() {
     var status = (data.run || {}).status;
     if (status === "running") return "This run did not finish";
-    if (status === "failed" && !(data.issues || []).length) return "This run failed";
+    if (status === "failed") return "This run failed";
     return "";
   }
   function unfinishedLine() {

@@ -691,7 +691,8 @@ def _unfinished_store(path, status, issue):
 
     With status "running", finish_run is never called, as after a closed window or a killed
     process. With "failed", the run ends as failed, e.g., when Adobe's answers held no rows.
-    issue adds one problem.
+    issue adds one problem. With "pair", it adds the 3 no_rows issues of a pair that read
+    nothing.
     """
     store = Store.open(path)
     rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
@@ -711,7 +712,10 @@ def _unfinished_store(path, status, issue):
         ],
     )
     store.add_daily_values(rid, _series("metrics/event1", 10.0, 10.0))
-    if issue:
+    if issue == "pair":
+        for n in (1, 2, 3):
+            store.add_issue(rid, "individual", f"individual/{n}", "no_rows", "No rows")
+    elif issue:
         store.add_issue(rid, "component", "metrics/event2", "unauthorized_metric", "Hidden")
     if status != "running":
         store.finish_run(rid, status)
@@ -741,6 +745,9 @@ return out;
         ("running", False, "This run did not finish"),
         ("running", True, "This run did not finish"),
         ("failed", False, "This run failed"),
+        # A failed run read no component value, also when it holds issues.
+        ("failed", True, "This run failed"),
+        ("failed", "pair", "This run failed"),
     ],
 )
 def test_an_unfinished_run_never_says_that_everything_was_read(
@@ -758,7 +765,7 @@ def test_an_unfinished_run_never_says_that_everything_was_read(
     line = f"{words}, so some components may not have been read."
     # The tile counts the problems that the run holds, and else shows no number.
     assert got["tag"] == "BUTTON" and got["kind"] == "tile tile-flag" and got["icon"] == "!"
-    assert got["value"] == ("1" if issue else "–")
+    assert got["value"] == {False: "–", True: "1", "pair": "3"}[issue]
     assert got["note"] == f"{words}. See the status section"
     assert got["focus"] == "status"
     assert line in got["status"]

@@ -344,9 +344,9 @@ def test_an_unfinished_run_never_says_that_no_problems_were_found():
     html = render_html(v)
     assert RUNNING_NOTE in html and 'id="copy-problems"' in html
     assert html.index('id="unfinished-run"') < html.index('id="copy-problems"')
-    # A failed run without an issue gets the warning too. With issues, they say what is missing.
+    # A failed run read no component value, so it gets the warning too, with or without issues.
     v["run"]["status"] = "failed"
-    assert FAILED_NOTE not in render_html(v)
+    assert FAILED_NOTE in render_html(v)
     v["issues"] = []
     html = render_html(v)
     assert FAILED_NOTE in html and "No problems" not in html
@@ -355,6 +355,25 @@ def test_an_unfinished_run_never_says_that_no_problems_were_found():
         v["run"]["status"] = status
         html = render_html(v)
         assert 'id="unfinished-run"' not in html and "No problems were found" in html
+
+
+def test_a_failed_run_whose_only_issues_are_of_the_pair_gets_the_warning():
+    # The pair stored only no_rows issues. They do not say that no component value was read.
+    v = sample_view()
+    v["run"]["status"] = "failed"
+    v["issues"] = [
+        {
+            "scope": "individual",
+            "component_id": f"individual/{n}",
+            "code": "no_rows",
+            "message": "Adobe returned no rows.",
+        }
+        for n in (1, 2, 3)
+    ]
+    html = render_html(v)
+    assert '<div class="warning" id="unfinished-run">' in html
+    assert FAILED_NOTE in html and UNREAD_CAUSE in html
+    assert html.index('id="unfinished-run"') < html.index('id="copy-problems"')
 
 
 def test_missing_bands_note():
