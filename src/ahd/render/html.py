@@ -343,12 +343,23 @@ def unfinished_note(status: str, issues: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def anomaly_blocked(method: dict[str, Any], issues: list[dict[str, Any]]) -> bool:
+    """Whether the page uses Adobe's anomaly detection, and the run could not use it.
+
+    This is the only copy of the rule. The page data carries the answer as anomaly_blocked, and
+    report.js reads it there.
+    """
+    return bool(method.get("adobe")) and any(i.get("code") in ANOMALY_BLOCKED for i in issues)
+
+
 def render_html(view: dict[str, Any], render_command: str | None = None) -> str:
     """The page of the report.
 
     render_command is the ahd render command for the run, with the --db or --profile option that
-    chose the database, e.g., "ahd render --run 3 --profile prod". The Alerts tab suggests it
-    with a local anomaly method. Without it, the page names only the run.
+    chose the database, e.g., "ahd render --run 3 --profile prod". When the run could not use
+    Adobe's anomaly detection, the Alerts tab suggests it with a local anomaly method. Without
+    it, the page names only the run. Any other page leaves it out, so that a page that is
+    shared names no database file and no profile.
     """
     run = view.get("run", {})
     status = run.get("status") or "unknown"
@@ -357,16 +368,17 @@ def render_html(view: dict[str, Any], render_command: str | None = None) -> str:
     day_words = f"on {last_day}" if last_day else "yesterday"
     method = anomaly_method(view)
     issues = view.get("issues", [])
+    blocked = anomaly_blocked(method, issues)
     if not method.get("adobe"):
         method_note: str | None = LOCAL_METHOD_NOTE
-    elif any(i.get("code") in ANOMALY_BLOCKED for i in issues):
+    elif blocked:
         method_note = BLOCKED_METHOD_NOTE
     else:
         method_note = None
     template = _env.get_template("report.html.j2")
     return template.render(
         run=run,
-        render_command=render_command or f"ahd render --run {run.get('id')}",
+        render_command=(render_command or f"ahd render --run {run.get('id')}") if blocked else None,
         run_mark=run_mark(run),
         status_label=STATUS_LABELS.get(status, status),
         status=status,
@@ -402,7 +414,7 @@ def render_html(view: dict[str, Any], render_command: str | None = None) -> str:
         day_words=day_words,
         css=_inline(_static("report.css"), "style"),
         js=_inline(_static("report.js"), "script"),
-        data=_json_for_script(view),
+        data=_json_for_script({**view, "anomaly_blocked": blocked}),
     )
 
 

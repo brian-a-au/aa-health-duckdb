@@ -270,12 +270,10 @@
     if (anomalyMethod.adobe) return "Adobe";
     return (start ? "The " : "the ") + anomalyMethod.label + " method";
   }
-  // The two codes that fetch.py records when a run was made without Adobe's anomaly detection:
-  // the credential may not use it, or the request that tests it failed. A local method does not
-  // need it.
-  var anomalyBlocked = !!anomalyMethod.adobe && (data.issues || []).some(function (i) {
-    return i.code === "anomaly_not_allowed" || i.code === "anomaly_probe_failed";
-  });
+  // The page uses Adobe's anomaly detection, and the run was made without it: the credential
+  // may not use it, or the request that tests it failed. html.py decides it, and only then
+  // writes the render command that the Alerts tab suggests.
+  var anomalyBlocked = !!data.anomaly_blocked;
 
   // ---- tabs ----------------------------------------------------------------
   var redrawers = [];
