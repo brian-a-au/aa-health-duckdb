@@ -39,7 +39,7 @@ The header names the report suite, the Individual Component Summary pairs, the s
 
 - **Complete:** everything was read.
 - **Complete, with some gaps:** the run finished, but some data could not be read. The status section lists it.
-- **Failed:** no data could be read.
+- **Failed:** no component value could be read, or the run stopped part way, e.g., on Ctrl-C. See [Status](#status).
 - **Not finished:** the run stopped in the middle, e.g., because the window was closed. Such a run may not have read every component. See [Status](#status).
 
 Every day in the report counts back from the run date. "Yesterday" is the day before the run date. For a normal run, that is the day before the run was made.
@@ -255,7 +255,7 @@ The problems tile says "Everything was read" only for a run that finished. For a
 
 When everything was read, the status section is one line that says "No problems". Otherwise it lists anything that could not be read, grouped by cause, with a plain explanation of each. **Copy problems** copies the list for an email or a ticket. See [Copying](#copying).
 
-A run that did not finish never says "No problems". The run stopped without saying which components it did not read, e.g., because the window was closed. So the status section shows a warning that says "This run did not finish, so some components may not have been read." Components that were not read are not shown in the tables, the tiles or the alert lists. Make a new run with `ahd run` to check every component. A failed run gets the same warning, which starts with "This run failed". A run fails only when it read no component value, so the warning shows also when the run lists problems, e.g., those of the Individual Component Summary pair. The copied alerts and the copied problems say it too, right after their title.
+A run that did not finish never says "No problems". The run stopped without saying which components it did not read, e.g., because the window was closed. So the status section shows a warning that says "This run did not finish, so some components may not have been read." Components that were not read are not shown in the tables, the tiles or the alert lists. Make a new run with `ahd run` to check every component. A failed run gets the same warning, which starts with "This run failed". A run fails when it read no component value, or when it stopped part way, e.g., on Ctrl-C or after a sign-in error. In both cases it may not have read every component, so the warning shows also when the run lists problems, e.g., those of the Individual Component Summary pair. The copied problems hold the warning right after their title. The copied alerts hold it after their lists. In the formatted copy, it is in the short notes at the end, with the run number.
 
 It also shows a warning when the run sees far fewer custom events, eVars or props than the run before it. See [Troubleshooting](troubleshooting.md#fewer-components-than-last-time).
 

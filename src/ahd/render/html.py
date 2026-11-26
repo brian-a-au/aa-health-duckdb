@@ -336,9 +336,10 @@ def unfinished_note(status: str) -> str | None:
     """The warning for a run that may not have read every component, or None.
 
     Every "running" run gets it, because it stopped without saying what it did not read. Every
-    "failed" run gets it too, because a run is "failed" only when it read no component value.
-    Its issues, e.g., the no_rows issues of the Individual Component Summary pair, do not say
-    that.
+    "failed" run gets it too. A run is "failed" when it read no component value, or when it
+    stopped part way, e.g., on Ctrl-C or after a sign-in error. In both cases it may not have
+    read every component, also when it holds issues, e.g., the no_rows issues of the Individual
+    Component Summary pair.
     """
     return UNFINISHED_NOTES.get(status)
 

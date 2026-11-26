@@ -26,6 +26,7 @@ from chrome import (
 
 from ahd.api.reports import Column, DailyValue
 from ahd.catalog import Component
+from ahd.fetch import INTERRUPTED, INTERRUPTED_MESSAGE
 from ahd.render.html import render_html
 from ahd.store import Store
 from ahd.summary import ANOMALY_LABELS, ANOMALY_METHODS, build_view
@@ -691,9 +692,10 @@ def _unfinished_store(path, status, issue):
     """A run of 3 components that read only the first.
 
     With status "running", finish_run is never called, as after a closed window or a killed
-    process. With "failed", the run ends as failed, e.g., when Adobe's answers held no rows.
-    issue adds one problem. With "pair", it adds the 3 no_rows issues of a pair that read
-    nothing.
+    process. With "failed", the run ends as failed with the values of the first component, as
+    after Ctrl-C part way. issue adds one problem. With "pair", it adds the 3 no_rows issues of
+    a pair that read nothing. With "stopped", it adds the issues that a run stopped with Ctrl-C
+    gets for each component it did not read.
     """
     store = Store.open(path)
     rid = store.create_run("rs1", "Suite One", None, TODAY, "US/Pacific", "0.1.0")
@@ -716,6 +718,8 @@ def _unfinished_store(path, status, issue):
     if issue == "pair":
         for n in (1, 2, 3):
             store.add_issue(rid, "individual", f"individual/{n}", "no_rows", "No rows")
+    elif issue == "stopped":
+        store.add_unread_issues(rid, INTERRUPTED, INTERRUPTED_MESSAGE)
     elif issue:
         store.add_issue(rid, "component", "metrics/event2", "unauthorized_metric", "Hidden")
     if status != "running":
@@ -746,9 +750,10 @@ return out;
         ("running", False, "This run did not finish"),
         ("running", True, "This run did not finish"),
         ("failed", False, "This run failed"),
-        # A failed run read no component value, also when it holds issues.
+        # A failed run read no component value or stopped part way, also when it holds issues.
         ("failed", True, "This run failed"),
         ("failed", "pair", "This run failed"),
+        ("failed", "stopped", "This run failed"),
     ],
 )
 def test_an_unfinished_run_never_says_that_everything_was_read(
@@ -766,15 +771,21 @@ def test_an_unfinished_run_never_says_that_everything_was_read(
     line = f"{words}, so some components may not have been read."
     # The tile counts the problems that the run holds, and else shows no number.
     assert got["tag"] == "BUTTON" and got["kind"] == "tile tile-flag" and got["icon"] == "!"
-    assert got["value"] == {False: "–", True: "1", "pair": "3"}[issue]
+    assert got["value"] == {False: "–", True: "1", "pair": "3", "stopped": "2"}[issue]
     assert got["note"] == f"{words}. See the status section"
     assert got["focus"] == "status"
     assert line in got["status"]
     assert "Components that were not read are not shown" in got["status"]
     assert "No problems" not in got["status"]
-    assert f"{line} See the status section of the report." in got["text"]
+    # The copied alerts hold the warning after their lists, not right after the title as the
+    # copied problems do. The formatted copy holds it in the notes at the end, with the run.
+    lines = got["text"].split("\n")
+    at = lines.index(f"{line} See the status section of the report.")
+    after = lines[at:]
+    assert at > 1 and not any(t.endswith("):") or t == "No alerts for this day." for t in after)
     assert copied["rich"]["copied"]["text"] == got["text"]
-    assert line in copied["rich"]["copied"]["html"]
+    html = copied["rich"]["copied"]["html"]
+    assert re.search(re.escape(line) + r"[^<]* Run \d+, made with ahd", html)
 
 
 def test_copied_problems_of_an_unfinished_run_hold_its_warning(chrome, tmp_path):

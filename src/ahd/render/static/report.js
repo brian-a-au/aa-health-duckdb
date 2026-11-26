@@ -1985,8 +1985,9 @@
   }
 
   // A run that may not have read every component, as the status section says: a run still
-  // marked "running", or a failed run, which read no component value. Its words start a
-  // sentence, e.g., "This run did not finish". Empty for any other run.
+  // marked "running", or a failed run, which read no component value or stopped part way, e.g.,
+  // on Ctrl-C. Its words start a sentence, e.g., "This run did not finish". Empty for any other
+  // run.
   function unfinishedText() {
     var status = (data.run || {}).status;
     if (status === "running") return "This run did not finish";
@@ -2491,7 +2492,8 @@
       "), " + run.today;
   }
   // The problems of a run that may not have read every component, e.g., a run that did not
-  // finish, also hold the warning of the status section, as the copied alerts do.
+  // finish, hold the warning of the status section right after their title. The copied alerts
+  // hold it too, after their lists.
   function problemsText() {
     var lines = [problemsTitle()];
     if (unfinishedText()) lines.push(unfinishedLine());
