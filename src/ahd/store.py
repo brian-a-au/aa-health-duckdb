@@ -197,7 +197,7 @@ def connect(path: Path | str, read_only: bool = False) -> duckdb.DuckDBPyConnect
     The two settings above do not cover a file of another kind. For a SQLite file, DuckDB loads
     its SQLite extension when it is installed, because the kind of the file asks for it. So a
     file that is not empty and is not a DuckDB file is refused before DuckDB opens it. A missing
-    file and an empty file become a new database, as before.
+    file becomes a new database, as before. DuckDB itself refuses an empty file.
     """
     if _is_duckdb_file(Path(path)) is False:
         raise NotDuckDBError(f"The file {path} is not a DuckDB database.")
