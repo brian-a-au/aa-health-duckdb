@@ -533,16 +533,12 @@ class Store:
         if not run_ids:
             return
         ids = list(run_ids)
-        self.con.execute("BEGIN TRANSACTION")
-        try:
+
+        def delete(con: duckdb.DuckDBPyConnection) -> None:
             for table in RUN_TABLES:
-                self.con.execute(
-                    f"DELETE FROM {table} WHERE list_contains(?::BIGINT[], run_id)", [ids]
-                )
-        except BaseException:
-            self.con.execute("ROLLBACK")
-            raise
-        self.con.execute("COMMIT")
+                con.execute(f"DELETE FROM {table} WHERE list_contains(?::BIGINT[], run_id)", [ids])
+
+        _in_transaction(self.con, delete)
         # Write the change to the file now, so the space can be reused.
         self.con.execute("CHECKPOINT")
 
@@ -570,21 +566,17 @@ class Store:
         when it replaces a pair that stored nothing. series_id is the component_id of the pair's
         daily trend, e.g. "individual/2".
         """
-        self.con.execute("BEGIN TRANSACTION")
-        try:
+
+        def delete(con: duckdb.DuckDBPyConnection) -> None:
             for table in ("pairs", "top_items", "breakdowns", "breakdown_totals"):
-                self.con.execute(
-                    f"DELETE FROM {table} WHERE run_id = ? AND pair = ?", [run_id, pair]
-                )
+                con.execute(f"DELETE FROM {table} WHERE run_id = ? AND pair = ?", [run_id, pair])
             for table in ("daily_values", "issues"):
-                self.con.execute(
+                con.execute(
                     f"DELETE FROM {table} WHERE run_id = ? AND component_id = ?",
                     [run_id, series_id],
                 )
-        except BaseException:
-            self.con.execute("ROLLBACK")
-            raise
-        self.con.execute("COMMIT")
+
+        _in_transaction(self.con, delete)
 
     def component_counts(self, run_id: int, groups: list[str]) -> dict[str, int]:
         """How many components of each group the run stored."""
