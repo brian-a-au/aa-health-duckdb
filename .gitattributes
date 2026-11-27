@@ -1,0 +1,3 @@
+# The copied cases keep their line endings on every system, so that the checksums in
+# SOURCE.json hold on Windows too.
+tests/standard_cases/*.json text eol=lf
