@@ -321,16 +321,17 @@ def check_live(case: dict, capsys, monkeypatch) -> str:
     assert report["ok"] is bool(report["sign_in"]["ok"] and report["product_access"]["ok"])
     assert (code == 0) is report["ok"]
     for step in ("sign_in", "product_access"):
-        want = dict(expect.get(step, {}))
+        want = expect.get(step, {})
         got = report[step]
         message = got["message"] or ""
         if "message_contains" in want:
-            assert want.pop("message_contains") in message
+            assert want["message_contains"] in message
         if "message_excludes" in want:
-            assert want.pop("message_excludes") not in message
+            assert want["message_excludes"] not in message
         if "message_contains_by_product" in want:
-            assert want.pop("message_contains_by_product")[PRODUCT] in message
-        assert {k: got[k] for k in want} == want
+            assert want["message_contains_by_product"][PRODUCT] in message
+        plain = {k: v for k, v in want.items() if not k.startswith("message_")}
+        assert {k: got[k] for k in plain} == plain
         if got["ok"] is False:
             assert got["code"] and got["message"]
     _code, text, text_err = _run(capsys, ["check"])
