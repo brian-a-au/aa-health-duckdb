@@ -10,6 +10,7 @@ This page describes every `ahd` command, with its options and exit codes. Add `-
 - [Options that every command shares](#options-that-every-command-shares)
 - [How IDs and names are matched](#how-ids-and-names-are-matched): what `--rsid` and the other options accept
 - [check](#check): test the sign-in and access
+- [config](#config): show where the credential comes from, with no API calls
 - [suites and segments](#suites-and-segments): list what the credential can see
 - [run](#run): fetch data and write the report
 - [individual](#individual): add a dimension by metric pair to a stored run
@@ -24,6 +25,7 @@ This page describes every `ahd` command, with its options and exit codes. Add `-
 ## A typical session
 
 ```
+ahd config                         # which credential does the tool find?
 ahd check                          # does the sign-in work?
 ahd suites                         # which report suites can it see?
 ahd check --rsid "My Suite"        # does it have full access to this suite?
@@ -92,8 +94,77 @@ ahd check --rsid "My Suite"
 | Option | What it does |
 |---|---|
 | `--rsid` | A report suite, by ID or name, to check in more detail. See [How IDs and names are matched](#how-ids-and-names-are-matched). |
+| `--format` | `text` for a person (default), or `json` for a program. |
 
 Without `--rsid`, it prints the login company and how many report suites the credential can see. With `--rsid`, it also counts the custom events, eVars and props and tests anomaly detection. When something is missing, it explains the fix in plain words. Run it before your first full run, and after any change in the Adobe Admin Console.
+
+With `--format json`, the command prints one JSON object. It holds two results, because one can work while the other fails:
+
+- `sign_in` is the request for a token to Adobe's sign-in service.
+- `product_access` is the one call to Analytics that finds the login company.
+
+Each result has `ok`, `code` and `message`. `ok` is `null` when the step did not run, e.g., `product_access` after a failed sign-in. `code` names the failure:
+
+| Code | Result | Meaning |
+|---|---|---|
+| `bad_client_id` | `sign_in` | Adobe does not know the client ID. |
+| `bad_secret` | `sign_in` | Adobe rejected the secret. |
+| `scopes_rejected` | `sign_in` | Adobe rejected the scopes. |
+| `wrong_org` | `sign_in` | The org ID does not belong to the credential. |
+| `sign_in_failed` | `sign_in` | The sign-in failed for another reason. The message holds Adobe's own text, cut to 200 characters. |
+| `no_product_access` | `product_access` | The sign-in worked, and the credential sees no Analytics company. |
+| `unreachable` | either | The tool could not reach Adobe, or the answer did not come from Adobe. |
+
+`ok` at the top is true when both results are. `source` names where the credential came from. `details` holds the lines that the text format prints after the sign-in, e.g., "Report suites visible: 12". The exit code is the same as for the text format. The JSON never holds the secret or the client ID. When the tool finds no credential, it prints the error on stderr and no JSON. Use [`ahd config`](#config) for that case.
+
+```json
+{
+  "schema": "adobe-credentials/v1/live-test",
+  "tool": "aa-health-duckdb",
+  "tool_version": "0.1.23",
+  "product": "aa",
+  "ok": false,
+  "source": {"kind": "flag_profile", "name": "profile prod"},
+  "sign_in": {"ok": false, "code": "bad_secret", "message": "Sign-in failed: the client secret is wrong. ..."},
+  "product_access": {"ok": null, "code": null, "message": null},
+  "details": []
+}
+```
+
+## config
+
+Shows which credential the tool finds, and where it comes from. It makes no call to Adobe, so it works without a network.
+
+```
+ahd config
+ahd config --profile prod
+ahd config --format json
+```
+
+| Option | What it does |
+|---|---|
+| `--format` | `text` for a person (default), or `json` for a program. |
+
+It prints:
+
+- the source of the credential, e.g., "profile prod", with the path of its file
+- the organization ID, the scopes, and the client ID with only its first 4 and last 4 characters, e.g., `1a2b****9y0z`
+- whether the secret is set. A secret that is set shows as `****`. No part of it is printed.
+- each source that holds a value and is not used, with the keys it lacks when it is partial
+- each problem, e.g., a missing key
+- each notice and warning that the other commands print on stderr. See [Notices and warnings](configuration.md#notices-and-warnings).
+
+It exits with 0 when the tool finds a whole credential, and with 1 when it does not. A profile together with `--config` is a problem here too, with exit code 1.
+
+With `--format json`, the keys are `ok`, `profile`, `sources`, `credential`, `problems`, `notices` and `warnings`. `credential` holds `org_id`, the masked `client_id`, `secret_set` as true or false, and `scopes`. Each source has a `kind`: `flag_profile` for `--profile`, `profile_variable` for `AA_PROFILE`, `flag_config` for `--config`, `default_config` for `./config.json`, `environment` for either set of variables, or `dotenv` for the `.env` file. Each problem has a `code`:
+
+| Code | Meaning |
+|---|---|
+| `no_credential` | The tool found no credential, or it could not read the file, or `--config` came with all four `AHD_` variables. The message says which. |
+| `partial_source` | The source lacks one or more of the four keys. `missing` names them. |
+| `profile_not_found` | The profile does not exist. |
+| `invalid_profile_name` | The profile name is not valid. |
+| `profile_and_config_both_given` | The command got a profile and `--config`. |
 
 ## suites and segments
 
@@ -488,7 +559,7 @@ ahd import backup/2026-11 --db data/other.duckdb
 | Code | Meaning |
 |---|---|
 | 0 | Everything worked. `alerts` printed at least one alert. |
-| 1 | The command failed. The message on stderr says why. `run` also exits with 1 when the run ends "failed". `prune` also exits with 1 when you answer no, or when a run that `--run` names is not stored. `alerts` also exits with 1 when a suite has no finished run. A variable that does not go with an option also gives 1, e.g., `AA_PROFILE` or all four credential variables with `--config`. |
+| 1 | The command failed. The message on stderr says why. `config` exits with 1 when it finds no whole credential, and prints why on stdout. `run` also exits with 1 when the run ends "failed". `prune` also exits with 1 when you answer no, or when a run that `--run` names is not stored. `alerts` also exits with 1 when a suite has no finished run. A variable that does not go with an option also gives 1, e.g., `AA_PROFILE` or all four credential variables with `--config`. |
 | 2 | `check` found limited access, or a check could not be run. `check` or `suites` found no report suites. Any command also exits with 2 when an option is wrong, e.g., `--change-alert 12`, or when two options do not go together, e.g., `--profile` with `--config`, and prints its usage. |
 | 3 | `run` or `individual` finished, but some columns or requests had problems. The report's status section lists them. After a run of several suites, at least one suite ended "partial" and none failed. |
 | 4 | `alerts` found no alerts in the chosen runs. See [Exit codes of alerts](#exit-codes-of-alerts). |

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import errno
+import io
+import json
 import logging
 import os
 import re
@@ -11,7 +13,7 @@ import shlex
 import subprocess
 import sys
 from collections.abc import Callable
-from contextlib import suppress
+from contextlib import redirect_stdout, suppress
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -31,13 +33,31 @@ from ahd.alerts import (
     run_age,
     write,
 )
-from ahd.api.auth import NO_REPORT_SUITES, SignInError, SignInUnavailable
+from ahd.api.auth import (
+    NO_REPORT_SUITES,
+    PRODUCT_ACCESS,
+    SIGN_IN,
+    SignInError,
+    SignInUnavailable,
+    failed_step,
+)
 from ahd.api.client import AdobeClient, ApiError
 from ahd.catalog import CUSTOM_GROUPS
-from ahd.config import ConfigError, chosen_profile, load_credentials, profile_dir
+from ahd.config import (
+    MASK,
+    PROFILE_AND_CONFIG,
+    ConfigError,
+    Credentials,
+    Lookup,
+    check_report,
+    chosen_profile,
+    find,
+    profile_dir,
+)
 from ahd.dates import RunWindow, today_in_zone
 from ahd.fetch import (
     DEFAULT_WORKERS,
+    DIST_NAME,
     RunOptions,
     add_pair,
     fetch_catalog,
@@ -46,6 +66,7 @@ from ahd.fetch import (
     suite_name,
     suite_zone,
 )
+from ahd.fetch import _tool_version as tool_version
 from ahd.lookup import (
     list_segments,
     list_suites,
@@ -119,6 +140,10 @@ PROFILE_DATABASE_HELP = (
     "Use the database of this profile, ~/.aa/orgs/NAME/ahd.duckdb. --db wins over it. "
     "Defaults to the AA_PROFILE variable."
 )
+
+# The formats of ahd config and ahd check.
+CHECK_FORMATS = ("text", "json")
+CHECK_FORMAT_HELP = "text for a person (default), or json for a program."
 
 SEGMENT_WITH_RUN = (
     "--segment works only with --rsid or --all-suites. The run that --run names already has "
@@ -288,6 +313,20 @@ def _parser() -> argparse.ArgumentParser:
     check = sub.add_parser("check", help="Sign in and check what this credential can see.")
     signin(check)
     check.add_argument("--rsid", help=RSID_HELP)
+    check.add_argument(
+        "--format",
+        choices=CHECK_FORMATS,
+        default="text",
+        help=CHECK_FORMAT_HELP + " The JSON holds the result of the sign-in and the result of "
+        "the call to Analytics, each with its own code.",
+    )
+
+    config = sub.add_parser(
+        "config",
+        help="Show where the credential comes from, and what is wrong with it. No API calls.",
+    )
+    common(config, db=False, profile_help=PROFILE_CREDENTIAL_HELP)
+    config.add_argument("--format", choices=CHECK_FORMATS, default="text", help=CHECK_FORMAT_HELP)
 
     suites = sub.add_parser("suites", help="List the report suites this credential can see.")
     signin(suites)
@@ -490,42 +529,97 @@ def _check_options(args: argparse.Namespace) -> None:
     Only the command line counts here. A conflict with a variable, e.g., AA_PROFILE, is found
     later and exits with 1, as other configuration problems do."""
     profile = getattr(args, "profile", None) or args.top_profile
-    if getattr(args, "config", None) is not None and profile:
-        # A profile always wins, so --config would be ignored without a word.
-        args.usage_error(
-            f"Use a profile or --config, not both. The profile {profile!r} comes from --profile."
-        )
+    if getattr(args, "config", None) is not None and profile and args.command != "config":
+        # A profile always wins, so --config would be ignored without a word. ahd config
+        # reports the two options as a problem instead, as it does for every other problem.
+        args.usage_error(PROFILE_AND_CONFIG.format(name=profile, where="--profile"))
     if args.command == "alerts" and args.run is not None and args.segment is not None:
         args.usage_error(SEGMENT_WITH_RUN)
     if args.command == "prune" and not args.run and args.before is None:
         args.usage_error(NO_SELECTION)
 
 
-def _connect(args: argparse.Namespace, factory: Callable[..., Any]) -> Any:
-    path = args.config
-    profile = _profile(args)
-    if path is not None and profile:
-        # _check_options already stopped a --profile option, so this one is from AA_PROFILE.
-        raise ConfigError(
-            f"Use a profile or --config, not both. The profile {profile!r} comes from the "
-            "AA_PROFILE variable."
-        )
-    from_option = path is not None
-    if path is None and Path("config.json").exists():
-        path = Path("config.json")
-    creds = load_credentials(path, profile, from_option=from_option)
+def _find(args: argparse.Namespace) -> Lookup:
+    """Look for the credential of the command."""
+    return find(args.config, getattr(args, "profile", None) or args.top_profile)
+
+
+def _credentials(args: argparse.Namespace) -> Credentials:
+    """The credential of the command. Each notice and warning of the lookup is one line on
+    stderr, so that it never mixes with the output of the command."""
+    look = _find(args)
+    if look.error is not None:
+        # _check_options already stopped --profile with --config, so a profile here that came
+        # with --config is from AA_PROFILE.
+        raise look.error
+    for label, messages in (("Warning", look.warnings), ("Notice", look.notices)):
+        for message in messages:
+            print(f"{label} ({message.code}): {message.text}", file=sys.stderr)
+    assert look.credentials is not None
+    return look.credentials
+
+
+def _connect(
+    args: argparse.Namespace,
+    factory: Callable[..., Any],
+    creds: Credentials | None = None,
+    say: Callable[[str], None] = print,
+) -> Any:
+    """Sign in. say prints the lines for a person, which ahd check --format json keeps."""
+    creds = creds or _credentials(args)
     company = getattr(args, "company", None)
     client = factory(creds, company_id=company) if company else factory(creds)
     # Only the name of the source, never a value from it.
-    print(f"Signed in using {creds.source}")
+    say(f"Signed in using {creds.source}")
     count = getattr(client, "companies", 1)
     if count > 1 and not company:
         name = getattr(client, "company_name", "") or "(no name)"
-        print(
+        say(
             f"This credential sees {count} login companies. Using {inert(name)} "
             f"({inert(client.company_id)}). Choose another with --company."
         )
     return client
+
+
+def _config(args: argparse.Namespace) -> int:
+    """Print how the tool finds the credential. It makes no call to Adobe."""
+    look = _find(args)
+    report = check_report(look, DIST_NAME, tool_version())
+    if args.format == "json":
+        print(json.dumps(report, indent=2))
+        return 0 if report["ok"] else 1
+    found = report["credential"]
+    used = [s for s in look.sources if s.used]
+    print(f"Credential: {'found' if report['ok'] else 'not found'}")
+    if look.credentials is not None:
+        print(f"Source: {look.credentials.source}")
+    if look.profile:
+        print(f"Profile: {look.profile}")
+    for source in used:
+        if source.path:
+            print(f"File: {source.path}")
+    print(f"Organization ID: {found['org_id'] or 'not set'}")
+    print(f"Client ID: {found['client_id'] or 'not set'}")
+    print(f"Secret: {MASK if found['secret_set'] else 'not set'}")
+    print(f"Scopes: {found['scopes'] or 'not set'}")
+    skipped = [s for s in look.sources if not s.used]
+    if skipped:
+        print("Sources that were not used:")
+    for source in skipped:
+        where = f" ({source.path})" if source.path else ""
+        if source.skipped == "partial":
+            why = f"it lacks {', '.join(source.missing)}"
+        else:
+            why = "another source is used first"
+        print(f"  {source.name}{where}: {why}. It holds {', '.join(source.fields)}.")
+    for label, entries in (
+        ("Problem", report["problems"]),
+        ("Warning", report["warnings"]),
+        ("Notice", report["notices"]),
+    ):
+        for entry in entries:
+            print(f"{label} ({entry['code']}): {entry['message']}")
+    return 0 if report["ok"] else 1
 
 
 def _print_table(rows: list[dict], empty: str) -> None:
@@ -576,8 +670,66 @@ class _Progress:
             self.stream.flush()
 
 
+def _step(ok: bool | None, code: str | None = None, message: str | None = None) -> dict:
+    """One result of the live test. ok is None when the step did not run."""
+    return {"ok": ok, "code": code, "message": message}
+
+
+def _check_json(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
+    """ahd check as JSON, in the shape adobe-credentials/v1/live-test.
+
+    The sign-in and the call to Analytics that finds the login company are two results, because
+    one can work while the other fails. details holds the lines that the text format prints
+    after the sign-in. The exit code is that of the text format.
+    """
+    creds = _credentials(args)
+    lines: list[str] = []
+    steps = {SIGN_IN: _step(None), PRODUCT_ACCESS: _step(None)}
+    code = 1
+    try:
+        client = _connect(args, factory, creds, lines.append)
+    except (SignInError, requests.RequestException) as e:
+        failed = failed_step(e)
+        if failed == PRODUCT_ACCESS:
+            steps[SIGN_IN] = _step(True)
+        if isinstance(e, SignInError):
+            # Adobe's own words only for a failure that the tool has no name for.
+            text = e.adobe_text if e.code == "sign_in_failed" and e.adobe_text else str(e)
+            steps[failed] = _step(False, e.code, text)
+        else:
+            text = _error_text(e)
+            steps[failed] = _step(False, "unreachable", text[0].upper() + text[1:])
+    else:
+        steps = {SIGN_IN: _step(True), PRODUCT_ACCESS: _step(True)}
+        out = io.StringIO()
+        try:
+            with redirect_stdout(out):
+                code = _check_access(args, client)
+        except (ConfigError, ApiError, SignInError, requests.RequestException) as e:
+            out.write(f"Error: {_error_text(e)}\n")
+        lines += out.getvalue().splitlines()
+    report = {
+        "schema": "adobe-credentials/v1/live-test",
+        "tool": DIST_NAME,
+        "tool_version": tool_version(),
+        "product": "aa",
+        "ok": all(step["ok"] for step in steps.values()),
+        "source": {"kind": creds.kind, "name": creds.source},
+        **steps,
+        "details": lines,
+    }
+    print(json.dumps(report, indent=2))
+    return code
+
+
 def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
-    client = _connect(args, factory)
+    if args.format == "json":
+        return _check_json(args, factory)
+    return _check_access(args, _connect(args, factory))
+
+
+def _check_access(args: argparse.Namespace, client: Any) -> int:
+    """What the credential can see, after the sign-in. Prints one line for each finding."""
     if args.rsid:
         args.rsid = resolve_suite(client, args.rsid)
     if not args.rsid:
@@ -1149,6 +1301,8 @@ def _command(args: argparse.Namespace, client_factory: Callable[..., Any]) -> in
     _choose_anomaly(args)
     if args.command == "check":
         return _check(args, client_factory)
+    if args.command == "config":
+        return _config(args)
     if args.command == "run":
         return _run(args, client_factory)
     if args.command == "render":

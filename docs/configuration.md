@@ -41,7 +41,13 @@ The tool uses the first of these that it finds:
 
 1. **A profile.** Pass `--profile <name>`, or set the `AA_PROFILE` environment variable. The tool reads `~/.aa/orgs/<name>/config.json`.
 2. **Environment variables.** Set all four of `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_SECRET` and `AHD_SCOPES`.
-3. **A config file.** Pass its path with `--config`, or put a file named `config.json` in the folder where you run the tool. If you also set some of the four credential variables, each one wins over the same key in the file.
+3. **A config file.** Pass its path with `--config`, or put a file named `config.json` in the folder where you run the tool. If you also set some of the four `AHD_` variables, each one wins over the same key in the file.
+4. **The plain variables.** Set all four of `ORG_ID`, `CLIENT_ID`, `SECRET` and `SCOPES`. These are the names that the companion tools read.
+5. **A `.env` file.** Put a file named `.env` in the folder where you run the tool, with the same four names, e.g., `SECRET=...`. The tool reads only these four lines of the file. It does not read a `.env` file in a folder above, and it puts nothing from the file into the environment. So the file cannot set `AA_PROFILE` or the `AHD_ANOMALY_` variables.
+
+The tool reads the plain variables and the `.env` file only when the first three give nothing at all. So a setup that worked before 0.1.23 gets the same credential as before. The tool takes all four values from the plain variables or all four from the `.env` file, and does not mix the two.
+
+Run `ahd config` to see which source the tool uses. It makes no call to Adobe. See [config](usage.md#config).
 
 A profile and `--config` cannot be used together. The tool stops and says so, also when the profile comes from `AA_PROFILE`.
 
@@ -51,9 +57,35 @@ A `~` at the start of the `--config` path means your home folder, e.g., `--confi
 
 Two more variables, `AHD_ANOMALY_METHOD` and `AHD_ANOMALY_SENSITIVITY`, hold no credential. They set the defaults of `--anomaly-method` and `--anomaly-sensitivity`. See [Set the anomaly method once](usage.md#set-the-anomaly-method-once).
 
-When the tool finds no credential at all, it stops and lists the three ways to give one.
+When the tool finds no credential at all, it stops and lists the ways to give one.
 
 The tool reads a profile or config file as UTF-8 JSON. It accepts the byte-order mark that Windows PowerShell 5 adds. If the file is missing, is not valid JSON, or does not hold one JSON object, the tool stops and names the file.
+
+### Notices and warnings
+
+Version 0.2.0 will look for the credential in another order, the one that the companion tools will share:
+
+1. `--profile` or `--config`
+2. `AA_PROFILE`
+3. The environment variables, with or without `AHD_` in front
+4. The `.env` file in the folder where you run the tool
+5. `./config.json`
+
+From 0.2.0, the tool also takes all four values from one source. A source that holds only some of them stops the command.
+
+Until then, the tool keeps its order. When the new order would give another result, a command that signs in prints one line on stderr that starts with "Notice", and then goes on as before. `ahd config` lists the same notices. Each notice has a code:
+
+| Code | What it means | What you can do |
+|---|---|---|
+| `plain_variables_not_used` | `ORG_ID`, `CLIENT_ID`, `SECRET` and `SCOPES` are all set, and the tool uses `./config.json`. From 0.2.0, it uses the variables. | Unset the variables, or remove the file. |
+| `variable_forms_differ` | A variable is set with and without `AHD_` in front, e.g., `AHD_SECRET` and `SECRET`, with different values. The tool uses the `AHD_` name. From 0.2.0, it stops. | Set both to the same value, or unset one. |
+| `mixed_sources` | Some of the `AHD_` variables are set, and the other keys come from a config file. From 0.2.0, the tool stops. | Set all four variables, or none. |
+| `partial_source_skipped` | Some of the plain variables are set, or the `.env` file holds some of the four names. The tool does not read them. From 0.2.0, it stops. | Set all four, or none. |
+| `dotenv_and_config_differ` | The `.env` file and `./config.json` hold different credentials. The tool uses `config.json`. From 0.2.0, it uses the `.env` file. | Keep one of the two files. |
+
+A notice never changes the result or the exit code of a command, and it never goes to stdout.
+
+On macOS and Linux, the tool also prints one line that starts with "Warning (file_readable_by_others)" when other users of the computer can read a profile, a config file or a `.env` file that it read. Make the file private, e.g., with `chmod 600 config.json`. When the file is a link, the tool checks the file that the link points to. The tool does not check this on Windows.
 
 ### Profiles
 
@@ -122,7 +154,8 @@ Changes in the Admin Console can take a while to reach Analytics. Run `ahd check
 
 - It only reads from Adobe. Among Analytics API calls, the only one that sends a body is the report request, and it only reads data.
 - When it signs in, it prints where the credential came from, e.g., "Signed in using profile prod". It prints only the name of the source.
-- It never writes a credential value or a token to the screen, to logs, to the database or to the report.
+- It never writes the secret or a token to the screen, to logs, to the database or to the report. No part of the secret is printed, also not its length.
+- Only `ahd config` shows other values of the credential: the organization ID, the scopes, and the client ID with only its first 4 and last 4 characters.
 - It never sends usage data anywhere.
 
 Keep `config.json` out of version control. If you work from a clone of this repository, its `.gitignore` already leaves the file out.

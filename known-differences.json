@@ -1,0 +1,38 @@
+{
+  "spec": "adobe-credentials/v1",
+  "tool": "aa-health-duckdb",
+  "tool_version": "0.1.23",
+  "not_applicable": [
+    {
+      "rule": "L1.1",
+      "reason": "Only the part about a worker or a child process, case mask-009. ahd starts no child process and passes the credential to no other program. The rest of the rule applies and is met."
+    },
+    {
+      "rule": "L1.3",
+      "reason": "Only the part about files and folders that a tool writes, cases perm-001, perm-002 and perm-003. ahd only reads profiles and config files and writes no credential. The warning for a file that others can read applies and is met."
+    }
+  ],
+  "differences": [
+    {
+      "rule": "L3.1",
+      "cases": [
+        "lookup-002",
+        "lookup-005",
+        "lookup-006"
+      ],
+      "summary": "ahd uses the first of these: a profile from --profile or AA_PROFILE, all four AHD_ variables, a config file from --config or ./config.json, the variables ORG_ID, CLIENT_ID, SECRET and SCOPES, and the .env file in the working folder. So ./config.json wins over the plain variables and over .env. --config together with AA_PROFILE, or together with all four AHD_ variables, stops the command. ahd prints the notice plain_variables_not_used or dotenv_and_config_differ when the order of the standard would give another credential.",
+      "planned": "0.2.0"
+    },
+    {
+      "rule": "L3.2",
+      "cases": [
+        "partial-001",
+        "partial-002",
+        "partial-004",
+        "forms-004"
+      ],
+      "summary": "When only some of the AHD_ variables are set, each one replaces the same key of the config file, and ahd prints the notice mixed_sources. A partial set of the plain variables, or a partial .env file, beside a config file is not read, and ahd prints the notice partial_source_skipped. When the AHD_ names and the plain names hold different values, ahd uses the AHD_ names and prints the notice variable_forms_differ.",
+      "planned": "0.2.0"
+    }
+  ]
+}

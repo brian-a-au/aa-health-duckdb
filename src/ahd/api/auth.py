@@ -74,8 +74,8 @@ WRONG_ORG = (
 )
 NO_COMPANY = (
     "Sign-in worked, but this credential sees no Adobe Analytics company. In the Adobe Admin "
-    "Console, open Adobe Analytics, choose a product profile, and add the credential's technical "
-    "account to it under API credentials. Changes can take a while to reach Analytics."
+    "Console, add the credential's technical account to an Adobe Analytics product profile, "
+    "under API credentials. Changes can take a while to reach Analytics."
 )
 NOT_FROM_ADOBE = (
     "Sign-in failed: the answer to the sign-in request did not come from Adobe's sign-in "
@@ -89,8 +89,36 @@ NO_REPORT_SUITES = (
 )
 
 
+# The two steps of a sign-in, as the live test of the Adobe credentials standard names them:
+# the token request, and the one call to Analytics that finds the login company.
+SIGN_IN = "sign_in"
+PRODUCT_ACCESS = "product_access"
+# The note on a network error of the second step. Without it, the error is of the first step.
+AFTER_TOKEN = "The token request worked. The Analytics discovery call failed."
+# The longest text from Adobe that an error keeps.
+ADOBE_TEXT_LIMIT = 200
+
+
 class SignInError(Exception):
-    """Sign-in failed. The message says what to fix and never holds a credential value."""
+    """Sign-in failed. The message says what to fix and never holds a credential value.
+
+    code is the name of the failure in the Adobe credentials standard, e.g., bad_secret, and
+    step is the step that failed. adobe_text is the error description of the answer for a
+    failure that the tool cannot name. It is cut short and holds no secret. Only the JSON of
+    ahd check shows it.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        code: str = "sign_in_failed",
+        step: str = SIGN_IN,
+        adobe_text: str = "",
+    ):
+        super().__init__(message)
+        self.code = code
+        self.step = step
+        self.adobe_text = adobe_text
 
 
 class SignInUnavailable(SignInError):
@@ -122,6 +150,19 @@ def _list(value: Any) -> list:
 def _missing_scopes(scopes: str) -> list[str]:
     have = {s.strip() for s in scopes.replace(" ", ",").split(",") if s.strip()}
     return [s for s in REQUIRED_SCOPES if s not in have]
+
+
+def _adobe_text(description: str, creds: Credentials) -> str:
+    """The error description of an answer, safe to show: no secret, no character that changes
+    the terminal, and no longer than ADOBE_TEXT_LIMIT."""
+    return inert(description.replace(creds.secret, "****"))[:ADOBE_TEXT_LIMIT]
+
+
+def failed_step(error: BaseException) -> str:
+    """The step of the sign-in that a SignInError or a network error stopped."""
+    if isinstance(error, SignInError):
+        return error.step
+    return PRODUCT_ACCESS if AFTER_TOKEN in getattr(error, "__notes__", ()) else SIGN_IN
 
 
 def _is_temporary(status: int) -> bool:
@@ -201,26 +242,29 @@ def get_token(session: Any, creds: Credentials, wait: Wait | None = None) -> str
     if resp.status_code == 200:
         # Adobe's sign-in service answers 200 only with a token. Another answer with 200 comes
         # from something between, e.g., a proxy or the sign-in page of a network.
-        raise SignInError(NOT_FROM_ADOBE)
+        raise SignInError(NOT_FROM_ADOBE, "unreachable")
     error = str(body.get("error") or "")
     desc = str(body.get("error_description") or "")
     if error == "invalid_client" and "secret" in desc:
-        raise SignInError(WRONG_SECRET)
+        raise SignInError(WRONG_SECRET, "bad_secret")
     if error == "invalid_client":
-        raise SignInError(WRONG_CLIENT_ID)
+        raise SignInError(WRONG_CLIENT_ID, "bad_client_id")
     if error == "invalid_scope":
-        raise SignInError(SCOPE_REJECTED)
+        raise SignInError(SCOPE_REJECTED, "scopes_rejected")
     # The error code comes from the answer, which may not be from Adobe, e.g., from a proxy.
     code = f", error {inert(error)}" if error else ""
+    adobe_text = _adobe_text(desc, creds)
     if _is_temporary(resp.status_code):
         raise SignInUnavailable(
             f"Sign-in failed: Adobe's sign-in service answered HTTP {resp.status_code}{code} "
             f"{SIGN_IN_TRIES} times. This is a problem at Adobe, not with the credential. Wait a "
-            "little and try again."
+            "little and try again.",
+            adobe_text=adobe_text,
         )
     raise SignInError(
         f"Sign-in failed: Adobe answered HTTP {resp.status_code}{code}. Check the credential in "
-        "the Adobe Developer Console, then try again."
+        "the Adobe Developer Console, then try again.",
+        adobe_text=adobe_text,
     )
 
 
@@ -254,31 +298,39 @@ def find_company(
         raise SignInUnavailable(
             f"Sign-in worked, but the Analytics discovery call answered HTTP {resp.status_code} "
             f"{SIGN_IN_TRIES} times. This is a problem at Adobe, not with the credential. Wait a "
-            "little and try again."
+            "little and try again.",
+            "unreachable",
+            PRODUCT_ACCESS,
         )
     if resp.status_code != 200 or not isinstance(body, dict):
         raise SignInError(
             f"Sign-in worked, but the Analytics discovery call answered HTTP {resp.status_code}. "
-            "Wait a little and try again."
+            "Wait a little and try again.",
+            "unreachable",
+            PRODUCT_ACCESS,
         )
     orgs = [o for o in _list(body.get("imsOrgs")) if isinstance(o, dict)]
     if not orgs:
         missing = _missing_scopes(creds.scopes)
         if missing:
-            raise SignInError(SCOPE_PROBLEM.format(missing=", ".join(missing)))
-        raise SignInError(NO_COMPANY)
+            raise SignInError(
+                SCOPE_PROBLEM.format(missing=", ".join(missing)),
+                "no_product_access",
+                PRODUCT_ACCESS,
+            )
+        raise SignInError(NO_COMPANY, "no_product_access", PRODUCT_ACCESS)
     org = next(
         (o for o in orgs if str(o.get("imsOrgId", "")).lower() == creds.org_id.lower()), None
     )
     if org is None:
-        raise SignInError(WRONG_ORG)
+        raise SignInError(WRONG_ORG, "wrong_org")
     companies = [
         (str(c["globalCompanyId"]), str(c.get("companyName") or ""))
         for c in _list(org.get("companies"))
         if isinstance(c, dict) and c.get("globalCompanyId")
     ]
     if not companies:
-        raise SignInError(NO_COMPANY)
+        raise SignInError(NO_COMPANY, "no_product_access", PRODUCT_ACCESS)
     if company_id is None:
         return companies[0][0], companies[0][1], len(companies)
     # The login company may be given by its global company ID or by its name.
@@ -288,11 +340,18 @@ def find_company(
             return cid, name, len(companies)
     names = ", ".join(f"{inert(name) or '(no name)'} ({inert(cid)})" for cid, name in companies)
     raise SignInError(
-        f"This credential cannot see the login company {company_id!r}. It can see: {names}."
+        f"This credential cannot see the login company {company_id!r}. It can see: {names}.",
+        "no_product_access",
+        PRODUCT_ACCESS,
     )
 
 
 def sign_in(session: Any, creds: Credentials, company_id: str | None = None) -> SignIn:
     token = get_token(session, creds)
-    cid, name, count = find_company(session, token, creds, company_id)
+    try:
+        cid, name, count = find_company(session, token, creds, company_id)
+    except requests.RequestException as e:
+        # The error keeps its type and its text. The note only says which step failed.
+        e.add_note(AFTER_TOKEN)
+        raise
     return SignIn(cid, header_for(token, creds, cid), name, count)
