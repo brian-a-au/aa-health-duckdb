@@ -2,6 +2,36 @@
 
 This file lists the changes in each release. The version numbers follow [Semantic Versioning](https://semver.org/). Until 1.0.0, a minor release, e.g., 0.2.0, may change the database layout or the command options. A patch release holds fixes and additions that break nothing. The tool then asks you to start a new database file, and this file says so.
 
+## Unreleased
+
+This release makes the tool follow Levels 1 and 2 of the Adobe credentials standard, version 1, which its companion tools follow too. You can now see which credential the tool finds, and read the result of `ahd check` as JSON. The tool finds the same credential as before in every setup that worked before. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is.
+
+**New command and option**
+
+- `ahd config` shows which credential the tool finds and where it comes from. It makes no call to Adobe. It shows the organization ID, the scopes, and the client ID with only its first 4 and last 4 characters, e.g., `1a2b****9y0z`. A secret that is set shows as `****`. It also lists each source that is not used, each problem and each notice. `--format json` prints the same as JSON for a program.
+- `ahd check --format json` prints the result as JSON. It holds one result for the sign-in and one for the call to Analytics that finds the login company, each with a code, e.g., `bad_secret`. `ok` is true only when the exit code is 0. When a later check fails, e.g., the credential sees no report suites, the result for Analytics has `ok` false and says why. The text output of `ahd check` does not change.
+
+**More ways to give the credential**
+
+- The tool now reads the variables `ORG_ID`, `CLIENT_ID`, `SECRET` and `SCOPES`, when all four are set. These are the names that the companion tools read. The `AHD_` names work as before.
+- The tool now reads a `.env` file in the folder where you run it, when the file holds the same four names. It reads only these four lines. It does not put the file into the environment, so the file cannot set `AA_PROFILE` or the `AHD_ANOMALY_` variables.
+- Both are used only where the tool said "No credential was found" before. A profile, the `AHD_` variables and a config file all still come first.
+
+**Notices for 0.2.0**
+
+- Version 0.2.0 will look for the credential in another order, and will take all four values from one source. When that would give another result, a command that signs in now prints one line on stderr that starts with "Notice", and goes on as before. E.g., it prints a notice when `ORG_ID`, `CLIENT_ID`, `SECRET` and `SCOPES` are set and the tool uses `./config.json`. [Notices and warnings](docs/configuration.md#notices-and-warnings) lists each notice and what you can do.
+
+**Safety**
+
+- On macOS and Linux, a command now prints one warning on stderr when other users of the computer can read the profile, the config file or the `.env` file that it read. Make the file private, e.g., with `chmod 600 config.json`.
+- A profile name may now have 64 characters at most. A longer name worked before and is now refused, so rename a profile folder with a longer name.
+- The message for a credential that sees no Analytics company now names the fix in one sentence: add the technical account to an Adobe Analytics product profile.
+
+**For contributors**
+
+- The tests now run the shared cases of the standard, in `tests/standard_cases`. `known-differences.json` lists the rules of Level 3 that the tool does not follow until 0.2.0.
+- The tests no longer read the variables `ORG_ID`, `CLIENT_ID`, `SECRET` and `SCOPES` of your shell, or a `config.json` or `.env` file in your clone.
+
 ## 0.1.22 (2026-11-26)
 
 This release fixes what a review of the whole tool found after 0.1.21. The database layout stays at version 7, and the views stay at version 9, so every file keeps working as it is. The alert rules and the counts do not change.

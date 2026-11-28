@@ -415,3 +415,14 @@ def test_companies_in_another_form_are_no_company(companies):
 @pytest.mark.parametrize("found", [5, "text", {"imsOrgId": "ORG1@AdobeOrg"}])
 def test_orgs_in_another_form_are_no_org(found):
     assert _fails(Session(GOOD_TOKEN, (200, {"imsOrgs": found}))) == NO_COMPANY
+
+
+def test_the_text_from_adobe_holds_no_secret_and_only_the_masked_client_id():
+    creds = Credentials("ORG1@AdobeOrg", "client-abc-0123456789", "secret-xyz", FULL_SCOPES)
+    said = f"The client {creds.client_id} sent {creds.secret}. " + "x" * 300
+    body = {"error": "access_denied", "error_description": said}
+    with pytest.raises(SignInError) as e:
+        get_token(Session((400, body)), creds)
+    text = e.value.adobe_text
+    assert text.startswith("The client clie****6789 sent ****. xxx") and len(text) == 200
+    assert creds.secret not in text and creds.client_id not in text

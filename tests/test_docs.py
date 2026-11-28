@@ -17,6 +17,7 @@ PAGES = sorted(
 GITHUB = "https://github.com/brian-a-au/aa-health-duckdb/blob/main/"
 COMMANDS = (
     "check",
+    "config",
     "suites",
     "segments",
     "run",

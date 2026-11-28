@@ -34,7 +34,9 @@ The tests run in one process per CPU core, with pytest-xdist. Add `-n 0` to run 
 
 - The tests use saved Adobe responses and never call Adobe.
 - Every test runs with the network blocked, so a test fails if it tries to open a connection.
-- The tests ignore your own `AA_PROFILE`, `AHD_*` variables and `~/.aa` profiles. Only `AHD_CHROME` stays, which chooses the Chrome for the page tests.
+- The tests ignore your own `AA_PROFILE`, `AHD_*` variables, `ORG_ID`, `CLIENT_ID`, `SECRET` and `SCOPES` variables and `~/.aa` profiles. Only `AHD_CHROME` stays, which chooses the Chrome for the page tests. Each test starts in an empty folder, so the tests do not read a `config.json` or `.env` file of your clone.
+- `tests/standard_cases` holds a copy of the shared cases of the Adobe credentials standard, version 1, which the companion tools run too. `tests/test_standard_cases.py` runs them. `known-differences.json` lists the cases that the tool does not meet yet. A listed case that starts to pass fails the tests, so remove it from the list then. Do not edit the copied files. To copy them again from a clone of the standard, run its `standards/sync_cases.py tests/standard_cases`.
+- `tests/test_lookup_pinned.py` holds which credential each combination of sources gave in 0.1.22. Until 0.2.0, no change may alter these results.
 - The example script in `docs/examples` has tests too.
 - The tests in `tests/test_report_js.py` open reports in headless Google Chrome or Chromium. They check the page script, e.g., that the alert lists match the `alerts` macro. The tests look for Chrome in the usual places. To choose the program, set `AHD_CHROME` to its path. Without Chrome these tests are skipped, but on GitHub Actions they fail.
 

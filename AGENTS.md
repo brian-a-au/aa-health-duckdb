@@ -32,8 +32,8 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 
 | Path | What it does |
 |---|---|
-| `src/ahd/cli.py` | The `ahd` command: `check`, `suites`, `segments`, `run`, `individual`, `render`, `alerts`, `runs`, `prune`, `export`, `import` |
-| `src/ahd/config.py` | Reads credentials from a profile, the `AHD_*` variables or a config file |
+| `src/ahd/cli.py` | The `ahd` command: `check`, `config`, `suites`, `segments`, `run`, `individual`, `render`, `alerts`, `runs`, `prune`, `export`, `import` |
+| `src/ahd/config.py` | Reads credentials from a profile, the `AHD_*` variables, a config file, the plain variables or a `.env` file. `find()` also gives the sources, the notices for 0.2.0 and the warning for a file that others can read. `mask_client_id()` is the only way to show a client ID |
 | `src/ahd/api/auth.py` | OAuth Server-to-Server sign-in, with a plain message for each way it can fail |
 | `src/ahd/api/client.py` | The only HTTP client for Adobe: retries, backoff, and one sign-in renewal across threads |
 | `src/ahd/api/reports.py` | Builds report request bodies and parses responses |
@@ -48,6 +48,8 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 | `src/ahd/text.py` | `inert()`, which makes a name from Adobe safe to print in a terminal. Every command that prints a name or ID from Adobe uses it |
 | `src/ahd/render/` | The Jinja template, CSS and JavaScript of the HTML report |
 | `tests/fakes.py` | A fake Adobe client. Tests use it instead of the network |
+| `tests/standard_cases/`, `tests/test_standard_cases.py`, `known-differences.json` | The shared cases of the Adobe credentials standard, version 1, and the test that runs them. `known-differences.json` lists the cases that the tool does not meet yet. Never edit the copied cases. `docs/development.md` says how to copy them again |
+| `tests/test_lookup_pinned.py` | Which credential each combination of sources gave in 0.1.22. A change before 0.2.0 must not change any of these results |
 | `tests/chrome.py`, `tests/test_report_js.py` | Run `report.js` in headless Chrome and read the results back |
 | `scripts/make_showcase.py` | Builds the README slideshow from synthetic data |
 | `scripts/check_wheel.py` | The release workflow runs it with the built wheel. It checks that the wheel has its SQL, template and page files |
@@ -64,7 +66,8 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 ### Adobe and credentials
 
 - The tool only reads from Adobe. The only request with a body is `POST /reports`, and it only reads data. Never add a request that changes anything in Adobe.
-- Never print, log or store a credential value or a token. Messages may name where a credential came from, e.g., "profile prod", but never a value. Exceptions carry only the exception type when the message could hold a URL.
+- Never print, log or store a credential value or a token. Messages may name where a credential came from, e.g., "profile prod", but never a value. Exceptions carry only the exception type when the message could hold a URL. The one exception is `ahd config`, which shows the organization ID, the scopes and the client ID through `mask_client_id()`. No command ever shows any part of the secret, or its length.
+- Until 0.2.0, a change must not change which credential the tool uses in a setup that works. Where the Adobe credentials standard asks for another result, add a notice in `config.py` and keep the result.
 - Never send usage data or telemetry anywhere.
 - Live checks use a credential that lives outside this repository. Ask the maintainer before you make live API calls. Keep any database or report you make for a check outside the repository.
 
@@ -80,7 +83,7 @@ The tests must pass on Python 3.12, 3.13 and 3.14 on Linux, and on Python 3.14 o
 ### Tests
 
 - Tests never use the network. `tests/conftest.py` blocks it and fails any test that tries. Use `tests/fakes.py` and the saved responses in `tests/fixtures/`.
-- `tests/conftest.py` also hides the maintainer's own `AA_PROFILE`, `AHD_*` variables and `~/.aa` profiles from every test. It keeps only `AHD_CHROME`. A new `AHD_*` variable is hidden without a change there.
+- `tests/conftest.py` also hides the maintainer's own `AA_PROFILE`, `AHD_*` variables, the variables `ORG_ID`, `CLIENT_ID`, `SECRET` and `SCOPES`, and `~/.aa` profiles from every test. It keeps only `AHD_CHROME`. A new `AHD_*` variable is hidden without a change there. Each test starts in an empty working folder, so a `config.json` or `.env` file in the repository folder never reaches a test. Each file that a test makes is private, so a test of the warning for a file that others can read sets the mode itself.
 - Add or update a test for every change in behavior.
 - `tests/test_report_js.py` runs `report.js` in headless Chrome. It skips without Chrome, and fails without Chrome when `CI` is set. Set `AHD_CHROME` to choose the Chrome program. Add a test there for every change to what the page does.
 - A test that waits for another thread or process must wait for a signal, e.g., a `threading.Event`, and never for a fixed time.

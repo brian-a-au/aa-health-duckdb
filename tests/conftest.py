@@ -7,6 +7,10 @@ import socket
 
 import pytest
 
+# Each file that a test makes is private, as a credential file should be. A test of the warning
+# for a file that others can read sets the mode of its file itself.
+os.umask(0o077)
+
 
 class NetworkBlocked(AssertionError):
     """A test tried to open a network connection."""
@@ -38,14 +42,26 @@ def block_network(monkeypatch):
     monkeypatch.setattr(socket, "create_connection", _blocked)
 
 
+# The variables of the credential without the AHD_ in front.
+PLAIN_VARIABLES = ("ORG_ID", "CLIENT_ID", "SECRET", "SCOPES")
+
+
 @pytest.fixture(autouse=True)
 def isolated_settings(monkeypatch, tmp_path_factory):
-    """No AA_PROFILE, no AHD_* variable, and a HOME with no ~/.aa profiles in it.
+    """No AA_PROFILE, no AHD_* variable, no ORG_ID, CLIENT_ID, SECRET or SCOPES, a HOME with no
+    ~/.aa profiles in it, and an empty working folder.
 
     The AHD_* variables hold the credential and the defaults of the anomaly options, e.g.,
     AHD_ANOMALY_METHOD. AHD_CHROME stays, because it only chooses the Chrome of the page tests.
+    The tool reads config.json and .env from the working folder, so each test starts in an empty
+    one. A file of that name in the folder of the repository then never reaches a test.
     """
     for key in list(os.environ):
-        if key == "AA_PROFILE" or (key.startswith("AHD_") and key != "AHD_CHROME"):
+        if (
+            key == "AA_PROFILE"
+            or key in PLAIN_VARIABLES
+            or (key.startswith("AHD_") and key != "AHD_CHROME")
+        ):
             monkeypatch.delenv(key)
     monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
+    monkeypatch.chdir(tmp_path_factory.mktemp("folder"))
