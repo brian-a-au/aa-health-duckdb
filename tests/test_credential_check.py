@@ -151,6 +151,45 @@ def test_a_dotenv_file_is_read_line_by_line_for_the_four_names_only(tmp_path):
     }
 
 
+@pytest.mark.parametrize(
+    "line, value",
+    [
+        ('SECRET="s3" # the secret', "s3"),
+        ("SECRET='s3'#the secret", "s3"),
+        ('SECRET="s3 # kept"', "s3 # kept"),
+        ("SECRET=s3#kept", "s3#kept"),
+        ("SECRET= # only a comment", None),
+        ("SECRET=#only a comment", None),
+        ("export\tSECRET=s3", "s3"),
+        ("  export   SECRET = s3  ", "s3"),
+        ('SECRET="s3', '"s3'),
+        ("SECRET=a=b", "a=b"),
+        ("exportSECRET=s3", None),
+        ("MY_SECRET=s3", None),
+        ("secret=s3", None),
+    ],
+)
+def test_a_dotenv_line_gives_its_value_without_quotes_or_a_comment(tmp_path, line, value):
+    path = tmp_path / ".env"
+    path.write_text(line + "\n", encoding="utf-8")
+    assert read_dotenv(path)["secret"] == value
+
+
+def test_a_dotenv_file_of_windows_is_read(tmp_path):
+    path = tmp_path / ".env"
+    path.write_bytes(b"\xef\xbb\xbfORG_ID=o\r\nSECRET='s3'\r\n")
+    assert read_dotenv(path) == {"org_id": "o", "client_id": None, "secret": "s3", "scopes": None}
+
+
+def test_the_text_of_a_lookup_holds_no_secret():
+    _file("config.json", A)
+    assert A["secret"] not in repr(find(None)) and A["client_id"] not in repr(find(None))
+    _file("config.json", {k: v for k, v in A.items() if k != "scopes"})
+    look = find(None)
+    assert look.error is not None and look.found["secret"] == A["secret"]
+    assert A["secret"] not in repr(look)
+
+
 def test_a_dotenv_file_that_cannot_be_read_gives_nothing(tmp_path):
     path = tmp_path / ".env"
     path.write_bytes(b"SECRET=\xff\xfe\n")

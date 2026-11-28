@@ -130,7 +130,8 @@ class Lookup:
     warnings: list[Message] = field(default_factory=list)
     # The values that were found when a key is missing, for the config check. Never printed
     # whole: the secret shows as set or not set, and the client ID is masked.
-    found: dict[str, str | None] = field(default_factory=dict)
+    # They hold the secret, so they stay out of the text of repr().
+    found: dict[str, str | None] = field(default_factory=dict, repr=False)
 
     def notice(self, code: str, text: str) -> None:
         self.notices.append(Message(code, text))
@@ -212,11 +213,20 @@ def _build(
     return Credentials(**{k: values[k] or "" for k in _KEYS}, source=source, kind=kind)
 
 
+# A value in quotes, with or without a comment after the closing quote.
+_QUOTED = re.compile(r"""(['"])(.*?)\1\s*(?:#.*)?""")
+# A comment in a value without quotes: a "#" at its start or after a space.
+_COMMENT = re.compile(r"(?:^|\s)#")
+# One line of a .env file: NAME=value, with or without "export" in front.
+_DOTENV_LINE = re.compile(r"(?:export\s+)?(\w+)\s*=(.*)")
+
+
 def _unquoted(value: str) -> str:
-    """The value of a .env line without its quotes, or without a comment after it."""
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-        return value[1:-1]
-    return value.split(" #", 1)[0]
+    """The value of a .env line without its quotes and without a comment after it."""
+    quoted = _QUOTED.fullmatch(value)
+    if quoted:
+        return quoted.group(2)
+    return _COMMENT.split(value, maxsplit=1)[0]
 
 
 def read_dotenv(path: Path) -> dict[str, str | None]:
@@ -233,10 +243,10 @@ def read_dotenv(path: Path) -> dict[str, str | None]:
         return values
     names = {k.upper(): k for k in _KEYS}
     for line in text.splitlines():
-        name, found, value = line.strip().removeprefix("export ").partition("=")
-        key = names.get(name.strip())
-        if found and key:
-            values[key] = _text(_unquoted(value.strip()))
+        match = _DOTENV_LINE.fullmatch(line.strip())
+        key = names.get(match.group(1)) if match else None
+        if match and key:
+            values[key] = _text(_unquoted(match.group(2).strip()))
     return values
 
 

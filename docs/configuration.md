@@ -43,7 +43,7 @@ The tool uses the first of these that it finds:
 2. **Environment variables.** Set all four of `AHD_ORG_ID`, `AHD_CLIENT_ID`, `AHD_SECRET` and `AHD_SCOPES`.
 3. **A config file.** Pass its path with `--config`, or put a file named `config.json` in the folder where you run the tool. If you also set some of the four `AHD_` variables, each one wins over the same key in the file.
 4. **The plain variables.** Set all four of `ORG_ID`, `CLIENT_ID`, `SECRET` and `SCOPES`. These are the names that the companion tools read.
-5. **A `.env` file.** Put a file named `.env` in the folder where you run the tool, with the same four names, e.g., `SECRET=...`. The tool reads only these four lines of the file. It does not read a `.env` file in a folder above, and it puts nothing from the file into the environment. So the file cannot set `AA_PROFILE` or the `AHD_ANOMALY_` variables.
+5. **A `.env` file.** Put a file named `.env` in the folder where you run the tool, with the same four names, e.g., `SECRET=...`. The tool reads only these four lines of the file. A value may be in quotes, and a line may start with `export`. A `#` after a closing quote or after a space starts a comment. It does not read a `.env` file in a folder above, and it puts nothing from the file into the environment. So the file cannot set `AA_PROFILE` or the `AHD_ANOMALY_` variables.
 
 The tool reads the plain variables and the `.env` file only when the first three give nothing at all. So a setup that worked before 0.1.23 gets the same credential as before. The tool takes all four values from the plain variables or all four from the `.env` file, and does not mix the two.
 
