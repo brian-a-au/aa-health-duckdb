@@ -15,7 +15,7 @@ from typing import Any
 
 import requests
 
-from ahd.config import Credentials
+from ahd.config import MASK, Credentials, mask_client_id
 from ahd.text import inert
 
 IMS_TOKEN_URL = "https://ims-na1.adobelogin.com/ims/token/v3"
@@ -153,9 +153,15 @@ def _missing_scopes(scopes: str) -> list[str]:
 
 
 def _adobe_text(description: str, creds: Credentials) -> str:
-    """The error description of an answer, safe to show: no secret, no character that changes
-    the terminal, and no longer than ADOBE_TEXT_LIMIT."""
-    return inert(description.replace(creds.secret, "****"))[:ADOBE_TEXT_LIMIT]
+    """The error description of an answer, safe to show: no secret, the client ID only as
+    mask_client_id() shows it, no character that changes the terminal, and no longer than
+    ADOBE_TEXT_LIMIT."""
+    text = description
+    if creds.secret:
+        text = text.replace(creds.secret, MASK)
+    if creds.client_id:
+        text = text.replace(creds.client_id, mask_client_id(creds.client_id))
+    return inert(text)[:ADOBE_TEXT_LIMIT]
 
 
 def failed_step(error: BaseException) -> str:
