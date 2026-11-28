@@ -680,7 +680,11 @@ def _check_json(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
 
     The sign-in and the call to Analytics that finds the login company are two results, because
     one can work while the other fails. details holds the lines that the text format prints
-    after the sign-in. The exit code is that of the text format.
+    after the sign-in. The exit code is that of the text format, and "ok" is true only when the
+    exit code is 0. When a later check fails, the product access result says so:
+
+    - no_product_access when the credential sees too little, e.g., no report suites
+    - unreachable when a check could not be run or Adobe answered with an error
     """
     creds = _credentials(args)
     lines: list[str] = []
@@ -702,12 +706,19 @@ def _check_json(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     else:
         steps = {SIGN_IN: _step(True), PRODUCT_ACCESS: _step(True)}
         out = io.StringIO()
+        access = ACCESS_UNTESTED
         try:
             with redirect_stdout(out):
-                code = _check_access(args, client)
+                access = _access(args, client)
         except (ConfigError, ApiError, SignInError, requests.RequestException) as e:
             out.write(f"Error: {_error_text(e)}\n")
+        else:
+            code = ACCESS_EXIT[access]
         lines += out.getvalue().splitlines()
+        if access != ACCESS_OK:
+            # The last line says what is wrong: the fix, or the error.
+            failed_code = "no_product_access" if access == ACCESS_MISSING else "unreachable"
+            steps[PRODUCT_ACCESS] = _step(False, failed_code, lines[-1].removeprefix("Error: "))
     report = {
         "schema": "adobe-credentials/v1/live-test",
         "tool": DIST_NAME,
@@ -728,7 +739,19 @@ def _check(args: argparse.Namespace, factory: Callable[..., Any]) -> int:
     return _check_access(args, _connect(args, factory))
 
 
+# What _access found: every check passed, the credential sees too little, or a check did not run.
+ACCESS_OK = "ok"
+ACCESS_MISSING = "missing"
+ACCESS_UNTESTED = "untested"
+ACCESS_EXIT = {ACCESS_OK: 0, ACCESS_MISSING: 2, ACCESS_UNTESTED: 2}
+
+
 def _check_access(args: argparse.Namespace, client: Any) -> int:
+    """The exit code of ahd check after the sign-in."""
+    return ACCESS_EXIT[_access(args, client)]
+
+
+def _access(args: argparse.Namespace, client: Any) -> str:
     """What the credential can see, after the sign-in. Prints one line for each finding."""
     if args.rsid:
         args.rsid = resolve_suite(client, args.rsid)
@@ -739,8 +762,8 @@ def _check_access(args: argparse.Namespace, client: Any) -> int:
         print(f"Report suites visible: {count}")
         if count == 0:
             print(NO_REPORT_SUITES)
-            return 2
-        return 0
+            return ACCESS_MISSING
+        return ACCESS_OK
     catalog, suite = fetch_catalog(client, args.rsid)
     counts = {g: sum(1 for c in catalog if c.group == g) for g in CUSTOM_GROUPS}
     print(f"Report suite: {inert(suite_name(suite, args.rsid))}")
@@ -768,12 +791,12 @@ def _check_access(args: argparse.Namespace, client: Any) -> int:
         print("Anomaly detection: not tested (no components to test with)")
     if not ok:
         print(ACCESS_FIX)
-        return 2
+        return ACCESS_MISSING
     if untested:
         print("Not every check could be run. Wait a little and run this check again.")
-        return 2
+        return ACCESS_UNTESTED
     print("All checks passed.")
-    return 0
+    return ACCESS_OK
 
 
 # The order of the statuses from best to worst, for the exit code of a run of several suites.

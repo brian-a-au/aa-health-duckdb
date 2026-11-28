@@ -9,7 +9,7 @@ This release makes the tool follow Levels 1 and 2 of the Adobe credentials stand
 **New command and option**
 
 - `ahd config` shows which credential the tool finds and where it comes from. It makes no call to Adobe. It shows the organization ID, the scopes, and the client ID with only its first 4 and last 4 characters, e.g., `1a2b****9y0z`. A secret that is set shows as `****`. It also lists each source that is not used, each problem and each notice. `--format json` prints the same as JSON for a program.
-- `ahd check --format json` prints the result as JSON. It holds one result for the sign-in and one for the call to Analytics that finds the login company, each with a code, e.g., `bad_secret`. The text output of `ahd check` does not change.
+- `ahd check --format json` prints the result as JSON. It holds one result for the sign-in and one for the call to Analytics that finds the login company, each with a code, e.g., `bad_secret`. `ok` is true only when the exit code is 0. When a later check fails, e.g., the credential sees no report suites, the result for Analytics has `ok` false and says why. The text output of `ahd check` does not change.
 
 **More ways to give the credential**
 

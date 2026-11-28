@@ -532,9 +532,13 @@ def test_check_as_json_holds_the_two_results_and_the_lines_of_the_text(monkeypat
 def test_check_as_json_keeps_the_exit_code_of_the_text_format(monkeypatch, capsys):
     _file("config.json", A)
     code, report, _err = _check(capsys, lambda creds: _suites())
-    assert code == 2 and report["ok"] is True
+    assert code == 2 and report["ok"] is False
     assert report["source"] == {"kind": "default_config", "name": "config.json"}
     assert report["details"][-1].startswith("This credential signs in but sees no report suites")
+    assert report["sign_in"]["ok"] is True
+    access = report["product_access"]
+    assert access["ok"] is False and access["code"] == "no_product_access"
+    assert access["message"] == report["details"][-1]
 
 
 def test_check_as_json_checks_a_suite(monkeypatch, capsys):
@@ -552,11 +556,17 @@ def test_check_as_json_reports_an_error_after_the_sign_in_in_the_details(monkeyp
     _file("config.json", A)
     fake = FakeClient(gets={"/reportsuites/collections/suites": ApiError(500, "down", None)})
     code, report, err = _check(capsys, lambda creds: fake)
-    assert code == 1 and err == "" and report["ok"] is True
+    assert code == 1 and err == "" and report["ok"] is False
     assert report["details"] == [
         "Signed in using config.json",
         "Error: Adobe API error 500: down",
     ]
+    assert report["sign_in"]["ok"] is True
+    assert report["product_access"] == {
+        "ok": False,
+        "code": "unreachable",
+        "message": "Adobe API error 500: down",
+    }
 
 
 def test_check_as_json_names_a_wrong_secret_without_any_part_of_it(monkeypatch, capsys):
